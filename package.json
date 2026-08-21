@@ -1,0 +1,40 @@
+{
+  "name": "multi-agent-platform",
+  "version": "1.0.0",
+  "description": "A fully self-hosted multi-agent platform for developing software and applications using TypeScript, LangGraph, BookStack, Azure DevOps, and LangFuse.",
+  "main": "dist/index.js",
+  "bin": {
+    "multi-agent": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@langchain/anthropic": "^0.3.15",
+    "@langchain/core": "^0.3.40",
+    "@langchain/langgraph": "^0.2.53",
+    "@langchain/openai": "^0.4.4",
+    "axios": "^1.7.9",
+    "azure-devops-node-api": "^14.1.0",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "inquirer": "^9.3.8",
+    "langfuse": "^3.35.0",
+    "langfuse-langchain": "^3.35.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/inquirer": "^9.0.7",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.13.4",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
