@@ -1,13 +1,17 @@
-import { WorkflowState } from './types';
-import { HumanAdapter } from '../adapters/humanAdapter';
+import { WorkflowState, Agent } from "../core/types";
+import { HumanAdapter } from "../../adapters/humanAdapter";
+import { DocumentFormatter, MarkdownDocumentFormatter } from "./documentFormatter";
 
-export class DocGeneratorAgent {
-  constructor() {}
+export class DocGeneratorAgent implements Agent {
+  private formatter: DocumentFormatter;
+
+  constructor(formatter?: DocumentFormatter) {
+    this.formatter = formatter || new MarkdownDocumentFormatter();
+  }
 
   async run(state: WorkflowState, humanAdapter: HumanAdapter): Promise<Partial<WorkflowState>> {
     await humanAdapter.notify('DocGeneratorAgent starting: Transforming amateur input into a mature technical spec...');
 
-    // Ask clarifying questions to build mature documentation
     const q1 = 'What are the target architecture, key tech stack, and non-functional requirements (e.g. performance, security) for this project?';
     const ans1 = await humanAdapter.askHuman(q1, { initialInput: state.inputPrompt });
 
@@ -15,23 +19,7 @@ export class DocGeneratorAgent {
     const ans2 = await humanAdapter.askHuman(q2);
 
     const docTitle = `Technical Specification: ${state.inputPrompt.slice(0, 40).replace(/[^a-zA-Z0-9 ]/g, '') || 'System Software'}`;
-    const docContent = `
-# ${docTitle}
-
-## 1. Overview & Goals
-${state.inputPrompt}
-
-## 2. Technical Architecture & Tech Stack
-${ans1}
-
-## 3. Data Schema & Core API Endpoints
-${ans2}
-
-## 4. Security & Performance Requirements
-- Authentication: OAuth2 / JWT
-- Data Encryption at rest and in transit
-- Auto-scaling supported
-`;
+    const docContent = this.formatter.format(docTitle, state.inputPrompt, [ans1, ans2]);
 
     await humanAdapter.notify(`DocGeneratorAgent completed: Created mature documentation.`);
 

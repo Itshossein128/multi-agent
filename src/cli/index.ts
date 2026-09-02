@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import dotenv from 'dotenv';
 import { CLIHumanAdapter, MattermostHumanAdapter } from '../adapters/humanAdapter';
-import { AgentGraphEngine } from '../agents/graphEngine';
+import { AgentGraphEngine } from '../agents/core/graphEngine';
 
 dotenv.config();
 

@@ -1,5 +1,5 @@
 import { BaseMessage } from '@langchain/core/messages';
-import { HumanAdapter } from '../adapters/humanAdapter';
+import { HumanAdapter } from '../../adapters/humanAdapter';
 
 export interface WorkflowState {
   messages: BaseMessage[];
@@ -16,4 +16,8 @@ export interface WorkflowState {
   status: 'PENDING' | 'QUESTIONS_NEEDED' | 'DOC_GENERATING' | 'READY_FOR_DEV' | 'DEV_IN_PROGRESS' | 'COMPLETED' | 'FAILED';
   clarificationQuestions?: string[];
   humanAnswers?: Record<string, string>;
+}
+
+export interface Agent {
+  run(state: WorkflowState, humanAdapter: HumanAdapter): Promise<Partial<WorkflowState>>;
 }
