@@ -1,10 +1,10 @@
 import { StateGraph, START, END, MemorySaver, Annotation } from '@langchain/langgraph';
-import { WorkflowState } from './types';
-import { OrchestratorAgent } from './orchestratorAgent';
-import { DocGeneratorAgent } from './docGeneratorAgent';
-import { DeveloperAgent } from './developerAgent';
-import { CLIHumanAdapter, HumanAdapter } from '../adapters/humanAdapter';
-import { LangFuseTracer } from '../integrations/langfuse';
+import { WorkflowState, Agent } from './types';
+import { OrchestratorAgent } from '../orchestrator/orchestratorAgent';
+import { DocGeneratorAgent } from '../docGenerator/docGeneratorAgent';
+import { DeveloperAgent } from '../developer/developerAgent';
+import { CLIHumanAdapter, HumanAdapter } from '../../adapters/humanAdapter';
+import { LangFuseTracer } from '../../integrations/langfuse';
 
 const WorkflowAnnotation = Annotation.Root({
   messages: Annotation<any[]>({
@@ -27,12 +27,6 @@ const WorkflowAnnotation = Annotation.Root({
     value: (x, y) => y ?? x,
   }),
   docContent: Annotation<string | undefined>({
-    value: (x, y) => y ?? x,
-  }),
-  bookStackTargetType: Annotation<'shelf' | 'book' | 'chapter' | 'page' | undefined>({
-    value: (x, y) => y ?? x,
-  }),
-  bookStackTargetId: Annotation<number | undefined>({
     value: (x, y) => y ?? x,
   }),
   createdDocUrl: Annotation<string | undefined>({
@@ -62,18 +56,22 @@ const WorkflowAnnotation = Annotation.Root({
   }),
 });
 
+export interface Tracer {
+  traceExecution(name: string, input: any, output: any): Promise<string>;
+}
+
 export class AgentGraphEngine {
-  private orchestrator: OrchestratorAgent;
-  private docGenerator: DocGeneratorAgent;
-  private developer: DeveloperAgent;
-  private tracer: LangFuseTracer;
+  private orchestrator: Agent;
+  private docGenerator: Agent;
+  private developer: Agent;
+  private tracer: Tracer;
   private compiledGraph: any;
 
   constructor(options?: {
-    orchestrator?: OrchestratorAgent;
-    docGenerator?: DocGeneratorAgent;
-    developer?: DeveloperAgent;
-    tracer?: LangFuseTracer;
+    orchestrator?: Agent;
+    docGenerator?: Agent;
+    developer?: Agent;
+    tracer?: Tracer;
   }) {
     this.orchestrator = options?.orchestrator || new OrchestratorAgent();
     this.docGenerator = options?.docGenerator || new DocGeneratorAgent();
@@ -86,7 +84,6 @@ export class AgentGraphEngine {
   private buildGraph() {
     const graphBuilder = new StateGraph(WorkflowAnnotation);
 
-    // Node Definitions
     const graph = graphBuilder
       .addNode('orchestratorNode', async (state: typeof WorkflowAnnotation.State) => {
         const adapter = state.humanAdapter || new CLIHumanAdapter();
@@ -107,7 +104,6 @@ export class AgentGraphEngine {
         return updates;
       });
 
-    // Edges
     graph.addEdge(START, 'orchestratorNode');
 
     graph.addConditionalEdges('orchestratorNode' as any, (state: typeof WorkflowAnnotation.State) => {

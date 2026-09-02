@@ -1,13 +1,24 @@
 import { AgentGraphEngine } from '../src/agents/graphEngine';
 import { CLIHumanAdapter } from '../src/adapters/humanAdapter';
+import { getLLM } from '../src/agents/llmFactory';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 
-describe('Multi-Agent Graph Engine', () => {
+describe('Multi-Agent Graph Engine & LLM Factory', () => {
   beforeEach(() => {
     process.env.AUTO_ANSWER = 'Sample user response for spec clarification';
   });
 
   afterEach(() => {
     delete process.env.AUTO_ANSWER;
+    delete process.env.LLM_PROVIDER;
+    delete process.env.LLM_MODEL;
+  });
+
+  test('LLM Factory returns ChatGoogleGenerativeAI when provider is gemini', () => {
+    process.env.LLM_PROVIDER = 'gemini';
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    const llm = getLLM();
+    expect(llm).toBeInstanceOf(ChatGoogleGenerativeAI);
   });
 
   test('Flow 1: Mature document input directly creates work items and triggers developer agent', async () => {
@@ -61,3 +72,4 @@ describe('Multi-Agent Graph Engine', () => {
     expect(result.status).toBe('COMPLETED');
   });
 });
+
