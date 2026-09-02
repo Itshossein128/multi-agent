@@ -1,47 +1,27 @@
-import { BookStackClient, BOOKSTACK_DEFINITIONS } from '../src/integrations/bookstack';
-import { AzureDevOpsClient } from '../src/integrations/azureDevOps';
 import { LangFuseTracer } from '../src/integrations/langfuse';
+import { GitHubClient } from '../src/integrations/github';
 
-describe('External Integration Clients', () => {
-  test('BookStackClient operations and definitions', async () => {
-    const client = new BookStackClient();
-    const defs = client.getDefinitions();
-    expect(defs.shelf).toBeDefined();
-    expect(defs.book).toBeDefined();
-    expect(defs.chapter).toBeDefined();
-    expect(defs.page).toBeDefined();
+describe('External Integration Clients', () => {  test('GitHubClient operations', async () => {
+    const github = new GitHubClient();
+    const issue = await github.createIssue('MainProject-Backend', 'Build GitHub API', 'Create GitHub REST endpoints');
+    expect(issue.id).toBeDefined();
+    expect(issue.title).toBe('Build GitHub API');
 
-    const shelf = await client.createShelf('Test Shelf', 'Description');
-    expect(shelf.name).toBe('Test Shelf');
-
-    const book = await client.createBook('Test Book', 'Description');
-    expect(book.name).toBe('Test Book');
-
-    const chapter = await client.createChapter(book.id, 'Test Chapter', 'Description');
-    expect(chapter.name).toBe('Test Chapter');
-
-    const page = await client.createPage({ bookId: book.id, name: 'Test Page', markdown: '# Spec' });
-    expect(page.name).toBe('Test Page');
-  });
-
-  test('AzureDevOpsClient operations', async () => {
-    const ado = new AzureDevOpsClient();
-    const wi = await ado.createWorkItem({ title: 'Build API', description: 'Build REST endpoints', type: 'Task' });
-    expect(wi.id).toBeDefined();
-    expect(wi.title).toBe('Build API');
-
-    const repos = await ado.listRepositories();
+    const repos = await github.listRepositories();
     expect(repos.length).toBeGreaterThan(0);
 
-    const pr = await ado.createPullRequest({
-      repoName: repos[0].name,
-      sourceBranch: 'feature/auth',
-      targetBranch: 'main',
-      title: 'PR for Auth',
-      description: 'Adds auth features',
+    const branch = await github.createBranch('MainProject-Backend', 'feature/github-test');
+    expect(branch.success).toBe(true);
+
+    const pr = await github.createPullRequest({
+      repo: repos[0].name,
+      head: 'feature/github-test',
+      base: 'main',
+      title: 'PR for GitHub',
+      body: 'Adds GitHub features',
     });
     expect(pr.prId).toBeDefined();
-    expect(pr.status).toBe('active');
+    expect(pr.state).toBe('open');
   });
 
   test('LangFuseTracer trace execution', async () => {

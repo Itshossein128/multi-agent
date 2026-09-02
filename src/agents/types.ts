@@ -8,8 +8,6 @@ export interface WorkflowState {
   isMatureDoc: boolean;
   docTitle?: string;
   docContent?: string;
-  bookStackTargetType?: 'shelf' | 'book' | 'chapter' | 'page';
-  bookStackTargetId?: number;
   createdDocUrl?: string;
   tasks?: Array<{ title: string; description: string; type: 'Task' | 'User Story' }>;
   createdWorkItemIds?: number[];

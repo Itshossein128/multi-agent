@@ -1,114 +1,186 @@
-import { WorkflowState } from './types';
-import { BookStackClient } from '../integrations/bookstack';
-import { AzureDevOpsClient } from '../integrations/azureDevOps';
-import { HumanAdapter } from '../adapters/humanAdapter';
+import { WorkflowState } from "./types";
+import { GitHubClient } from "../integrations/github";
+import { HumanAdapter } from "../adapters/humanAdapter";
+import { getLLM } from "./llmFactory";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 
 export class OrchestratorAgent {
-  private bookStackClient: BookStackClient;
-  private azureDevOpsClient: AzureDevOpsClient;
+  private githubClient: GitHubClient;
 
-  constructor(bookStackClient?: BookStackClient, azureDevOpsClient?: AzureDevOpsClient) {
-    this.bookStackClient = bookStackClient || new BookStackClient();
-    this.azureDevOpsClient = azureDevOpsClient || new AzureDevOpsClient();
+  constructor(githubClient?: GitHubClient) {
+    this.githubClient = githubClient || new GitHubClient();
   }
 
   // Helper to evaluate document status
-  evaluateInput(state: WorkflowState): { isDoc: boolean; isMatureDoc: boolean; reasons: string[] } {
+  async evaluateInput(
+    state: WorkflowState,
+  ): Promise<{ isDoc: boolean; isMatureDoc: boolean; reasons: string[] }> {
     if (state.isMatureDoc || state.docContent) {
       return { isDoc: true, isMatureDoc: true, reasons: [] };
     }
 
     const prompt = state.inputPrompt.trim();
-    const isDocCandidate = prompt.length > 50 || prompt.includes('#') || prompt.toLowerCase().includes('specification') || prompt.toLowerCase().includes('doc');
+    const isDocCandidate =
+      prompt.length > 50 ||
+      prompt.includes("#") ||
+      prompt.toLowerCase().includes("specification") ||
+      prompt.toLowerCase().includes("doc");
 
     const reasons: string[] = [];
     if (!isDocCandidate) {
-      reasons.push('Input is too short or informal to be considered a software spec documentation.');
+      reasons.push(
+        "Input is too short or informal to be considered a software spec documentation.",
+      );
       return { isDoc: false, isMatureDoc: false, reasons };
     }
 
-    const hasTechStack = /node|typescript|react|postgres|docker|api|jwt|database|schema/i.test(prompt);
-    const hasArch = /architecture|component|endpoint|service|flow|module/i.test(prompt);
-    const hasReqs = /requirement|feature|user story|acceptance/i.test(prompt);
+    const llm = getLLM();
+    const evaluationPrompt = `
+You are an expert technical architect. Evaluate the following software requirement prompt.
+Does it contain mature, sufficient details regarding:
+1. Technology Stack
+2. System Architecture / Components
+3. Feature / User Requirements
 
-    if (!hasTechStack) reasons.push('Missing explicit technology stack details.');
-    if (!hasArch) reasons.push('Missing clear system architecture or API specifications.');
-    if (!hasReqs) reasons.push('Missing structured feature requirements or acceptance criteria.');
+Respond with a JSON object ONLY, in this exact format:
+{
+  "isMatureDoc": boolean,
+  "reasons": [] // If not mature, list specifically what is missing as short sentences. If mature, empty array.
+}
 
-    const isMatureDoc = hasTechStack && hasArch && hasReqs;
-    return { isDoc: true, isMatureDoc, reasons };
+Prompt to evaluate:
+---
+${prompt}
+---`;
+
+    try {
+      const response = await llm.invoke([
+        new SystemMessage("You are a technical document maturity analyzer."),
+        new HumanMessage(evaluationPrompt),
+      ]);
+
+      const text = response.content
+        .toString()
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+      const parsed = JSON.parse(text);
+
+      return {
+        isDoc: true,
+        isMatureDoc: Boolean(parsed.isMatureDoc),
+        reasons: Array.isArray(parsed.reasons) ? parsed.reasons : [],
+      };
+    } catch (error) {
+      console.warn(
+        "LLM document maturity evaluation failed, falling back to assuming immature.",
+        error,
+      );
+      return {
+        isDoc: true,
+        isMatureDoc: false,
+        reasons: [
+          "Document evaluation failed, system assumes missing details.",
+        ],
+      };
+    }
   }
 
-  async run(state: WorkflowState, humanAdapter: HumanAdapter): Promise<Partial<WorkflowState>> {
-    await humanAdapter.notify('OrchestratorAgent evaluating input, existing wiki docs, and repository code...');
+  async run(
+    state: WorkflowState,
+    humanAdapter: HumanAdapter,
+  ): Promise<Partial<WorkflowState>> {
+    await humanAdapter.notify(
+      "OrchestratorAgent evaluating input, existing wiki docs, and repository code...",
+    );
 
-    // Fetch context from BookStack and Azure DevOps
-    const existingWikiPages = await this.bookStackClient.listPages();
-    const existingRepos = await this.azureDevOpsClient.listRepositories();
+    // Fetch context from DevOps Provider
+    let existingRepoNames: string[] = [];
+    const githubRepos = await this.githubClient.listRepositories();
+    existingRepoNames = githubRepos.map((r) => r.name);
 
-    await humanAdapter.notify(`Found ${existingWikiPages.length} wiki docs and ${existingRepos.length} Azure DevOps repos for context.`);
+    await humanAdapter.notify(
+      `Found ${existingRepoNames.length} repos in github for context.`,
+    );
 
     // Check input maturity
-    const evalResult = this.evaluateInput(state);
+    const evalResult = await this.evaluateInput(state);
 
     if (!evalResult.isDoc) {
-      await humanAdapter.notify('OrchestratorAgent determined input is NOT a documentation. Handing off to DocGeneratorAgent.');
+      await humanAdapter.notify(
+        "OrchestratorAgent determined input is NOT a documentation. Handing off to DocGeneratorAgent.",
+      );
       return {
         isDoc: false,
         isMatureDoc: false,
-        status: 'DOC_GENERATING',
+        status: "DOC_GENERATING",
       };
     }
 
     if (!evalResult.isMatureDoc) {
-      await humanAdapter.notify('OrchestratorAgent determined document has technical ambiguities. Asking clarifying questions...');
+      await humanAdapter.notify(
+        "OrchestratorAgent determined document has technical ambiguities. Asking clarifying questions...",
+      );
       const answers: Record<string, string> = {};
 
       for (let i = 0; i < evalResult.reasons.length; i++) {
         const question = `Ambiguity Clarification #${i + 1}: ${evalResult.reasons[i]} Please clarify.`;
-        const ans = await humanAdapter.askHuman(question, { existingRepos: existingRepos.map((r) => r.name) });
+        const ans = await humanAdapter.askHuman(question, {
+          existingRepos: existingRepoNames,
+        });
         answers[`q_${i}`] = ans;
       }
 
-      await humanAdapter.notify('All ambiguities resolved with user input. Document is now mature.');
+      await humanAdapter.notify(
+        "All ambiguities resolved with user input. Document is now mature.",
+      );
       return {
         isDoc: true,
         isMatureDoc: true,
-        docContent: `${state.inputPrompt}\n\n## Clarifications & Ambiguity Resolution\n${Object.values(answers).join('\n')}`,
-        status: 'READY_FOR_DEV',
+        docContent: `${state.inputPrompt}\n\n## Clarifications & Ambiguity Resolution\n${Object.values(answers).join("\n")}`,
+        status: "READY_FOR_DEV",
       };
     }
 
-    // Fully mature document -> create Azure DevOps tasks
-    await humanAdapter.notify('OrchestratorAgent confirmed MATURE documentation with zero ambiguities. Creating Azure DevOps work items...');
+    // Fully mature document -> create work items / issues in DevOps provider
+    await humanAdapter.notify(
+      `OrchestratorAgent confirmed MATURE documentation. Creating work items in github...`,
+    );
 
     const tasks = [
       {
-        title: `[Core Architecture] ${state.docTitle || 'System Component Setup'}`,
+        title: `[Core Architecture] ${state.docTitle || "System Component Setup"}`,
         description: `Implement base system module based on spec:\n${state.docContent || state.inputPrompt}`,
-        type: 'Task' as const,
+        type: "Task" as const,
       },
       {
-        title: `[API Integration] ${state.docTitle || 'API Services'}`,
+        title: `[API Integration] ${state.docTitle || "API Services"}`,
         description: `Implement REST/GraphQL API contracts and database schema.`,
-        type: 'User Story' as const,
+        type: "User Story" as const,
       },
     ];
 
     const workItemIds: number[] = [];
+    const targetRepo = existingRepoNames[0] || "MainProject-Backend";
     for (const task of tasks) {
-      const item = await this.azureDevOpsClient.createWorkItem(task);
-      if (item.id) workItemIds.push(item.id);
+      const issue = await this.githubClient.createIssue(
+        targetRepo,
+        task.title,
+        task.description,
+      );
+      if (issue.number || issue.id) workItemIds.push(issue.number || issue.id!);
     }
 
-    await humanAdapter.notify(`Created ${workItemIds.length} work items in Azure DevOps: ${workItemIds.join(', ')}`);
+    await humanAdapter.notify(
+      `Created ${workItemIds.length} work items/issues in github: ${workItemIds.join(", ")}`,
+    );
 
     return {
       isDoc: true,
       isMatureDoc: true,
       tasks,
       createdWorkItemIds: workItemIds,
-      status: 'READY_FOR_DEV',
+      status: "READY_FOR_DEV",
     };
   }
 }

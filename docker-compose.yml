@@ -1,0 +1,90 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Multi-Agent Platform Application
+  # ---------------------------------------------------------------------------
+  multi-agent-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-agent-app
+    ports:
+      - "3000:3000"
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-mock-key}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-mock-key}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-mock-key}
+      - LANGFUSE_HOST=http://langfuse:3000
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-pk-lf-mock}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-sk-lf-mock}
+      - MATTERMOST_WEBHOOK_URL=http://mattermost:8065/hooks/mock-hook
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-mock-github-token}
+      - GITHUB_OWNER=${GITHUB_OWNER:-my-github-username}
+    depends_on:
+      - langfuse
+      - mattermost
+    restart: unless-stopped
+    command:
+      ["web-server", "--port", "3000", "Build a customer portal application"]
+
+
+  # ---------------------------------------------------------------------------
+  # 3. LangFuse (LLM Observability & Tracing) + PostgreSQL
+  # ---------------------------------------------------------------------------
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: langfuse-db
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=langfuse_pass
+      - POSTGRES_DB=langfuse
+    volumes:
+      - langfuse-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: langfuse
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3001:3000"
+    environment:
+      - DATABASE_URL=postgresql://langfuse:langfuse_pass@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=super-secret-nextauth-key-12345
+      - SALT=super-secret-salt-12345
+      - NEXTAUTH_URL=http://localhost:3001
+      - TELEMETRY_ENABLED=false
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # 4. Mattermost (Chat & Webhook Integration) + PostgreSQL
+  # ---------------------------------------------------------------------------
+  mattermost-db:
+    image: postgres:15-alpine
+    container_name: mattermost-db
+    environment:
+      - POSTGRES_USER=mmuser
+      - POSTGRES_PASSWORD=mmuser_pass
+      - POSTGRES_DB=mattermost
+    volumes:
+      - mattermost-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  mattermost:
+    image: mattermost/mattermost-team-edition:latest
+    container_name: mattermost
+    ports:
+      - "8065:8065"
+    environment:
+      - MM_SERVICESETTINGS_SITEURL=http://localhost:8065
+      - MM_SQLSETTINGS_DRIVERNAME=postgres
+      - MM_SQLSETTINGS_DATASOURCE=postgres://mmuser:mmuser_pass@mattermost-db:5432/mattermost?sslmode=disable
+    depends_on:
+      - mattermost-db
+    restart: unless-stopped
+
+volumes:
+  langfuse-db-data:
+  mattermost-db-data:
