@@ -52,7 +52,19 @@ program
       humanAdapter: adapter,
     });
 
-    console.log(`Workflow completed with status: ${result.status}`);
+    console.log('\n================ WORKFLOW SUMMARY ================');
+    console.log(`Final Status: ${result.status}`);
+    console.log(`Document Title: ${result.docTitle || 'N/A'}`);
+    if (result.createdDocUrl) console.log(`BookStack Document URL: ${result.createdDocUrl}`);
+    if (result.createdWorkItemIds?.length) console.log(`GitHub Issue IDs: ${result.createdWorkItemIds.join(', ')}`);
+    if (result.prUrl) console.log(`GitHub Pull Request: ${result.prUrl}`);
+    console.log('==================================================\n');
+
+    await adapter.notify(
+      `🎉 **Workflow Completed!**\n- **Status**: ${result.status}\n- **Document Title**: ${result.docTitle || 'N/A'}\n${
+        result.createdWorkItemIds?.length ? `- **Work Items**: ${result.createdWorkItemIds.join(', ')}\n` : ''
+      }${result.prUrl ? `- **Pull Request**: ${result.prUrl}` : ''}`
+    );
   });
 
 program.parse(process.argv);

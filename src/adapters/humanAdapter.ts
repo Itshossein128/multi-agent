@@ -46,21 +46,67 @@ export class CLIHumanAdapter implements HumanAdapter {
 
 
 // Mattermost Webhook / Bot Implementation
-import axios from "axios";
+import axios, { AxiosInstance } from "axios";
+
+export interface MattermostAdapterConfig {
+  webhookUrl?: string;
+  botToken?: string;
+  channelId?: string;
+  serverUrl?: string;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+}
 
 export class MattermostHumanAdapter implements HumanAdapter {
   public type: "mattermost" = "mattermost";
   private webhookUrl: string;
+  private botToken?: string;
+  private channelId?: string;
+  private serverUrl: string;
+  private pollIntervalMs: number;
+  private timeoutMs: number;
+  private botClient?: AxiosInstance;
 
-  constructor(webhookUrl?: string) {
-    this.webhookUrl =
-      webhookUrl ||
-      process.env.MATTERMOST_WEBHOOK_URL ||
-      "http://localhost:8065/hooks/mock-hook";
+  constructor(config?: MattermostAdapterConfig | string) {
+    if (typeof config === "string") {
+      this.webhookUrl = config;
+      this.botToken = process.env.MATTERMOST_BOT_TOKEN;
+      this.channelId = process.env.MATTERMOST_CHANNEL_ID;
+      this.serverUrl = process.env.MATTERMOST_SERVER_URL || "http://localhost:8065";
+      this.pollIntervalMs = 3000;
+      this.timeoutMs = 120000;
+    } else {
+      this.webhookUrl =
+        config?.webhookUrl ||
+        process.env.MATTERMOST_WEBHOOK_URL ||
+        "http://localhost:8065/hooks/mock-hook";
+      this.botToken = config?.botToken || process.env.MATTERMOST_BOT_TOKEN;
+      this.channelId = config?.channelId || process.env.MATTERMOST_CHANNEL_ID;
+      this.serverUrl =
+        config?.serverUrl ||
+        process.env.MATTERMOST_SERVER_URL ||
+        "http://localhost:8065";
+      this.pollIntervalMs = config?.pollIntervalMs || 3000;
+      this.timeoutMs = config?.timeoutMs || 120000; // 2 minutes default timeout
+    }
+
+    if (this.botToken) {
+      this.botClient = axios.create({
+        baseURL: `${this.serverUrl.replace(/\/$/, "")}/api/v4`,
+        headers: {
+          Authorization: `Bearer ${this.botToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+    }
   }
 
   async askHuman(question: string, context?: any): Promise<string> {
-    const text = `### 🤖 Agent Question\n**Question**: ${question}\n${context ? `\`\`\`json\n${JSON.stringify(context, null, 2)}\n\`\`\`` : ""}`;
+    const text = `### 🤖 Agent Question\n**Question**: ${question}\n${
+      context ? `\`\`\`json\n${JSON.stringify(context, null, 2)}\n\`\`\`` : ""
+    }\n*👉 Please reply to this channel or thread with your answer.*`;
+
+    const questionSentTime = Date.now();
 
     try {
       await axios.post(this.webhookUrl, { text });
@@ -73,11 +119,64 @@ export class MattermostHumanAdapter implements HumanAdapter {
       );
     }
 
+    // In automated/test environments, check AUTO_ANSWER first
     if (process.env.AUTO_ANSWER) {
+      console.log(`[Mattermost Auto-Answer]: ${process.env.AUTO_ANSWER}`);
       return process.env.AUTO_ANSWER;
     }
 
+    // If bot token and channel ID are available, wait for human reply from Mattermost channel
+    if (this.botClient && this.channelId) {
+      console.log(
+        `[MattermostHumanAdapter] Waiting for user response in channel (${this.channelId})...`,
+      );
+      const answer = await this.waitForUserResponse(questionSentTime);
+      if (answer) {
+        console.log(`[MattermostHumanAdapter] Received response: ${answer}`);
+        return answer;
+      }
+    }
+
     return `Mattermost user response to: ${question}`;
+  }
+
+  private async waitForUserResponse(sinceTimestamp: number): Promise<string | null> {
+    if (!this.botClient || !this.channelId) return null;
+
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < this.timeoutMs) {
+      try {
+        const response = await this.botClient.get(
+          `/channels/${this.channelId}/posts?since=${sinceTimestamp}`,
+        );
+        const { posts, order } = response.data;
+
+        if (order && order.length > 0) {
+          for (const postId of order) {
+            const post = posts[postId];
+            // Ignore bot's own posts and system webhook messages
+            const isWebhook = post.props?.from_webhook === "true";
+            const isBot = post.props?.from_bot === "true";
+            const isSystem = post.type?.startsWith("system_");
+
+            if (!isWebhook && !isBot && !isSystem && post.message && post.create_at > sinceTimestamp) {
+              const reply = post.message.trim();
+              if (reply) {
+                return reply;
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[MattermostHumanAdapter] Error polling posts: ${err.message}`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
+    }
+
+    console.warn(`[MattermostHumanAdapter] Timed out waiting for human reply after ${this.timeoutMs / 1000}s`);
+    return null;
   }
 
   async notify(message: string): Promise<void> {

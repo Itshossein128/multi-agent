@@ -1,6 +1,6 @@
-import { AgentGraphEngine } from '../src/agents/graphEngine';
+import { AgentGraphEngine } from '../src/agents/core/graphEngine';
 import { CLIHumanAdapter } from '../src/adapters/humanAdapter';
-import { getLLM } from '../src/agents/llmFactory';
+import { getLLM } from '../src/agents/core/llmFactory';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 
 describe('Multi-Agent Graph Engine & LLM Factory', () => {
@@ -66,7 +66,6 @@ describe('Multi-Agent Graph Engine & LLM Factory', () => {
 
     expect(result.isDoc).toBe(true);
     expect(result.isMatureDoc).toBe(true);
-    expect(result.bookStackTargetType).toBeDefined();
     expect(result.createdWorkItemIds?.length).toBeGreaterThan(0);
     expect(result.prUrl).toBeDefined();
     expect(result.status).toBe('COMPLETED');

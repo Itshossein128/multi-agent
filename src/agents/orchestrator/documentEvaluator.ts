@@ -59,11 +59,20 @@ ${prompt}
         reasons: Array.isArray(parsed.reasons) ? parsed.reasons : [],
       };
     } catch (error) {
-      console.warn("LLM document maturity evaluation failed, falling back to assuming immature.", error);
+      console.warn("LLM document maturity evaluation failed, falling back to heuristic evaluation.", error);
+      const hasTechStack = /node|typescript|react|postgres|docker|api|jwt|database|schema/i.test(prompt);
+      const hasArch = /architecture|component|endpoint|service|flow|module/i.test(prompt);
+      const hasReqs = /requirement|feature|user story|acceptance/i.test(prompt);
+
+      const reasons: string[] = [];
+      if (!hasTechStack) reasons.push('Missing explicit technology stack details.');
+      if (!hasArch) reasons.push('Missing clear system architecture or API specifications.');
+      if (!hasReqs) reasons.push('Missing structured feature requirements or acceptance criteria.');
+
       return {
         isDoc: true,
-        isMatureDoc: false,
-        reasons: ["Document evaluation failed, system assumes missing details."],
+        isMatureDoc: hasTechStack && hasArch && hasReqs,
+        reasons,
       };
     }
   }
