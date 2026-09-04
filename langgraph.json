@@ -1,0 +1,9 @@
+{
+  "node_version": "22",
+  "dockerfile_lines": [],
+  "env": ".env",
+  "graphs": {
+    "agent": "./src/agents/core/studio.ts:graph"
+  },
+  "dependencies": ["."]
+}

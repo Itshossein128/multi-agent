@@ -21,6 +21,9 @@ services:
       - MATTERMOST_WEBHOOK_URL=http://mattermost:8065/hooks/mock-hook
       - GITHUB_TOKEN=${GITHUB_TOKEN:-mock-github-token}
       - GITHUB_OWNER=${GITHUB_OWNER:-my-github-username}
+      - BOOKSTACK_BASE_URL=${BOOKSTACK_BASE_URL:-http://172.17.0.1:7875}
+      - BOOKSTACK_TOKEN_ID=${BOOKSTACK_TOKEN_ID:-mock}
+      - BOOKSTACK_TOKEN_SECRET=${BOOKSTACK_TOKEN_SECRET:-mock}
     depends_on:
       - langfuse
       - mattermost
@@ -94,6 +97,8 @@ services:
       - "7860:7860"
     environment:
       - LANGFLOW_HOST=0.0.0.0
+      - LANGFLOW_SUPERUSER=admin
+      - LANGFLOW_SUPERUSER_PASSWORD=mock-password-1234
     restart: unless-stopped
 
 volumes:

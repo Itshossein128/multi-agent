@@ -10,7 +10,8 @@
     "build": "tsc",
     "start": "node dist/cli/index.js",
     "dev": "ts-node src/cli/index.ts",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit",
+    "studio": "npx @langchain/langgraph-cli dev"
   },
   "license": "MIT",
   "dependencies": {
@@ -28,6 +29,7 @@
     "undici": "^8.10.1"
   },
   "devDependencies": {
+    "@langchain/langgraph-cli": "^1.4.5",
     "@types/inquirer": "^9.0.7",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.13.4",
