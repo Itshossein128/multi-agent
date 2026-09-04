@@ -70,5 +70,62 @@ describe('Multi-Agent Graph Engine & LLM Factory', () => {
     expect(result.prUrl).toBeDefined();
     expect(result.status).toBe('COMPLETED');
   });
+
+  test('Flow 3: Debugging an existing project routes to DEBUG triage and creates fix PR', async () => {
+    const engine = new AgentGraphEngine();
+    const adapter = new CLIHumanAdapter();
+
+    const debugPrompt = 'Fix the critical bug in index.js causing 500 error when parsing empty tokens';
+
+    const result = await engine.runWorkflow({
+      inputPrompt: debugPrompt,
+      humanAdapter: adapter,
+      threadId: 'test-thread-debug',
+    });
+
+    expect(result.projectMode).toBe('DEBUG');
+    expect(result.tasks?.[0].type).toBe('Bug');
+    expect(result.createdWorkItemIds?.length).toBeGreaterThan(0);
+    expect(result.prUrl).toBeDefined();
+    expect(result.status).toBe('COMPLETED');
+  });
+
+  test('Flow 4: Continuing an existing project routes to CONTINUATION and creates feature PR', async () => {
+    const engine = new AgentGraphEngine();
+    const adapter = new CLIHumanAdapter();
+
+    const continuePrompt = 'In MainProject-Backend, continue implementing payment webhook endpoints with signature validation';
+
+    const result = await engine.runWorkflow({
+      inputPrompt: continuePrompt,
+      humanAdapter: adapter,
+      threadId: 'test-thread-continue',
+    });
+
+    expect(result.projectMode).toBe('CONTINUATION');
+    expect(result.targetRepo).toBe('MainProject-Backend');
+    expect(result.createdWorkItemIds?.length).toBeGreaterThan(0);
+    expect(result.prUrl).toBeDefined();
+    expect(result.status).toBe('COMPLETED');
+  });
+
+  test('Flow 5: When user orders to clone, workflow clones locally and uses Local Git CLI', async () => {
+    const engine = new AgentGraphEngine();
+    const adapter = new CLIHumanAdapter();
+
+    const clonePrompt = 'Please clone the repository MainProject-Backend and implement health check endpoint';
+
+    const result = await engine.runWorkflow({
+      inputPrompt: clonePrompt,
+      humanAdapter: adapter,
+      threadId: 'test-thread-clone',
+    });
+
+    expect(result.vcsMode).toBe('CLONE');
+    expect(result.workspacePath).toBeDefined();
+    expect(result.createdWorkItemIds?.length).toBeGreaterThan(0);
+    expect(result.prUrl).toBeDefined();
+    expect(result.status).toBe('COMPLETED');
+  });
 });
 

@@ -20,7 +20,6 @@ export class CLIHumanAdapter implements HumanAdapter {
     console.log(`Question: ${question}`);
     console.log(`================================================\n`);
 
-    // In non-interactive test/automated environments, if input stream is not a TTY or automated responses set:
     if (process.env.AUTO_ANSWER) {
       console.log(`[CLI Auto-Answer]: ${process.env.AUTO_ANSWER}`);
       return process.env.AUTO_ANSWER;
@@ -66,6 +65,8 @@ export class MattermostHumanAdapter implements HumanAdapter {
   private pollIntervalMs: number;
   private timeoutMs: number;
   private botClient?: AxiosInstance;
+  public botUserId?: string;
+  private isListening: boolean = false;
 
   constructor(config?: MattermostAdapterConfig | string) {
     if (typeof config === "string") {
@@ -73,7 +74,7 @@ export class MattermostHumanAdapter implements HumanAdapter {
       this.botToken = process.env.MATTERMOST_BOT_TOKEN;
       this.channelId = process.env.MATTERMOST_CHANNEL_ID;
       this.serverUrl = process.env.MATTERMOST_SERVER_URL || "http://localhost:8065";
-      this.pollIntervalMs = 3000;
+      this.pollIntervalMs = 2500;
       this.timeoutMs = 120000;
     } else {
       this.webhookUrl =
@@ -86,7 +87,7 @@ export class MattermostHumanAdapter implements HumanAdapter {
         config?.serverUrl ||
         process.env.MATTERMOST_SERVER_URL ||
         "http://localhost:8065";
-      this.pollIntervalMs = config?.pollIntervalMs || 3000;
+      this.pollIntervalMs = config?.pollIntervalMs || 2500;
       this.timeoutMs = config?.timeoutMs || 120000; // 2 minutes default timeout
     }
 
@@ -98,6 +99,133 @@ export class MattermostHumanAdapter implements HumanAdapter {
           "Content-Type": "application/json",
         },
       });
+    }
+  }
+
+  async initBotUser(): Promise<string | undefined> {
+    if (this.botUserId) return this.botUserId;
+    if (!this.botClient) return undefined;
+    try {
+      const meRes = await this.botClient.get("/users/me");
+      this.botUserId = meRes.data.id;
+      return this.botUserId;
+    } catch {
+      return undefined;
+    }
+  }
+
+  stopListener(): void {
+    this.isListening = false;
+  }
+
+  async startListenerLoop(
+    handler: (prompt: string, adapter: MattermostHumanAdapter) => Promise<void>,
+    once: boolean = false
+  ): Promise<void> {
+    if (!this.botClient || !this.channelId) {
+      throw new Error(
+        "[Mattermost Bot] Error: MATTERMOST_BOT_TOKEN and MATTERMOST_CHANNEL_ID must be configured in .env."
+      );
+    }
+
+    await this.initBotUser();
+
+    let channelName = this.channelId;
+    try {
+      const chRes = await this.botClient.get(`/channels/${this.channelId}`);
+      channelName = `${chRes.data.display_name} (#${chRes.data.name})`;
+    } catch {
+      // fallback
+    }
+
+    console.log(`\n======================================================`);
+    console.log(`🤖 Multi-Agent Mattermost Bot Daemon Started`);
+    console.log(`📡 Connected Channel: ${channelName}`);
+    console.log(`👂 Listening for user messages inside Mattermost...`);
+    console.log(`======================================================\n`);
+
+    await this.notify(
+      `🤖 **Multi-Agent Bot is online and listening!**\nSend any software requirement, feature request, or bug report here to trigger an automated workflow.`
+    );
+
+    let lastTimestamp = Date.now();
+    this.isListening = true;
+
+    const onSigint = () => {
+      console.log(`\n🛑 Shutting down Mattermost Bot listener...`);
+      this.isListening = false;
+      process.removeListener("SIGINT", onSigint);
+    };
+    process.on("SIGINT", onSigint);
+
+    let isRunningWorkflow = false;
+
+    while (this.isListening) {
+      try {
+        if (!isRunningWorkflow) {
+          const response = await this.botClient.get(
+            `/channels/${this.channelId}/posts?since=${lastTimestamp}`
+          );
+          const { posts, order } = response.data;
+
+          if (order && order.length > 0) {
+            const chronological = [...order].reverse();
+
+            for (const postId of chronological) {
+              const post = posts[postId];
+              if (!post) continue;
+
+              if (post.create_at > lastTimestamp) {
+                lastTimestamp = post.create_at;
+              }
+
+              const isWebhook = post.props?.from_webhook === "true";
+              const isBot =
+                post.props?.from_bot === "true" ||
+                (this.botUserId && post.user_id === this.botUserId);
+              const isSystem = post.type?.startsWith("system_");
+
+              if (
+                !isWebhook &&
+                !isBot &&
+                !isSystem &&
+                post.message &&
+                post.message.trim().length > 0
+              ) {
+                const userPrompt = post.message.trim();
+                console.log(`\n📥 [Mattermost User Message]: "${userPrompt}"`);
+
+                isRunningWorkflow = true;
+                await this.notify(
+                  `🚀 **Workflow Triggered!**\n> "${userPrompt}"\n\nStarting multi-agent software engineering process...`
+                );
+
+                try {
+                  await handler(userPrompt, this);
+                } catch (err: any) {
+                  console.error(`[Mattermost Bot] Workflow failed: ${err.message}`);
+                  await this.notify(`❌ **Workflow Error**: ${err.message}`);
+                } finally {
+                  lastTimestamp = Date.now();
+                  isRunningWorkflow = false;
+                  console.log(`\n👂 Resumed listening for incoming messages in Mattermost channel...\n`);
+                }
+
+                if (once) {
+                  this.isListening = false;
+                }
+                break; // Process one trigger at a time
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[Mattermost Bot] Polling error: ${err.message}`);
+      }
+
+      if (this.isListening) {
+        await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs));
+      }
     }
   }
 
@@ -119,7 +247,6 @@ export class MattermostHumanAdapter implements HumanAdapter {
       );
     }
 
-    // In automated/test environments, check AUTO_ANSWER first
     if (process.env.AUTO_ANSWER) {
       console.log(`[Mattermost Auto-Answer]: ${process.env.AUTO_ANSWER}`);
       return process.env.AUTO_ANSWER;
@@ -127,6 +254,7 @@ export class MattermostHumanAdapter implements HumanAdapter {
 
     // If bot token and channel ID are available, wait for human reply from Mattermost channel
     if (this.botClient && this.channelId) {
+      await this.initBotUser();
       console.log(
         `[MattermostHumanAdapter] Waiting for user response in channel (${this.channelId})...`,
       );
@@ -157,7 +285,9 @@ export class MattermostHumanAdapter implements HumanAdapter {
             const post = posts[postId];
             // Ignore bot's own posts and system webhook messages
             const isWebhook = post.props?.from_webhook === "true";
-            const isBot = post.props?.from_bot === "true";
+            const isBot =
+              post.props?.from_bot === "true" ||
+              (this.botUserId && post.user_id === this.botUserId);
             const isSystem = post.type?.startsWith("system_");
 
             if (!isWebhook && !isBot && !isSystem && post.message && post.create_at > sinceTimestamp) {

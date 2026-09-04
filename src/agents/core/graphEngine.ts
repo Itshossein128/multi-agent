@@ -32,10 +32,31 @@ const WorkflowAnnotation = Annotation.Root({
   createdDocUrl: Annotation<string | undefined>({
     value: (x, y) => y ?? x,
   }),
-  tasks: Annotation<Array<{ title: string; description: string; type: 'Task' | 'User Story' }> | undefined>({
+  tasks: Annotation<Array<{ title: string; description: string; type: 'Task' | 'User Story' | 'Bug' }> | undefined>({
     value: (x, y) => y ?? x,
   }),
   createdWorkItemIds: Annotation<number[] | undefined>({
+    value: (x, y) => y ?? x,
+  }),
+  projectMode: Annotation<WorkflowState['projectMode']>({
+    value: (x, y) => y ?? x,
+  }),
+  vcsMode: Annotation<WorkflowState['vcsMode']>({
+    value: (x, y) => y ?? x,
+  }),
+  workspacePath: Annotation<string | undefined>({
+    value: (x, y) => y ?? x,
+  }),
+  targetRepo: Annotation<string | undefined>({
+    value: (x, y) => y ?? x,
+  }),
+  targetFile: Annotation<string | undefined>({
+    value: (x, y) => y ?? x,
+  }),
+  existingCodeContext: Annotation<string | undefined>({
+    value: (x, y) => y ?? x,
+  }),
+  docEvaluationReasons: Annotation<string[] | undefined>({
     value: (x, y) => y ?? x,
   }),
   prUrl: Annotation<string | undefined>({
@@ -65,7 +86,7 @@ export class AgentGraphEngine {
   private docGenerator: Agent;
   private developer: Agent;
   private tracer: Tracer;
-  private compiledGraph: any;
+  public compiledGraph: any;
 
   constructor(options?: {
     orchestrator?: Agent;

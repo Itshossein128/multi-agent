@@ -28,7 +28,6 @@ services:
     command:
       ["web-server", "--port", "3000", "Build a customer portal application"]
 
-
   # ---------------------------------------------------------------------------
   # 3. LangFuse (LLM Observability & Tracing) + PostgreSQL
   # ---------------------------------------------------------------------------
@@ -85,6 +84,19 @@ services:
       - mattermost-db
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # 5. LangFlow (Visual IDE for LangChain/LangGraph)
+  # ---------------------------------------------------------------------------
+  langflow:
+    image: langflowai/langflow:latest
+    container_name: langflow
+    ports:
+      - "7860:7860"
+    environment:
+      - LANGFLOW_HOST=0.0.0.0
+    restart: unless-stopped
+
 volumes:
   langfuse-db-data:
   mattermost-db-data:
+  langflow-data:

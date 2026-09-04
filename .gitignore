@@ -3,3 +3,7 @@ dist/
 coverage/
 *.log
 .env
+workspaces/
+
+# LangGraph API
+.langgraph_api

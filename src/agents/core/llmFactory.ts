@@ -2,6 +2,17 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+
+// Initialize global network proxy dispatcher if configured in environment
+const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.HTTP_PROXY;
+if (proxyUrl) {
+  try {
+    setGlobalDispatcher(new ProxyAgent(proxyUrl));
+  } catch {
+    // ignore if already configured
+  }
+}
 
 // ------------------------------------------------------------------
 // SOLID Principle Refactoring:
@@ -14,7 +25,7 @@ export interface LLMProvider {
 
 export class GoogleProvider implements LLMProvider {
   createModel(): BaseChatModel {
-    const modelName = process.env.LLM_MODEL || 'gemini-1.5-flash';
+    const modelName = process.env.LLM_MODEL || 'gemini-3.6-flash';
     return new ChatGoogleGenerativeAI({
       model: modelName,
       apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'mock-key',

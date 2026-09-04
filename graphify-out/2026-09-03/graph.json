@@ -53,7 +53,7 @@
       "file_type": "code",
       "norm_label": "agentgraphengine",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L84"
+      "source_location": "L78"
     },
     {
       "id": "src_agents_core_graphengine_tracer",
@@ -66,7 +66,7 @@
       "file_type": "code",
       "norm_label": "tracer",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L80"
+      "source_location": "L74"
     },
     {
       "id": "src_agents_core_types_agent",
@@ -79,7 +79,7 @@
       "file_type": "code",
       "norm_label": "agent",
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L31"
+      "source_location": "L28"
     },
     {
       "id": "src_agents_core_types_workflowstate",
@@ -92,7 +92,7 @@
       "file_type": "code",
       "norm_label": "workflowstate",
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L7"
+      "source_location": "L6"
     },
     {
       "id": "src_agents_docgenerator_docgeneratoragent_docgeneratoragent",
@@ -170,7 +170,7 @@
       "file_type": "code",
       "norm_label": "developeragent",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L8"
+      "source_location": "L7"
     },
     {
       "id": "src_agents_developer_types_versioncontrolclient",
@@ -186,19 +186,6 @@
       "source_location": "L1"
     },
     {
-      "id": "src_integrations_localgit_localgitconfig",
-      "label": "LocalGitConfig",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 11,
-      "community_name": "developerAgent.ts",
-      "file_type": "code",
-      "norm_label": "localgitconfig",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L10"
-    },
-    {
       "id": "src_agents_core_types_projectmode",
       "label": "ProjectMode",
       "_callable": true,
@@ -210,19 +197,6 @@
       "norm_label": "projectmode",
       "source_file": "src/agents/core/types.ts",
       "source_location": "L4"
-    },
-    {
-      "id": "src_agents_core_types_vcsmode",
-      "label": "VcsMode",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 12,
-      "community_name": "orchestratorAgent.ts",
-      "file_type": "code",
-      "norm_label": "vcsmode",
-      "source_file": "src/agents/core/types.ts",
-      "source_location": "L5"
     },
     {
       "id": "src_agents_developer_codegenerator_generatecodeoptions",
@@ -313,7 +287,7 @@
       "file_type": "code",
       "norm_label": "orchestratoragent",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L9"
+      "source_location": "L8"
     },
     {
       "id": "src_agents_orchestrator_types_issuetrackerclient",
@@ -327,32 +301,6 @@
       "norm_label": "issuetrackerclient",
       "source_file": "src/agents/orchestrator/types.ts",
       "source_location": "L1"
-    },
-    {
-      "id": "src_integrations_github_githubclient",
-      "label": "GitHubClient",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": "githubclient",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L26"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient",
-      "label": "LocalGitClient",
-      "_callable": true,
-      "_callable_class": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": "localgitclient",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L18"
     },
     {
       "id": "src_agents_core_llmfactory_anthropicprovider",
@@ -420,13 +368,26 @@
       "source_location": "L48"
     },
     {
+      "id": "src_integrations_github_githubclient",
+      "label": "GitHubClient",
+      "_callable": true,
+      "_callable_class": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": "githubclient",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L26"
+    },
+    {
       "id": "src_integrations_github_githubconfig",
       "label": "GitHubConfig",
       "_callable": true,
       "_callable_class": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "githubconfig",
       "source_file": "src/integrations/github.ts",
@@ -439,7 +400,7 @@
       "_callable_class": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "githubissue",
       "source_file": "src/integrations/github.ts",
@@ -452,7 +413,7 @@
       "_callable_class": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "githubrepository",
       "source_file": "src/integrations/github.ts",
@@ -465,7 +426,7 @@
       "_callable_class": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "langfuseconfig",
       "source_file": "src/integrations/langfuse.ts",
@@ -478,7 +439,7 @@
       "_callable_class": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "langfusetracer",
       "source_file": "src/integrations/langfuse.ts",
@@ -555,7 +516,7 @@
       "file_type": "code",
       "norm_label": ".buildgraph()",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L105"
+      "source_location": "L99"
     },
     {
       "id": "src_agents_core_graphengine_agentgraphengine_constructor",
@@ -567,7 +528,7 @@
       "file_type": "code",
       "norm_label": ".constructor()",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L91"
+      "source_location": "L85"
     },
     {
       "id": "src_agents_core_graphengine_agentgraphengine_runworkflow",
@@ -579,7 +540,7 @@
       "file_type": "code",
       "norm_label": ".runworkflow()",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L144"
+      "source_location": "L138"
     },
     {
       "id": "src_agents_core_graphengine_tracer_traceexecution",
@@ -591,7 +552,7 @@
       "file_type": "code",
       "norm_label": ".traceexecution()",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L81"
+      "source_location": "L75"
     },
     {
       "id": "src_agents_core_types_agent_run",
@@ -603,7 +564,7 @@
       "file_type": "code",
       "norm_label": ".run()",
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L32"
+      "source_location": "L29"
     },
     {
       "id": "src_agents_docgenerator_docgeneratoragent_docgeneratoragent_constructor",
@@ -616,18 +577,6 @@
       "norm_label": ".constructor()",
       "source_file": "src/agents/docGenerator/docGeneratorAgent.ts",
       "source_location": "L10"
-    },
-    {
-      "id": "src_agents_docgenerator_docgeneratoragent_docgeneratoragent_generateclarificationquestions",
-      "label": ".generateClarificationQuestions()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 0,
-      "community_name": "graphEngine.ts",
-      "file_type": "code",
-      "norm_label": ".generateclarificationquestions()",
-      "source_file": "src/agents/docGenerator/docGeneratorAgent.ts",
-      "source_location": "L14"
     },
     {
       "id": "src_agents_docgenerator_docgeneratoragent_docgeneratoragent_run",
@@ -687,7 +636,7 @@
       "file_type": "code",
       "norm_label": ".constructor()",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L13"
+      "source_location": "L11"
     },
     {
       "id": "src_agents_developer_developeragent_developeragent_formatbranchname",
@@ -699,7 +648,7 @@
       "file_type": "code",
       "norm_label": ".formatbranchname()",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L138"
+      "source_location": "L125"
     },
     {
       "id": "src_agents_developer_developeragent_developeragent_run",
@@ -711,7 +660,7 @@
       "file_type": "code",
       "norm_label": ".run()",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L23"
+      "source_location": "L19"
     },
     {
       "id": "src_agents_developer_types_versioncontrolclient_commitfile",
@@ -810,6 +759,18 @@
       "source_location": "L17"
     },
     {
+      "id": "src_agents_docgenerator_docgeneratoragent_docgeneratoragent_generateclarificationquestions",
+      "label": ".generateClarificationQuestions()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 12,
+      "community_name": "orchestratorAgent.ts",
+      "file_type": "code",
+      "norm_label": ".generateclarificationquestions()",
+      "source_file": "src/agents/docGenerator/docGeneratorAgent.ts",
+      "source_location": "L14"
+    },
+    {
       "id": "src_agents_orchestrator_documentevaluator_documentevaluator_evaluate",
       "label": ".evaluate()",
       "_callable": true,
@@ -879,7 +840,7 @@
       "file_type": "code",
       "norm_label": ".constructor()",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L15"
+      "source_location": "L13"
     },
     {
       "id": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
@@ -891,7 +852,7 @@
       "file_type": "code",
       "norm_label": ".run()",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L27"
+      "source_location": "L23"
     },
     {
       "id": "src_agents_orchestrator_types_issuetrackerclient_createissue",
@@ -952,246 +913,6 @@
       "norm_label": ".listrepositoryfiles()",
       "source_file": "src/agents/orchestrator/types.ts",
       "source_location": "L6"
-    },
-    {
-      "id": "src_integrations_github_githubclient_commitfile",
-      "label": ".commitFile()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".commitfile()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L184"
-    },
-    {
-      "id": "src_integrations_github_githubclient_constructor",
-      "label": ".constructor()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".constructor()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L30"
-    },
-    {
-      "id": "src_integrations_github_githubclient_createbranch",
-      "label": ".createBranch()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".createbranch()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L146"
-    },
-    {
-      "id": "src_integrations_github_githubclient_createissue",
-      "label": ".createIssue()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".createissue()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L51"
-    },
-    {
-      "id": "src_integrations_github_githubclient_createpullrequest",
-      "label": ".createPullRequest()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".createpullrequest()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L255"
-    },
-    {
-      "id": "src_integrations_github_githubclient_createrepository",
-      "label": ".createRepository()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".createrepository()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L115"
-    },
-    {
-      "id": "src_integrations_github_githubclient_getfilecontent",
-      "label": ".getFileContent()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".getfilecontent()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L212"
-    },
-    {
-      "id": "src_integrations_github_githubclient_istestenv",
-      "label": ".isTestEnv()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".istestenv()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L46"
-    },
-    {
-      "id": "src_integrations_github_githubclient_listrepositories",
-      "label": ".listRepositories()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".listrepositories()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L78"
-    },
-    {
-      "id": "src_integrations_github_githubclient_listrepositoryfiles",
-      "label": ".listRepositoryFiles()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".listrepositoryfiles()",
-      "source_file": "src/integrations/github.ts",
-      "source_location": "L229"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_cloneorpull",
-      "label": ".cloneOrPull()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".cloneorpull()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L54"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_commitfile",
-      "label": ".commitFile()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".commitfile()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L112"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_constructor",
-      "label": ".constructor()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".constructor()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L26"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_createbranch",
-      "label": ".createBranch()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".createbranch()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L94"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_createpullrequest",
-      "label": ".createPullRequest()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".createpullrequest()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L147"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_getfilecontent",
-      "label": ".getFileContent()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".getfilecontent()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L157"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_getworkspacepath",
-      "label": ".getWorkspacePath()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".getworkspacepath()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L50"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_istestenv",
-      "label": ".isTestEnv()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".istestenv()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L46"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_listrepositories",
-      "label": ".listRepositories()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".listrepositories()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L191"
-    },
-    {
-      "id": "src_integrations_localgit_localgitclient_listrepositoryfiles",
-      "label": ".listRepositoryFiles()",
-      "_callable": true,
-      "_origin": "ast",
-      "community": 4,
-      "community_name": "GitHubClient",
-      "file_type": "code",
-      "norm_label": ".listrepositoryfiles()",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L169"
     },
     {
       "id": "src_agents_core_llmfactory_anthropicprovider_createmodel",
@@ -1278,12 +999,132 @@
       "source_location": "L49"
     },
     {
+      "id": "src_integrations_github_githubclient_commitfile",
+      "label": ".commitFile()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".commitfile()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L184"
+    },
+    {
+      "id": "src_integrations_github_githubclient_constructor",
+      "label": ".constructor()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".constructor()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L30"
+    },
+    {
+      "id": "src_integrations_github_githubclient_createbranch",
+      "label": ".createBranch()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".createbranch()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L146"
+    },
+    {
+      "id": "src_integrations_github_githubclient_createissue",
+      "label": ".createIssue()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".createissue()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L51"
+    },
+    {
+      "id": "src_integrations_github_githubclient_createpullrequest",
+      "label": ".createPullRequest()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".createpullrequest()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L255"
+    },
+    {
+      "id": "src_integrations_github_githubclient_createrepository",
+      "label": ".createRepository()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".createrepository()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L115"
+    },
+    {
+      "id": "src_integrations_github_githubclient_getfilecontent",
+      "label": ".getFileContent()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".getfilecontent()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L212"
+    },
+    {
+      "id": "src_integrations_github_githubclient_istestenv",
+      "label": ".isTestEnv()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".istestenv()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L46"
+    },
+    {
+      "id": "src_integrations_github_githubclient_listrepositories",
+      "label": ".listRepositories()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".listrepositories()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L78"
+    },
+    {
+      "id": "src_integrations_github_githubclient_listrepositoryfiles",
+      "label": ".listRepositoryFiles()",
+      "_callable": true,
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": ".listrepositoryfiles()",
+      "source_file": "src/integrations/github.ts",
+      "source_location": "L229"
+    },
+    {
       "id": "src_integrations_langfuse_langfusetracer_constructor",
       "label": ".constructor()",
       "_callable": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": ".constructor()",
       "source_file": "src/integrations/langfuse.ts",
@@ -1295,7 +1136,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": ".flush()",
       "source_file": "src/integrations/langfuse.ts",
@@ -1307,7 +1148,7 @@
       "_callable": true,
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": ".traceexecution()",
       "source_file": "src/integrations/langfuse.ts",
@@ -1431,17 +1272,6 @@
       "source_location": "L9"
     },
     {
-      "id": "src_agents_core_types",
-      "label": "core/types.ts",
-      "_origin": "ast",
-      "community": 0,
-      "community_name": "graphEngine.ts",
-      "file_type": "code",
-      "norm_label": "core/types.ts",
-      "source_file": "src/agents/core/types.ts",
-      "source_location": "L1"
-    },
-    {
       "id": "src_agents_docgenerator_docgeneratoragent",
       "label": "docGeneratorAgent.ts",
       "_origin": "ast",
@@ -1475,17 +1305,6 @@
       "source_location": "L1"
     },
     {
-      "id": "src_agents_index",
-      "label": "agents/index.ts",
-      "_origin": "ast",
-      "community": 0,
-      "community_name": "graphEngine.ts",
-      "file_type": "code",
-      "norm_label": "agents/index.ts",
-      "source_file": "src/agents/index.ts",
-      "source_location": "L1"
-    },
-    {
       "id": "src_cli_index",
       "label": "cli/index.ts",
       "_origin": "ast",
@@ -1506,17 +1325,6 @@
       "norm_label": "program",
       "source_file": "src/cli/index.ts",
       "source_location": "L9"
-    },
-    {
-      "id": "src_index",
-      "label": "src/index.ts",
-      "_origin": "ast",
-      "community": 0,
-      "community_name": "graphEngine.ts",
-      "file_type": "code",
-      "norm_label": "src/index.ts",
-      "source_file": "src/index.ts",
-      "source_location": "L1"
     },
     {
       "id": "tests_adapters_test",
@@ -1816,6 +1624,17 @@
       "source_location": "L28"
     },
     {
+      "id": "src_agents_core_types",
+      "label": "core/types.ts",
+      "_origin": "ast",
+      "community": 11,
+      "community_name": "developerAgent.ts",
+      "file_type": "code",
+      "norm_label": "core/types.ts",
+      "source_file": "src/agents/core/types.ts",
+      "source_location": "L1"
+    },
+    {
       "id": "src_agents_developer_codegenerator",
       "label": "codeGenerator.ts",
       "_origin": "ast",
@@ -1860,14 +1679,14 @@
       "source_location": "L1"
     },
     {
-      "id": "src_integrations_localgit",
-      "label": "localGit.ts",
+      "id": "src_agents_index",
+      "label": "agents/index.ts",
       "_origin": "ast",
       "community": 11,
       "community_name": "developerAgent.ts",
       "file_type": "code",
-      "norm_label": "localgit.ts",
-      "source_file": "src/integrations/localGit.ts",
+      "norm_label": "agents/index.ts",
+      "source_file": "src/agents/index.ts",
       "source_location": "L1"
     },
     {
@@ -2272,55 +2091,11 @@
       "source_location": "L16"
     },
     {
-      "id": "package",
-      "label": "package.json",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "package.json",
-      "source_file": "package.json",
-      "source_location": "L1"
-    },
-    {
-      "id": "package_bin",
-      "label": "bin",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "bin",
-      "source_file": "package.json",
-      "source_location": "L6"
-    },
-    {
-      "id": "package_bin_multi_agent",
-      "label": "multi-agent",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "multi-agent",
-      "source_file": "package.json",
-      "source_location": "L7"
-    },
-    {
-      "id": "package_description",
-      "label": "description",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "description",
-      "source_file": "package.json",
-      "source_location": "L4"
-    },
-    {
       "id": "package_devdependencies",
       "label": "devDependencies",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "devdependencies",
       "source_file": "package.json",
@@ -2331,7 +2106,7 @@
       "label": "jest",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "jest",
       "source_file": "package.json",
@@ -2342,7 +2117,7 @@
       "label": "ts-jest",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "ts-jest",
       "source_file": "package.json",
@@ -2353,7 +2128,7 @@
       "label": "ts-node",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "ts-node",
       "source_file": "package.json",
@@ -2364,7 +2139,7 @@
       "label": "@types/inquirer",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "@types/inquirer",
       "source_file": "package.json",
@@ -2375,7 +2150,7 @@
       "label": "@types/jest",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "@types/jest",
       "source_file": "package.json",
@@ -2386,7 +2161,7 @@
       "label": "@types/node",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "@types/node",
       "source_file": "package.json",
@@ -2397,117 +2172,18 @@
       "label": "typescript",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "code",
       "norm_label": "typescript",
       "source_file": "package.json",
       "source_location": "L37"
     },
     {
-      "id": "package_license",
-      "label": "license",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "license",
-      "source_file": "package.json",
-      "source_location": "L15"
-    },
-    {
-      "id": "package_main",
-      "label": "main",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "main",
-      "source_file": "package.json",
-      "source_location": "L5"
-    },
-    {
-      "id": "package_name",
-      "label": "name",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "name",
-      "source_file": "package.json",
-      "source_location": "L2"
-    },
-    {
-      "id": "package_scripts",
-      "label": "scripts",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "scripts",
-      "source_file": "package.json",
-      "source_location": "L9"
-    },
-    {
-      "id": "package_scripts_build",
-      "label": "build",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "build",
-      "source_file": "package.json",
-      "source_location": "L10"
-    },
-    {
-      "id": "package_scripts_dev",
-      "label": "dev",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "dev",
-      "source_file": "package.json",
-      "source_location": "L12"
-    },
-    {
-      "id": "package_scripts_start",
-      "label": "start",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "start",
-      "source_file": "package.json",
-      "source_location": "L11"
-    },
-    {
-      "id": "package_scripts_test",
-      "label": "test",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "test",
-      "source_file": "package.json",
-      "source_location": "L13"
-    },
-    {
-      "id": "package_version",
-      "label": "version",
-      "_origin": "ast",
-      "community": 3,
-      "community_name": "package.json",
-      "file_type": "code",
-      "norm_label": "version",
-      "source_file": "package.json",
-      "source_location": "L3"
-    },
-    {
       "id": "jest",
       "label": "jest",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "concept",
       "norm_label": "jest",
       "source_file": "package.json",
@@ -2518,7 +2194,7 @@
       "label": "ts-jest",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "concept",
       "norm_label": "ts-jest",
       "source_file": "package.json",
@@ -2529,7 +2205,7 @@
       "label": "ts-node",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "concept",
       "norm_label": "ts-node",
       "source_file": "package.json",
@@ -2540,7 +2216,7 @@
       "label": "@types/inquirer",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "concept",
       "norm_label": "@types/inquirer",
       "source_file": "package.json",
@@ -2551,7 +2227,7 @@
       "label": "@types/jest",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "concept",
       "norm_label": "@types/jest",
       "source_file": "package.json",
@@ -2562,7 +2238,7 @@
       "label": "@types/node",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "concept",
       "norm_label": "@types/node",
       "source_file": "package.json",
@@ -2573,22 +2249,154 @@
       "label": "typescript",
       "_origin": "ast",
       "community": 3,
-      "community_name": "package.json",
+      "community_name": "devDependencies",
       "file_type": "concept",
       "norm_label": "typescript",
       "source_file": "package.json",
       "source_location": "L37"
     },
     {
-      "id": "src_integrations_localgit_execasync",
-      "label": "execAsync",
+      "id": "package",
+      "label": "package.json",
       "_origin": "ast",
       "community": 4,
-      "community_name": "GitHubClient",
+      "community_name": "package.json",
       "file_type": "code",
-      "norm_label": "execasync",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L8"
+      "norm_label": "package.json",
+      "source_file": "package.json",
+      "source_location": "L1"
+    },
+    {
+      "id": "package_bin",
+      "label": "bin",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "bin",
+      "source_file": "package.json",
+      "source_location": "L6"
+    },
+    {
+      "id": "package_bin_multi_agent",
+      "label": "multi-agent",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "multi-agent",
+      "source_file": "package.json",
+      "source_location": "L7"
+    },
+    {
+      "id": "package_description",
+      "label": "description",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "description",
+      "source_file": "package.json",
+      "source_location": "L4"
+    },
+    {
+      "id": "package_license",
+      "label": "license",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "license",
+      "source_file": "package.json",
+      "source_location": "L15"
+    },
+    {
+      "id": "package_main",
+      "label": "main",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "main",
+      "source_file": "package.json",
+      "source_location": "L5"
+    },
+    {
+      "id": "package_name",
+      "label": "name",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "name",
+      "source_file": "package.json",
+      "source_location": "L2"
+    },
+    {
+      "id": "package_scripts",
+      "label": "scripts",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "scripts",
+      "source_file": "package.json",
+      "source_location": "L9"
+    },
+    {
+      "id": "package_scripts_build",
+      "label": "build",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "build",
+      "source_file": "package.json",
+      "source_location": "L10"
+    },
+    {
+      "id": "package_scripts_dev",
+      "label": "dev",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "dev",
+      "source_file": "package.json",
+      "source_location": "L12"
+    },
+    {
+      "id": "package_scripts_start",
+      "label": "start",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "start",
+      "source_file": "package.json",
+      "source_location": "L11"
+    },
+    {
+      "id": "package_scripts_test",
+      "label": "test",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "test",
+      "source_file": "package.json",
+      "source_location": "L13"
+    },
+    {
+      "id": "package_version",
+      "label": "version",
+      "_origin": "ast",
+      "community": 4,
+      "community_name": "package.json",
+      "file_type": "code",
+      "norm_label": "version",
+      "source_file": "package.json",
+      "source_location": "L3"
     },
     {
       "id": "src_agents_core_llmfactory",
@@ -2613,11 +2421,22 @@
       "source_location": "L84"
     },
     {
+      "id": "src_index",
+      "label": "src/index.ts",
+      "_origin": "ast",
+      "community": 6,
+      "community_name": "GitHubClient",
+      "file_type": "code",
+      "norm_label": "src/index.ts",
+      "source_file": "src/index.ts",
+      "source_location": "L1"
+    },
+    {
       "id": "src_integrations_github",
       "label": "github.ts",
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "github.ts",
       "source_file": "src/integrations/github.ts",
@@ -2628,7 +2447,7 @@
       "label": "integrations/index.ts",
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "integrations/index.ts",
       "source_file": "src/integrations/index.ts",
@@ -2639,7 +2458,7 @@
       "label": "langfuse.ts",
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "langfuse.ts",
       "source_file": "src/integrations/langfuse.ts",
@@ -2650,7 +2469,7 @@
       "label": "integrations.test.ts",
       "_origin": "ast",
       "community": 6,
-      "community_name": "github.ts",
+      "community_name": "GitHubClient",
       "file_type": "code",
       "norm_label": "integrations.test.ts",
       "source_file": "tests/integrations.test.ts",
@@ -2816,7 +2635,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L102",
+      "source_location": "L96",
       "weight": 1.0
     },
     {
@@ -2876,7 +2695,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L64",
+      "source_location": "L53",
       "weight": 1.0
     },
     {
@@ -3033,138 +2852,6 @@
       "context": "call",
       "source_file": "src/integrations/github.ts",
       "source_location": "L230",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_cloneorpull",
-      "target": "src_integrations_localgit_localgitclient_getworkspacepath",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L55",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_cloneorpull",
-      "target": "src_integrations_localgit_localgitclient_istestenv",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L57",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_cloneorpull",
-      "target": "src_integrations_localgit_execasync",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L75",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_commitfile",
-      "target": "src_integrations_localgit_localgitclient_istestenv",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L119",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_commitfile",
-      "target": "src_integrations_localgit_localgitclient_cloneorpull",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L124",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_commitfile",
-      "target": "src_integrations_localgit_execasync",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L131",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_createbranch",
-      "target": "src_integrations_localgit_localgitclient_cloneorpull",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L102",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_createbranch",
-      "target": "src_integrations_localgit_execasync",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L104",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_createbranch",
-      "target": "src_integrations_localgit_localgitclient_istestenv",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L98",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_getfilecontent",
-      "target": "src_integrations_localgit_localgitclient_getworkspacepath",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L158",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_listrepositoryfiles",
-      "target": "src_integrations_localgit_localgitclient_getworkspacepath",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L173",
       "weight": 1.0
     },
     {
@@ -3404,7 +3091,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L85",
+      "source_location": "L79",
       "weight": 1.0
     },
     {
@@ -3416,7 +3103,7 @@
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L25",
+      "source_location": "L22",
       "weight": 1.0
     },
     {
@@ -3433,19 +3120,19 @@
     },
     {
       "source": "src_agents_developer_developeragent_developeragent",
-      "target": "src_agents_developer_codegenerator_codegenerator",
+      "target": "src_agents_developer_types_versioncontrolclient",
       "relation": "references",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L11",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
       "source": "src_agents_developer_developeragent_developeragent",
-      "target": "src_agents_developer_types_versioncontrolclient",
+      "target": "src_agents_developer_codegenerator_codegenerator",
       "relation": "references",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -3481,7 +3168,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent",
-      "target": "src_agents_orchestrator_types_issuetrackerclient",
+      "target": "src_agents_orchestrator_documentevaluator_documentevaluator",
       "relation": "references",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -3493,7 +3180,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent",
-      "target": "src_agents_orchestrator_documentevaluator_documentevaluator",
+      "target": "src_agents_orchestrator_intentclassifier_intentclassifier",
       "relation": "references",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -3505,38 +3192,14 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent",
-      "target": "src_agents_orchestrator_intentclassifier_intentclassifier",
+      "target": "src_agents_orchestrator_types_issuetrackerclient",
       "relation": "references",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "context": "field",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L12",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent",
-      "target": "src_integrations_localgit_localgitclient",
-      "relation": "references",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "field",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L13",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_github_githubclient",
-      "relation": "references",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "field",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L24",
+      "source_location": "L9",
       "weight": 1.0
     },
     {
@@ -3548,7 +3211,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L144",
+      "source_location": "L138",
       "weight": 1.0
     },
     {
@@ -3560,7 +3223,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L23",
+      "source_location": "L19",
       "weight": 1.0
     },
     {
@@ -3584,7 +3247,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L27",
+      "source_location": "L23",
       "weight": 1.0
     },
     {
@@ -4045,7 +3708,7 @@
     },
     {
       "source": "src_agents_developer_developeragent",
-      "target": "src_integrations_localgit_localgitclient",
+      "target": "src_adapters_humanadapter_humanadapter",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4057,7 +3720,7 @@
     },
     {
       "source": "src_agents_developer_developeragent",
-      "target": "src_adapters_humanadapter_humanadapter",
+      "target": "src_agents_developer_types_versioncontrolclient",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4069,7 +3732,7 @@
     },
     {
       "source": "src_agents_developer_developeragent",
-      "target": "src_agents_developer_types_versioncontrolclient",
+      "target": "src_agents_developer_codegenerator_codegenerator",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4081,18 +3744,6 @@
     },
     {
       "source": "src_agents_developer_developeragent",
-      "target": "src_agents_developer_codegenerator_codegenerator",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L6",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_developer_developeragent",
       "target": "src_agents_developer_codegenerator_llmcodegenerator",
       "relation": "imports",
       "_origin": "ast",
@@ -4100,7 +3751,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L6",
+      "source_location": "L5",
       "weight": 1.0
     },
     {
@@ -4237,18 +3888,6 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_agents_core_types_vcsmode",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L1",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent",
       "target": "src_agents_core_types_workflowstate",
       "relation": "imports",
       "_origin": "ast",
@@ -4273,7 +3912,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_integrations_localgit_localgitclient",
+      "target": "src_adapters_humanadapter_humanadapter",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4285,7 +3924,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_adapters_humanadapter_humanadapter",
+      "target": "src_agents_orchestrator_types_issuetrackerclient",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4297,7 +3936,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_agents_orchestrator_types_issuetrackerclient",
+      "target": "src_agents_orchestrator_documentevaluator_documentevaluator",
       "relation": "imports",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4309,18 +3948,6 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_agents_orchestrator_documentevaluator_documentevaluator",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L6",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent",
       "target": "src_agents_orchestrator_documentevaluator_llmdocumentevaluator",
       "relation": "imports",
       "_origin": "ast",
@@ -4328,7 +3955,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L6",
+      "source_location": "L5",
       "weight": 1.0
     },
     {
@@ -4340,7 +3967,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L7",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -4352,7 +3979,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L7",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -4389,30 +4016,6 @@
       "context": "import",
       "source_file": "src/cli/index.ts",
       "source_location": "L5",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit",
-      "target": "src_agents_developer_types_versioncontrolclient",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L5",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit",
-      "target": "src_integrations_github_githubclient",
-      "relation": "imports",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -4633,7 +4236,7 @@
     },
     {
       "source": "src_agents_developer_developeragent",
-      "target": "src_integrations_localgit",
+      "target": "src_adapters_humanadapter",
       "relation": "imports_from",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4645,7 +4248,7 @@
     },
     {
       "source": "src_agents_developer_developeragent",
-      "target": "src_adapters_humanadapter",
+      "target": "src_agents_developer_types",
       "relation": "imports_from",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4657,18 +4260,6 @@
     },
     {
       "source": "src_agents_developer_developeragent",
-      "target": "src_agents_developer_types",
-      "relation": "imports_from",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L5",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_developer_developeragent",
       "target": "src_agents_developer_codegenerator",
       "relation": "imports_from",
       "_origin": "ast",
@@ -4676,7 +4267,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L6",
+      "source_location": "L5",
       "weight": 1.0
     },
     {
@@ -4789,7 +4380,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_integrations_localgit",
+      "target": "src_adapters_humanadapter",
       "relation": "imports_from",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4801,7 +4392,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_adapters_humanadapter",
+      "target": "src_agents_orchestrator_types",
       "relation": "imports_from",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4813,7 +4404,7 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_agents_orchestrator_types",
+      "target": "src_agents_orchestrator_documentevaluator",
       "relation": "imports_from",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -4825,18 +4416,6 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent",
-      "target": "src_agents_orchestrator_documentevaluator",
-      "relation": "imports_from",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L6",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent",
       "target": "src_agents_orchestrator_intentclassifier",
       "relation": "imports_from",
       "_origin": "ast",
@@ -4844,7 +4423,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L7",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -4869,30 +4448,6 @@
       "context": "import",
       "source_file": "src/cli/index.ts",
       "source_location": "L5",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit",
-      "target": "src_agents_developer_types",
-      "relation": "imports_from",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L5",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit",
-      "target": "src_integrations_github",
-      "relation": "imports_from",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "import",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -4976,7 +4531,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L91",
+      "source_location": "L85",
       "weight": 1.0
     },
     {
@@ -4988,7 +4543,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L144",
+      "source_location": "L138",
       "weight": 1.0
     },
     {
@@ -5000,7 +4555,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L32",
+      "source_location": "L29",
       "weight": 1.0
     },
     {
@@ -5012,7 +4567,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L13",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -5024,7 +4579,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L13",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -5036,7 +4591,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L23",
+      "source_location": "L19",
       "weight": 1.0
     },
     {
@@ -5072,7 +4627,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L15",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -5084,7 +4639,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L15",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -5096,19 +4651,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L15",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_constructor",
-      "target": "src_integrations_localgit_localgitclient",
-      "relation": "references",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "parameter_type",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L15",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -5120,19 +4663,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L27",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient_constructor",
-      "target": "src_integrations_github_githubclient",
-      "relation": "references",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "parameter_type",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L26",
+      "source_location": "L23",
       "weight": 1.0
     },
     {
@@ -5216,7 +4747,7 @@
       "confidence_score": 1.0,
       "context": "type",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L8",
+      "source_location": "L7",
       "weight": 1.0
     },
     {
@@ -5276,19 +4807,7 @@
       "confidence_score": 1.0,
       "context": "type",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L9",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_agents_developer_types_versioncontrolclient",
-      "relation": "implements",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "context": "type",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L18",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -5772,7 +5291,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L80",
+      "source_location": "L74",
       "weight": 1.0
     },
     {
@@ -5783,7 +5302,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L84",
+      "source_location": "L78",
       "weight": 1.0
     },
     {
@@ -5882,7 +5401,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L31",
+      "source_location": "L28",
       "weight": 1.0
     },
     {
@@ -5898,24 +5417,13 @@
     },
     {
       "source": "src_agents_core_types",
-      "target": "src_agents_core_types_vcsmode",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/agents/core/types.ts",
-      "source_location": "L5",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_core_types",
       "target": "src_agents_core_types_workflowstate",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L7",
+      "source_location": "L6",
       "weight": 1.0
     },
     {
@@ -5959,7 +5467,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L8",
+      "source_location": "L7",
       "weight": 1.0
     },
     {
@@ -6069,7 +5577,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L9",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -6158,39 +5666,6 @@
       "confidence_score": 1.0,
       "source_file": "src/integrations/langfuse.ts",
       "source_location": "L9",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit",
-      "target": "src_integrations_localgit_localgitconfig",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L10",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit",
-      "target": "src_integrations_localgit_localgitclient",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L18",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit",
-      "target": "src_integrations_localgit_execasync",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -6470,24 +5945,13 @@
     },
     {
       "source": "src_agents_core_graphengine_agentgraphengine",
-      "target": "src_agents_core_graphengine_agentgraphengine_buildgraph",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L105",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_core_graphengine_agentgraphengine",
       "target": "src_agents_core_graphengine_agentgraphengine_runworkflow",
       "relation": "method",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L144",
+      "source_location": "L138",
       "weight": 1.0
     },
     {
@@ -6498,7 +5962,18 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L91",
+      "source_location": "L85",
+      "weight": 1.0
+    },
+    {
+      "source": "src_agents_core_graphengine_agentgraphengine",
+      "target": "src_agents_core_graphengine_agentgraphengine_buildgraph",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/agents/core/graphEngine.ts",
+      "source_location": "L99",
       "weight": 1.0
     },
     {
@@ -6509,7 +5984,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/graphEngine.ts",
-      "source_location": "L81",
+      "source_location": "L75",
       "weight": 1.0
     },
     {
@@ -6597,7 +6072,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/core/types.ts",
-      "source_location": "L32",
+      "source_location": "L29",
       "weight": 1.0
     },
     {
@@ -6630,7 +6105,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L13",
+      "source_location": "L11",
       "weight": 1.0
     },
     {
@@ -6641,7 +6116,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L138",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -6652,7 +6127,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L23",
+      "source_location": "L19",
       "weight": 1.0
     },
     {
@@ -6839,7 +6314,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L15",
+      "source_location": "L13",
       "weight": 1.0
     },
     {
@@ -6850,7 +6325,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L27",
+      "source_location": "L23",
       "weight": 1.0
     },
     {
@@ -7052,113 +6527,15 @@
       "weight": 1.0
     },
     {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_commitfile",
-      "relation": "method",
+      "source": "src_agents_developer_developeragent_developeragent_run",
+      "target": "src_agents_developer_types_versioncontrolclient_createpullrequest",
+      "relation": "calls",
       "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L112",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_createpullrequest",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L147",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_getfilecontent",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L157",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_listrepositoryfiles",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L169",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_listrepositories",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L191",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_constructor",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L26",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_istestenv",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L46",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_getworkspacepath",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L50",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_cloneorpull",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L54",
-      "weight": 1.0
-    },
-    {
-      "source": "src_integrations_localgit_localgitclient",
-      "target": "src_integrations_localgit_localgitclient_createbranch",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L94",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "context": "call",
+      "source_file": "src/agents/developer/developerAgent.ts",
+      "source_location": "L105",
       "weight": 1.0
     },
     {
@@ -7170,7 +6547,31 @@
       "confidence_score": 0.8,
       "context": "call",
       "source_file": "src/agents/developer/developerAgent.ts",
-      "source_location": "L27",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "src_agents_developer_developeragent_developeragent_run",
+      "target": "src_agents_developer_types_versioncontrolclient_listrepositories",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "context": "call",
+      "source_file": "src/agents/developer/developerAgent.ts",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "src_agents_developer_developeragent_developeragent_run",
+      "target": "src_agents_developer_types_versioncontrolclient_listrepositoryfiles",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "context": "call",
+      "source_file": "src/agents/developer/developerAgent.ts",
+      "source_location": "L40",
       "weight": 1.0
     },
     {
@@ -7182,7 +6583,31 @@
       "confidence_score": 0.8,
       "context": "call",
       "source_file": "src/agents/developer/developerAgent.ts",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "src_agents_developer_developeragent_developeragent_run",
+      "target": "src_agents_developer_types_versioncontrolclient_createbranch",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "context": "call",
+      "source_file": "src/agents/developer/developerAgent.ts",
       "source_location": "L76",
+      "weight": 1.0
+    },
+    {
+      "source": "src_agents_developer_developeragent_developeragent_run",
+      "target": "src_agents_developer_types_versioncontrolclient_commitfile",
+      "relation": "calls",
+      "_origin": "ast",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "context": "call",
+      "source_file": "src/agents/developer/developerAgent.ts",
+      "source_location": "L90",
       "weight": 1.0
     },
     {
@@ -7223,42 +6648,6 @@
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_agents_orchestrator_types_issuetrackerclient_listrepositoryfiles",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "context": "call",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L100",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_agents_orchestrator_types_issuetrackerclient_getfilecontent",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "context": "call",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L117",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_agents_orchestrator_types_issuetrackerclient_createissue",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "context": "call",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L126",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
       "target": "src_agents_orchestrator_documentevaluator_documentevaluator_evaluate",
       "relation": "calls",
       "_origin": "ast",
@@ -7266,55 +6655,7 @@
       "confidence_score": 0.8,
       "context": "call",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L170",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_agents_orchestrator_types_issuetrackerclient_createrepository",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "context": "call",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L277",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_adapters_humanadapter_humanadapter_notify",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "context": "call",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L28",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_agents_orchestrator_types_issuetrackerclient_listrepositories",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "context": "call",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L30",
-      "weight": 1.0
-    },
-    {
-      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_agents_orchestrator_intentclassifier_intentclassifier_classify",
-      "relation": "calls",
-      "_origin": "ast",
-      "confidence": "INFERRED",
-      "confidence_score": 0.8,
-      "context": "call",
-      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L41",
+      "source_location": "L124",
       "weight": 1.0
     },
     {
@@ -7326,91 +6667,91 @@
       "confidence_score": 0.8,
       "context": "call",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L66",
+      "source_location": "L193",
       "weight": 1.0
     },
     {
       "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
-      "target": "src_integrations_localgit_localgitclient_cloneorpull",
+      "target": "src_agents_orchestrator_types_issuetrackerclient_createrepository",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "context": "call",
       "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
-      "source_location": "L81",
+      "source_location": "L223",
       "weight": 1.0
     },
     {
-      "source": "src_integrations_localgit_localgitclient_commitfile",
-      "target": "src_integrations_github_githubclient_commitfile",
+      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
+      "target": "src_adapters_humanadapter_humanadapter_notify",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L143",
+      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
+      "source_location": "L24",
       "weight": 1.0
     },
     {
-      "source": "src_integrations_localgit_localgitclient_createbranch",
-      "target": "src_integrations_github_githubclient_createbranch",
+      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
+      "target": "src_agents_orchestrator_types_issuetrackerclient_listrepositories",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L108",
+      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
+      "source_location": "L26",
       "weight": 1.0
     },
     {
-      "source": "src_integrations_localgit_localgitclient_createpullrequest",
-      "target": "src_integrations_github_githubclient_createpullrequest",
+      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
+      "target": "src_agents_orchestrator_intentclassifier_intentclassifier_classify",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L154",
+      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
+      "source_location": "L37",
       "weight": 1.0
     },
     {
-      "source": "src_integrations_localgit_localgitclient_getfilecontent",
-      "target": "src_integrations_github_githubclient_getfilecontent",
+      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
+      "target": "src_agents_orchestrator_types_issuetrackerclient_listrepositoryfiles",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L166",
+      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
+      "source_location": "L56",
       "weight": 1.0
     },
     {
-      "source": "src_integrations_localgit_localgitclient_listrepositories",
-      "target": "src_integrations_github_githubclient_listrepositories",
+      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
+      "target": "src_agents_orchestrator_types_issuetrackerclient_getfilecontent",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L192",
+      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
+      "source_location": "L73",
       "weight": 1.0
     },
     {
-      "source": "src_integrations_localgit_localgitclient_listrepositoryfiles",
-      "target": "src_integrations_github_githubclient_listrepositoryfiles",
+      "source": "src_agents_orchestrator_orchestratoragent_orchestratoragent_run",
+      "target": "src_agents_orchestrator_types_issuetrackerclient_createissue",
       "relation": "calls",
       "_origin": "ast",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "context": "call",
-      "source_file": "src/integrations/localGit.ts",
-      "source_location": "L188",
+      "source_file": "src/agents/orchestrator/orchestratorAgent.ts",
+      "source_location": "L82",
       "weight": 1.0
     },
     {

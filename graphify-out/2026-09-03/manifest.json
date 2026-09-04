@@ -66,9 +66,9 @@
     "semantic_hash": "d50925f1f45715d397d026e85f81574f"
   },
   "tests/agents.test.ts": {
-    "mtime": 1788465829.0474932,
-    "seen": 1788465861.4602132,
-    "ast_hash": "b1c4e5daa0da248072ed1075f2cc863c",
+    "mtime": 1788464636.8612692,
+    "seen": 1788464655.0193894,
+    "ast_hash": "e5d71208b343114ef85198cf2db2691c",
     "semantic_hash": ""
   },
   "tests/integrations.test.ts": {
@@ -96,9 +96,9 @@
     "semantic_hash": "b431e9a079c753077a1538ed2e6a991c"
   },
   "src/agents/core/graphEngine.ts": {
-    "mtime": 1788465679.5034971,
-    "seen": 1788465861.458841,
-    "ast_hash": "48081f217f0bc42d5f13313f34672d81",
+    "mtime": 1788464455.2859113,
+    "seen": 1788464655.0185318,
+    "ast_hash": "96baaaf07812fdeee6a3b85094042dc5",
     "semantic_hash": ""
   },
   "src/agents/core/llmFactory.ts": {
@@ -108,9 +108,9 @@
     "semantic_hash": ""
   },
   "src/agents/core/types.ts": {
-    "mtime": 1788465660.726864,
-    "seen": 1788465861.4589305,
-    "ast_hash": "4c46e5f0475c2f87c9b16c9cb9b56487",
+    "mtime": 1788464448.4549801,
+    "seen": 1788464655.0186272,
+    "ast_hash": "612a3a7f5c05ecca31342fbe9935ac45",
     "semantic_hash": ""
   },
   "src/agents/developer/codeGenerator.ts": {
@@ -120,9 +120,9 @@
     "semantic_hash": ""
   },
   "src/agents/developer/developerAgent.ts": {
-    "mtime": 1788465731.6604652,
-    "seen": 1788465861.459011,
-    "ast_hash": "7f07c7b5435bb0028147e77736abf4f5",
+    "mtime": 1788464510.4182618,
+    "seen": 1788464655.0186324,
+    "ast_hash": "0a05f5210f7536d92880af5d255b61a6",
     "semantic_hash": ""
   },
   "src/agents/developer/index.ts": {
@@ -168,9 +168,9 @@
     "semantic_hash": ""
   },
   "src/agents/orchestrator/orchestratorAgent.ts": {
-    "mtime": 1788465798.935109,
-    "seen": 1788465861.4596949,
-    "ast_hash": "c8be8851a80f1959dd7c6840dfee2511",
+    "mtime": 1788464617.0796182,
+    "seen": 1788464655.019116,
+    "ast_hash": "6bc13118388b9bb14da22ed716b2aedd",
     "semantic_hash": ""
   },
   "src/agents/orchestrator/types.ts": {
@@ -201,12 +201,6 @@
     "mtime": 1788464485.9665697,
     "seen": 1788464655.019114,
     "ast_hash": "478c0fbcfbd36bf37a441a9e7c69a2b6",
-    "semantic_hash": ""
-  },
-  "src/integrations/localGit.ts": {
-    "mtime": 1788465691.6092594,
-    "seen": 1788465861.4601407,
-    "ast_hash": "5acd9f4cc48bf501e015d48d2ac1d60d",
     "semantic_hash": ""
   }
 }
