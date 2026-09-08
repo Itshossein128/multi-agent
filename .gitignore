@@ -7,3 +7,6 @@ workspaces/
 
 # LangGraph API
 .langgraph_api
+
+# Task board persistence
+.taskboard.json

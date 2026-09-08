@@ -1,0 +1,77 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Multi-Agent Platform Application
+  # ---------------------------------------------------------------------------
+  multi-agent-app:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile
+    container_name: multi-agent-app
+    ports:
+      - "3000:3000"
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-mock-key}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-mock-key}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-mock-key}
+      - LANGFUSE_HOST=http://langfuse:3000
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-pk-lf-mock}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-sk-lf-mock}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-mock-github-token}
+      - GITHUB_OWNER=${GITHUB_OWNER:-my-github-username}
+      - BOOKSTACK_BASE_URL=${BOOKSTACK_BASE_URL:-http://172.17.0.1:7875}
+      - BOOKSTACK_TOKEN_ID=${BOOKSTACK_TOKEN_ID:-mock}
+      - BOOKSTACK_TOKEN_SECRET=${BOOKSTACK_TOKEN_SECRET:-mock}
+    depends_on:
+      - langfuse
+    restart: unless-stopped
+    command:
+      ["start", "Build a customer portal application"]
+
+  # ---------------------------------------------------------------------------
+  # 2. LangFuse (LLM Observability & Tracing) + PostgreSQL
+  # ---------------------------------------------------------------------------
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: langfuse-db
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=langfuse_pass
+      - POSTGRES_DB=langfuse
+    volumes:
+      - langfuse-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: langfuse
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3001:3000"
+    environment:
+      - DATABASE_URL=postgresql://langfuse:langfuse_pass@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=super-secret-nextauth-key-12345
+      - SALT=super-secret-salt-12345
+      - NEXTAUTH_URL=http://localhost:3001
+      - TELEMETRY_ENABLED=false
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # 3. LangFlow (Visual IDE for LangChain/LangGraph)
+  # ---------------------------------------------------------------------------
+  langflow:
+    image: langflowai/langflow:latest
+    container_name: langflow
+    ports:
+      - "7860:7860"
+    environment:
+      - LANGFLOW_HOST=0.0.0.0
+      - LANGFLOW_SUPERUSER=admin
+      - LANGFLOW_SUPERUSER_PASSWORD=mock-password-1234
+    restart: unless-stopped
+
+volumes:
+  langfuse-db-data:
+  langflow-data:

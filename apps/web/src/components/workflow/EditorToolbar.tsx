@@ -1,0 +1,146 @@
+"use client";
+
+import React from "react";
+import {
+  CircleCheck,
+  Maximize,
+  Redo2,
+  Save,
+  Trash2,
+  Undo2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { useReactFlow } from "@xyflow/react";
+import { useWorkflowStore } from "@/store/useWorkflowStore";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+function ToolButton({
+  title,
+  disabled,
+  onClick,
+  children,
+}: {
+  title: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors",
+        disabled
+          ? "cursor-not-allowed opacity-40"
+          : "cursor-pointer hover:border-zinc-600 hover:text-white"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function EditorToolbar() {
+  const name = useWorkflowStore((s) => s.definition.name);
+  const isDirty = useWorkflowStore((s) => s.isDirty);
+  const saveState = useWorkflowStore((s) => s.saveState);
+  const undoStack = useWorkflowStore((s) => s.undoStack);
+  const redoStack = useWorkflowStore((s) => s.redoStack);
+  const selectedNodeIds = useWorkflowStore((s) => s.selectedNodeIds);
+  const selectedEdgeIds = useWorkflowStore((s) => s.selectedEdgeIds);
+  const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
+  const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
+  const undo = useWorkflowStore((s) => s.undo);
+  const redo = useWorkflowStore((s) => s.redo);
+  const removeNodes = useWorkflowStore((s) => s.removeNodes);
+  const removeEdges = useWorkflowStore((s) => s.removeEdges);
+
+  const { zoomIn, zoomOut, fitView } = useReactFlow();
+
+  const hasSelection = selectedNodeIds.length > 0 || selectedEdgeIds.length > 0;
+  const isSaving = saveState === "saving";
+
+  return (
+    <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/80 px-3">
+      <input
+        type="text"
+        value={name}
+        onChange={(event) => setWorkflowName(event.target.value)}
+        placeholder="Workflow name"
+        className="h-8 w-52 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-semibold text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      />
+      {isDirty ? (
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+          Unsaved
+        </span>
+      ) : (
+        <span className="text-[10px] uppercase tracking-wider text-zinc-600">Saved</span>
+      )}
+
+      <div className="mx-1 h-5 w-px bg-zinc-800" />
+
+      <ToolButton title="Undo (Ctrl+Z)" disabled={undoStack.length === 0} onClick={undo}>
+        <Undo2 className="h-4 w-4" />
+      </ToolButton>
+      <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={redoStack.length === 0} onClick={redo}>
+        <Redo2 className="h-4 w-4" />
+      </ToolButton>
+      <ToolButton
+        title="Delete selected nodes/edges (Del)"
+        disabled={!hasSelection}
+        onClick={() => {
+          removeNodes(selectedNodeIds);
+          removeEdges(selectedEdgeIds);
+        }}
+      >
+        <Trash2 className="h-4 w-4" />
+      </ToolButton>
+
+      <div className="mx-1 h-5 w-px bg-zinc-800" />
+
+      <ToolButton title="Zoom out" onClick={() => zoomOut()}>
+        <ZoomOut className="h-4 w-4" />
+      </ToolButton>
+      <ToolButton title="Zoom in" onClick={() => zoomIn()}>
+        <ZoomIn className="h-4 w-4" />
+      </ToolButton>
+      <ToolButton title="Fit view" onClick={() => fitView({ duration: 300 })}>
+        <Maximize className="h-4 w-4" />
+      </ToolButton>
+
+      <div className="ml-auto flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const firstError = useWorkflowStore
+              .getState()
+              .issues.find((issue) => issue.severity === "error");
+            if (firstError) {
+              useWorkflowStore.getState().focusIssue(firstError);
+            }
+          }}
+          className="h-8 cursor-pointer gap-1.5 text-xs"
+        >
+          <CircleCheck className="h-3.5 w-3.5" />
+          Validate
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => saveWorkflow()}
+          disabled={isSaving}
+          className="h-8 cursor-pointer gap-1.5 bg-indigo-600 text-xs text-white hover:bg-indigo-500"
+        >
+          <Save className={cn("h-3.5 w-3.5", isSaving && "animate-pulse")} />
+          {isSaving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,316 @@
+/**
+ * Frontend workflow validation.
+ *
+ * Catches obviously invalid or suspicious workflows before they reach the
+ * backend. Cycles are allowed (loops are a first-class LangGraph concept),
+ * but cycles without an exit condition produce warnings. The backend must
+ * still perform authoritative validation before compiling to LangGraph.
+ */
+
+import {
+  AgentNodeConfig,
+  AgentRecord,
+  ApprovalNodeConfig,
+  ConditionNodeConfig,
+  MemoryNodeConfig,
+  ToolNodeConfig,
+  WorkflowDefinition,
+} from "./types";
+
+export interface WorkflowIssue {
+  id: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+  nodeId?: string;
+  edgeId?: string;
+}
+
+interface IssueBuilder {
+  (message: string, target?: { nodeId?: string; edgeId?: string }): WorkflowIssue;
+}
+
+function issueFactory(severity: WorkflowIssue["severity"], counter: { n: number }): IssueBuilder {
+  return (message, target) => ({
+    id: `issue-${severity}-${counter.n++}`,
+    severity,
+    message,
+    nodeId: target?.nodeId,
+    edgeId: target?.edgeId,
+  });
+}
+
+/**
+ * Tarjan's algorithm — strongly connected components over the edge graph.
+ * Components with more than one node represent cycles; self-loops are
+ * handled separately as warnings.
+ */
+function findCycles(def: WorkflowDefinition): string[][] {
+  const adjacency = new Map<string, string[]>();
+  for (const node of def.nodes) adjacency.set(node.id, []);
+  for (const edge of def.edges) {
+    adjacency.get(edge.source)?.push(edge.target);
+  }
+
+  const indexByNode = new Map<string, number>();
+  const lowlink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const cycles: string[][] = [];
+  let counter = 0;
+
+  const strongConnect = (nodeId: string) => {
+    indexByNode.set(nodeId, counter);
+    lowlink.set(nodeId, counter);
+    counter += 1;
+    stack.push(nodeId);
+    onStack.add(nodeId);
+
+    for (const next of adjacency.get(nodeId) ?? []) {
+      if (!indexByNode.has(next)) {
+        strongConnect(next);
+        lowlink.set(nodeId, Math.min(lowlink.get(nodeId)!, lowlink.get(next)!));
+      } else if (onStack.has(next)) {
+        lowlink.set(nodeId, Math.min(lowlink.get(nodeId)!, indexByNode.get(next)!));
+      }
+    }
+
+    if (lowlink.get(nodeId) === indexByNode.get(nodeId)) {
+      const component: string[] = [];
+      let popped: string;
+      do {
+        popped = stack.pop()!;
+        onStack.delete(popped);
+        component.push(popped);
+      } while (popped !== nodeId);
+      if (component.length > 1) cycles.push(component);
+    }
+  };
+
+  for (const node of def.nodes) {
+    if (!indexByNode.has(node.id)) strongConnect(node.id);
+  }
+  return cycles;
+}
+
+export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[]): WorkflowIssue[] {
+  const issues: WorkflowIssue[] = [];
+  const error = issueFactory("error", { n: 0 });
+  const warning = issueFactory("warning", { n: 0 });
+  const info = issueFactory("info", { n: 0 });
+
+  const nodesById = new Map(def.nodes.map((n) => [n.id, n]));
+
+  // -- Structural integrity -------------------------------------------------
+  const seenIds = new Set<string>();
+  for (const node of def.nodes) {
+    if (seenIds.has(node.id)) {
+      issues.push(error(`Duplicate node id "${node.id}"`, { nodeId: node.id }));
+    }
+    seenIds.add(node.id);
+  }
+
+  for (const edge of def.edges) {
+    if (!nodesById.has(edge.source)) {
+      issues.push(error(`Edge references missing source node "${edge.source}"`, { edgeId: edge.id }));
+      continue;
+    }
+    if (!nodesById.has(edge.target)) {
+      issues.push(error(`Edge references missing target node "${edge.target}"`, { edgeId: edge.id }));
+      continue;
+    }
+    if (edge.source === edge.target) {
+      issues.push(warning("Edge connects a node to itself", { edgeId: edge.id }));
+    }
+    if (edge.kind === "conditional") {
+      const sourceNode = nodesById.get(edge.source);
+      if (sourceNode && sourceNode.type !== "condition") {
+        issues.push(
+          warning("Conditional edges should originate from a Condition node", {
+            edgeId: edge.id,
+            nodeId: edge.source,
+          })
+        );
+      }
+      if (!edge.branchKey.trim()) {
+        issues.push(error("Conditional edge is missing a branch key", { edgeId: edge.id }));
+      }
+    }
+  }
+
+  // -- Node configuration ---------------------------------------------------
+  for (const node of def.nodes) {
+    switch (node.type) {
+      case "agent": {
+        const config = node.config as AgentNodeConfig;
+        const agent = config.agentId ? agents.find((a) => a.id === config.agentId) : undefined;
+        if (!config.agentId || !agent) {
+          issues.push(error("Agent node is not linked to an agent", { nodeId: node.id }));
+        } else {
+          if (!agent.name.trim()) {
+            issues.push(error(`Agent "${agent.id}" has no name`, { nodeId: node.id }));
+          }
+          if (!agent.model.trim()) {
+            issues.push(error(`Agent "${agent.name}" has no model configured`, { nodeId: node.id }));
+          }
+          if (!agent.systemPrompt.trim()) {
+            issues.push(warning(`Agent "${agent.name}" has no system prompt`, { nodeId: node.id }));
+          }
+        }
+        break;
+      }
+      case "tool": {
+        const config = node.config as ToolNodeConfig;
+        if (!config.name.trim()) {
+          issues.push(error("Tool node has no name", { nodeId: node.id }));
+        }
+        if (!config.toolId.trim()) {
+          issues.push(error("Tool node has no tool id", { nodeId: node.id }));
+        }
+        break;
+      }
+      case "approval": {
+        const config = node.config as ApprovalNodeConfig;
+        if (!config.message.trim()) {
+          issues.push(error("Approval node has no approval message", { nodeId: node.id }));
+        }
+        if (config.approvalType === "timeout" && config.timeoutSeconds <= 0) {
+          issues.push(
+            error("Approval timeout must be greater than zero seconds", { nodeId: node.id })
+          );
+        }
+        break;
+      }
+      case "memory": {
+        const config = node.config as MemoryNodeConfig;
+        if (!config.key.trim()) {
+          issues.push(error("Memory node has no memory key", { nodeId: node.id }));
+        }
+        break;
+      }
+      case "condition": {
+        const config = node.config as ConditionNodeConfig;
+        const outgoing = def.edges.filter((e) => e.source === node.id);
+        if (config.branches.length < 2) {
+          issues.push(warning("Condition node defines fewer than two branches", { nodeId: node.id }));
+        }
+        const keys = new Set(config.branches.map((b) => b.key));
+        if (keys.size !== config.branches.length) {
+          issues.push(error("Condition node has duplicate branch keys", { nodeId: node.id }));
+        }
+        for (const branch of config.branches) {
+          if (!branch.key.trim()) {
+            issues.push(error("Condition branch has an empty key", { nodeId: node.id }));
+          } else if (!outgoing.some((e) => e.kind === "conditional" && e.branchKey === branch.key)) {
+            issues.push(warning(`Branch "${branch.key}" has no outgoing edge`, { nodeId: node.id }));
+          }
+        }
+        for (const edge of outgoing) {
+          if (edge.kind === "conditional" && edge.branchKey && !keys.has(edge.branchKey)) {
+            issues.push(
+              warning(`Edge branch "${edge.branchKey}" is not defined on the Condition node`, {
+                edgeId: edge.id,
+                nodeId: node.id,
+              })
+            );
+          }
+        }
+        break;
+      }
+      case "input":
+      case "output":
+        break;
+    }
+  }
+
+  // -- Entry / exit points ----------------------------------------------------
+  const inputNodes = def.nodes.filter((n) => n.type === "input");
+  const outputNodes = def.nodes.filter((n) => n.type === "output");
+
+  if (def.nodes.length === 0) {
+    issues.push(
+      info("Canvas is empty — drag node types from the palette to start building")
+    );
+  } else {
+    if (inputNodes.length === 0) {
+      issues.push(error("Workflow has no Input node (required entry point)"));
+    } else if (inputNodes.length > 1) {
+      issues.push(error("Workflow must have exactly one Input node"));
+    }
+    if (outputNodes.length === 0) {
+      issues.push(warning("Workflow has no Output node"));
+    }
+  }
+
+  for (const input of inputNodes) {
+    if (def.edges.some((e) => e.target === input.id)) {
+      issues.push(warning("Input node should not have incoming edges", { nodeId: input.id }));
+    }
+  }
+  for (const output of outputNodes) {
+    if (def.edges.some((e) => e.source === output.id)) {
+      issues.push(warning("Output node should not have outgoing edges", { nodeId: output.id }));
+    }
+  }
+
+  // -- Reachability -----------------------------------------------------------
+  if (inputNodes.length === 1) {
+    const adjacency = new Map<string, string[]>();
+    for (const node of def.nodes) adjacency.set(node.id, []);
+    for (const edge of def.edges) {
+      if (nodesById.has(edge.target)) adjacency.get(edge.source)?.push(edge.target);
+    }
+    const reachable = new Set<string>([inputNodes[0].id]);
+    const queue = [inputNodes[0].id];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const next of adjacency.get(current) ?? []) {
+        if (!reachable.has(next)) {
+          reachable.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    for (const node of def.nodes) {
+      if (!reachable.has(node.id)) {
+        issues.push(
+          warning(`"${nodeLabel(node, agents)}" is not reachable from the Input node`, {
+            nodeId: node.id,
+          })
+        );
+      }
+    }
+  }
+
+  // -- Cycles -----------------------------------------------------------------
+  const exitCapableTypes = new Set(["condition", "approval"]);
+  for (const cycle of findCycles(def)) {
+    const hasExit = cycle.some((nodeId) => {
+      const node = nodesById.get(nodeId);
+      return node ? exitCapableTypes.has(node.type) : false;
+    });
+    if (!hasExit) {
+      const names = cycle.map((id) => nodeLabel(nodesById.get(id)!, agents)).join(" → ");
+      issues.push(
+        warning(`Cycle ${names} has no Condition or Approval node and may loop forever`, {
+          nodeId: cycle[0],
+        })
+      );
+    }
+  }
+
+  return issues;
+}
+
+function nodeLabel(node: WorkflowDefinition["nodes"][number], agents: AgentRecord[]): string {
+  switch (node.type) {
+    case "agent": {
+      const config = node.config as AgentNodeConfig;
+      const agent = agents.find((a) => a.id === config.agentId);
+      return agent?.name ?? "Agent node";
+    }
+    case "tool":
+      return (node.config as ToolNodeConfig).name || "Tool node";
+    default:
+      return node.type;
+  }
+}
