@@ -1,5 +1,13 @@
 node_modules/
 /dist/
+*.tsbuildinfo
+# Compiler output belongs in dist, never beside runtime source.
+/apps/server/src/**/*.js
+/apps/server/src/**/*.js.map
+/apps/server/src/**/*.d.ts
+/src/agents/runtime/*.js
+/src/agents/runtime/*.js.map
+/src/agents/runtime/*.d.ts
 coverage/
 *.log
 .env

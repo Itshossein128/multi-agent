@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
@@ -12,6 +13,7 @@ import { StatusBar } from "@/components/workflow/StatusBar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TriangleAlert } from "lucide-react";
+import { WorkflowSwitcher } from "./WorkflowSwitcher";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -52,12 +54,20 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 }
 
 export function WorkflowEditor() {
+  return <Suspense fallback={<LoadingState />}><WorkflowEditorContent /></Suspense>;
+}
+
+function WorkflowEditorContent() {
+  const searchParams = useSearchParams();
+  const requestedWorkflowId = searchParams.get("workflowId") ?? undefined;
+  const requestedNodeId = searchParams.get("focusNode");
   const [focusError, setFocusError] = useState<string | null>(null);
   const focused = useRef(false);
   const definition = useWorkflowStore((s) => s.definition);
   const flowHelpers = useWorkflowStore((s) => s.flowHelpers);
   const loadState = useWorkflowStore((s) => s.loadState);
   const loadError = useWorkflowStore((s) => s.loadError);
+  const saveError = useWorkflowStore((s) => s.saveError);
   const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
   const undo = useWorkflowStore((s) => s.undo);
@@ -66,18 +76,18 @@ export function WorkflowEditor() {
 
   // Initial load
   useEffect(() => {
-    void loadWorkflow();
-  }, [loadWorkflow]);
+    focused.current = false;
+    void loadWorkflow(requestedWorkflowId);
+  }, [loadWorkflow, requestedWorkflowId]);
 
   useEffect(() => {
     if (loadState !== "ready" || !flowHelpers || focused.current) return;
-    const query = new URLSearchParams(window.location.search);
-    const nodeId = query.get("focusNode");
+    const nodeId = requestedNodeId;
     if (!nodeId) return;
     // Wait for the canvas layout before centering and reporting navigation results.
     const frame = requestAnimationFrame(() => {
       focused.current = true;
-      const workflowId = query.get("workflowId");
+      const workflowId = requestedWorkflowId;
       if (workflowId && workflowId !== definition.id) { setFocusError("The requested workflow is not available in this browser’s saved workspace."); return; }
       const node = definition.nodes.find((item) => item.id === nodeId);
       if (!node) { setFocusError("The requested node no longer exists in this workflow."); return; }
@@ -85,7 +95,7 @@ export function WorkflowEditor() {
       flowHelpers.setCenter(node.position.x + 112, node.position.y + 40, 1.1);
     });
     return () => cancelAnimationFrame(frame);
-  }, [loadState, flowHelpers, definition]);
+  }, [loadState, flowHelpers, definition, requestedNodeId, requestedWorkflowId]);
 
   // Global keyboard shortcuts (Ctrl/Cmd+S save, Ctrl/Cmd+Z undo, Shift+Z redo)
   useEffect(() => {
@@ -122,12 +132,14 @@ export function WorkflowEditor() {
   return (
     <ReactFlowProvider>
       <div className="flex min-h-0 flex-1 flex-col">
+        <WorkflowSwitcher />
         <EditorToolbar />
+        {saveError && <p role="alert" className="bg-red-950 p-3 text-sm text-red-200">{saveError}</p>}
         {focusError && <p role="status" className="bg-amber-950 p-3 text-sm text-amber-200">{focusError}</p>}
 
         {loadState === "loading" && <LoadingState />}
         {loadState === "error" && (
-          <ErrorState message={loadError ?? "Unknown error"} onRetry={() => void loadWorkflow()} />
+          <ErrorState message={loadError ?? "Unknown error"} onRetry={() => void loadWorkflow(requestedWorkflowId)} />
         )}
 
         {loadState === "ready" && (

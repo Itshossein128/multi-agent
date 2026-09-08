@@ -1,12 +1,16 @@
 # Agent detail page
 
-Open an agent using **Details** in the Graph Editor palette or `/org/agents/<agentId>`.
+Open the independent registry at `/org/agents`, or use **Details** in the Graph Editor palette. Individual agents live at `/org/agents/<agentId>`.
 
 The page reuses `AgentRecord`, `AgentBackend`, `AgentExecutionPolicy`, `Run` and `RunEvent` from the shared types package. Configuration is saved through `workflowService`; React Query owns loaded data and mutations, while the form maintains its own editable draft. The page never imports LangGraph or executor implementations.
 
 ## Configuration and navigation
 
-General configuration, API/CLI/local backend fields, execution policy and tool ID assignments can be edited. Switching backend type asks before resetting incompatible fields and preserves the policy. Risky filesystem/shell choices require confirmation. The runtime does not yet fully enforce the policy, which is stated in the form.
+General configuration, lifecycle, API/CLI/local backend fields, execution policy and tool ID assignments can be edited. Duplicate creates an independent ID and deep copy without adding permissions. Disabled agents fail validation before executor creation. Switching backend type asks before resetting incompatible fields and preserves the policy. CLI/local implementations remain unsupported and fail explicitly.
+
+API model fields come from the shared provider/model schema registry in `packages/types/src/agentConfiguration.ts`. Temperature, Top P and output limits flow through the runtime to provider constructors. Blank fields use provider defaults (Anthropic defaults to 4096 output tokens). Conservative OpenAI reasoning profiles expose output limits only. Unsupported settings must be reset when changing providers/models. Authentication remains server environment configuration.
+
+Agent memory is bounded conversation history inside one run. Agent scope shares history across sequential instances; node scope isolates them. Read, write and read/write modes are enforced by AgentRuntime, with 1–100 entries and normalized memory events. A fresh standalone test starts with empty history. Persistent memory and memory exploration remain later-phase work.
 
 Edits remain pending until Save succeeds. Storage failures are surfaced and keep the draft intact. Page actions and browser reload/close protect unsaved changes; browser history navigation within the SPA is not globally intercepted. Deletion is blocked while any saved workflow references the agent, with instructions to remove the nodes and save first.
 
@@ -16,18 +20,30 @@ Workflow usages distinguish agent IDs from node instance IDs. `Open in Graph` us
 
 The execution server exposes `GET /runs?agentId=<id>` and `GET /runs/<runId>/history?agentId=<id>`. History includes the agent's normalized events plus un-attributed events on its related nodes, excluding events attributed to another agent. The run and agent pages share `ExecutionTimeline` and its selectable event detail panel.
 
-Executor payloads are sanitized at the run store boundary before both history and subscriber delivery. Credential-like legacy configuration fields are removed before agent data enters query/form state. No credential input or browser-side availability probe is introduced.
+Executor payloads are sanitized at the run store boundary before both history and subscriber delivery. Credential-like legacy configuration fields are removed before agent data enters query/form state. Shared credential validation rejects new secret-bearing values at editor, persistence, and execution-request boundaries.
+
+**Test Agent** posts the saved agent and a JSON input object to `POST /runs/agent-test`. The server invokes AgentRuntime directly, records normalized events and output in RunStore, and supports cancellation. The panel polls only during its active test and offers retry after transport errors. Tests also appear in normal agent execution history. No graph construction is required.
+
+## Workspace persistence
+
+The browser service stores one versioned workspace document (`agent-studio.workspace.v2`) containing the registry, workflow collection and active workflow ID. It migrates the old workflow/agent keys after a successful write. Unsafe legacy workflow data reports an error and leaves the original recoverable.
+
+The editor's workflow selector opens saved workflows by ID and creates new ones. All workflows reference the same independent agent registry. Detail-page deletion blocks referenced agents; palette deletion explicitly cascades through every saved workflow, removing only matching agent nodes and incident edges. Registry and saved-graph deletion is one localStorage write. Graph undo history is cleared for entity deletion to prevent dangling references.
 
 ## Existing platform limits
 
-- Agents and one saved workflow still use the existing browser-local persistence service. No parallel storage was added.
+- Agents and multiple workflows remain browser-local, with no cross-device synchronization or concurrent multi-tab conflict resolution.
 - Runs/events are real but retained only in execution server memory; restart clears history. Refresh is explicit on the detail page.
 - Backend diagnostics/authentication status has no endpoint, so health is Unknown. Agent status is labeled as last observed event status and is separate from backend health.
-- The model has no agent-level memory settings or session mode. Memory is described as workflow-level configuration, not inferred ownership of neighboring nodes.
+- CLI session modes, persistent agent memory, and a memory explorer are outside this phase.
 - Tool descriptions are resolved from saved workflow tool nodes. There is no global Tool Detail route or per-agent tool enabled flag.
-- CLI/local execution implementations are unchanged. There is no safe dedicated single-agent test endpoint, so no Test action is added.
+- CLI/local executors and policy sandboxing remain outside this implementation; unsupported tests report a failure.
 - Recorded provider/model values are shown only when present in events. Complete backend/version snapshots are not persisted and are never inferred from current configuration.
 
 ## Verification
 
-`tests/agentDetail.test.ts` covers configuration constraints, legacy credential filtering, run filtering, related-node event scope, missing-run responses, and sanitization before storage/subscriber delivery. Existing agent executor tests remain applicable. Tests resolve TypeScript before generated JavaScript siblings to avoid exercising stale compiled artifacts.
+`tests/agentDetail.test.ts` covers configuration constraints, legacy credential filtering, history and sanitization. `tests/agentRegistry.test.ts` covers migration, duplication, multi-workflow identity, credential rejection, deletion and failed atomic writes. `tests/phase5Runtime.test.ts` covers lifecycle enforcement, model forwarding, bounded memory, compiled-workflow reuse, the standalone endpoint and terminal SSE replay. Existing executor tests remain applicable.
+
+Server builds emit into `apps/server/dist/apps/server/src`, including their shared runtime dependencies. Run `pnpm --filter server build` then `pnpm --filter server start`; generated JavaScript no longer sits beside runtime TypeScript sources.
+
+Development CORS allows Studio on localhost ports 3000 and 3001. Set `WEB_ORIGIN` to a comma-separated list of exact origins to override it; production defaults to localhost:3000.

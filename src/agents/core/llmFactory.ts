@@ -3,6 +3,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
+import type { AgentModelSettings } from '@multi-agent/types';
 
 // Initialize global network proxy dispatcher if configured in environment
 const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.HTTP_PROXY;
@@ -24,46 +25,52 @@ export interface LLMProvider {
 }
 
 export class GoogleProvider implements LLMProvider {
-  constructor(private readonly modelOverride?: string) { }
+  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}) { }
 
   createModel(): BaseChatModel {
     const modelName = this.modelOverride || process.env.LLM_MODEL || 'gemini-3.6-flash';
     return new ChatGoogleGenerativeAI({
       model: modelName,
       apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'mock-key',
-      temperature: 0.2,
+      temperature: this.settings.temperature,
+      topP: this.settings.topP,
+      maxOutputTokens: this.settings.maxTokens,
     }) as unknown as BaseChatModel;
   }
 }
 
 export class AnthropicProvider implements LLMProvider {
-  constructor(private readonly modelOverride?: string) { }
+  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}) { }
 
   createModel(): BaseChatModel {
     const modelName = this.modelOverride || process.env.LLM_MODEL || 'claude-3-5-sonnet-20241022';
     return new ChatAnthropic({
       modelName,
       apiKey: process.env.ANTHROPIC_API_KEY || 'mock-key',
-      temperature: 0.2,
+      temperature: this.settings.temperature,
+      topP: this.settings.topP,
+      maxTokens: this.settings.maxTokens ?? 4096,
     }) as unknown as BaseChatModel;
   }
 }
 
 export class OpenAIProvider implements LLMProvider {
-  constructor(private readonly modelOverride?: string) { }
+  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}) { }
 
   createModel(): BaseChatModel {
     const modelName = this.modelOverride || process.env.LLM_MODEL || 'gpt-4o';
     return new ChatOpenAI({
       modelName,
       openAIApiKey: process.env.OPENAI_API_KEY || 'mock-key',
-      temperature: 0.2,
+      temperature: this.settings.temperature,
+      topP: this.settings.topP,
+      maxTokens: this.settings.maxTokens,
     }) as unknown as BaseChatModel;
   }
 }
 
 export class LLMFactory {
-  private providers: Map<string, new (model?: string) => LLMProvider> = new Map();
+  private providers: Map<string, new (model?: string, settings?: AgentModelSettings) => LLMProvider> = new Map();
 
   constructor() {
     this.register('gemini', GoogleProvider);
@@ -72,17 +79,16 @@ export class LLMFactory {
     this.register('openai', OpenAIProvider);
   }
 
-  register(name: string, provider: new (model?: string) => LLMProvider) {
+  register(name: string, provider: new (model?: string, settings?: AgentModelSettings) => LLMProvider) {
     this.providers.set(name.toLowerCase(), provider);
   }
 
-  getModel(providerName: string, options?: { model?: string }): BaseChatModel {
+  getModel(providerName: string, options?: { model?: string; settings?: AgentModelSettings }): BaseChatModel {
     const Provider = this.providers.get(providerName.toLowerCase());
     if (Provider) {
-      return new Provider(options?.model).createModel();
+      return new Provider(options?.model, options?.settings).createModel();
     }
-    // Fallback to OpenAI
-    return new OpenAIProvider(options?.model).createModel();
+    throw new Error(`Unsupported API provider: ${providerName}`);
   }
 }
 

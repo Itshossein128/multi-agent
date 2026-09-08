@@ -1,5 +1,5 @@
 import type { AgentRecord, WorkflowDefinition, WorkflowNode } from "@multi-agent/types";
-import { agentHasConfiguredModel } from "@multi-agent/types";
+import { agentHasConfiguredModel, validateAgent } from "@multi-agent/types";
 
 export interface WorkflowIssue {
   id: string;
@@ -40,6 +40,8 @@ export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRe
             : "has no model configured";
         add("error", `Agent "${agent.name}" ${detail}`, node.id);
       }
+      if (agent?.enabled === false) add("error", `Agent "${agent.name}" is disabled`, node.id);
+      if (agent) for (const message of validateAgent(agent)) add("error", message, node.id);
     }
     if (node.type === "memory" && !(node.config as { key?: string }).key?.trim()) add("error", "Memory node has no memory key", node.id);
     if (node.type === "condition") {

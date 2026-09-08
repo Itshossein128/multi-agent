@@ -1,6 +1,6 @@
 "use client";
 
-import type { AgentBackend, AgentExecutionPolicy } from "@multi-agent/types";
+import { modelSettingsSchema, type AgentBackend, type AgentExecutionPolicy } from "@multi-agent/types";
 import { BACKEND_PROVIDERS, emptyBackend } from "@/lib/agentConfiguration";
 import { Field, fieldClass, Section } from "./AgentFields";
 
@@ -21,6 +21,15 @@ export function AgentBackendPanel({ backend, onChange }: { backend: AgentBackend
       <p className="text-sm text-zinc-400">Use Workspace root under Execution policy. Session mode is not represented in the current agent model.</p>
     </>}
     {backend.type === "local" && <Field label="Base URL (optional)"><input className={fieldClass} type="url" value={backend.baseUrl ?? ""} onChange={(event) => onChange({ ...backend, baseUrl: event.target.value })} /></Field>}
+    {backend.type === "api" && <div className="grid gap-4 md:grid-cols-3">
+      {modelSettingsSchema(backend).map((field) => <Field key={field.key} label={field.label}><input type="number" className={fieldClass} min={field.min} max={field.max} step={field.step} placeholder="Provider default" value={backend.settings?.[field.key] ?? ""} onChange={(event) => {
+        const settings = { ...backend.settings };
+        if (event.target.value === "") delete settings[field.key]; else settings[field.key] = Number(event.target.value);
+        onChange({ ...backend, settings });
+      }} /></Field>)}
+      {!!Object.keys(backend.settings ?? {}).length && <button type="button" onClick={() => onChange({ ...backend, settings: {} })}>Reset model settings</button>}
+      <p className="text-xs text-zinc-400 md:col-span-3">Blank values use provider defaults. Anthropic accepts temperature or Top P. Reasoning models expose output limits only; changing provider/model may require resetting incompatible settings.</p>
+    </div>}
     <p className="text-sm text-zinc-400">Authentication is managed on the execution server. Do not enter credentials here.</p>
   </Section>;
 }

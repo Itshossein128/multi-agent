@@ -6,9 +6,10 @@ module.exports = {
   roots: ["<rootDir>/src", "<rootDir>/tests"],
   testMatch: ["**/*.test.ts", "**/*.spec.ts"],
   transform: {
-    "^.+\\.tsx?$": "ts-jest",
+    "^.+\\.tsx?$": ["ts-jest", { tsconfig: { baseUrl: ".", paths: { "@/*": ["apps/web/src/*"] } } }],
   },
   moduleNameMapper: {
-    "^@multi-agent/types$": "<rootDir>/tests/shims/multi-agent-types.js",
+    "^@/(.*)$": "<rootDir>/apps/web/src/$1",
+    "^@multi-agent/types$": "<rootDir>/packages/types/src/index.ts",
   },
 };

@@ -1,13 +1,14 @@
-import { nowIso, type AgentRecord } from "@multi-agent/types";
+import { nowIso, type AgentRecord, type AgentModelSettings } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
+import { llmFactory } from "../core/llmFactory";
 
 type ChatModel = {
-  invoke: (messages: unknown[]) => Promise<{ content: unknown }>;
+  invoke: (messages: unknown[], options?: { signal?: AbortSignal }) => Promise<{ content: unknown }>;
 };
 
 type LLMFactoryLike = {
-  getModel: (provider: string, options?: { model?: string }) => ChatModel;
+  getModel: (provider: string, options?: { model?: string; settings?: AgentModelSettings }) => ChatModel;
 };
 
 /**
@@ -33,11 +34,14 @@ export class ApiAgentExecutor implements AgentExecutor {
     try {
       const model = this.getFactory().getModel(agent.backend.provider, {
         model: agent.backend.model,
+        settings: agent.backend.settings,
       });
+      const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
       const result = await model.invoke([
         { role: "system", content: systemPromptFor(agent) },
+        ...history.flatMap((entry) => [{ role: "user", content: serializeInput(entry.input) }, { role: "assistant", content: serializeInput(entry.output) }]),
         { role: "user", content: serializeInput(input.input) },
-      ]);
+      ], { signal: input.signal });
       const content = result.content;
       yield baseEvent("agent.output", input, { content });
       yield baseEvent("agent.completed", input, { content });
@@ -78,9 +82,5 @@ function baseEvent(
 }
 
 function loadLlmFactory(): LLMFactoryLike {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const mod = require("../core/llmFactory") as {
-    llmFactory: LLMFactoryLike;
-  };
-  return mod.llmFactory;
+  return llmFactory as unknown as LLMFactoryLike;
 }

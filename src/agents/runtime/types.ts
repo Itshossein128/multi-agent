@@ -8,6 +8,8 @@ export type AgentExecutionEventType =
   | "tool.started"
   | "tool.completed"
   | "tool.failed"
+  | "memory.read"
+  | "memory.write"
   | "log";
 
 export interface AgentExecutionEvent {
@@ -26,6 +28,8 @@ export interface AgentExecutionInput {
   nodeId: string;
   workflowId?: string;
   context?: Record<string, unknown>;
+  signal?: AbortSignal;
+  memoryStore?: Map<string, { input: unknown; output: unknown }[]>;
 }
 
 /**

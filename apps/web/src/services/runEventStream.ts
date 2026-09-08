@@ -7,7 +7,12 @@ export function createRunEventStream(runId: string, handlers: { onEvent: (event:
     if (closed) return;
     handlers.onStatus?.("connecting");
     source = new EventSource(runService.eventsUrl(runId, sequence));
-    source.addEventListener("run-event", (message) => { const event = JSON.parse((message as MessageEvent).data) as RunEvent; sequence = Math.max(sequence, event.sequence); handlers.onEvent(event); handlers.onStatus?.("live"); });
+    source.addEventListener("run-event", (message) => {
+      const event = JSON.parse((message as MessageEvent).data) as RunEvent;
+      if (event.sequence <= sequence) return;
+      sequence = event.sequence; handlers.onEvent(event); handlers.onStatus?.("live");
+      if (event.type === "run.completed" || event.type === "run.failed") { closed = true; source?.close(); handlers.onStatus?.("closed"); }
+    });
     source.onerror = () => { source?.close(); handlers.onStatus?.("error"); if (!closed) timer = setTimeout(connect, Math.min(5000, 500 + sequence * 0)); };
   };
   connect();

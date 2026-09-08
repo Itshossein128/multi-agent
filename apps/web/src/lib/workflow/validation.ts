@@ -17,6 +17,7 @@ import {
   WorkflowDefinition,
   agentHasConfiguredModel,
 } from "./types";
+import { validateAgent } from "@multi-agent/types";
 
 export interface WorkflowIssue {
   id: string;
@@ -147,6 +148,8 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[])
         if (!config.agentId || !agent) {
           issues.push(error("Agent node is not linked to an agent", { nodeId: node.id }));
         } else {
+          if (agent.enabled === false) issues.push(error(`Agent "${agent.name}" is disabled`, { nodeId: node.id }));
+          for (const message of validateAgent(agent)) issues.push(error(message, { nodeId: node.id }));
           if (!agent.name.trim()) {
             issues.push(error(`Agent "${agent.id}" has no name`, { nodeId: node.id }));
           }

@@ -19,6 +19,7 @@ export type AgentBackend = {
     /** Extensible provider id — openai, anthropic, google, gemini, etc. */
     provider: string;
     model: string;
+    settings?: AgentModelSettings;
 } | {
     type: "cli";
     provider: "codex" | "claude-code" | "agy" | (string & {});
@@ -32,6 +33,19 @@ export type AgentBackend = {
     baseUrl?: string;
 };
 export type AgentBackendType = AgentBackend["type"];
+export interface AgentModelSettings {
+    temperature?: number;
+    topP?: number;
+    maxTokens?: number;
+}
+/** Bounded conversation memory, isolated to a run; persistence belongs to Phase 8. */
+export interface AgentMemoryConfig {
+    enabled: boolean;
+    type: "run";
+    scope: "agent" | "node";
+    mode: "read" | "write" | "read_write";
+    maxEntries: number;
+}
 /** Future CLI/local execution constraints — not fully enforced yet. */
 export interface AgentExecutionPolicy {
     filesystem?: "none" | "read" | "read-write";
@@ -47,6 +61,8 @@ export interface AgentRecord {
     backend: AgentBackend;
     systemPrompt: string;
     tools: string[];
+    enabled?: boolean;
+    memory?: AgentMemoryConfig;
     executionPolicy?: AgentExecutionPolicy;
     metadata: Record<string, string | number | boolean>;
     createdAt: string;
@@ -61,6 +77,8 @@ export interface LegacyAgentRecord {
     provider?: string;
     systemPrompt?: string;
     tools?: string[];
+    enabled?: boolean;
+    memory?: AgentMemoryConfig;
     metadata?: Record<string, string | number | boolean>;
     createdAt?: string;
     updatedAt?: string;
@@ -192,6 +210,11 @@ export interface RunCreateRequest {
 export interface RunCreateResponse {
     runId: string;
 }
+export interface AgentTestRequest {
+    agent: AgentRecord;
+    input: Record<string, unknown>;
+}
+export { assertNoCredentials, credentialIssues, validateAgent, modelSettingsSchema, API_PROVIDER_SCHEMAS, removeAgentNodes } from "./agentConfiguration";
 export interface RunEvent {
     id: string;
     runId: string;

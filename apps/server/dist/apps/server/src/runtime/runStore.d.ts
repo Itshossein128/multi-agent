@@ -10,7 +10,9 @@ export declare class RunStore {
     private entries;
     create(run: Run): Run;
     get(runId: string): Entry | undefined;
+    list(agentId?: string): Run[];
     append(runId: string, event: RunEvent): {
+        payload: RunEvent["payload"];
         sequence: number;
         id: string;
         runId: string;
@@ -20,7 +22,6 @@ export declare class RunStore {
         agentId?: string;
         toolId?: string;
         parentEventId?: string;
-        payload: Record<string, unknown>;
     } | undefined;
     update(runId: string, patch: Partial<Run>): Run | undefined;
     events(runId: string, after?: number): RunEvent[];

@@ -9,6 +9,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const runService = {
+  testAgent(agent: AgentRecord, input: Record<string, unknown>) {
+    return request<RunCreateResponse>("/runs/agent-test", { method: "POST", body: JSON.stringify({ agent, input }) });
+  },
   getAgentRuns(agentId: string) { return request<Run[]>(`/runs?agentId=${encodeURIComponent(agentId)}`); },
   getRunEvents(runId: string, agentId?: string) {
     return request<RunEvent[]>(`/runs/${encodeURIComponent(runId)}/history${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ""}`);

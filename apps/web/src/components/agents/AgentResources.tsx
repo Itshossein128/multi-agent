@@ -13,7 +13,7 @@ export function AgentToolsPanel({ agent, workflows, editing, onChange }: { agent
     catalog.set(config.toolId, config);
   }
   return <Section title="Assigned tools">
-    <p className="text-sm text-zinc-400">Assignments reference tool IDs. Names and descriptions below come from saved workflow tool nodes. Per-agent enable/disable settings are not supported yet.</p>
+    <p className="text-sm text-zinc-400">Assignments reference tool IDs. Names and descriptions below come from saved workflow tool nodes. Remove an assignment to disable that tool for this agent.</p>
     {!agent.tools.length && <p className="text-sm text-zinc-400">No tools assigned.</p>}
     <ul className="space-y-2">{agent.tools.map((id) => {
       const tool = catalog.get(id);
@@ -32,7 +32,7 @@ export function AgentToolsPanel({ agent, workflows, editing, onChange }: { agent
 export function AgentWorkflowUsage({ agentId, workflows, navigate }: { agentId: string; workflows: WorkflowDefinition[]; navigate: (url: string) => void }) {
   const usages = workflows.flatMap((workflow) => workflow.nodes.filter((node) => node.type === "agent" && (node.config as { agentId?: string }).agentId === agentId).map((node) => ({ workflow, node })));
   return <Section title="Workflow usage">
-    <p className="text-sm text-zinc-400">{new Set(usages.map(({ workflow }) => workflow.id)).size} saved workflows · {usages.length} node instances. The current service stores one workflow; unsaved graph changes are not included.</p>
+    <p className="text-sm text-zinc-400">{new Set(usages.map(({ workflow }) => workflow.id)).size} saved workflows · {usages.length} node instances. Unsaved graph changes are not included.</p>
     {!usages.length && <p className="text-sm text-zinc-400">This agent is not referenced in a saved workflow.</p>}
     {usages.map(({ workflow, node }) => <div key={`${workflow.id}:${node.id}`} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 p-3">
       <div className="min-w-0 flex-1"><p className="font-medium">{workflow.name}</p><p className="break-all text-xs text-zinc-400">Workflow: {workflow.id}</p><p className="break-all text-xs text-zinc-400">Node: {node.id} · Saved definition (execution status unavailable)</p></div>

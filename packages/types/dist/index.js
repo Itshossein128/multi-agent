@@ -6,7 +6,7 @@
  * share the same contract for workflow definitions and event streams.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WORKFLOW_NODE_TYPES = exports.NODE_TYPE_META = void 0;
+exports.removeAgentNodes = exports.API_PROVIDER_SCHEMAS = exports.modelSettingsSchema = exports.validateAgent = exports.credentialIssues = exports.assertNoCredentials = exports.WORKFLOW_NODE_TYPES = exports.NODE_TYPE_META = void 0;
 exports.createApiBackend = createApiBackend;
 exports.agentBackendLabel = agentBackendLabel;
 exports.agentRequiresModel = agentRequiresModel;
@@ -77,6 +77,8 @@ function migrateAgentRecord(raw) {
         systemPrompt: typeof record.systemPrompt === "string" ? record.systemPrompt : "",
         tools: Array.isArray(record.tools) ? record.tools.filter((t) => typeof t === "string") : [],
         executionPolicy: record.executionPolicy,
+        enabled: record.enabled !== false,
+        memory: record.memory,
         metadata: record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
             ? record.metadata
             : {},
@@ -178,6 +180,7 @@ function createAgentRecord(input) {
         backend,
         systemPrompt: "",
         tools: [],
+        enabled: true,
         metadata: {},
         createdAt: stamp,
         updatedAt: stamp,
@@ -242,4 +245,11 @@ function createEmptyDefinition(name) {
 function nodeConfig(node) {
     return node.config;
 }
+var agentConfiguration_1 = require("./agentConfiguration");
+Object.defineProperty(exports, "assertNoCredentials", { enumerable: true, get: function () { return agentConfiguration_1.assertNoCredentials; } });
+Object.defineProperty(exports, "credentialIssues", { enumerable: true, get: function () { return agentConfiguration_1.credentialIssues; } });
+Object.defineProperty(exports, "validateAgent", { enumerable: true, get: function () { return agentConfiguration_1.validateAgent; } });
+Object.defineProperty(exports, "modelSettingsSchema", { enumerable: true, get: function () { return agentConfiguration_1.modelSettingsSchema; } });
+Object.defineProperty(exports, "API_PROVIDER_SCHEMAS", { enumerable: true, get: function () { return agentConfiguration_1.API_PROVIDER_SCHEMAS; } });
+Object.defineProperty(exports, "removeAgentNodes", { enumerable: true, get: function () { return agentConfiguration_1.removeAgentNodes; } });
 //# sourceMappingURL=index.js.map

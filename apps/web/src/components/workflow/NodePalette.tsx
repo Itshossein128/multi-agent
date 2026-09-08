@@ -144,7 +144,7 @@ export function NodePalette() {
                 {agent.name}
               </span>
               <span className="block truncate text-[9px] text-zinc-500">
-                {agentBackendLabel(agent.backend)}
+                {agent.enabled === false ? "Disabled · " : ""}{agentBackendLabel(agent.backend)}
               </span>
             </button>
             <Link href={`/org/agents/${encodeURIComponent(agent.id)}`} aria-label={`Inspect ${agent.name}`} className="rounded px-1 py-2 text-xs text-indigo-300 underline focus-visible:outline-2 focus-visible:outline-indigo-400">Details</Link>
@@ -152,7 +152,7 @@ export function NodePalette() {
               type="button"
               title={`Delete agent "${agent.name}" and its nodes`}
               onClick={() => {
-                if (window.confirm(`Delete agent "${agent.name}" and all of its nodes?`)) {
+                if (window.confirm(`Delete agent "${agent.name}" and all of its nodes from every saved workflow? This cannot be undone.`)) {
                   void deleteAgent(agent.id);
                 }
               }}

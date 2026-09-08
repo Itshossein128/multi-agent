@@ -8,6 +8,6 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('fs').copyFileSync('dist/index.js','../../tests/shims/types-bundle.js')\""
+    "build": "tsc -p tsconfig.json"
   }
 }

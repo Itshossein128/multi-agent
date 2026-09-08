@@ -1,6 +1,5 @@
 import { StateGraph } from "@langchain/langgraph";
-import type { AgentRecord, WorkflowDefinition, WorkflowNode } from "@multi-agent/types";
-import { AgentRuntime, type AgentExecutionEvent } from "../../../../src/agents/runtime";
+import { type AgentRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
 export declare class UnsupportedPhase4NodeError extends Error {
     readonly nodeId: string;
     constructor(nodeId: string, node: WorkflowNode);
@@ -20,7 +19,16 @@ declare const State: import("@langchain/langgraph").AnnotationRoot<{
     lastValue: import("@langchain/langgraph").BaseChannel<unknown, unknown, unknown>;
 }>;
 export type CompiledWorkflow = ReturnType<StateGraph<typeof State["State"], typeof State["Node"]>["compile"]>;
+export interface AgentExecutionEvent {
+    type: string;
+    timestamp: string;
+    payload?: unknown;
+    agentId?: string;
+    nodeId?: string;
+    runId?: string;
+}
 export interface CompileOptions {
+    signal?: AbortSignal;
     /** @deprecated Prefer AgentRuntime via the default path; kept for tests/overrides. */
     agentRunner?: (agent: AgentRecord, state: RuntimeState, meta: {
         runId: string;
@@ -29,7 +37,6 @@ export interface CompileOptions {
     runId?: string;
     workflowId?: string;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
-    agentRuntime?: AgentRuntime;
 }
 export declare function compileWorkflow(definition: WorkflowDefinition, agents: AgentRecord[], options?: CompileOptions): {
     graph: import("@langchain/langgraph").CompiledStateGraph<{

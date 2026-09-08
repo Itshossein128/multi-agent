@@ -1,12 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.agentExecutorFactory = exports.AgentExecutorFactory = void 0;
-var apiAgentExecutor_1 = require("./apiAgentExecutor");
-var notImplementedExecutor_1 = require("./notImplementedExecutor");
-var AgentExecutorFactory = /** @class */ (function () {
-    function AgentExecutorFactory() {
-    }
-    AgentExecutorFactory.prototype.create = function (backend) {
+const apiAgentExecutor_1 = require("./apiAgentExecutor");
+const notImplementedExecutor_1 = require("./notImplementedExecutor");
+class AgentExecutorFactory {
+    create(backend) {
         if (backend.type === "api") {
             return new apiAgentExecutor_1.ApiAgentExecutor();
         }
@@ -28,11 +26,10 @@ var AgentExecutorFactory = /** @class */ (function () {
             }
             return new notImplementedExecutor_1.NotImplementedAgentExecutor(backend);
         }
-        var exhaustive = backend;
+        const exhaustive = backend;
         return new notImplementedExecutor_1.NotImplementedAgentExecutor(exhaustive);
-    };
-    return AgentExecutorFactory;
-}());
+    }
+}
 exports.AgentExecutorFactory = AgentExecutorFactory;
 exports.agentExecutorFactory = new AgentExecutorFactory();
 //# sourceMappingURL=agentExecutorFactory.js.map

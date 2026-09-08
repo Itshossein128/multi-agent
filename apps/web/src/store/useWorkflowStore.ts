@@ -15,6 +15,7 @@ import {
 } from "@/lib/workflow/types";
 import { validateWorkflow, WorkflowIssue } from "@/lib/workflow/validation";
 import { workflowService } from "@/services/workflowService";
+import { assertNoCredentials, removeAgentNodes } from "@multi-agent/types";
 
 /** Imperative helpers registered by the canvas (React Flow instance). */
 export interface FlowHelpers {
@@ -51,7 +52,7 @@ interface WorkflowStoreState {
   flowHelpers: FlowHelpers | null;
 
   // lifecycle
-  loadWorkflow: () => Promise<void>;
+  loadWorkflow: (workflowId?: string) => Promise<void>;
   saveWorkflow: () => Promise<void>;
   setWorkflowName: (name: string) => void;
   setFlowHelpers: (helpers: FlowHelpers) => void;
@@ -98,6 +99,9 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     set((state) => {
       const draft = clone(state.definition);
       mutator(draft);
+      try { assertNoCredentials(draft); } catch (error) {
+        return { saveError: error instanceof Error ? error.message : "Credentials are not allowed in workflow data." };
+      }
       const issues = validateWorkflow(draft, state.agents);
       const nodeIds = new Set(draft.nodes.map((n) => n.id));
       const edgeIds = new Set(draft.edges.map((e) => e.id));
@@ -155,13 +159,14 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     lastEditKey: null,
     flowHelpers: null,
 
-    loadWorkflow: async () => {
+    loadWorkflow: async (workflowId) => {
       set({ loadState: "loading", loadError: null });
       try {
         const [storedDefinition, agents] = await Promise.all([
-          workflowService.getWorkflow(),
+          workflowService.getWorkflow(workflowId),
           workflowService.listAgents(),
         ]);
+        if (workflowId && !storedDefinition) throw new Error("Workflow not found.");
         const definition = storedDefinition ?? createEmptyDefinition();
         set({
           definition,
@@ -169,6 +174,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
           loadState: "ready",
           isDirty: false,
           saveState: "idle",
+          saveError: null,
           issues: validateWorkflow(definition, agents),
           selectedNodeIds: [],
           selectedEdgeIds: [],
@@ -198,6 +204,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     },
 
     setWorkflowName: (name) => {
+      try { assertNoCredentials(name); } catch (error) { set({ saveError: String(error) }); return; }
       pushHistoryCoalesced("workflow-name");
       set((state) => ({ definition: { ...state.definition, name }, isDirty: true }));
     },
@@ -333,6 +340,10 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     },
 
     updateAgentRecord: (agentId, patch) => {
+      try { assertNoCredentials(patch); } catch (error) {
+        set({ saveError: error instanceof Error ? error.message : "Credentials are not allowed in agent data." });
+        return;
+      }
       pushHistoryCoalesced(`agent:${agentId}`);
       set((state) => ({
         agents: state.agents.map((a) =>
@@ -354,21 +365,16 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     },
 
     deleteAgent: async (agentId) => {
+      try { await workflowService.deleteAgent(agentId, { removeReferences: true }); }
+      catch (error) { set({ saveError: error instanceof Error ? error.message : "Could not delete agent." }); return; }
       pushHistory();
       withDefinition((draft) => {
-        draft.nodes = draft.nodes.filter((n) => {
-          if (n.type !== "agent") return true;
-          return (n.config as { agentId?: string | null }).agentId !== agentId;
-        });
-        const agentNodeIds = new Set(
-          draft.nodes.filter((n) => n.type === "agent").map((n) => n.id)
-        );
-        draft.edges = draft.edges.filter(
-          (e) => agentNodeIds.has(e.source) && agentNodeIds.has(e.target)
-        );
+        Object.assign(draft, removeAgentNodes(draft, agentId));
       });
-      set((state) => ({ agents: state.agents.filter((a) => a.id !== agentId) }));
-      await workflowService.deleteAgent(agentId).catch(() => undefined);
+      set((state) => {
+        const agents = state.agents.filter((a) => a.id !== agentId);
+        return { agents, issues: validateWorkflow(state.definition, agents), undoStack: [], redoStack: [], lastEditKey: null };
+      });
     },
 
     beginHistory: () => {

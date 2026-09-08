@@ -1,12 +1,16 @@
+import { type AgentModelSettings } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 type ChatModel = {
-    invoke: (messages: unknown[]) => Promise<{
+    invoke: (messages: unknown[], options?: {
+        signal?: AbortSignal;
+    }) => Promise<{
         content: unknown;
     }>;
 };
 type LLMFactoryLike = {
     getModel: (provider: string, options?: {
         model?: string;
+        settings?: AgentModelSettings;
     }) => ChatModel;
 };
 /**

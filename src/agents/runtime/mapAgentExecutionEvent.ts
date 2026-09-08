@@ -9,6 +9,8 @@ const TYPE_MAP: Record<AgentExecutionEvent["type"], RunEventType> = {
   "tool.started": "tool.started",
   "tool.completed": "tool.completed",
   "tool.failed": "tool.failed",
+  "memory.read": "memory.read",
+  "memory.write": "memory.write",
   log: "log",
 };
 

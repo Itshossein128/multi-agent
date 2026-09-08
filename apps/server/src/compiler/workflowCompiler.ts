@@ -1,5 +1,5 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import type { AgentRecord, WorkflowDefinition, WorkflowNode } from "@multi-agent/types";
+import { validateAgent, type AgentRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
 import { validateWorkflow } from "./validation";
 
 export class UnsupportedPhase4NodeError extends Error {
@@ -40,6 +40,7 @@ export interface AgentExecutionEvent {
 }
 
 export interface CompileOptions {
+  signal?: AbortSignal;
   /** @deprecated Prefer AgentRuntime via the default path; kept for tests/overrides. */
   agentRunner?: (
     agent: AgentRecord,
@@ -64,6 +65,7 @@ export function compileWorkflow(
   const nodesById = new Map(definition.nodes.map((node) => [node.id, node]));
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
   const runId = options.runId ?? "run-local";
+  const memoryStore = new Map<string, { input: unknown; output: unknown }[]>();
 
   for (const node of definition.nodes) {
     graph.addNode(node.id, async (state: RuntimeState) => {
@@ -74,7 +76,7 @@ export function compileWorkflow(
           output:
             state.lastValue && typeof state.lastValue === "object"
               ? (state.lastValue as Record<string, unknown>)
-              : state.input,
+              : state.lastValue === undefined ? state.input : { content: state.lastValue },
         };
       }
       if (node.type === "memory") {
@@ -96,6 +98,9 @@ export function compileWorkflow(
       const config = node.config as { agentId?: string | null };
       const agent = config.agentId ? agentById.get(config.agentId) : undefined;
       if (!agent) throw new Error(`Agent node "${node.id}" has no linked agent`);
+      if (agent.enabled === false) throw new Error(`Agent "${agent.name}" is disabled`);
+      const agentErrors = validateAgent(agent);
+      if (agentErrors.length) throw new Error(agentErrors.join(" "));
 
       const value = options.agentRunner
         ? await options.agentRunner(agent, state, { runId, nodeId: node.id })
@@ -104,6 +109,8 @@ export function compileWorkflow(
           nodeId: node.id,
           workflowId: options.workflowId ?? definition.id,
           onAgentEvent: options.onAgentEvent,
+          memoryStore,
+          signal: options.signal,
         });
       return { lastValue: value };
     });
@@ -147,6 +154,8 @@ async function runAgentThroughRuntime(
     runId: string;
     nodeId: string;
     workflowId: string;
+    signal?: AbortSignal;
+    memoryStore: Map<string, { input: unknown; output: unknown }[]>;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
   }
 ): Promise<unknown> {
@@ -161,6 +170,8 @@ async function runAgentThroughRuntime(
         nodeId: string;
         workflowId?: string;
         context?: Record<string, unknown>;
+        signal?: AbortSignal;
+        memoryStore?: Map<string, { input: unknown; output: unknown }[]>;
       }) => AsyncIterable<AgentExecutionEvent>;
     };
     AgentExecutionFailedError: new (message: string) => Error;
@@ -176,6 +187,8 @@ async function runAgentThroughRuntime(
       runId: meta.runId,
       nodeId: meta.nodeId,
       workflowId: meta.workflowId,
+      signal: meta.signal,
+      memoryStore: meta.memoryStore,
       context: { memory: state.memory, branch: state.branch },
     })) {
       meta.onAgentEvent?.(event);

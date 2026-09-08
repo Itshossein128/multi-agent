@@ -43,7 +43,7 @@ The web application is the **control plane**. LangGraph is the **execution engin
 - [x] Phase 2 — Task Board
 - [x] Phase 3 — Visual Graph Editor
 - [x] Phase 4 — Execution Timeline & Live Execution
-- [ ] Phase 5 — Agent Management & Configuration
+- [x] Phase 5 — Agent Management & Configuration
 - [ ] Phase 6 — Tool Management
 - [ ] Phase 7 — Human-in-the-Loop & Approval System
 - [ ] Phase 8 — Memory Management & Memory Explorer
@@ -639,6 +639,8 @@ A user can start a workflow/task and watch execution evolve in real time, inspec
 ---
 
 # Phase 5 — Agent Management & Configuration
+
+Implemented for browser-local Studio persistence and API execution. See [agent detail implementation](agent-detail-page.md) for configuration, standalone testing, migration, regression coverage, and limits. Agent memory is bounded to one run; CLI/local executors and persistent memory remain later work.
 
 ## Goal
 

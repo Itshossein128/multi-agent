@@ -4,11 +4,14 @@ import { Hono } from "hono";
 import { createRunsRouter } from "./api/runs";
 
 const app = new Hono();
+const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3000" : "http://localhost:3000,http://localhost:3001")).split(",").map((origin) => origin.trim());
 app.use("/*", async (c, next) => {
-  await next();
-  c.header("Access-Control-Allow-Origin", process.env.WEB_ORIGIN ?? "http://localhost:3000");
+  const origin = c.req.header("Origin");
+  if (origin && webOrigins.includes(origin)) c.header("Access-Control-Allow-Origin", origin);
+  c.header("Vary", "Origin");
   c.header("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
   c.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  await next();
 });
 app.options("/*", (c) => c.body(null, 204));
 app.get("/health", (c) => c.json({ ok: true }));

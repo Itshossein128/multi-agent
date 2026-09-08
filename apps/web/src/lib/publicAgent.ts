@@ -9,7 +9,7 @@ export function publicAgent(raw: unknown): AgentRecord {
       .replace(/((?:api[_-]?key|password|token|secret)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]");
     if (Array.isArray(value)) return value.map(scrub);
     if (!value || typeof value !== "object") return value;
-    return Object.fromEntries(Object.entries(value).filter(([key]) => !/secret|token|password|api[-_]?key|authorization|credential|^env$/i.test(key)).map(([key, item]) => [key, scrub(item)]));
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key === "maxTokens" || !/secret|token|password|api[-_]?key|authorization|credential|^env$/i.test(key)).map(([key, item]) => [key, scrub(item)]));
   };
   const agent = migrateAgentRecord(scrub(raw));
   if (agent.backend.type === "local" && agent.backend.baseUrl) {
