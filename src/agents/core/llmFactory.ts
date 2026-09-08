@@ -24,8 +24,10 @@ export interface LLMProvider {
 }
 
 export class GoogleProvider implements LLMProvider {
+  constructor(private readonly modelOverride?: string) { }
+
   createModel(): BaseChatModel {
-    const modelName = process.env.LLM_MODEL || 'gemini-3.6-flash';
+    const modelName = this.modelOverride || process.env.LLM_MODEL || 'gemini-3.6-flash';
     return new ChatGoogleGenerativeAI({
       model: modelName,
       apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'mock-key',
@@ -35,8 +37,10 @@ export class GoogleProvider implements LLMProvider {
 }
 
 export class AnthropicProvider implements LLMProvider {
+  constructor(private readonly modelOverride?: string) { }
+
   createModel(): BaseChatModel {
-    const modelName = process.env.LLM_MODEL || 'claude-3-5-sonnet-20241022';
+    const modelName = this.modelOverride || process.env.LLM_MODEL || 'claude-3-5-sonnet-20241022';
     return new ChatAnthropic({
       modelName,
       apiKey: process.env.ANTHROPIC_API_KEY || 'mock-key',
@@ -46,8 +50,10 @@ export class AnthropicProvider implements LLMProvider {
 }
 
 export class OpenAIProvider implements LLMProvider {
+  constructor(private readonly modelOverride?: string) { }
+
   createModel(): BaseChatModel {
-    const modelName = process.env.LLM_MODEL || 'gpt-4o';
+    const modelName = this.modelOverride || process.env.LLM_MODEL || 'gpt-4o';
     return new ChatOpenAI({
       modelName,
       openAIApiKey: process.env.OPENAI_API_KEY || 'mock-key',
@@ -57,33 +63,35 @@ export class OpenAIProvider implements LLMProvider {
 }
 
 export class LLMFactory {
-  private providers: Map<string, LLMProvider> = new Map();
+  private providers: Map<string, new (model?: string) => LLMProvider> = new Map();
 
   constructor() {
-    this.register('gemini', new GoogleProvider());
-    this.register('google', new GoogleProvider());
-    this.register('anthropic', new AnthropicProvider());
-    this.register('openai', new OpenAIProvider());
+    this.register('gemini', GoogleProvider);
+    this.register('google', GoogleProvider);
+    this.register('anthropic', AnthropicProvider);
+    this.register('openai', OpenAIProvider);
   }
 
-  register(name: string, provider: LLMProvider) {
+  register(name: string, provider: new (model?: string) => LLMProvider) {
     this.providers.set(name.toLowerCase(), provider);
   }
 
-  getModel(providerName: string): BaseChatModel {
-    const provider = this.providers.get(providerName.toLowerCase());
-    if (provider) {
-      return provider.createModel();
+  getModel(providerName: string, options?: { model?: string }): BaseChatModel {
+    const Provider = this.providers.get(providerName.toLowerCase());
+    if (Provider) {
+      return new Provider(options?.model).createModel();
     }
     // Fallback to OpenAI
-    return this.providers.get('openai')!.createModel();
+    return new OpenAIProvider(options?.model).createModel();
   }
 }
 
 // Singleton instance for backward compatibility with existing getLLM() calls
 const defaultFactory = new LLMFactory();
 
-export function getLLM(): BaseChatModel {
-  const provider = process.env.LLM_PROVIDER || 'openai';
-  return defaultFactory.getModel(provider);
+export function getLLM(options?: { provider?: string; model?: string }): BaseChatModel {
+  const provider = options?.provider || process.env.LLM_PROVIDER || 'openai';
+  return defaultFactory.getModel(provider, { model: options?.model });
 }
+
+export { defaultFactory as llmFactory };

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import {
   Bot,
   Database,
@@ -15,6 +16,7 @@ import {
 import {
   NODE_TYPE_META,
   WorkflowNodeType,
+  agentBackendLabel,
   isWorkflowNodeType,
 } from "@/lib/workflow/types";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
@@ -141,8 +143,11 @@ export function NodePalette() {
               <span className="block truncate text-[11px] font-medium text-zinc-200">
                 {agent.name}
               </span>
-              <span className="block truncate text-[9px] text-zinc-500">{agent.model}</span>
+              <span className="block truncate text-[9px] text-zinc-500">
+                {agentBackendLabel(agent.backend)}
+              </span>
             </button>
+            <Link href={`/org/agents/${encodeURIComponent(agent.id)}`} aria-label={`Inspect ${agent.name}`} className="rounded px-1 py-2 text-xs text-indigo-300 underline focus-visible:outline-2 focus-visible:outline-indigo-400">Details</Link>
             <button
               type="button"
               title={`Delete agent "${agent.name}" and its nodes`}

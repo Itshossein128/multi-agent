@@ -1,1 +1,34 @@
-{}
+{
+    "projectColors.mainColor": "#1c15e5",
+    "window.title": "Real multi agent system",
+    "workbench.colorCustomizations": {
+        "statusBarItem.warningBackground": "#1c15e5",
+        "statusBarItem.warningForeground": "#ffffff",
+        "statusBarItem.warningHoverBackground": "#1c15e5",
+        "statusBarItem.warningHoverForeground": "#ffffff90",
+        "statusBarItem.remoteBackground": "#2922f2",
+        "statusBarItem.remoteForeground": "#ffffff",
+        "statusBarItem.remoteHoverBackground": "#362fff",
+        "statusBarItem.remoteHoverForeground": "#ffffff90",
+        "statusBar.background": "#1c15e5",
+        "statusBar.foreground": "#ffffff",
+        "statusBar.border": "#1c15e5",
+        "statusBar.debuggingBackground": "#1c15e5",
+        "statusBar.debuggingForeground": "#ffffff",
+        "statusBar.debuggingBorder": "#1c15e5",
+        "statusBar.noFolderBackground": "#1c15e5",
+        "statusBar.noFolderForeground": "#ffffff",
+        "statusBar.noFolderBorder": "#1c15e5",
+        "statusBar.prominentBackground": "#1c15e5",
+        "statusBar.prominentForeground": "#ffffff",
+        "statusBar.prominentHoverBackground": "#1c15e5",
+        "statusBar.prominentHoverForeground": "#ffffff90"
+    },
+    "projectColors.name": "Real multi agent system",
+    "projectColors.isActivityBarColored": false,
+    "projectColors.isTitleBarColored": false,
+    "projectColors.isStatusBarColored": true,
+    "projectColors.isProjectNameColored": false,
+    "projectColors.isActiveItemsColored": false,
+    "projectColors.setWindowTitle": true
+}

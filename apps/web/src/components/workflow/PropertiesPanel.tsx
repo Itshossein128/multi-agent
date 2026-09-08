@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { Bot, CircleAlert, GitBranch, Trash2, Wrench } from "lucide-react";
 import {
+  AgentBackend,
   AgentNodeConfig,
   AgentRecord,
   ApprovalNodeConfig,
@@ -129,12 +130,76 @@ function AgentForm({ node }: { node: WorkflowNode }) {
               className={inputClass}
             />
           </Field>
+          <Field label="Backend">
+            <select
+              value={agent.backend.type}
+              onChange={(event) => {
+                const type = event.target.value as AgentBackend["type"];
+                if (type === "api") {
+                  patchAgent({
+                    backend: {
+                      type: "api",
+                      provider:
+                        agent.backend.type === "api" ? agent.backend.provider : "openai",
+                      model:
+                        "model" in agent.backend && agent.backend.model
+                          ? agent.backend.model
+                          : "gpt-4o",
+                    },
+                  });
+                } else if (type === "cli") {
+                  patchAgent({
+                    backend: {
+                      type: "cli",
+                      provider:
+                        agent.backend.type === "cli" ? agent.backend.provider : "codex",
+                      model: "model" in agent.backend ? agent.backend.model : undefined,
+                    },
+                  });
+                } else {
+                  patchAgent({
+                    backend: {
+                      type: "local",
+                      provider:
+                        agent.backend.type === "local" ? agent.backend.provider : "ollama",
+                      model:
+                        "model" in agent.backend && agent.backend.model
+                          ? agent.backend.model
+                          : "llama3",
+                    },
+                  });
+                }
+              }}
+              className={inputClass}
+            >
+              <option value="api">API provider</option>
+              <option value="cli">CLI agent (soon)</option>
+              <option value="local">Local model (soon)</option>
+            </select>
+          </Field>
+          <Field label="Provider">
+            <input
+              type="text"
+              value={agent.backend.provider}
+              onChange={(event) =>
+                patchAgent({
+                  backend: { ...agent.backend, provider: event.target.value } as AgentBackend,
+                })
+              }
+              placeholder="openai, anthropic, codex, ollama…"
+              className={inputClass}
+            />
+          </Field>
           <Field label="Model">
             <input
               type="text"
-              value={agent.model}
-              onChange={(event) => patchAgent({ model: event.target.value })}
-              placeholder="gpt-4o, claude-sonnet, gemini-pro…"
+              value={"model" in agent.backend ? agent.backend.model ?? "" : ""}
+              onChange={(event) =>
+                patchAgent({
+                  backend: { ...agent.backend, model: event.target.value } as AgentBackend,
+                })
+              }
+              placeholder="gpt-4o, claude-sonnet, llama3…"
               className={inputClass}
             />
           </Field>

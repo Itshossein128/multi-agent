@@ -3,6 +3,10 @@
 ## Architecture Diagram
 
 ```
+
+## Phase 4 Execution Flow
+
+The editor sends the shared workflow definition and linked agent records to the TypeScript execution server. The server validates and compiles the definition into a LangGraph StateGraph, then exposes the run snapshot and an SSE event stream. The web run page consumes only the shared Run and RunEvent contracts, so LangGraph remains isolated to the server runtime.
                          Next.js
                      Agent Workspace
                             │

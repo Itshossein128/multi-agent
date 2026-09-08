@@ -21,6 +21,7 @@ import {
   NODE_TYPE_META,
   ToolNodeConfig,
   WorkflowNode,
+  agentBackendLabel,
 } from "@/lib/workflow/types";
 import { cn } from "@/lib/utils";
 
@@ -107,7 +108,7 @@ function AgentNodeComponent(props: NodeProps) {
       issueCount={issueCount}
       icon={<Bot className="h-4 w-4" />}
       title={agent?.name ?? "Unlinked agent"}
-      subtitle={agent ? `${agent.model} · ${agent.tools.length} tools` : "Not linked to an agent"}
+      subtitle={agent ? `${agentBackendLabel(agent.backend)} · ${agent.tools.length} tools` : "Not linked to an agent"}
     >
       {agent?.description && (
         <p className="mt-1.5 line-clamp-2 border-t border-zinc-800/80 pt-1.5 text-[10px] leading-snug text-zinc-500">

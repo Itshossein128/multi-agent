@@ -18,9 +18,11 @@ import {
   AgentRecord,
   WorkflowDefinition,
   createAgentRecord,
+  migrateAgentRecord,
   nowIso,
   uid,
 } from "@/lib/workflow/types";
+import { publicAgent } from "@/lib/publicAgent";
 
 const WORKFLOW_KEY = "agent-studio.workflow.v1";
 const AGENTS_KEY = "agent-studio.agents.v1";
@@ -31,7 +33,7 @@ function readJson<T>(key: string): T | null {
     const raw = window.localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : null;
   } catch {
-    return null;
+    throw new Error("Could not read Studio storage. Check browser storage access and retry.");
   }
 }
 
@@ -40,16 +42,26 @@ function writeJson(key: string, value: unknown): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Storage unavailable (private mode / quota) — editor keeps working in memory.
+    throw new Error("Could not save to Studio storage. Check storage access or available space.");
   }
 }
 
 export interface CreateAgentInput {
   name?: string;
   model?: string;
+  provider?: string;
+  backend?: import("@multi-agent/types").AgentBackend;
 }
 
 export const workflowService = {
+  async getAgent(agentId: string): Promise<AgentRecord | null> {
+    return (await this.listAgents()).find((agent) => agent.id === agentId) ?? null;
+  },
+
+  async listWorkflows(): Promise<WorkflowDefinition[]> {
+    const workflow = await this.getWorkflow();
+    return workflow ? [workflow] : [];
+  },
   async getWorkflow(): Promise<WorkflowDefinition | null> {
     return readJson<WorkflowDefinition>(WORKFLOW_KEY);
   },
@@ -61,7 +73,13 @@ export const workflowService = {
   },
 
   async listAgents(): Promise<AgentRecord[]> {
-    return readJson<AgentRecord[]>(AGENTS_KEY) ?? [];
+    const raw = readJson<unknown[]>(AGENTS_KEY) ?? [];
+    const agents = raw.map(publicAgent);
+    const needsMigration = raw.some(
+      (item) => !item || typeof item !== "object" || !("backend" in (item as object))
+    );
+    if (needsMigration && agents.length > 0) writeJson(AGENTS_KEY, agents);
+    return agents;
   },
 
   async createAgent(input?: CreateAgentInput): Promise<AgentRecord> {
@@ -80,11 +98,11 @@ export const workflowService = {
     if (index === -1) {
       throw new Error(`Agent ${agentId} not found`);
     }
-    const updated: AgentRecord = {
+    const updated = migrateAgentRecord({
       ...agents[index],
       ...patch,
       updatedAt: nowIso(),
-    };
+    });
     agents[index] = updated;
     writeJson(AGENTS_KEY, agents);
     return updated;

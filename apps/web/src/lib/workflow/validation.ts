@@ -15,6 +15,7 @@ import {
   MemoryNodeConfig,
   ToolNodeConfig,
   WorkflowDefinition,
+  agentHasConfiguredModel,
 } from "./types";
 
 export interface WorkflowIssue {
@@ -149,8 +150,12 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[])
           if (!agent.name.trim()) {
             issues.push(error(`Agent "${agent.id}" has no name`, { nodeId: node.id }));
           }
-          if (!agent.model.trim()) {
-            issues.push(error(`Agent "${agent.name}" has no model configured`, { nodeId: node.id }));
+          if (!agentHasConfiguredModel(agent)) {
+            const detail =
+              agent.backend.type === "cli"
+                ? "has no CLI provider configured"
+                : "has no model configured";
+            issues.push(error(`Agent "${agent.name}" ${detail}`, { nodeId: node.id }));
           }
           if (!agent.systemPrompt.trim()) {
             issues.push(warning(`Agent "${agent.name}" has no system prompt`, { nodeId: node.id }));

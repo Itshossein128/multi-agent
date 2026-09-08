@@ -4,6 +4,7 @@ import React from "react";
 import {
   CircleCheck,
   Maximize,
+  Play,
   Redo2,
   Save,
   Trash2,
@@ -15,6 +16,8 @@ import { useReactFlow } from "@xyflow/react";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { runService } from "@/services/runService";
 
 function ToolButton({
   title,
@@ -46,6 +49,10 @@ function ToolButton({
 }
 
 export function EditorToolbar() {
+  const router = useRouter();
+  const definition = useWorkflowStore((s) => s.definition);
+  const agents = useWorkflowStore((s) => s.agents);
+  const issues = useWorkflowStore((s) => s.issues);
   const name = useWorkflowStore((s) => s.definition.name);
   const isDirty = useWorkflowStore((s) => s.isDirty);
   const saveState = useWorkflowStore((s) => s.saveState);
@@ -64,6 +71,7 @@ export function EditorToolbar() {
 
   const hasSelection = selectedNodeIds.length > 0 || selectedEdgeIds.length > 0;
   const isSaving = saveState === "saving";
+  const hasErrors = issues.some((issue) => issue.severity === "error");
 
   return (
     <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/80 px-3">
@@ -130,6 +138,25 @@ export function EditorToolbar() {
         >
           <CircleCheck className="h-3.5 w-3.5" />
           Validate
+        </Button>
+        <Button
+          size="sm"
+          disabled={hasErrors}
+          onClick={async () => {
+            const value = window.prompt("Input for this run", "");
+            if (value === null) return;
+            try {
+              const { runId } = await runService.startRun(definition, agents, { input: value });
+              sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
+              router.push(`/runs/${runId}`);
+            } catch (error) {
+              window.alert(error instanceof Error ? error.message : String(error));
+            }
+          }}
+          className="h-8 cursor-pointer gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-500"
+        >
+          <Play className="h-3.5 w-3.5" />
+          Run
         </Button>
         <Button
           size="sm"
