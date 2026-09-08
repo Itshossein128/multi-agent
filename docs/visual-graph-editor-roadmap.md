@@ -1,10 +1,248 @@
-# Visual Multi-Agent Graph Editor Roadmap
+# Multi-Agent Studio Roadmap
 
-This document defines the implementation roadmap and detailed requirements for the **Visual Multi-Agent Programming / Graph Editor** feature inside the `Org` page.
+This document defines the implementation roadmap for the **Multi-Agent Studio**.
 
-The graph is not merely a visualization. It represents the executable workflow of the multi-agent system. Users should be able to visually design a multi-agent workflow and later have the backend translate that workflow definition into a LangGraph `StateGraph` for execution.
+The goal of the Studio is to provide a web-based control plane and visual programming environment for designing, configuring, running, and observing multi-agent systems powered by LangGraph.
 
-The core architecture is:
+The Studio is not only a dashboard and not only a graph viewer. It is intended to become the main interface through which a user can:
+
+- create and configure agents,
+- create and assign tasks,
+- visually design multi-agent workflows,
+- execute those workflows,
+- inspect execution in real time,
+- interact with human-in-the-loop steps,
+- manage tools and memory,
+- inspect traces, errors, latency, and cost.
+
+The high-level architecture is:
+
+```text
+Multi-Agent Studio (Web)
+        ↓
+Backend API / Runtime
+        ↓
+Workflow Definition
+        ↓
+LangGraph Builder / Compiler
+        ↓
+LangGraph Runtime
+        ↓
+Agents / Tools / Memory / LLMs
+        ↓
+Execution Events / Traces / Results
+```
+
+The web application is the **control plane**. LangGraph is the **execution engine**. The graph/workflow definition is the **source of truth for workflow structure**.
+
+---
+
+# Progress
+
+- [x] Phase 1 — Dashboard
+- [x] Phase 2 — Task Board
+- [x] Phase 3 — Visual Graph Editor
+- [ ] Phase 4 — Execution Timeline & Live Execution
+- [ ] Phase 5 — Agent Management & Configuration
+- [ ] Phase 6 — Tool Management
+- [ ] Phase 7 — Human-in-the-Loop & Approval System
+- [ ] Phase 8 — Memory Management & Memory Explorer
+- [ ] Phase 9 — Persistence, Runs, History & Recovery
+- [ ] Phase 10 — Observability & Langfuse Integration
+- [ ] Phase 11 — Validation, Safety & Runtime Guardrails
+- [ ] Phase 12 — Production Hardening & Developer Experience
+
+---
+
+# Phase 1 — Dashboard ✅
+
+## Goal
+
+Create the main operational overview of the multi-agent system.
+
+The Dashboard should answer, at a glance:
+
+- What is currently running?
+- What is waiting?
+- What failed?
+- Which agents are active?
+- Which workflows/tasks need attention?
+- What happened recently?
+
+## Functional Requirements
+
+The Dashboard should include at minimum:
+
+- Active runs count
+- Pending tasks count
+- Completed tasks count
+- Failed tasks count
+- Active agents count
+- Recent executions
+- Recent failures/errors
+- Tasks requiring human attention
+- Quick navigation to Task Board, Org/Graph Editor, Agents, Tools, and Runs
+
+## Run Status Model
+
+The UI should support states such as:
+
+```text
+queued
+running
+waiting_for_agent
+waiting_for_tool
+waiting_for_human
+completed
+failed
+cancelled
+paused
+```
+
+These states should be represented consistently across the application.
+
+## UX Requirements
+
+- The page should remain useful even when no runs exist.
+- Empty states should explain what the user can do next.
+- Statuses must be visually distinguishable.
+- Cards should link to the relevant detailed view.
+- Recent failures should be easy to inspect.
+
+## Architecture Requirements
+
+The Dashboard must not own business logic.
+
+Data should come from reusable services/store selectors so the same information can be consumed by:
+
+- Dashboard
+- Task Board
+- Execution Timeline
+- Run Detail views
+
+## Definition of Done
+
+The Dashboard gives a reliable system-level overview and provides navigation into the parts of the system that require attention.
+
+---
+
+# Phase 2 — Task Board ✅
+
+## Goal
+
+Provide a user-facing task orchestration interface where users can create, assign, prioritize, and track tasks executed by the multi-agent system.
+
+The Task Board should behave as an operational layer above individual LangGraph runs.
+
+## Core Task Model
+
+Each task should support at minimum:
+
+```text
+id
+name/title
+description
+status
+priority
+assignedAgentIds
+workflowId
+createdAt
+updatedAt
+startedAt
+completedAt
+parentTaskId (optional)
+dependencies (optional)
+result/run reference
+metadata
+```
+
+## Functional Requirements
+
+Users should be able to:
+
+- Create a task
+- Edit a task
+- Delete/archive a task
+- Assign one or multiple agents
+- Associate a task with a workflow
+- Set task priority
+- Track task status
+- Retry failed tasks
+- Pause running work when runtime support exists
+- Cancel work when runtime support exists
+- Open the related execution/run
+- View the final output/result
+
+## Dependency Requirements
+
+The task model should support task dependencies.
+
+Example:
+
+```text
+Research Task
+      ↓
+Implementation Task
+      ↓
+Review Task
+```
+
+A dependent task should not start before required upstream tasks complete successfully unless explicitly configured otherwise.
+
+## Task Status Requirements
+
+Suggested task statuses:
+
+```text
+backlog
+ready
+queued
+running
+blocked
+waiting_for_human
+completed
+failed
+cancelled
+```
+
+## UX Requirements
+
+The board may use columns such as:
+
+```text
+Backlog → Ready → Running → Review/Waiting → Done
+```
+
+but UI representation must remain separate from the domain status model.
+
+Users should be able to inspect:
+
+- Assigned agents
+- Workflow
+- Dependencies
+- Current run
+- Last error
+- Final output
+
+## Backend Requirements
+
+Creating or starting a task should ultimately create a run through the backend/runtime rather than executing logic directly in the browser.
+
+## Definition of Done
+
+A user can create and manage tasks, assign agents/workflows, start execution, and navigate from a task to its actual run/result.
+
+---
+
+# Phase 3 — Visual Graph Editor ✅
+
+## Goal
+
+Provide a visual programming environment inside the `Org` page where users can design executable multi-agent workflows.
+
+The graph is not merely a visualization. **The graph represents the program/workflow itself.**
+
+## Core Architecture
 
 ```text
 React Flow Graph Editor
@@ -20,89 +258,7 @@ LangGraph StateGraph
 Execution
 ```
 
-React Flow is the editor/view layer. The workflow definition is the domain representation and source of truth. LangGraph is the execution engine.
-
----
-
-# Progress
-
-- [x] 1. Graph Editor
-- [x] 2. Node Types
-- [x] 3. Edges
-- [ ] 4. Parallel Branches
-- [ ] 5. Loops / Cycles
-- [ ] 6. Agent Creation
-- [ ] 7. Workflow Definition
-- [ ] 8. State Management
-- [ ] 9. Persistence
-- [ ] 10. Validation
-- [ ] 11. LangGraph Integration Boundary
-- [ ] 12. UI / UX
-- [ ] 13. Architecture Requirements
-- [ ] 14. MVP Scope Constraints
-
----
-
-# 1. Graph Editor ✅
-
-## Goal
-
-Build the main visual programming surface inside the `Org` page using **React Flow**.
-
-The graph editor should behave like a workflow/programming environment rather than a static diagram.
-
-## Functional Requirements
-
-The editor must support:
-
-- Pan around the canvas
-- Zoom in/out
-- Fit graph to viewport
-- Node selection
-- Edge selection
-- Multiple selection
-- Node dragging
-- Node creation
-- Node deletion
-- Edge creation
-- Edge deletion
-- Connecting nodes via handles
-- Reconnecting edges when possible
-- Keyboard shortcuts for common operations when practical
-- Selection clearing
-- Canvas click handling
-- Drag-and-drop node creation if a node palette is used
-- Basic minimap support if it improves navigation
-
-## Interaction Requirements
-
-- Clicking a node selects it.
-- Clicking an edge selects it.
-- Clicking empty canvas clears selection.
-- Dragging a node updates its visual position.
-- Dragging from an output handle to an input handle creates a directional edge.
-- Invalid connections should be rejected or surfaced to the user.
-- Deleting selected graph elements must update the editor state consistently.
-- The editor should remain usable with a non-trivial number of nodes.
-
-## Technical Requirements
-
-- Use React Flow as the graph rendering/editing layer.
-- Keep graph-specific UI code isolated from business/domain logic.
-- Avoid embedding persistence logic directly inside the React Flow component.
-- Avoid a single oversized component that owns all editor responsibilities.
-
-## Definition of Done
-
-This stage is complete when users can create, move, select, connect, and delete graph elements reliably inside the `Org` page.
-
----
-
-# 2. Node Types ✅
-
-## Goal
-
-Represent all important multi-agent workflow building blocks as extensible custom node types.
+React Flow is the editor/view layer. The workflow definition is the domain model. LangGraph is the execution engine.
 
 ## Required Node Types
 
@@ -110,218 +266,95 @@ Represent all important multi-agent workflow building blocks as extensible custo
 
 Represents an AI agent.
 
-Required properties:
+Required fields:
 
-- `id`
-- `agentId`
-- `name`
-- `description`
-- `model`
-- `systemPrompt`
-- `tools`
-- `metadata`
-- Other runtime configuration as needed
-
-Requirements:
-
-- Must expose clearly defined input/output handles.
-- Agent identity must be independent of React Flow coordinates.
-- Visual state must not be the source of truth for agent configuration.
+- Agent ID
+- Name
+- Description
+- Model
+- System prompt
+- Assigned tools
+- Optional memory configuration
+- Metadata/runtime configuration
 
 ### Tool Node
 
-Represents a callable tool/function.
+Represents an executable tool/function.
 
-Required properties:
+Required fields:
 
-- `id`
-- `toolId`
-- `name`
-- `description`
-- `configuration`
-
-Requirements:
-
-- Must be visually distinguishable from agent nodes.
-- Must be connectable within the workflow.
-- Tool configuration should be editable through a property/configuration UI.
+- Tool ID
+- Name
+- Description
+- Configuration
 
 ### Human Approval Node
 
-Pauses workflow execution and waits for human approval or input.
+Pauses execution and waits for user approval/input.
 
-Required properties:
+Required fields:
 
-- `id`
-- `approvalMessage`
-- `approvalType`
-- Optional `timeout`
-- Optional approval metadata
-
-Requirements:
-
-- Must clearly communicate that execution stops until human input is received.
-- Should support approval/rejection branching later.
+- Approval message
+- Approval type
+- Optional timeout
+- Approval metadata
 
 ### Memory Node
 
-Represents workflow or agent memory access.
+Represents memory access.
 
-Required properties:
+Required fields:
 
-- `id`
-- `memoryType`
-- `mode` (`read`, `write`, or `read-write`)
-- `configuration`
-
-Requirements:
-
-- Must be able to represent memory read/write intent.
-- Runtime-specific implementation details should remain backend concerns.
+- Memory type
+- Read/write/read-write mode
+- Configuration
 
 ### Condition / Router Node
 
-Represents conditional branching.
+Represents conditional routing.
 
-Requirements:
-
-- Must support multiple outgoing paths.
-- Each outgoing path should have a condition/branch key.
-- Node configuration must identify routing logic or routing metadata.
-
-Example:
-
-```text
-Planner
-   |
-   v
-Condition
-  / \
-yes  no
- |    |
- v    v
-Coder Researcher
-```
+Must support multiple outgoing branches with branch keys or structured conditions.
 
 ### Input Node
 
-Represents workflow entry/input.
-
-Requirements:
-
-- Clearly identifies input origin.
-- Should normally have no incoming workflow edge.
-- Must expose workflow input configuration when needed.
+Represents workflow input/entry.
 
 ### Output Node
 
-Represents workflow termination/output.
+Represents workflow output/termination.
 
-Requirements:
+## Edge Requirements
 
-- Clearly identifies workflow output.
-- Should normally have no outgoing workflow edge.
-- Must support output mapping/configuration later.
+Edges must be directional and support:
 
-## Extensibility Requirements
-
-Adding a new node type later should not require rewriting the editor.
-
-Prefer a registry/configuration-based approach such as:
-
-```ts
-nodeTypes = {
-  agent: AgentNode,
-  tool: ToolNode,
-  condition: ConditionNode,
-  approval: HumanApprovalNode,
-  memory: MemoryNode,
-  input: InputNode,
-  output: OutputNode,
-}
-```
-
-## Definition of Done
-
-This stage is complete when all required node categories can be rendered, identified, connected, and configured independently.
-
----
-
-# 3. Edges ✅
-
-## Goal
-
-Represent execution/control/data flow between nodes using directional edges.
-
-## Functional Requirements
-
-Support:
-
-- Normal directional edges
+- Normal edges
 - Conditional edges
 - Multiple incoming edges
 - Multiple outgoing edges
 - Edge labels
-- Edge selection
+- Branch metadata
+- Edge editing
 - Edge deletion
-- Edge configuration
-- Edge direction visualization
-- Connection validation
 
-## Direction Requirement
+## Conditional Routing
 
-Connections must explicitly communicate direction.
-
-Example:
+The workflow must support structures such as:
 
 ```text
-A → B
+Planner
+   ↓
+Condition
+  /     \
+approved rejected
+  ↓        ↓
+Coder   Researcher
 ```
 
-The graph must never treat workflow edges as undirected relationships.
+Conditional data must be stored structurally, not only as a visual label.
 
-## Conditional Edge Requirements
+## Parallel Branches
 
-A conditional edge must support configuration such as:
-
-```text
-condition = "approved"
-condition = "rejected"
-```
-
-or another structured branch key/expression representation.
-
-Conditional metadata must not exist only as text painted on the edge. It must be represented in the workflow data model.
-
-## Editing Requirements
-
-Users should be able to:
-
-- Select an edge
-- Inspect its configuration
-- Change its type where valid
-- Edit label/condition metadata
-- Delete it
-
-## Technical Requirements
-
-Do not make React Flow's `Edge` object the permanent domain model.
-
-React Flow edges may be mapped to/from a workflow edge representation.
-
-## Definition of Done
-
-This stage is complete when edges correctly represent directed workflow transitions and conditional branch metadata can be captured reliably.
-
----
-
-# 4. Parallel Branches
-
-## Goal
-
-Allow workflows to represent multiple branches that can execute independently or concurrently.
-
-Example:
+The graph must support structures such as:
 
 ```text
              ┌→ Researcher ─┐
@@ -329,54 +362,11 @@ Planner ─────┤              ├→ Reviewer
              └→ Coder ──────┘
 ```
 
-## Functional Requirements
+Parallel semantics must be represented explicitly in workflow data and must never be inferred only from node positions.
 
-- A node may have multiple outgoing edges.
-- Parallel branches must be distinguishable from conditional exclusive branches.
-- Multiple branches may converge into a later node.
-- The workflow definition must preserve branch relationships.
-- The visual editor must not implicitly serialize parallel branches.
+## Loop / Cycle Requirements
 
-## Domain Model Requirements
-
-The workflow representation should make it possible for the backend compiler to determine whether multiple outgoing paths are:
-
-- Parallel
-- Conditional/exclusive
-- Normal independent transitions
-
-If needed, represent this through:
-
-- Node type
-- Edge metadata
-- Branch/group metadata
-- Explicit parallel/fork node semantics
-
-Do not rely only on canvas geometry to infer parallelism.
-
-## Backend Boundary
-
-The frontend only represents workflow intent.
-
-The frontend must not implement actual concurrency scheduling.
-
-Actual parallel execution belongs to the LangGraph/backend runtime.
-
-## Validation Requirements
-
-Warn about structurally ambiguous parallel branches when the backend would not be able to determine intended semantics.
-
-## Definition of Done
-
-Parallel execution intent can be expressed explicitly, serialized, saved, and later interpreted by the workflow compiler.
-
----
-
-# 5. Loops / Cycles
-
-## Goal
-
-Allow cyclic workflows instead of assuming every graph is a DAG.
+The graph must support cycles where LangGraph supports them.
 
 Example:
 
@@ -386,133 +376,20 @@ Coder → Reviewer
   └───────┘
 ```
 
-## Functional Requirements
+Cycles should not automatically be rejected, but they must later be protected by validation and recursion/iteration limits.
 
-- Users must be allowed to connect a downstream node back to an upstream node.
-- The graph editor must not automatically reject all cycles.
-- Cyclic edges must render normally and remain editable.
-- Loop configuration may later include exit conditions or limits.
+## Workflow Definition
 
-## Safety / Validation Requirements
+The workflow must be serializable independently of React Flow.
 
-The system should identify potentially unsafe loops, such as:
-
-- Cycle with no obvious exit path
-- Loop with no conditional transition
-- Invalid self-loop where unsupported
-- Loop lacking an execution limit if the runtime requires one
-
-The frontend should warn rather than over-constrain unless a structure is definitely invalid.
-
-## Domain Model Requirements
-
-Cycles must be represented explicitly in the workflow definition through normal node/edge references.
-
-Do not flatten or remove cycles during serialization.
-
-## Backend Requirements
-
-The authoritative runtime/compiler must determine whether the loop is executable by LangGraph.
-
-The backend should later enforce runtime protections such as recursion/iteration limits where appropriate.
-
-## Definition of Done
-
-Users can visually create valid cycles, serialize them without corruption, and receive warnings for obviously unsafe structures.
-
----
-
-# 6. Agent Creation
-
-## Goal
-
-Allow users to create and configure agents directly from the `Org` page and then use them as workflow nodes.
-
-## User Flow
-
-```text
-Create Agent
-     ↓
-Configure Agent
-     ↓
-Persist/Create Agent Entity
-     ↓
-Agent appears as a node
-     ↓
-Connect it to workflow
-```
-
-## Required Agent Fields
-
-At minimum:
-
-- Name
-- Description
-- Model/provider selection
-- System prompt
-- Assigned tools
-- Optional memory configuration
-- Optional metadata
-
-## Architecture Requirements
-
-Separate the concepts of:
-
-1. **Agent entity/configuration**
-2. **Agent node instance in a workflow**
-
-An agent entity may potentially be reusable across workflows.
-
-Its identity must not depend on:
-
-- React Flow node ID alone
-- Canvas coordinates
-- Visual styling
-
-The graph node should reference the agent through `agentId` or equivalent.
-
-## UX Requirements
-
-- Provide a clear create-agent action.
-- Validate required agent fields.
-- After creation, allow immediate use on the graph.
-- Allow selecting an existing agent where appropriate.
-- Allow editing agent configuration through a dedicated panel/modal without destroying graph connections.
-
-## Definition of Done
-
-A user can create an agent, configure it, and use it as a stable workflow node without coupling the underlying agent identity to graph layout.
-
----
-
-# 7. Workflow Definition
-
-## Goal
-
-Create a clean, framework-independent domain representation for visual workflows.
-
-This is one of the most important architectural stages.
-
-## Core Principle
-
-React Flow state is **not** the workflow source of truth.
-
-The domain workflow definition is the source of truth.
-
-React Flow is a visualization/editing adapter around that model.
-
-## Required Structure
-
-A minimal workflow definition should support:
+Example:
 
 ```json
 {
   "id": "workflow-id",
-  "name": "Workflow Name",
-  "version": 1,
   "nodes": [
     {
-      "id": "planner-node",
+      "id": "planner",
       "type": "agent",
       "config": {
         "agentId": "planner-agent"
@@ -522,208 +399,737 @@ A minimal workflow definition should support:
   "edges": [
     {
       "id": "planner-reviewer",
-      "source": "planner-node",
-      "target": "reviewer-node",
-      "type": "normal",
-      "config": {}
+      "source": "planner",
+      "target": "reviewer",
+      "type": "normal"
     }
-  ],
-  "metadata": {}
+  ]
 }
 ```
 
-## Required Capabilities
-
-The model must be able to represent:
-
-- Agent nodes
-- Tool nodes
-- Human approval nodes
-- Memory nodes
-- Input/output nodes
-- Condition/router nodes
-- Normal edges
-- Conditional edges
-- Parallel branches
-- Cycles
-- Node configuration
-- Edge configuration
-- Workflow metadata
-
 ## Separation Requirements
 
-Do not store React Flow-specific fields inside the core execution definition unless needed for editor metadata.
+Do not tightly couple the domain model to React Flow internals.
 
-If positions need persistence, prefer separating them conceptually, e.g.:
+Prefer a conceptual separation such as:
 
-```ts
+```text
 workflow.execution
 workflow.layout
 ```
 
-or use clearly separated metadata fields.
+The editor should map between domain workflow data and React Flow state.
 
-## Conversion Requirements
+## UI Requirements
 
-Implement explicit mapping functions such as:
+Suggested editor structure:
 
-```ts
-toReactFlow(workflow)
-fromReactFlow(nodes, edges)
+```text
+┌─────────────────────────────────────────────────────┐
+│ Toolbar                                              │
+├──────────────┬──────────────────────────┬───────────┤
+│ Node Palette │                          │           │
+│              │      Graph Canvas        │ Properties│
+│ Agent        │                          │ Panel     │
+│ Tool         │                          │           │
+│ Condition    │                          │           │
+│ Approval     │                          │           │
+│ Memory       │                          │           │
+│ Input        │                          │           │
+│ Output       │                          │           │
+├──────────────┴──────────────────────────┴───────────┤
+│ Save / Validation / Status                          │
+└─────────────────────────────────────────────────────┘
 ```
-
-or equivalent adapters.
 
 ## Definition of Done
 
-The complete workflow can be serialized to structured data and reconstructed without depending on React Flow internals.
+A user can visually design a multi-agent workflow, serialize it into a workflow definition, save/load it, and provide enough structured information for the backend to later compile it into LangGraph.
 
 ---
 
-# 8. State Management
+# Phase 4 — Execution Timeline & Live Execution
 
 ## Goal
 
-Manage editor and workflow state predictably without mixing visual state, domain state, and persistence state.
+Make executions observable in real time.
 
-## Required State Categories
+After starting a task/workflow, the user should be able to see **what the system is doing right now**, which agent/node is active, what already happened, what failed, and what is waiting.
 
-### Workflow Domain State
+This page is the bridge between the visual workflow definition and the actual runtime behavior.
 
-- Workflow ID
-- Workflow metadata
-- Workflow nodes
-- Workflow edges
-- Node configuration
-- Edge configuration
+## Core Concepts
 
-### Editor State
+Introduce explicit concepts for:
 
-- Selected node(s)
-- Selected edge(s)
-- Viewport
-- Temporary drag/connect state
-- Panel state
-- Editor mode
+```text
+Run
+Run Event
+Node Execution
+Agent Execution
+Tool Execution
+Human Approval Event
+State Transition
+```
 
-### Persistence State
+## Required Run Model
 
-- Is loading
-- Is saving
-- Is dirty
-- Last saved timestamp/version
-- Save error
+Each workflow execution should have a stable Run entity containing at least:
+
+```text
+runId
+workflowId
+taskId (optional)
+status
+startedAt
+completedAt
+input
+output
+error
+currentNodeId
+metadata
+```
+
+## Required Event Model
+
+Execution events should be append-only and ordered.
+
+Example event types:
+
+```text
+run.created
+run.started
+run.paused
+run.resumed
+run.completed
+run.failed
+run.cancelled
+
+node.started
+node.completed
+node.failed
+node.retrying
+
+agent.started
+agent.completed
+agent.failed
+
+llm.started
+llm.completed
+llm.failed
+
+tool.started
+tool.completed
+tool.failed
+
+human_approval.requested
+human_approval.approved
+human_approval.rejected
+
+state.updated
+edge.traversed
+```
+
+Each event should include as appropriate:
+
+- ID
+- Run ID
+- Timestamp
+- Node ID
+- Agent ID
+- Tool ID
+- Event type
+- Status
+- Input/output summary
+- Error information
+- Duration
+- Metadata
+
+## Live Transport Requirements
+
+Use server-to-client streaming instead of polling as the primary mechanism.
+
+Preferred options:
+
+- SSE for one-way execution streams
+- WebSocket if bidirectional real-time control is required
+
+The transport layer should be abstract enough to change later without rewriting the UI.
+
+## Timeline UI Requirements
+
+The timeline should show chronological execution events.
+
+For each event, display relevant information such as:
+
+- Timestamp
+- Node/agent/tool name
+- Event type
+- Status
+- Duration
+- Error indicator
+- Expandable input/output details
+
+Example:
+
+```text
+10:32:01  Run started
+10:32:01  Planner started
+10:32:04  Planner completed        3.1s
+10:32:04  Researcher started
+10:32:04  Coder started
+10:32:09  Researcher completed     5.2s
+10:32:11  Coder completed          7.1s
+10:32:11  Reviewer started
+10:32:15  Reviewer completed       4.0s
+10:32:15  Run completed
+```
+
+## Graph Synchronization Requirements
+
+The Execution Timeline should synchronize with the Graph Editor visualization.
+
+During execution:
+
+- Active node should be highlighted.
+- Completed nodes should have completed state.
+- Failed nodes should show failure state.
+- Waiting nodes should show waiting state.
+- Traversed edges may be highlighted.
+- Parallel running nodes should be shown simultaneously.
+
+Do not mutate the saved workflow definition merely to represent runtime state.
+
+Runtime visualization state must remain separate from workflow design state.
+
+## Run Controls
+
+Where backend support exists, provide:
+
+- Start
+- Pause
+- Resume
+- Cancel
+- Retry failed run
+- Retry failed node/subtask when semantically safe
+
+## Error Requirements
+
+Failures should show:
+
+- Which node failed
+- Agent/tool involved
+- Error type/message
+- Timestamp
+- Relevant input
+- Retryability if known
+
+Do not expose secrets, API keys, or credentials in raw event payloads.
+
+## History Requirements
+
+Users should be able to open completed runs and replay their timeline from stored events.
+
+Live execution and historical execution should use the same UI model whenever possible.
+
+## Definition of Done
+
+A user can start a workflow/task and watch execution evolve in real time, inspect individual events, see graph node states update, and later reopen the completed run with the same timeline.
+
+---
+
+# Phase 5 — Agent Management & Configuration
+
+## Goal
+
+Create agents as reusable first-class entities independent from individual workflow nodes.
+
+## Agent Domain Model
+
+Each agent should support at minimum:
+
+```text
+id
+name
+description
+modelProvider
+modelName
+systemPrompt
+temperature/model settings
+assignedTools
+memory configuration
+runtime configuration
+createdAt
+updatedAt
+metadata
+```
 
 ## Functional Requirements
 
-Support:
+Users should be able to:
 
-- Adding/removing nodes
-- Adding/removing edges
-- Updating node config
-- Updating edge config
-- Updating layout
-- Selection
-- Dirty tracking
-- Reset/reload
-- Save completion state
-- Undo/redo if practical within MVP constraints
+- Create an agent
+- Edit an agent
+- Duplicate an agent
+- Delete/archive an agent
+- Enable/disable an agent
+- Assign tools
+- Configure model/provider
+- Configure system prompt
+- Configure memory behavior
+- Inspect where the agent is used
 
-## Technical Requirements
+## Reusability Requirement
 
-- Use the project's existing state-management solution where possible.
-- Do not introduce another global store library without a clear reason.
-- Keep state update APIs explicit and testable.
-- Avoid mutating graph/domain data directly inside presentation components.
+An Agent entity and an Agent Node are different concepts.
 
-## Definition of Done
-
-All graph edits flow through predictable state operations and the application can distinguish editor-only changes from persisted workflow changes.
-
----
-
-# 9. Persistence
-
-## Goal
-
-Make workflow definitions saveable/loadable through a clean backend-facing abstraction.
-
-## Required Service Boundary
-
-Provide an API/service layer similar to:
-
-```ts
-getWorkflow(workflowId)
-saveWorkflow(workflow)
-createWorkflow(workflow)
-updateWorkflow(workflow)
-deleteWorkflow(workflowId)
-
-createAgent(agent)
-updateAgent(agent)
-deleteAgent(agentId)
-getAgents()
+```text
+Agent Entity
+    ↓ referenced by
+Agent Node in Workflow
 ```
 
-## Requirements
+A single agent should be reusable across multiple workflows.
 
-- UI components must not call raw persistence implementation details directly.
-- React Flow components must not know database structure.
-- Saving should serialize the domain workflow definition.
-- Loading should hydrate domain state and then map it into React Flow state.
-- Save errors must be surfaced to the user.
-- Dirty state should clear only after successful save.
+## Configuration Requirements
 
-## Temporary Backend Strategy
+The configuration UI should support provider/model-specific options without hard-coding every provider directly into the page.
 
-If backend APIs are not yet available:
+Prefer provider adapters/config schemas.
 
-- Use mocks/in-memory/local persistence behind the same service interface.
-- Keep the interface compatible with future server implementation.
-- Do not hard-code temporary storage behavior throughout components.
+## Security Requirements
 
-## Data Integrity Requirements
+- Provider API keys must never be stored in browser state as normal domain data.
+- Secret values must not appear in workflow JSON.
+- Secret configuration belongs to server-side secure configuration.
 
-The persistence layer should preserve:
+## Testing Requirement
 
-- Workflow structure
-- Node config
-- Edge config
-- Layout metadata if applicable
-- Version/metadata fields
+Provide a lightweight way to test an agent configuration with a sample input without requiring construction of a full workflow.
 
 ## Definition of Done
 
-A workflow can be saved, reloaded, and reconstructed without loss of structure or configuration.
+Users can manage reusable agents independently and reference them from graph workflows reliably.
 
 ---
 
-# 10. Validation
+# Phase 6 — Tool Management
 
 ## Goal
 
-Catch invalid workflow structures early while leaving authoritative runtime validation to the backend.
+Manage tools that agents/workflows can invoke.
 
-## Required Frontend Validations
+Tools are reusable runtime capabilities and should not be hard-coded into individual agents.
 
-At minimum:
+## Tool Model
+
+Each tool should support:
+
+```text
+id
+name
+description
+type
+inputSchema
+outputSchema
+configuration
+enabled
+permissions/security metadata
+createdAt
+updatedAt
+```
+
+## Supported Tool Categories
+
+Architecture should allow tool categories such as:
+
+- Internal functions
+- HTTP/API tools
+- Database tools
+- Search tools
+- File tools
+- MCP tools
+- CLI tools
+- Custom application tools
+
+Not all categories need full implementation in the MVP, but the model must be extensible.
+
+## Functional Requirements
+
+Users should be able to:
+
+- Register a tool
+- Configure a tool
+- Enable/disable a tool
+- Test a tool
+- Assign a tool to agents
+- Use a tool node in workflows
+- Inspect recent failures
+
+## Schema Requirements
+
+Tools should have structured input/output contracts when possible.
+
+Prefer JSON Schema, Zod-derived schemas, or another consistent schema format.
+
+## Permission Requirements
+
+The runtime should be capable of restricting tool use per:
+
+- Agent
+- Workflow
+- Environment
+- User/organization if multi-user support is added later
+
+## Secret Handling
+
+Credentials must be server-side and referenced indirectly.
+
+Never persist secrets in the visual workflow definition.
+
+## Definition of Done
+
+Tools are reusable, configurable, testable, assignable to agents, and safely callable by the runtime.
+
+---
+
+# Phase 7 — Human-in-the-Loop & Approval System
+
+## Goal
+
+Support workflows that intentionally stop and wait for human decisions or input.
+
+This turns Human Approval nodes from visual concepts into real runtime behavior.
+
+## Required Approval States
+
+```text
+requested
+approved
+rejected
+expired
+cancelled
+```
+
+## Approval Model
+
+Each approval request should contain at minimum:
+
+```text
+approvalId
+runId
+nodeId
+status
+message
+requestedAt
+resolvedAt
+input/context
+response
+metadata
+```
+
+## Runtime Requirements
+
+When execution reaches a Human Approval node:
+
+1. Persist the current execution/checkpoint.
+2. Emit a `human_approval.requested` event.
+3. Change run status to `waiting_for_human`.
+4. Surface the request in the UI.
+5. Wait without losing run state.
+6. Resume execution after approval/rejection/input.
+
+## UI Requirements
+
+Approval requests should be visible in:
+
+- Dashboard
+- Task detail
+- Run detail / Execution Timeline
+- Approval inbox/queue if necessary
+
+## Interaction Requirements
+
+A user should be able to:
+
+- Approve
+- Reject
+- Enter requested text/data
+- Inspect the context before making a decision
+
+## Branching Requirements
+
+Approval outcome must be usable by conditional routing.
+
+Example:
+
+```text
+Human Approval
+    ├── approved → Deploy Agent
+    └── rejected → Revision Agent
+```
+
+## Definition of Done
+
+A workflow can pause safely, persist its state, request a human decision, and resume from that exact point after the decision.
+
+---
+
+# Phase 8 — Memory Management & Memory Explorer
+
+## Goal
+
+Make agent/workflow memory explicit, inspectable, and configurable.
+
+## Memory Categories
+
+Architecture should distinguish at least conceptually:
+
+- Run-scoped state
+- Conversation/thread memory
+- Agent memory
+- Long-term memory
+- Shared workflow/team memory
+
+## Functional Requirements
+
+Users should eventually be able to:
+
+- Configure whether an agent uses memory
+- Select memory scope
+- Inspect stored memory
+- Search memory
+- Delete/clear memory where allowed
+- Inspect which run/agent created a memory item
+
+## Memory Node Requirements
+
+Memory nodes in the graph should support operations such as:
+
+```text
+read
+write
+read-write
+search
+```
+
+## Data Requirements
+
+Memory entries should contain metadata such as:
+
+```text
+id
+scope
+agentId
+workflowId
+runId
+content/value
+createdAt
+updatedAt
+source
+metadata
+```
+
+## Safety Requirements
+
+- Do not accidentally expose one workflow/user's private memory to another scope.
+- Memory access must be explicit.
+- Provide retention/deletion mechanisms.
+- Avoid storing secrets in ordinary memory records.
+
+## MVP Constraint
+
+A full vector database UI is not required initially.
+
+Start with inspectability and clear memory boundaries.
+
+## Definition of Done
+
+Memory behavior is configurable and users can understand what memory exists, who created it, and how it affects execution.
+
+---
+
+# Phase 9 — Persistence, Runs, History & Recovery
+
+## Goal
+
+Make the system durable so workflows and executions survive process restarts and can be inspected/recovered later.
+
+## Persistent Entities
+
+Persist at minimum:
+
+- Agents
+- Tools
+- Workflows
+- Tasks
+- Runs
+- Run events
+- Approval requests
+- Memory metadata/content as appropriate
+
+## Database Requirements
+
+Use PostgreSQL as the primary durable data store unless the existing architecture already provides another deliberate choice.
+
+Use Redis only for transient/coordination concerns such as:
+
+- queues,
+- locks,
+- ephemeral execution state,
+- caching,
+- pub/sub,
+
+not as the sole authoritative store for critical data.
+
+## Workflow Persistence
+
+A saved workflow must preserve:
+
+- Execution definition
+- Node configuration
+- Edge configuration
+- Layout/editor metadata
+- Version metadata
+
+## Run History
+
+Users should be able to:
+
+- List previous runs
+- Filter by workflow/task/status/date
+- Open a run
+- View its timeline
+- View its result
+- View failure details
+
+## Recovery Requirements
+
+Where supported by LangGraph/checkpointing:
+
+- Interrupted runs should be recoverable.
+- Human-approval waits must survive server restarts.
+- Run state should not depend solely on process memory.
+
+## Idempotency Requirements
+
+Actions such as retry/resume should be designed to avoid accidental duplicate execution where possible.
+
+## Definition of Done
+
+The core system survives restarts without losing workflows, tasks, or execution history, and recoverable runs can continue safely.
+
+---
+
+# Phase 10 — Observability & Langfuse Integration
+
+## Goal
+
+Use Langfuse as the observability/evaluation layer instead of rebuilding full LLM tracing inside the Studio.
+
+## Responsibility Split
+
+### Multi-Agent Studio
+
+The Studio owns the **Control Plane**:
+
+- Tasks
+- Agents
+- Workflows
+- Graph Editor
+- Runs
+- Execution Timeline
+- Human approvals
+- Run controls
+- System status
+
+### Langfuse
+
+Langfuse owns the **Observability / Evaluation Plane**:
+
+- LLM traces
+- Prompt/response inspection
+- Token usage
+- Cost
+- Latency
+- Tool spans
+- Nested agent execution traces
+- Errors
+- Evaluations
+- Prompt management where adopted
+
+## Integration Requirements
+
+Each Studio run should be correlatable with Langfuse through stable identifiers such as:
+
+```text
+runId
+workflowId
+taskId
+agentId
+nodeId
+```
+
+## UI Requirements
+
+The Studio should expose useful high-level observability fields such as:
+
+- Run duration
+- Token count
+- Estimated cost
+- Error count
+- Agent/tool execution duration
+
+and provide direct navigation to the corresponding Langfuse trace when deeper inspection is needed.
+
+## Instrumentation Requirements
+
+Instrument:
+
+- Workflow run
+- Node execution
+- Agent execution
+- LLM calls
+- Tool calls
+- Important routing decisions
+
+Prefer OpenTelemetry-compatible instrumentation.
+
+## Non-Goal
+
+Do not build a full Langfuse clone inside the custom UI.
+
+## Definition of Done
+
+Every meaningful execution can be correlated to a Langfuse trace, while the Studio remains focused on orchestration/control.
+
+---
+
+# Phase 11 — Validation, Safety & Runtime Guardrails
+
+## Goal
+
+Prevent invalid or dangerous workflows from being executed accidentally.
+
+## Graph Validation
+
+Validate at minimum:
 
 - Duplicate node IDs
 - Duplicate edge IDs
-- Edge references to missing nodes
-- Required agent config missing
-- Invalid node configuration
-- Invalid conditional edge configuration
-- Condition node with invalid branch configuration
-- Missing required input/output where workflow rules require them
-- Invalid connection between incompatible node types
-- Dangling nodes where relevant
-- Ambiguous parallel/conditional branching
-- Structurally suspicious cycles
+- Missing node references
+- Invalid node config
+- Missing required agent config
+- Missing tool config
+- Invalid conditional branches
+- Ambiguous branching semantics
+- Invalid input/output structure
+- Unsupported connections
+- Unsafe cycles
 
-## Validation Model
+## Structured Validation Model
 
-Prefer structured validation results such as:
+Prefer results such as:
 
 ```ts
 {
@@ -735,351 +1141,217 @@ Prefer structured validation results such as:
 }
 ```
 
-## UX Requirements
+## Runtime Guardrails
 
-- Show overall validation status.
-- Highlight affected node/edge when possible.
-- Distinguish warnings from blocking errors.
-- Allow navigating from a validation issue to the graph element.
+Add protections such as:
 
-## Backend Boundary
+- Maximum recursion/loop count
+- Maximum run duration
+- Tool timeouts
+- LLM timeouts
+- Retry limits
+- Maximum concurrent branches
+- Maximum token/cost limits when available
+- Cancellation support
 
-Frontend validation is advisory/pre-flight validation.
+## Tool Safety
 
-The backend/compiler must revalidate the workflow before execution.
+Tools with side effects should be identifiable.
 
-Never assume a workflow is safe to execute only because frontend validation passed.
+Examples:
+
+```text
+read-only
+write
+external side effect
+high impact
+```
+
+High-impact tools may later require explicit approval policies.
+
+## Secret Redaction
+
+Logs, traces, and timeline events must avoid exposing:
+
+- API keys
+- Access tokens
+- Passwords
+- Private credentials
+
+## Backend Authority
+
+Frontend validation improves UX, but the backend must always perform authoritative validation before compilation/execution.
 
 ## Definition of Done
 
-Invalid workflow structures can be identified before save/execution with actionable user feedback.
+Invalid workflows are blocked before execution and runaway/unsafe runtime behavior is constrained by explicit guardrails.
 
 ---
 
-# 11. LangGraph Integration Boundary
+# Phase 12 — Production Hardening & Developer Experience
 
 ## Goal
 
-Establish the contract between the visual workflow model and backend LangGraph execution.
+Turn the MVP into a maintainable, deployable engineering project without prematurely splitting it into unnecessary microservices.
 
-## Core Rule
+## Recommended Architecture
 
-The frontend must **not** rewrite or generate TypeScript source files as its persistence mechanism.
-
-Instead:
+Keep the MVP simple:
 
 ```text
-Graph Editor
-    ↓
-Workflow Definition
-    ↓
-Backend Compiler
-    ↓
-LangGraph StateGraph
+multi-agent/
+├── apps/
+│   ├── web/
+│   └── server/
+│       ├── agents/
+│       ├── graphs/
+│       ├── tools/
+│       ├── tasks/
+│       ├── execution/
+│       └── api/
+├── packages/
+│   ├── ui/
+│   ├── types/
+│   └── shared/
+├── infrastructure/
+└── docs/
 ```
 
-## Backend Compiler Responsibilities
+The server may contain both API and LangGraph runtime for now.
 
-The backend should eventually:
+Do not split `agent-runtime` into a separate service unless there is a real scaling/deployment need.
 
-1. Receive a workflow definition.
-2. Validate it.
-3. Resolve referenced agents/tools/memory components.
-4. Create a LangGraph `StateGraph`.
-5. Add nodes.
-6. Add normal edges.
-7. Add conditional edges.
-8. Configure branching/parallelism.
-9. Preserve supported cycles.
-10. Compile the graph.
-11. Execute it.
-12. Return runtime state/events/results.
+## Monorepo Requirements
 
-Conceptually:
+Use a lightweight monorepo setup such as pnpm workspaces.
 
-```ts
-const graph = new StateGraph(StateSchema)
+Do not introduce Nx/Turborepo unless build complexity makes it useful.
 
-for (const node of workflow.nodes) {
-  graph.addNode(node.id, resolveNodeHandler(node))
-}
+## Testing Requirements
 
-for (const edge of workflow.edges) {
-  // normal / conditional / other workflow semantics
-}
+Add tests at multiple levels:
 
-const compiledGraph = graph.compile()
-```
+### Unit Tests
 
-## Important Design Principle
+- Workflow validation
+- Workflow-to-LangGraph compiler/builder
+- State transitions
+- Agent/tool config validation
 
-The graph created by the user is the **program**.
+### Integration Tests
 
-The workflow definition is the **intermediate representation (IR)**.
+- Task → Run creation
+- Workflow execution
+- Tool invocation
+- Human approval pause/resume
+- Persistence/checkpoint recovery
 
-The LangGraph builder/compiler is the **compiler/runtime adapter**.
+### E2E Tests
 
-LangGraph is the **execution engine**.
-
-## API Boundary
-
-The frontend should eventually communicate through APIs such as:
+Critical user paths:
 
 ```text
-POST /workflows
-PUT  /workflows/:id
-POST /workflows/:id/validate
-POST /workflows/:id/run
-GET  /runs/:id
+Create Agent
+→ Create Workflow
+→ Create Task
+→ Start Run
+→ Observe Timeline
+→ Complete/Approve
+→ Inspect Result
 ```
 
-Exact endpoint naming may follow the existing backend architecture.
+## CI Requirements
+
+GitHub Actions should at least run:
+
+- install
+- lint
+- typecheck
+- tests
+- build
+
+## Containerization
+
+Docker Compose is enough for the current stage.
+
+A local development environment may include:
+
+- web
+- server
+- PostgreSQL
+- Redis
+- Langfuse dependencies when self-hosting is used
+
+## Logging Requirements
+
+Use structured logs with stable correlation IDs:
+
+```text
+runId
+workflowId
+taskId
+nodeId
+agentId
+```
+
+## Documentation Requirements
+
+Maintain documentation for:
+
+- Architecture
+- Workflow definition schema
+- Node types
+- Edge types
+- Runtime event schema
+- Agent model
+- Tool model
+- Development setup
+- Environment variables
+
+## Performance Requirements
+
+Avoid optimizing prematurely, but monitor:
+
+- Graph rendering performance
+- Event stream size
+- Long-running execution memory usage
+- Database query patterns
+- Parallel workflow concurrency
 
 ## Definition of Done
 
-The frontend workflow model has a stable contract that the backend can compile into LangGraph without relying on generated source-code files.
+The project can be installed, tested, built, run locally, and deployed predictably, while retaining a simple architecture appropriate for the current product stage.
 
 ---
 
-# 12. UI / UX
+# End-to-End Target Experience
 
-## Goal
-
-Make the graph editor feel like a professional visual developer tool.
-
-## Suggested Layout
+When these phases are complete, the intended user flow is:
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│ Toolbar                                              │
-├──────────────┬──────────────────────────┬───────────┤
-│ Node Palette │                          │           │
-│              │      Graph Canvas        │ Properties│
-│ Agent        │                          │           │
-│ Tool         │                          │           │
-│ Condition    │                          │           │
-│ Approval     │                          │           │
-│ Memory       │                          │           │
-│ Input        │                          │           │
-│ Output       │                          │           │
-├──────────────┴──────────────────────────┴───────────┤
-│ Status / Save / Validation                           │
-└─────────────────────────────────────────────────────┘
+1. Create/configure reusable Agents
+            ↓
+2. Register/assign Tools
+            ↓
+3. Open Org / Graph Editor
+            ↓
+4. Visually design the multi-agent workflow
+            ↓
+5. Save/validate workflow
+            ↓
+6. Create a Task and select the workflow
+            ↓
+7. Start execution
+            ↓
+8. Watch Execution Timeline + live graph state
+            ↓
+9. Approve/reject Human-in-the-Loop steps if required
+            ↓
+10. Inspect final output
+            ↓
+11. Inspect detailed Langfuse trace when needed
+            ↓
+12. Reopen any historical run later
 ```
 
-## Required Interactions
-
-- Drag a node type from palette to canvas.
-- Click node to inspect/configure it.
-- Drag from output handle to input handle to create an edge.
-- Click edge to inspect/configure it.
-- Delete selected elements.
-- Save workflow.
-- Validate workflow.
-- Show unsaved-change state.
-- Show loading/saving state.
-- Provide clear error feedback.
-
-## Visual Requirements
-
-Different node types should be visually distinguishable.
-
-At minimum, distinguish:
-
-- Agent
-- Tool
-- Condition
-- Human approval
-- Memory
-- Input
-- Output
-
-Edges should visually distinguish:
-
-- Normal transitions
-- Conditional transitions
-- Selected state
-
-Loops and parallel branches should remain visually understandable.
-
-## Properties Panel
-
-The right-side properties panel should adapt to the selected graph element.
-
-For nodes, show node-specific configuration.
-
-For edges, show edge type, label, condition, and related metadata.
-
-## Developer Tool Feel
-
-Prioritize:
-
-- Clarity
-- Dense but readable information
-- Fast editing
-- Minimal unnecessary modal flows
-- Useful keyboard interactions
-- Predictable selection behavior
-
-Use the project's existing design system/UI component library.
-
-## Definition of Done
-
-A user can build and understand a workflow without needing to inspect raw JSON or backend code.
-
----
-
-# 13. Architecture Requirements
-
-## Goal
-
-Keep the feature modular, maintainable, and extensible as it grows from an MVP into a more capable visual programming system.
-
-## Recommended Module Boundaries
-
-```text
-Graph Editor
-├── Canvas
-├── Toolbar
-├── Node Palette
-├── Custom Nodes
-├── Custom Edges
-├── Properties Panel
-├── Workflow State
-├── Workflow Domain Model
-├── React Flow Adapters
-├── Validation
-├── Persistence/API Layer
-└── Utilities
-```
-
-## Separation of Concerns
-
-### Canvas
-
-Responsible for React Flow rendering/interactions.
-
-### Custom Nodes / Edges
-
-Responsible for element-specific rendering only.
-
-### Properties Panel
-
-Responsible for editing selected element configuration.
-
-### Workflow Domain Model
-
-Defines framework-independent workflow types.
-
-### React Flow Adapters
-
-Maps workflow domain data to/from React Flow structures.
-
-### Validation
-
-Contains structural validation logic.
-
-### Persistence/API Layer
-
-Contains communication with server/storage.
-
-### State Layer
-
-Coordinates domain/editor state transitions.
-
-## Extensibility Requirements
-
-Adding a new node type should ideally involve:
-
-1. Define its domain config type.
-2. Register a renderer.
-3. Register validation rules.
-4. Register configuration UI.
-5. Later register backend compiler/runtime handling.
-
-It should not require modifying unrelated editor internals.
-
-## Code Quality Requirements
-
-- Avoid giant components.
-- Avoid duplicate node/edge logic.
-- Prefer typed discriminated unions for node types where practical.
-- Keep domain types strongly typed.
-- Keep UI and backend contract types aligned through shared packages/types if the monorepo structure supports it.
-- Avoid unnecessary abstractions that slow MVP delivery.
-
-## Definition of Done
-
-The editor architecture can support additional workflow primitives without major rewrites.
-
----
-
-# 14. MVP Scope Constraints
-
-## Goal
-
-Ship a strong visual multi-agent programming MVP without turning the project into a full LangGraph Studio clone during this phase.
-
-## MVP Priorities
-
-Implement in this order:
-
-1. Agent nodes
-2. Tool nodes
-3. Human approval nodes
-4. Memory nodes
-5. Condition/router nodes
-6. Input/output nodes
-7. Directed edges
-8. Conditional edges
-9. Parallel branches
-10. Loops/cycles
-11. Workflow serialization
-12. Workflow state management
-13. Save/load boundary
-14. Validation
-15. Backend LangGraph compiler boundary
-16. Clean developer-oriented UX
-
-## Explicitly Out of Scope for This Phase
-
-Do **not** spend excessive time implementing:
-
-- Full LangGraph Studio replacement
-- Distributed execution infrastructure
-- Production-grade collaborative editing
-- Real-time multi-user graph editing
-- Advanced workflow version-control UI
-- Advanced visual debugging
-- Breakpoints
-- Time-travel debugging
-- Complex execution animation systems
-- Enterprise permission systems for individual nodes
-- Full observability implementation already covered by tools such as Langfuse
-- Advanced auto-layout engines unless trivially integrable
-- Arbitrary TypeScript code generation/editing from the browser
-
-## Architecture Constraint
-
-Even while keeping the MVP small, do not create shortcuts that make the visual workflow disposable.
-
-The central product principle must remain:
-
-> **The user visually programs the multi-agent system through the graph, the workflow definition represents that program, and the backend translates it into an executable LangGraph workflow.**
-
-## Final MVP Definition of Done
-
-The MVP is successful when a user can:
-
-1. Open the `Org` page.
-2. Create/configure agents and workflow components.
-3. Arrange them visually.
-4. Connect them with directional and conditional edges.
-5. Represent branching, parallel execution, and loops.
-6. Add human approval, tools, memory, input, and output steps.
-7. Save the workflow as a structured domain definition.
-8. Reload the workflow without losing structure/configuration.
-9. Validate common structural errors.
-10. Send the workflow definition to a backend boundary that can later compile it into LangGraph.
-
-At that point, the feature is no longer just a graph editor: it is the first usable version of a **Visual Programming Environment for Multi-Agent Systems**.
+The end goal is a system where users can **visually program multi-agent systems**, execute them, control them, and understand exactly what happened during execution without needing to operate the system through a terminal.
