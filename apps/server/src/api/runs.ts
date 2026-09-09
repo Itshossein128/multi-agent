@@ -41,6 +41,22 @@ export function createRunsRouter(executor = new RunExecutor(), resolveMemoryAcce
     error: redact(run.error), metadata: redact(run.metadata),
   })));
   });
+  app.get("/:runId/approvals", (c) => {
+    const runId = c.req.param("runId");
+    if (!executor.getStore().get(runId)) return c.json({ error: "Run not found" }, 404);
+    return c.json(executor.getStore().listApprovals(runId));
+  });
+  app.post("/:runId/approvals/:approvalId/resolve", async (c) => {
+    const runId = c.req.param("runId");
+    const approvalId = c.req.param("approvalId");
+    if (!executor.getStore().get(runId)) return c.json({ error: "Run not found" }, 404);
+    const body = await c.req.json<{ decision?: string; response?: string }>().catch(() => ({}) as { decision?: string; response?: string });
+    if (body.decision !== "approved" && body.decision !== "rejected") return c.json({ error: "decision must be 'approved' or 'rejected'" }, 400);
+    try {
+      executor.resolveApproval(runId, approvalId, { decision: body.decision, response: body.response });
+      return c.json({ ok: true }, 202);
+    } catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400); }
+  });
   app.get("/:runId/history", (c) => {
     const runId = c.req.param("runId");
     if (!executor.getStore().get(runId)) return c.json({ error: "Run not found" }, 404);

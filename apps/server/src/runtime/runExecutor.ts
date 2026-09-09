@@ -1,6 +1,9 @@
-import { nowIso, uid, validateAgent, type AgentTestRequest, type Run, type RunCreateRequest, type RunEvent } from "@multi-agent/types";
+import { Command, type BaseCheckpointSaver, MemorySaver } from "@langchain/langgraph";
+import { nowIso, uid, validateAgent, type AgentRecord, type AgentTestRequest, type ApprovalDecisionRequest, type ApprovalRequest, type Run, type RunCreateRequest, type RunEvent, type WorkflowDefinition } from "@multi-agent/types";
 import { LangGraphEventAdapter } from "../adapters/langGraphEventAdapter";
 import { compileWorkflow, UnsupportedPhase4NodeError, type AgentExecutionEvent, type CompileOptions } from "../compiler/workflowCompiler";
+
+type CompiledGraph = ReturnType<typeof compileWorkflow>;
 import { RunStore } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { AgentRuntime, mapAgentExecutionEvent } from "../../../../src/agents/runtime";
@@ -9,7 +12,16 @@ function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
   return mapAgentExecutionEvent(event as Parameters<typeof mapAgentExecutionEvent>[0], runId);
 }
 
+interface PausedContext {
+  workflow: WorkflowDefinition;
+  agents: AgentRecord[];
+  memoryAccess?: MemoryAccessContext;
+}
+
 export class RunExecutor {
+  private checkpointers = new Map<string, BaseCheckpointSaver>();
+  private pausedContext = new Map<string, PausedContext>();
+
   constructor(
     private readonly store = new RunStore(),
     private readonly agentRuntime: Pick<AgentRuntime, "execute"> = new AgentRuntime(),
@@ -51,15 +63,70 @@ export class RunExecutor {
     void this.execute(id, request, memoryAccess);
     return id;
   }
-  cancel(runId: string) { return this.store.cancel(runId); }
+  cancel(runId: string) {
+    const entry = this.store.get(runId);
+    if (!entry) return false;
+    if (entry.run.status === "waiting_for_human") {
+      // No in-flight promise is awaiting the abort signal — the stream already
+      // returned when the graph paused. Finalize cancellation directly.
+      for (const approval of this.store.listApprovals(runId)) {
+        if (approval.status === "requested") {
+          this.store.clearApprovalTimer(runId, approval.id);
+          this.store.updateApproval(runId, approval.id, { status: "cancelled", resolvedAt: nowIso() });
+        }
+      }
+      this.pausedContext.delete(runId);
+      this.checkpointers.delete(runId);
+      this.store.update(runId, { status: "cancelled", completedAt: nowIso() });
+      this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      return true;
+    }
+    return this.store.cancel(runId);
+  }
+
+  resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
+    const approval = this.store.getApproval(runId, approvalId);
+    if (!approval) throw new Error("Approval not found");
+    if (approval.status !== "requested") throw new Error("Approval has already been resolved.");
+    this.store.clearApprovalTimer(runId, approvalId);
+    const stamp = nowIso();
+    this.store.updateApproval(runId, approvalId, { status: decision.decision, resolvedAt: stamp, response: decision.response });
+    this.store.append(runId, { id: uid("event"), runId, type: "human_approval.resolved", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: decision.response } });
+    this.store.update(runId, { status: "running" });
+    void this.continueAfterApproval(runId, decision);
+  }
+
+  private async continueAfterApproval(runId: string, decision: ApprovalDecisionRequest) {
+    const context = this.pausedContext.get(runId);
+    const checkpointer = this.checkpointers.get(runId);
+    if (!context || !checkpointer) { this.fail(runId, new Error("Run is not resumable.")); return; }
+    this.pausedContext.delete(runId);
+    try {
+      const compiled = compileWorkflow(context.workflow, context.agents, {
+        runId,
+        runtime: this.agentRuntime,
+        checkpointer,
+        memoryAccess: context.memoryAccess,
+        signal: this.store.signal(runId),
+        workflowId: context.workflow.id,
+        onAgentEvent: (event) => { for (const runEvent of mapAgentEvents(event, runId)) this.store.append(runId, runEvent); },
+      });
+      await this.runGraph(runId, compiled, new Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess);
+    } catch (error) { this.fail(runId, error); }
+  }
+
   private async execute(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
     this.store.update(runId, { status: "running" });
-    const adapter = new LangGraphEventAdapter();
+    // Approvals require checkpointing to pause/resume — a per-run MemorySaver is
+    // retained across the initial run and any resume, unlike the ad-hoc default
+    // compileWorkflow would otherwise create fresh on every call.
+    const checkpointer = typeof this.checkpointer === "object" ? this.checkpointer : new MemorySaver();
+    this.checkpointers.set(runId, checkpointer);
     try {
       const compiled = compileWorkflow(request.workflow, request.agents, {
         runId,
         runtime: this.agentRuntime,
-        checkpointer: this.checkpointer,
+        checkpointer,
         memoryAccess,
         signal: this.store.signal(runId),
         workflowId: request.workflow.id,
@@ -69,28 +136,75 @@ export class RunExecutor {
           }
         },
       });
-      const stream = await compiled.graph.streamEvents({ input: request.input ?? {}, output: {}, memory: {} }, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal: this.store.signal(runId), configurable: { thread_id: runId } } as never);
-      let output: Record<string, unknown> | undefined;
-      for await (const raw of stream as AsyncIterable<unknown>) {
-        const rawRecord = raw as { method?: string; params?: { data?: unknown } };
-        if (rawRecord.method === "values" && rawRecord.params?.data && typeof rawRecord.params.data === "object") {
-          const values = rawRecord.params.data as { output?: Record<string, unknown> };
-          if (values.output) output = values.output;
-        }
-        // Agent lifecycle comes from AgentRuntime exactly once, not the graph task adapter.
-        for (const event of adapter.adapt(raw, runId, request.workflow, request.agents)) {
-          if (!event.type.startsWith("agent.")) this.store.append(runId, event);
-        }
+      await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess);
+    } catch (error) { this.fail(runId, error); }
+  }
+
+  private async runGraph(runId: string, compiled: CompiledGraph, input: unknown, workflow: WorkflowDefinition, agents: AgentRecord[], memoryAccess?: MemoryAccessContext) {
+    const adapter = new LangGraphEventAdapter();
+    const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal: this.store.signal(runId), configurable: { thread_id: runId } } as never);
+    let output: Record<string, unknown> | undefined;
+    for await (const raw of stream as AsyncIterable<unknown>) {
+      const rawRecord = raw as { method?: string; params?: { data?: unknown; node?: string } };
+      if (rawRecord.method === "updates" && rawRecord.params?.node === "__interrupt__") {
+        const values = (rawRecord.params.data as { values?: { id: string; value: unknown }[] } | undefined)?.values ?? [];
+        for (const item of values) this.handleApprovalRequested(runId, item);
+        continue;
       }
-      this.store.signal(runId)?.throwIfAborted();
-      this.store.update(runId, { status: "completed", completedAt: nowIso(), output });
-      this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const unsupported = error instanceof UnsupportedPhase4NodeError;
-      if (unsupported) this.store.append(runId, { id: uid("event"), runId, type: "node.failed", timestamp: nowIso(), nodeId: error.nodeId, sequence: 0, payload: { error: message } });
-      this.store.update(runId, { status: this.store.signal(runId)?.aborted ? "cancelled" : "failed", completedAt: nowIso(), error: message });
-      this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message } });
+      if (rawRecord.method === "values" && rawRecord.params?.data && typeof rawRecord.params.data === "object") {
+        const values = rawRecord.params.data as { output?: Record<string, unknown> };
+        if (values.output) output = values.output;
+      }
+      // Agent lifecycle comes from AgentRuntime exactly once, not the graph task adapter.
+      for (const event of adapter.adapt(raw, runId, workflow, agents)) {
+        if (!event.type.startsWith("agent.")) this.store.append(runId, event);
+      }
     }
+    this.store.signal(runId)?.throwIfAborted();
+    const state = await compiled.graph.getState({ configurable: { thread_id: runId } } as never);
+    if ((state as { next: string[] }).next.length > 0) {
+      // Paused at a human approval node — leave status as waiting_for_human and
+      // retain enough context to recompile and resume once it is resolved.
+      this.pausedContext.set(runId, { workflow, agents, memoryAccess });
+      return;
+    }
+    this.pausedContext.delete(runId);
+    this.checkpointers.delete(runId);
+    this.store.update(runId, { status: "completed", completedAt: nowIso(), output });
+    this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
+  }
+
+  private handleApprovalRequested(runId: string, item: { id: string; value: unknown }) {
+    const value = item.value as { nodeId: string; message: string; approvalType: "manual" | "timeout"; timeoutSeconds: number; context?: unknown };
+    const stamp = nowIso();
+    const request: ApprovalRequest = {
+      id: item.id,
+      runId,
+      nodeId: value.nodeId,
+      status: "requested",
+      message: value.message,
+      requestedAt: stamp,
+      context: value.context && typeof value.context === "object" ? value.context as Record<string, unknown> : undefined,
+      metadata: {},
+    };
+    this.store.addApproval(runId, request);
+    this.store.update(runId, { status: "waiting_for_human", currentNodeId: value.nodeId });
+    this.store.append(runId, { id: uid("event"), runId, type: "human_approval.requested", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id, message: value.message, approvalType: value.approvalType } });
+    if (value.approvalType === "timeout" && value.timeoutSeconds > 0) {
+      const timer = setTimeout(() => {
+        try { this.resolveApproval(runId, item.id, { decision: "approved" }); } catch { /* already resolved by a human in the meantime */ }
+      }, value.timeoutSeconds * 1000);
+      this.store.setApprovalTimer(runId, item.id, timer);
+    }
+  }
+
+  private fail(runId: string, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const unsupported = error instanceof UnsupportedPhase4NodeError;
+    if (unsupported) this.store.append(runId, { id: uid("event"), runId, type: "node.failed", timestamp: nowIso(), nodeId: error.nodeId, sequence: 0, payload: { error: message } });
+    this.pausedContext.delete(runId);
+    this.checkpointers.delete(runId);
+    this.store.update(runId, { status: this.store.signal(runId)?.aborted ? "cancelled" : "failed", completedAt: nowIso(), error: message });
+    this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message } });
   }
 }

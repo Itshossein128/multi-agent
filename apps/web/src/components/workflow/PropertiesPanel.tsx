@@ -599,10 +599,13 @@ function EdgeProperties({ edge }: { edge: WorkflowEdge }) {
   const sourceNode = definition.nodes.find((n) => n.id === edge.source);
   const targetNode = definition.nodes.find((n) => n.id === edge.target);
   const sourceIsCondition = sourceNode?.type === "condition";
+  const sourceIsApproval = sourceNode?.type === "approval";
   const branches =
     sourceIsCondition && sourceNode
       ? (sourceNode.config as ConditionNodeConfig).branches
-      : [];
+      : sourceIsApproval
+        ? [{ key: "approved", label: "Approved" }, { key: "rejected", label: "Rejected" }]
+        : [];
 
   return (
     <div className="space-y-4">

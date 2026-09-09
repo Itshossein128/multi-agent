@@ -1,5 +1,5 @@
-import { Annotation, END, START, StateGraph, MemorySaver, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { validateAgent, type AgentRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
+import { Annotation, END, START, StateGraph, MemorySaver, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
+import { validateAgent, type AgentRecord, type ApprovalNodeConfig, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
 import { AgentRuntime, AgentExecutionFailedError } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
@@ -78,7 +78,18 @@ export function compileWorkflow(
 
   for (const node of definition.nodes) {
     graph.addNode(node.id, async (state: RuntimeState) => {
-      if (node.type === "tool" || node.type === "approval") throw new UnsupportedPhase4NodeError(node.id, node);
+      if (node.type === "tool") throw new UnsupportedPhase4NodeError(node.id, node);
+      if (node.type === "approval") {
+        const config = node.config as ApprovalNodeConfig;
+        const resume = interrupt({
+          nodeId: node.id,
+          message: config.message,
+          approvalType: config.approvalType,
+          timeoutSeconds: config.timeoutSeconds,
+          context: state.lastValue ?? state.input,
+        }) as { decision?: string; response?: string } | undefined;
+        return { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
+      }
       if (node.type === "input") return { input: state.input, lastValue: state.input };
       if (node.type === "output") {
         return {
@@ -134,8 +145,10 @@ export function compileWorkflow(
     // Dynamic workflow node ids are not in the static StateGraph type map.
     (graph as { addEdge: (a: string, b: string) => void }).addEdge(edge.source, edge.target);
   }
-  for (const node of definition.nodes.filter((candidate) => candidate.type === "condition")) {
+  for (const node of definition.nodes.filter((candidate) => candidate.type === "condition" || candidate.type === "approval")) {
     const outgoing = definition.edges.filter((edge) => edge.source === node.id && edge.kind === "conditional");
+    // A plain (non-conditional) edge out of an approval node already routes via the addEdge loop above.
+    if (!outgoing.length) continue;
     const destinations: Record<string, string> = {};
     for (const edge of outgoing) destinations[edge.branchKey] = edge.target;
     (graph as { addConditionalEdges: (...args: unknown[]) => void }).addConditionalEdges(

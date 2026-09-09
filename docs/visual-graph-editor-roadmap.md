@@ -45,7 +45,7 @@ The web application is the **control plane**. LangGraph is the **execution engin
 - [x] Phase 4 — Execution Timeline & Live Execution
 - [x] Phase 5 — Agent Management & Configuration
 - [x] Phase 6 — Tool Management
-- [ ] Phase 7 — Human-in-the-Loop & Approval System
+- [x] Phase 7 — Human-in-the-Loop & Approval System
 - [ ] Phase 8 — Memory Management & Memory Explorer
 - [ ] Phase 9 — Persistence, Runs, History & Recovery
 - [ ] Phase 10 — Observability & Langfuse Integration
@@ -797,7 +797,9 @@ Tools are reusable, configurable, testable, assignable to agents, and safely cal
 
 ---
 
-# Phase 7 — Human-in-the-Loop & Approval System
+# Phase 7 — Human-in-the-Loop & Approval System ✅
+
+Implemented on LangGraph's dynamic `interrupt()`/`Command({resume})` primitives with a per-run in-memory checkpointer. See [Human approvals](phase-7-approvals.md) for the pause/resume mechanism, the fixed `"approved"`/`"rejected"` branch vocabulary, timeout auto-approve, and MVP limits (in-memory only; Dashboard/Task Board not wired to real runs).
 
 ## Goal
 

@@ -7,6 +7,7 @@
 
 export * from "./memory";
 export * from "./toolConfiguration";
+export * from "./approval";
 import type { ToolRecord } from "./toolConfiguration";
 
 export type WorkflowNodeType =

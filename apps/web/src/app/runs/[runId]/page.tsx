@@ -8,12 +8,14 @@ import { useRunStore } from "@/store/useRunStore";
 import { runService } from "@/services/runService";
 import { Button } from "@/components/ui/button";
 import { ExecutionTimeline } from "@/components/runs/ExecutionTimeline";
+import { ApprovalPanel } from "@/components/runs/ApprovalPanel";
 
 export default function RunPage({ params }: { params: Promise<{ runId: string }> }) {
   const { runId } = use(params);
   const router = useRouter();
   const run = useRunStore((state) => state.run);
   const events = useRunStore((state) => state.events);
+  const approvals = useRunStore((state) => state.approvals);
   const status = useRunStore((state) => state.streamStatus);
   const [definition, setDefinition] = useState<WorkflowDefinition | undefined>();
   const load = useRunStore((state) => state.load);
@@ -28,6 +30,7 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
       <div><h1 className="text-sm font-semibold">Run {runId}</h1><p className="text-[10px] uppercase tracking-widest text-zinc-500">{run?.status ?? status}</p></div>
       {run && ["queued", "running", "waiting_for_human"].includes(run.status) && <Button variant="destructive" size="sm" className="ml-auto" onClick={() => void runService.cancelRun(runId)}><Ban className="mr-1.5 h-3.5 w-3.5" />Cancel</Button>}
     </header>
+    {approvals.some((approval) => approval.status === "requested") && <div className="p-4 pb-0"><ApprovalPanel runId={runId} approvals={approvals} /></div>}
     <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[1.3fr_0.7fr]">
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4"><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Workflow execution</h2><RuntimeGraph definition={definition} nodeStatus={nodeStatus} /></section>
       <section className="min-h-0 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4"><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Event timeline</h2><ExecutionTimeline events={events} emptyMessage="Waiting for execution events…" /></section>

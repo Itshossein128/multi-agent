@@ -1,4 +1,4 @@
-import type { AgentRecord, Run, RunEvent, RunCreateRequest, RunCreateResponse, WorkflowDefinition } from "@multi-agent/types";
+import type { AgentRecord, ApprovalDecision, ApprovalRequest, Run, RunEvent, RunCreateRequest, RunCreateResponse, WorkflowDefinition } from "@multi-agent/types";
 
 const API_URL = process.env.NEXT_PUBLIC_EXECUTION_API_URL ?? "http://localhost:4000";
 
@@ -23,4 +23,8 @@ export const runService = {
   getRun(runId: string) { return request<Run>(`/runs/${encodeURIComponent(runId)}`); },
   cancelRun(runId: string) { return request<{ runId: string; status: string }>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }); },
   eventsUrl(runId: string, afterSequence = 0) { return `${API_URL}/runs/${encodeURIComponent(runId)}/events?sequence=${afterSequence}`; },
+  getApprovals(runId: string) { return request<ApprovalRequest[]>(`/runs/${encodeURIComponent(runId)}/approvals`); },
+  resolveApproval(runId: string, approvalId: string, decision: ApprovalDecision, response?: string) {
+    return request<{ ok: true }>(`/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}/resolve`, { method: "POST", body: JSON.stringify({ decision, response }) });
+  },
 };

@@ -38,6 +38,7 @@ exports.removeToolNodes = removeToolNodes;
 exports.migrateWorkflowToolNodes = migrateWorkflowToolNodes;
 __exportStar(require("./memory"), exports);
 __exportStar(require("./toolConfiguration"), exports);
+__exportStar(require("./approval"), exports);
 function createApiBackend(provider = "openai", model = "gpt-4o") {
     return { type: "api", provider, model };
 }

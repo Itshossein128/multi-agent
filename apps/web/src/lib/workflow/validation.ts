@@ -126,9 +126,17 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
     }
     if (edge.kind === "conditional") {
       const sourceNode = nodesById.get(edge.source);
-      if (sourceNode && sourceNode.type !== "condition") {
+      if (sourceNode && sourceNode.type !== "condition" && sourceNode.type !== "approval") {
         issues.push(
-          warning("Conditional edges should originate from a Condition node", {
+          warning("Conditional edges should originate from a Condition or Approval node", {
+            edgeId: edge.id,
+            nodeId: edge.source,
+          })
+        );
+      }
+      if (sourceNode?.type === "approval" && edge.branchKey && !["approved", "rejected"].includes(edge.branchKey)) {
+        issues.push(
+          warning('Approval branch keys must be "approved" or "rejected"', {
             edgeId: edge.id,
             nodeId: edge.source,
           })
