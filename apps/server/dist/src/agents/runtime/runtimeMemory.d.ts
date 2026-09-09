@@ -1,11 +1,13 @@
 import type { RuntimeMemoryDependencies } from "../../memory/contracts";
 import type { AgentExecutionEvent, AgentExecutionInput } from "./types";
+import { ExecutionTelemetry } from "../../observability/telemetry";
 export declare function memoryEvent(input: AgentExecutionInput, type: "memory.read" | "memory.write", payload: Record<string, unknown>): AgentExecutionEvent;
 /** Owns one node's memory lifecycle; no authority is inferred from agent/browser configuration. */
 export declare class RuntimeMemory {
     private readonly input;
     private readonly deps?;
-    constructor(input: AgentExecutionInput, deps?: RuntimeMemoryDependencies | undefined);
+    private readonly telemetry;
+    constructor(input: AgentExecutionInput, deps?: RuntimeMemoryDependencies | undefined, telemetry?: ExecutionTelemetry);
     private get config();
     get enabled(): boolean | undefined;
     private failure;

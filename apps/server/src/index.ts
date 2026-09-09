@@ -13,6 +13,7 @@ import { RunExecutor } from "./runtime/runExecutor";
 import { InMemoryRunStore, PostgresRunStore } from "./runtime/runStore";
 import { recoverInterruptedRuns } from "./runtime/recovery";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
+import { createObservabilityRuntime } from "./observability/bootstrap";
 
 async function createDurableCheckpointer(connectionString: string): Promise<(BaseCheckpointSaver & { end?: () => Promise<void> }) | undefined> {
   try {
@@ -27,6 +28,7 @@ async function createDurableCheckpointer(connectionString: string): Promise<(Bas
 }
 
 async function main() {
+  const observability = createObservabilityRuntime();
   const app = new Hono();
   const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3000" : "http://localhost:3000,http://localhost:3001")).split(",").map((origin) => origin.trim());
   app.use("/*", async (c, next) => {
@@ -56,8 +58,9 @@ async function main() {
 
   const executor = new RunExecutor(
     runStore,
-    new AgentRuntime(undefined, memory.runtime),
+    new AgentRuntime(undefined, memory.runtime, observability.telemetry),
     checkpointer,
+    observability.telemetry,
   );
   const recovery = recoverInterruptedRuns(executor, runStore, checkpointer);
   if (recovery.restored.length || recovery.failed.length) {
@@ -73,7 +76,7 @@ async function main() {
   const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));
   const shutdown = () => {
     server.close(() => {
-      void Promise.all([memory.close(), studio.close()]).then(
+      void Promise.all([memory.close(), studio.close(), observability.shutdown()]).then(
         () => process.exit(0),
         () => { console.error("Shutdown failed."); process.exit(1); },
       );

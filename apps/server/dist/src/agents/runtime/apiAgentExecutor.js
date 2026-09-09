@@ -4,14 +4,17 @@ exports.ApiAgentExecutor = void 0;
 const types_1 = require("@multi-agent/types");
 const errors_1 = require("./errors");
 const llmFactory_1 = require("../core/llmFactory");
+const telemetry_1 = require("../../observability/telemetry");
 /**
  * Wraps the existing API/LLM provider stack behind AgentExecutor.
  * Credentials remain an env/runtime concern — never taken from the agent record.
  */
 class ApiAgentExecutor {
     getFactory;
-    constructor(getFactory = loadLlmFactory) {
+    telemetry;
+    constructor(getFactory = loadLlmFactory, telemetry = telemetry_1.ExecutionTelemetry.disabled()) {
         this.getFactory = getFactory;
+        this.telemetry = telemetry;
     }
     async *execute(input) {
         const { agent, runId, nodeId } = input;
@@ -28,13 +31,15 @@ class ApiAgentExecutor {
                 settings: agent.backend.settings,
             });
             const history = (input.context?.history ?? []);
-            const result = await model.invoke([
+            const messages = [
                 { role: "system", content: systemPromptFor(agent) },
                 ...history.flatMap((entry) => [{ role: "user", content: serializeInput(entry.input) }, { role: "assistant", content: serializeInput(entry.output) }]),
                 ...(typeof input.context?.memoryContext === "string" && input.context.memoryContext
                     ? [{ role: "user", content: input.context.memoryContext }] : []),
                 { role: "user", content: serializeInput(input.input) },
-            ], { signal: input.signal });
+            ];
+            const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };
+            const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
             const content = result.content;
             yield baseEvent("agent.output", input, { content });
             yield baseEvent("agent.completed", input, { content });

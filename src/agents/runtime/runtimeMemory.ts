@@ -3,6 +3,7 @@ import { nowIso, type MemoryNamespace, type MemorySearchResult } from "@multi-ag
 import type { MemoryContextFormatter, RuntimeMemoryDependencies } from "../../memory/contracts";
 import type { AgentExecutionEvent, AgentExecutionInput } from "./types";
 import { boundedInteger, boundText } from "./shortTermMemory";
+import { ExecutionTelemetry } from "../../observability/telemetry";
 
 const sameNamespace = (a: MemoryNamespace, b: MemoryNamespace) => a.scope === b.scope && a.id === b.id;
 export function memoryEvent(input: AgentExecutionInput, type: "memory.read" | "memory.write", payload: Record<string, unknown>): AgentExecutionEvent {
@@ -11,7 +12,7 @@ export function memoryEvent(input: AgentExecutionInput, type: "memory.read" | "m
 
 /** Owns one node's memory lifecycle; no authority is inferred from agent/browser configuration. */
 export class RuntimeMemory {
-  constructor(private readonly input: AgentExecutionInput, private readonly deps?: RuntimeMemoryDependencies) {}
+  constructor(private readonly input: AgentExecutionInput, private readonly deps?: RuntimeMemoryDependencies, private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled()) {}
   private get config() { return this.input.agent.memory?.longTerm; }
   get enabled() { return this.input.agent.memory?.enabled && this.config?.enabled; }
   private failure(type: "memory.read" | "memory.write", reason: string): AgentExecutionEvent {
@@ -66,10 +67,11 @@ export class RuntimeMemory {
       const contextBudget = Math.max(0, maxTokens - Buffer.byteLength(prefix));
       const limit = boundedInteger(config.retrieval?.maxMemories, 5, 100);
       const start = Date.now();
-      const result = await this.deps!.service.recall({
+      const recallInput = {
         text: boundText(typeof this.input.input === "string" ? this.input.input : JSON.stringify(this.input.input ?? {}), 16000),
         namespaces, kinds: config.kinds, maxTokens: contextBudget, limit, minScore: config.retrieval?.minScore,
-      }, access);
+      };
+      const result = await this.telemetry.withMemory("memory.retrieve", { runId: this.input.runId, workflowId: this.input.workflowId, nodeId: this.input.nodeId, agentId: this.input.agent.id, namespaceCount: namespaces.length, input: recallInput }, () => this.deps!.service.recall(recallInput, access));
       this.input.signal?.throwIfAborted();
       // Defense in depth: never format a result outside the requested, granted namespaces.
       const selected = { ...result, results: result.results.filter(r => r.memory.tenantId === access.tenantId && namespaces.some(ns => sameNamespace(ns, r.memory.namespace))).slice(0, limit) };
@@ -117,8 +119,9 @@ export class RuntimeMemory {
         if (!decision.remember) continue;
         this.input.signal?.throwIfAborted();
         const identity = createHash("sha256").update(JSON.stringify([access.tenantId, runId, nodeId, agent.id, namespace.scope, namespace.id, candidate.kind, candidate.content.trim().replace(/\s+/g, " ")])).digest("hex");
-        const result = await this.deps!.service.remember({ ...candidate, namespace, importance: decision.importance ?? candidate.importance,
-          idempotencyKey: `runtime:${identity}`, source: { ...candidate.source, runId, nodeId, agentId: agent.id, workflowId } }, access);
+        const rememberInput = { ...candidate, namespace, importance: decision.importance ?? candidate.importance,
+          idempotencyKey: `runtime:${identity}`, source: { ...candidate.source, runId, nodeId, agentId: agent.id, workflowId } };
+        const result = await this.telemetry.withMemory("memory.write", { runId, workflowId, nodeId, agentId: agent.id, candidateKind: candidate.kind, namespace, input: { contentLength: candidate.content.length } }, () => this.deps!.service.remember(rememberInput, access));
         events.push(memoryEvent(this.input, "memory.write", { status: "completed", memoryIds: [result.memory.id], count: result.action === "duplicate" ? 0 : 1, action: result.action, candidateCount: candidates.length }));
         this.input.signal?.throwIfAborted();
       }

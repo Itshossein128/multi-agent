@@ -2,6 +2,7 @@ import { nowIso, type AgentRecord, type AgentModelSettings } from "@multi-agent/
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
 import { llmFactory } from "../core/llmFactory";
+import { ExecutionTelemetry } from "../../observability/telemetry";
 
 type ChatModel = {
   invoke: (messages: unknown[], options?: { signal?: AbortSignal }) => Promise<{ content: unknown }>;
@@ -16,7 +17,7 @@ type LLMFactoryLike = {
  * Credentials remain an env/runtime concern — never taken from the agent record.
  */
 export class ApiAgentExecutor implements AgentExecutor {
-  constructor(private readonly getFactory: () => LLMFactoryLike = loadLlmFactory) { }
+  constructor(private readonly getFactory: () => LLMFactoryLike = loadLlmFactory, private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled()) { }
 
   async *execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent> {
     const { agent, runId, nodeId } = input;
@@ -37,13 +38,15 @@ export class ApiAgentExecutor implements AgentExecutor {
         settings: agent.backend.settings,
       });
       const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
-      const result = await model.invoke([
+      const messages = [
         { role: "system", content: systemPromptFor(agent) },
         ...history.flatMap((entry) => [{ role: "user", content: serializeInput(entry.input) }, { role: "assistant", content: serializeInput(entry.output) }]),
         ...(typeof input.context?.memoryContext === "string" && input.context.memoryContext
           ? [{ role: "user", content: input.context.memoryContext }] : []),
         { role: "user", content: serializeInput(input.input) },
-      ], { signal: input.signal });
+      ];
+      const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };
+      const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
       const content = result.content;
       yield baseEvent("agent.output", input, { content });
       yield baseEvent("agent.completed", input, { content });

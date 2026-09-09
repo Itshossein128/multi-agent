@@ -1,5 +1,6 @@
 import { type AgentModelSettings } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
+import { ExecutionTelemetry } from "../../observability/telemetry";
 type ChatModel = {
     invoke: (messages: unknown[], options?: {
         signal?: AbortSignal;
@@ -19,7 +20,8 @@ type LLMFactoryLike = {
  */
 export declare class ApiAgentExecutor implements AgentExecutor {
     private readonly getFactory;
-    constructor(getFactory?: () => LLMFactoryLike);
+    private readonly telemetry;
+    constructor(getFactory?: () => LLMFactoryLike, telemetry?: ExecutionTelemetry);
     execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent>;
 }
 export {};

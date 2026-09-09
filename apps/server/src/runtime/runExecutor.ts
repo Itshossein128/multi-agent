@@ -7,6 +7,10 @@ type CompiledGraph = ReturnType<typeof compileWorkflow>;
 import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { AgentRuntime, mapAgentExecutionEvent } from "../../../../src/agents/runtime";
+import { ExecutionTelemetry } from "../../../../src/observability/telemetry";
+import { validateWorkflow } from "../compiler/validation";
+import { runtimeGuardrailsFromEnvironment, type RuntimeGuardrails } from "./guardrails";
+import { log } from "../logging";
 
 function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
   return mapAgentExecutionEvent(event as Parameters<typeof mapAgentExecutionEvent>[0], runId);
@@ -26,6 +30,8 @@ export class RunExecutor {
     private readonly store: RunStoreContract = new InMemoryRunStore(),
     private readonly agentRuntime: Pick<AgentRuntime, "execute"> = new AgentRuntime(),
     private readonly checkpointer?: CompileOptions["checkpointer"],
+    private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
+    private readonly guardrails: RuntimeGuardrails = runtimeGuardrailsFromEnvironment(),
   ) { }
   getStore() { return this.store; }
   /** Restore in-memory pause maps after a durable hydrate so waiting runs can resume. */
@@ -62,9 +68,13 @@ export class RunExecutor {
     }
   }
   start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
+    const issues = validateWorkflow(request.workflow, request.agents, this.guardrails);
+    const errors = issues.filter(issue => issue.level === "error");
+    if (errors.length) throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
     const id = uid("run"); const stamp = nowIso();
     const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: {} };
     this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents });
+    log.info("run.started", { runId: id, workflowId: request.workflow.id, taskId: request.taskId });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     void this.execute(id, request, memoryAccess);
     return id;
@@ -123,7 +133,15 @@ export class RunExecutor {
   }
 
   private async execute(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
+    if (this.telemetry.enabled) {
+      const traceId = await this.telemetry.traceIdForRun(runId);
+      this.store.update(runId, { metadata: { ...(this.store.get(runId)?.run.metadata ?? {}), observability: { provider: "langfuse", traceId } } });
+    }
+    return this.telemetry.withWorkflow({ runId, workflowId: request.workflow.id, taskId: request.taskId, input: request.input }, () => this.executeWorkflow(runId, request, memoryAccess));
+  }
+  private async executeWorkflow(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
     this.store.update(runId, { status: "running" });
+    const timeout = setTimeout(() => this.store.cancel(runId), this.guardrails.maxRunDurationMs);
     // Approvals require checkpointing to pause/resume — a per-run MemorySaver is
     // retained across the initial run and any resume, unlike the ad-hoc default
     // compileWorkflow would otherwise create fresh on every call.
@@ -144,12 +162,12 @@ export class RunExecutor {
         },
       });
       await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess);
-    } catch (error) { this.fail(runId, error); }
+    } catch (error) { this.fail(runId, error); } finally { clearTimeout(timeout); }
   }
 
   private async runGraph(runId: string, compiled: CompiledGraph, input: unknown, workflow: WorkflowDefinition, agents: AgentRecord[], memoryAccess?: MemoryAccessContext) {
     const adapter = new LangGraphEventAdapter();
-    const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal: this.store.signal(runId), configurable: { thread_id: runId } } as never);
+    const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal: this.store.signal(runId), recursionLimit: this.guardrails.recursionLimit, configurable: { thread_id: runId } } as never);
     let output: Record<string, unknown> | undefined;
     for await (const raw of stream as AsyncIterable<unknown>) {
       const rawRecord = raw as { method?: string; params?: { data?: unknown; node?: string } };
@@ -233,5 +251,6 @@ export class RunExecutor {
     this.store.setPausedContext?.(runId, null);
     this.store.update(runId, { status: this.store.signal(runId)?.aborted ? "cancelled" : "failed", completedAt: nowIso(), error: message });
     this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message } });
+    log.error("run.failed", { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message });
   }
 }

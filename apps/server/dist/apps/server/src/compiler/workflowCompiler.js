@@ -39,8 +39,19 @@ function compileWorkflow(definition, agents, options = {}) {
     const runtime = options.runtime ?? new runtime_1.AgentRuntime();
     for (const node of definition.nodes) {
         graph.addNode(node.id, async (state) => {
-            if (node.type === "tool" || node.type === "approval")
+            if (node.type === "tool")
                 throw new UnsupportedPhase4NodeError(node.id, node);
+            if (node.type === "approval") {
+                const config = node.config;
+                const resume = (0, langgraph_1.interrupt)({
+                    nodeId: node.id,
+                    message: config.message,
+                    approvalType: config.approvalType,
+                    timeoutSeconds: config.timeoutSeconds,
+                    context: state.lastValue ?? state.input,
+                });
+                return { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
+            }
             if (node.type === "input")
                 return { input: state.input, lastValue: state.input };
             if (node.type === "output") {
@@ -97,8 +108,11 @@ function compileWorkflow(definition, agents, options = {}) {
         // Dynamic workflow node ids are not in the static StateGraph type map.
         graph.addEdge(edge.source, edge.target);
     }
-    for (const node of definition.nodes.filter((candidate) => candidate.type === "condition")) {
+    for (const node of definition.nodes.filter((candidate) => candidate.type === "condition" || candidate.type === "approval")) {
         const outgoing = definition.edges.filter((edge) => edge.source === node.id && edge.kind === "conditional");
+        // A plain (non-conditional) edge out of an approval node already routes via the addEdge loop above.
+        if (!outgoing.length)
+            continue;
         const destinations = {};
         for (const edge of outgoing)
             destinations[edge.branchKey] = edge.target;

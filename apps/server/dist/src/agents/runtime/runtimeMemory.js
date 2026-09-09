@@ -5,6 +5,7 @@ exports.memoryEvent = memoryEvent;
 const node_crypto_1 = require("node:crypto");
 const types_1 = require("@multi-agent/types");
 const shortTermMemory_1 = require("./shortTermMemory");
+const telemetry_1 = require("../../observability/telemetry");
 const sameNamespace = (a, b) => a.scope === b.scope && a.id === b.id;
 function memoryEvent(input, type, payload) {
     return { type, timestamp: (0, types_1.nowIso)(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { tier: "long_term", ...payload } };
@@ -13,9 +14,11 @@ function memoryEvent(input, type, payload) {
 class RuntimeMemory {
     input;
     deps;
-    constructor(input, deps) {
+    telemetry;
+    constructor(input, deps, telemetry = telemetry_1.ExecutionTelemetry.disabled()) {
         this.input = input;
         this.deps = deps;
+        this.telemetry = telemetry;
     }
     get config() { return this.input.agent.memory?.longTerm; }
     get enabled() { return this.input.agent.memory?.enabled && this.config?.enabled; }
@@ -76,10 +79,11 @@ class RuntimeMemory {
             const contextBudget = Math.max(0, maxTokens - Buffer.byteLength(prefix));
             const limit = (0, shortTermMemory_1.boundedInteger)(config.retrieval?.maxMemories, 5, 100);
             const start = Date.now();
-            const result = await this.deps.service.recall({
+            const recallInput = {
                 text: (0, shortTermMemory_1.boundText)(typeof this.input.input === "string" ? this.input.input : JSON.stringify(this.input.input ?? {}), 16000),
                 namespaces, kinds: config.kinds, maxTokens: contextBudget, limit, minScore: config.retrieval?.minScore,
-            }, access);
+            };
+            const result = await this.telemetry.withMemory("memory.retrieve", { runId: this.input.runId, workflowId: this.input.workflowId, nodeId: this.input.nodeId, agentId: this.input.agent.id, namespaceCount: namespaces.length, input: recallInput }, () => this.deps.service.recall(recallInput, access));
             this.input.signal?.throwIfAborted();
             // Defense in depth: never format a result outside the requested, granted namespaces.
             const selected = { ...result, results: result.results.filter(r => r.memory.tenantId === access.tenantId && namespaces.some(ns => sameNamespace(ns, r.memory.namespace))).slice(0, limit) };
@@ -131,8 +135,9 @@ class RuntimeMemory {
                     continue;
                 this.input.signal?.throwIfAborted();
                 const identity = (0, node_crypto_1.createHash)("sha256").update(JSON.stringify([access.tenantId, runId, nodeId, agent.id, namespace.scope, namespace.id, candidate.kind, candidate.content.trim().replace(/\s+/g, " ")])).digest("hex");
-                const result = await this.deps.service.remember({ ...candidate, namespace, importance: decision.importance ?? candidate.importance,
-                    idempotencyKey: `runtime:${identity}`, source: { ...candidate.source, runId, nodeId, agentId: agent.id, workflowId } }, access);
+                const rememberInput = { ...candidate, namespace, importance: decision.importance ?? candidate.importance,
+                    idempotencyKey: `runtime:${identity}`, source: { ...candidate.source, runId, nodeId, agentId: agent.id, workflowId } };
+                const result = await this.telemetry.withMemory("memory.write", { runId, workflowId, nodeId, agentId: agent.id, candidateKind: candidate.kind, namespace, input: { contentLength: candidate.content.length } }, () => this.deps.service.remember(rememberInput, access));
                 events.push(memoryEvent(this.input, "memory.write", { status: "completed", memoryIds: [result.memory.id], count: result.action === "duplicate" ? 0 : 1, action: result.action, candidateCount: candidates.length }));
                 this.input.signal?.throwIfAborted();
             }

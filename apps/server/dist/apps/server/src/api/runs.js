@@ -43,12 +43,53 @@ function createRunsRouter(executor = new runExecutor_1.RunExecutor(), resolveMem
         }
     });
     app.get("/", async (c) => {
-        const runs = executor.getStore().list(c.req.query("agentId"));
+        const filters = {
+            agentId: c.req.query("agentId") || undefined,
+            workflowId: c.req.query("workflowId") || undefined,
+            taskId: c.req.query("taskId") || undefined,
+            status: c.req.query("status"),
+            from: c.req.query("from") || undefined,
+            to: c.req.query("to") || undefined,
+        };
+        const runs = executor.getStore().list(filters);
         const allowed = await Promise.all(runs.map((run) => canRead(run.id, c.req.raw)));
         return c.json(runs.filter((_, index) => allowed[index]).map((run) => ({
             ...run, input: undefined, output: undefined,
             error: (0, langGraphEventAdapter_1.redact)(run.error), metadata: (0, langGraphEventAdapter_1.redact)(run.metadata),
         })));
+    });
+    app.get("/:runId/definition", (c) => {
+        const runId = c.req.param("runId");
+        const entry = executor.getStore().get(runId);
+        if (!entry)
+            return c.json({ error: "Run not found" }, 404);
+        const workflow = executor.getStore().getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+        const agents = entry.agentsSnapshot;
+        if (!workflow)
+            return c.json({ error: "Run definition snapshot not available" }, 404);
+        return c.json({ workflow, agents: agents ?? [] });
+    });
+    app.get("/:runId/approvals", (c) => {
+        const runId = c.req.param("runId");
+        if (!executor.getStore().get(runId))
+            return c.json({ error: "Run not found" }, 404);
+        return c.json(executor.getStore().listApprovals(runId));
+    });
+    app.post("/:runId/approvals/:approvalId/resolve", async (c) => {
+        const runId = c.req.param("runId");
+        const approvalId = c.req.param("approvalId");
+        if (!executor.getStore().get(runId))
+            return c.json({ error: "Run not found" }, 404);
+        const body = await c.req.json().catch(() => ({}));
+        if (body.decision !== "approved" && body.decision !== "rejected")
+            return c.json({ error: "decision must be 'approved' or 'rejected'" }, 400);
+        try {
+            executor.resolveApproval(runId, approvalId, { decision: body.decision, response: body.response });
+            return c.json({ ok: true }, 202);
+        }
+        catch (error) {
+            return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+        }
     });
     app.get("/:runId/history", (c) => {
         const runId = c.req.param("runId");

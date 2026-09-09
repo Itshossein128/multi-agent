@@ -1,13 +1,19 @@
-import { AgentExecutorFactory, agentExecutorFactory } from "./agentExecutorFactory";
+import { AgentExecutorFactory } from "./agentExecutorFactory";
 import type { AgentExecutionEvent, AgentExecutionInput } from "./types";
 import type { RuntimeMemoryDependencies } from "../../memory/contracts";
 import { validateAgent, nowIso } from "@multi-agent/types";
 import { RuntimeMemory } from "./runtimeMemory";
 import { boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
+import { ExecutionTelemetry } from "../../observability/telemetry";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
-  constructor(private readonly executorFactory: AgentExecutorFactory = agentExecutorFactory, private readonly memoryDependencies?: RuntimeMemoryDependencies) {}
+  private readonly executorFactory: Pick<AgentExecutorFactory, "create">;
+  private readonly maxExecutionMs: number;
+  constructor(executorFactory: Pick<AgentExecutorFactory, "create"> | undefined = undefined, private readonly memoryDependencies?: RuntimeMemoryDependencies, readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(), maxExecutionMs = configuredAgentTimeout()) {
+    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry);
+    this.maxExecutionMs = maxExecutionMs;
+  }
 
   async *execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent> {
     const errors = validateAgent(input.agent);
@@ -16,7 +22,9 @@ export class AgentRuntime {
       yield { type: "agent.failed", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: errors.join(" ") } };
       throw new Error(errors.join(" "));
     }
-    input.signal?.throwIfAborted();
+    const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(this.maxExecutionMs)]) : AbortSignal.timeout(this.maxExecutionMs);
+    signal.throwIfAborted();
+    input = { ...input, signal };
     const memory = input.agent.memory;
     const shortEnabled = memory?.enabled && memory.shortTerm?.enabled !== false;
     const key = historyKey(input);
@@ -28,7 +36,7 @@ export class AgentRuntime {
     const history = shortEnabled && memory?.mode !== "write"
       ? boundHistory({ entries: prior, maxEntries, maxTokens }).entries.map(({ input, output }) => ({ input, output })) : [];
     if (shortEnabled && memory?.mode !== "write") yield { type: "memory.read", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: history.length, scope: memory?.scope, tier: "short_term" } };
-    const longTerm = new RuntimeMemory(input, this.memoryDependencies);
+    const longTerm = new RuntimeMemory(input, this.memoryDependencies, this.telemetry);
     // Caller context cannot smuggle memory into the executor when long-term access is disabled/denied.
     let memoryContext: string | undefined;
     if (longTerm.enabled) {
@@ -77,4 +85,9 @@ export class AgentRuntime {
       yield { type: "memory.write", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: Math.min(prior.length + 1, maxEntries), scope: memory?.scope, tier: "short_term" } };
     }
   }
+}
+
+function configuredAgentTimeout() {
+  const value = Number(process.env.AGENT_MAX_DURATION_MS ?? 120_000);
+  return Number.isInteger(value) && value >= 1_000 && value <= 60 * 60_000 ? value : 120_000;
 }

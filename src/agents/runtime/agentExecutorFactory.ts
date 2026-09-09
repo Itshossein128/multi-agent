@@ -8,11 +8,13 @@ import {
   OllamaLocalExecutor,
 } from "./notImplementedExecutor";
 import type { AgentExecutor } from "./types";
+import { ExecutionTelemetry } from "../../observability/telemetry";
 
 export class AgentExecutorFactory {
+  constructor(private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled()) {}
   create(backend: AgentBackend): AgentExecutor {
     if (backend.type === "api") {
-      return new ApiAgentExecutor();
+      return new ApiAgentExecutor(undefined, this.telemetry);
     }
 
     if (backend.type === "cli") {

@@ -3,10 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.agentExecutorFactory = exports.AgentExecutorFactory = void 0;
 const apiAgentExecutor_1 = require("./apiAgentExecutor");
 const notImplementedExecutor_1 = require("./notImplementedExecutor");
+const telemetry_1 = require("../../observability/telemetry");
 class AgentExecutorFactory {
+    telemetry;
+    constructor(telemetry = telemetry_1.ExecutionTelemetry.disabled()) {
+        this.telemetry = telemetry;
+    }
     create(backend) {
         if (backend.type === "api") {
-            return new apiAgentExecutor_1.ApiAgentExecutor();
+            return new apiAgentExecutor_1.ApiAgentExecutor(undefined, this.telemetry);
         }
         if (backend.type === "cli") {
             switch (backend.provider) {
