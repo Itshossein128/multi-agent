@@ -31,6 +31,8 @@ export function WorkflowSwitcher() {
       catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setBusy(false); }
     }}>New workflow</Button>
     <Button variant="ghost" onClick={() => { if (canLeave()) router.push("/org/agents"); }}>Agent registry</Button>
+    <Button variant="ghost" onClick={() => { if (canLeave()) router.push("/org/tools"); }}>Tool registry</Button>
+    <Button variant="ghost" onClick={() => { if (canLeave()) router.push("/org/memory"); }}>Memory explorer</Button>
     {(error || workflows.error) && <p role="alert" className="text-red-300">{error || workflows.error?.message}</p>}
   </div>;
 }

@@ -46,7 +46,7 @@ The web application is the **control plane**. LangGraph is the **execution engin
 - [x] Phase 5 — Agent Management & Configuration
 - [x] Phase 6 — Tool Management
 - [x] Phase 7 — Human-in-the-Loop & Approval System
-- [ ] Phase 8 — Memory Management & Memory Explorer
+- [x] Phase 8 — Memory Management & Memory Explorer
 - [ ] Phase 9 — Persistence, Runs, History & Recovery
 - [ ] Phase 10 — Observability & Langfuse Integration
 - [ ] Phase 11 — Validation, Safety & Runtime Guardrails
@@ -881,7 +881,9 @@ A workflow can pause safely, persist its state, request a human decision, and re
 
 ---
 
-# Phase 8 — Memory Management & Memory Explorer
+# Phase 8 — Memory Management & Memory Explorer ✅
+
+The backend (storage, retrieval, authorization, runtime integration) was already implemented — see [Phase 6 Memory](phase-6-memory.md) (numbered against an earlier internal plan; it is this roadmap's Phase 8 backend). This pass adds the piece that document explicitly deferred: the browser-side [Memory Explorer](phase-8-memory-explorer.md) — list/search/inspect/delete against the real authenticated API, plus a minimal bearer-token entry point since no browser identity system exists yet.
 
 ## Goal
 
