@@ -1,14 +1,8 @@
 /**
- * Server-side task board store.
- *
- * Tasks are persisted to `.taskboard.json` next to the web app so they
- * survive dev-server reloads / restarts, and are kept in sync with the
- * shared runtime tracker (agent workload states + execution history)
- * used by the dashboard.
+ * Task board store backed by the Studio persistence API on the execution server.
+ * Keeps dashboard runtimeTracker sync as a side effect of board mutations.
  */
 
-import fs from "node:fs/promises";
-import path from "node:path";
 import { runtimeTracker } from "@/lib/runtimeTracker";
 import {
   BoardAgent,
@@ -21,13 +15,11 @@ import {
   hasDependencyCycle,
 } from "@/lib/taskStatus";
 
-const DATA_FILE = path.join(process.cwd(), ".taskboard.json");
-
+const API_URL = process.env.NEXT_PUBLIC_EXECUTION_API_URL ?? process.env.EXECUTION_API_URL ?? "http://localhost:4000";
 const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 2000;
 const OUTPUT_MAX = 4000;
 
-/** Error carrying an HTTP status code and optional dependency blockers. */
 export class TaskActionError extends Error {
   public statusCode: number;
   public blockedBy: { id: string; title: string; status: TaskStatus }[];
@@ -54,39 +46,31 @@ function randomId(): string {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+async function studioRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}/studio${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new TaskActionError(body.error ?? `Studio task request failed (${response.status})`, { statusCode: response.status });
+  }
+  return response.json() as Promise<T>;
+}
+
 async function loadTasks(): Promise<Task[]> {
   try {
-    const raw = await fs.readFile(DATA_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    // Defensive normalization so a corrupt/partial file never breaks the board.
-    return parsed
-      .filter((t): t is Task => Boolean(t && typeof t.id === "string"))
-      .map((t) => ({
-        ...t,
-        description: t.description ?? "",
-        priority: t.priority ?? "medium",
-        status: t.status ?? "todo",
-        assignedAgent: t.assignedAgent ?? null,
-        dependencies: Array.isArray(t.dependencies) ? t.dependencies : [],
-        output: t.output ?? null,
-        retryCount: t.retryCount ?? 0,
-        paused: Boolean(t.paused),
-        createdAt: t.createdAt ?? nowIso(),
-        updatedAt: t.updatedAt ?? t.createdAt ?? nowIso(),
-      }));
+    return await studioRequest<Task[]>("/tasks");
   } catch {
-    // First run or unreadable file: start with an empty board.
     return [];
   }
 }
 
 async function saveTasks(tasks: Task[]): Promise<void> {
-  await fs.writeFile(DATA_FILE, JSON.stringify(tasks, null, 2), "utf8");
+  await studioRequest("/tasks", { method: "PUT", body: JSON.stringify(tasks) });
 }
 
-// Serialize all read-modify-write cycles so concurrent mutations cannot
-// clobber each other between load and save.
 let writeChain: Promise<unknown> = Promise.resolve();
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
   const run = writeChain.then(fn, fn);
@@ -118,7 +102,6 @@ function validateDependencies(tasks: Task[], taskId: string, dependencies: strin
   return unique;
 }
 
-/** Keep the dashboard's agent workload states in sync with the board. */
 function syncAgentActivity(tasks: Task[]): void {
   const idleMessages: Record<string, string> = {
     "agent-orchestrator": "Listening for workflow requests & routing to LangGraph nodes",
@@ -149,6 +132,7 @@ function recordCompletion(task: Task, status: "COMPLETED" | "FAILED"): void {
 
 export async function getBoardData(): Promise<TaskBoardData> {
   const tasks = await loadTasks();
+  syncAgentActivity(tasks);
   const agents: BoardAgent[] = runtimeTracker.agents.map((a) => ({
     id: a.id,
     name: a.name,
@@ -210,7 +194,6 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
   });
 }
 
-// Tasks may start in any workflow stage except a terminal one.
 function canCreateInStatus(status: TaskStatus): boolean {
   return status !== "done" && status !== "failed";
 }
@@ -353,7 +336,6 @@ export async function setTaskPaused(taskId: string, paused: boolean): Promise<Ta
   });
 }
 
-/** Cancel removes the task and cleans up references from other tasks. */
 export async function cancelTask(taskId: string): Promise<{ id: string }> {
   return serialized(async () => {
     const tasks = await loadTasks();

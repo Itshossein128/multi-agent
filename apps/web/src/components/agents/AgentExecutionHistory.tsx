@@ -19,7 +19,7 @@ export function AgentExecutionHistory({ agentId, runs, navigate }: { agentId: st
   const errors = events.data?.filter((event) => event.type.endsWith("failed")) ?? [];
   const traceUrl = typeof run?.metadata.traceUrl === "string" && /^https?:\/\//i.test(run.metadata.traceUrl) ? run.metadata.traceUrl : null;
   return <Section title="Executions">
-    <p className="text-sm text-zinc-400">Real runs involving this agent. History is held in server memory and is cleared when the execution server restarts.</p>
+    <p className="text-sm text-zinc-400">Real runs involving this agent. History is persisted by the execution server when Studio Postgres is configured.</p>
     {!runs.length && <p className="text-sm text-zinc-400">No recorded executions for this agent.</p>}
     {!!runs.length && <div className="overflow-x-auto"><table className="w-full text-left text-sm"><caption className="sr-only">Runs involving this agent</caption>
       <thead className="text-zinc-400"><tr>{["Run", "Workflow", "Run status", "Started", "Run duration"].map((label) => <th key={label} className="p-2 font-medium">{label}</th>)}</tr></thead>

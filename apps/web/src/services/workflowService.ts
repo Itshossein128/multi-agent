@@ -1,15 +1,25 @@
-/** Browser persistence boundary. A single versioned document makes registry/graph changes atomic. */
+/** Studio persistence client. Entities live on the execution server; activeWorkflowId stays local. */
 import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, uid, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
 
+const API_URL = process.env.NEXT_PUBLIC_EXECUTION_API_URL ?? "http://localhost:4000";
+const ACTIVE_WORKFLOW_KEY = "agent-studio.active-workflow.v1";
 const WORKSPACE_KEY = "agent-studio.workspace.v3";
 const LEGACY_WORKSPACE_V2_KEY = "agent-studio.workspace.v2";
 const LEGACY_WORKFLOW_KEY = "agent-studio.workflow.v1";
 const LEGACY_AGENTS_KEY = "agent-studio.agents.v1";
+const IMPORT_FLAG_KEY = "agent-studio.workspace-imported.v1";
+
 interface Workspace { version: 3; activeWorkflowId: string | null; workflows: WorkflowDefinition[]; agents: AgentRecord[]; tools: ToolRecord[] }
 interface WorkspaceV2 { version: 2; activeWorkflowId: string | null; workflows: WorkflowDefinition[]; agents: AgentRecord[] }
 
-/** Upgrade a v2 workspace (no tool registry) by promoting legacy inline tool nodes into it. */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}/studio${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Studio request failed (${response.status})`);
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
 function upgradeFromV2(v2: WorkspaceV2): Workspace {
   const tools: ToolRecord[] = [];
   const workflows = v2.workflows.map((workflow) => {
@@ -20,147 +30,160 @@ function upgradeFromV2(v2: WorkspaceV2): Workspace {
   return { version: 3, activeWorkflowId: v2.activeWorkflowId, workflows, agents: v2.agents, tools };
 }
 
-function readWorkspace(): Workspace {
-  if (typeof window === "undefined") throw new Error("Studio storage is available only in the browser.");
+function readLegacyWorkspace(): Workspace | null {
+  if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(WORKSPACE_KEY);
   if (raw) {
     const workspace = JSON.parse(raw) as Workspace;
-    if (workspace.version !== 3 || !Array.isArray(workspace.agents) || !Array.isArray(workspace.workflows) || !Array.isArray(workspace.tools)) throw new Error("Studio storage has an unsupported format.");
+    if (workspace.version !== 3 || !Array.isArray(workspace.agents) || !Array.isArray(workspace.workflows) || !Array.isArray(workspace.tools)) return null;
     assertNoCredentials(workspace);
     return workspace;
   }
   const rawV2 = window.localStorage.getItem(LEGACY_WORKSPACE_V2_KEY);
-  if (rawV2) {
-    const workspace = upgradeFromV2(JSON.parse(rawV2) as WorkspaceV2);
-    writeWorkspace(workspace);
-    window.localStorage.removeItem(LEGACY_WORKSPACE_V2_KEY);
-    return workspace;
-  }
+  if (rawV2) return upgradeFromV2(JSON.parse(rawV2) as WorkspaceV2);
   const oldWorkflow = window.localStorage.getItem(LEGACY_WORKFLOW_KEY);
   const oldAgents = window.localStorage.getItem(LEGACY_AGENTS_KEY);
+  if (!oldWorkflow && !oldAgents) return null;
   const workflow = oldWorkflow ? JSON.parse(oldWorkflow) as WorkflowDefinition : null;
   const agents = oldAgents ? (JSON.parse(oldAgents) as unknown[]).map(publicAgent) : [];
   const tools: ToolRecord[] = [];
   const migratedWorkflow = workflow ? migrateWorkflowToolNodes(workflow, tools) : null;
   if (migratedWorkflow) tools.push(...migratedWorkflow.newTools);
-  const workspace: Workspace = { version: 3, activeWorkflowId: migratedWorkflow?.definition.id ?? null, workflows: migratedWorkflow ? [migratedWorkflow.definition] : [], agents, tools };
-  // Do not silently discard unsafe legacy workflow configuration. Keep it recoverable.
-  writeWorkspace(workspace);
-  window.localStorage.removeItem(LEGACY_WORKFLOW_KEY);
-  window.localStorage.removeItem(LEGACY_AGENTS_KEY);
-  return workspace;
+  return { version: 3, activeWorkflowId: migratedWorkflow?.definition.id ?? null, workflows: migratedWorkflow ? [migratedWorkflow.definition] : [], agents, tools };
 }
 
-function writeWorkspace(workspace: Workspace): void {
-  assertNoCredentials(workspace);
-  window.localStorage.setItem(WORKSPACE_KEY, JSON.stringify(workspace));
+let importPromise: Promise<void> | null = null;
+
+async function ensureImported(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (window.localStorage.getItem(IMPORT_FLAG_KEY) === "1") return;
+  if (!importPromise) {
+    importPromise = (async () => {
+      const legacy = readLegacyWorkspace();
+      if (legacy && (legacy.workflows.length || legacy.agents.length || legacy.tools.length)) {
+        await request("/workspace/import", {
+          method: "POST",
+          body: JSON.stringify({ workflows: legacy.workflows, agents: legacy.agents, tools: legacy.tools }),
+        });
+        if (legacy.activeWorkflowId) window.localStorage.setItem(ACTIVE_WORKFLOW_KEY, legacy.activeWorkflowId);
+      }
+      window.localStorage.setItem(IMPORT_FLAG_KEY, "1");
+      window.localStorage.removeItem(WORKSPACE_KEY);
+      window.localStorage.removeItem(LEGACY_WORKSPACE_V2_KEY);
+      window.localStorage.removeItem(LEGACY_WORKFLOW_KEY);
+      window.localStorage.removeItem(LEGACY_AGENTS_KEY);
+    })().catch((error) => {
+      importPromise = null;
+      throw error;
+    });
+  }
+  await importPromise;
+}
+
+function getActiveWorkflowId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ACTIVE_WORKFLOW_KEY);
+}
+
+function setActiveWorkflowId(id: string | null): void {
+  if (typeof window === "undefined") return;
+  if (id) window.localStorage.setItem(ACTIVE_WORKFLOW_KEY, id);
+  else window.localStorage.removeItem(ACTIVE_WORKFLOW_KEY);
 }
 
 export interface CreateAgentInput { name?: string; model?: string; provider?: string; backend?: AgentRecord["backend"] }
 
 export const workflowService = {
   async getAgent(agentId: string): Promise<AgentRecord | null> {
-    return readWorkspace().agents.map(publicAgent).find((agent) => agent.id === agentId) ?? null;
+    await ensureImported();
+    try {
+      const agent = await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}`);
+      return publicAgent(agent);
+    } catch {
+      return null;
+    }
   },
-  async listAgents(): Promise<AgentRecord[]> { return readWorkspace().agents.map(publicAgent); },
-  async listWorkflows(): Promise<WorkflowDefinition[]> { return readWorkspace().workflows; },
+  async listAgents(): Promise<AgentRecord[]> {
+    await ensureImported();
+    return (await request<AgentRecord[]>("/agents")).map(publicAgent);
+  },
+  async listWorkflows(): Promise<WorkflowDefinition[]> {
+    await ensureImported();
+    return request("/workflows");
+  },
   async getWorkflow(workflowId?: string): Promise<WorkflowDefinition | null> {
-    const workspace = readWorkspace();
-    return workspace.workflows.find((workflow) => workflow.id === (workflowId ?? workspace.activeWorkflowId)) ?? null;
+    await ensureImported();
+    const id = workflowId ?? getActiveWorkflowId();
+    if (!id) {
+      const workflows = await request<WorkflowDefinition[]>("/workflows");
+      return workflows[0] ?? null;
+    }
+    try {
+      return await request(`/workflows/${encodeURIComponent(id)}`);
+    } catch {
+      return null;
+    }
   },
   async saveWorkflow(definition: WorkflowDefinition): Promise<WorkflowDefinition> {
+    await ensureImported();
     assertNoCredentials(definition);
-    const workspace = readWorkspace();
     const stamped = { ...definition, updatedAt: nowIso() };
-    workspace.workflows = [...workspace.workflows.filter((workflow) => workflow.id !== stamped.id), stamped];
-    workspace.activeWorkflowId = stamped.id;
-    writeWorkspace(workspace);
-    return stamped;
+    const saved = await request<WorkflowDefinition>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(stamped) });
+    setActiveWorkflowId(saved.id);
+    return saved;
   },
   async createWorkflow(name = "Untitled Workflow"): Promise<WorkflowDefinition> {
-    return this.saveWorkflow(createEmptyDefinition(name));
+    await ensureImported();
+    const created = await request<WorkflowDefinition>("/workflows", { method: "POST", body: JSON.stringify({ name }) });
+    setActiveWorkflowId(created.id);
+    return created;
   },
   async createAgent(input?: CreateAgentInput): Promise<AgentRecord> {
+    await ensureImported();
     assertNoCredentials(input);
-    const workspace = readWorkspace();
-    const agent = createAgentRecord(input);
-    workspace.agents.push(agent);
-    writeWorkspace(workspace);
-    return agent;
+    return publicAgent(await request<AgentRecord>("/agents", { method: "POST", body: JSON.stringify(input ?? {}) }));
   },
   async duplicateAgent(agentId: string): Promise<AgentRecord> {
-    const workspace = readWorkspace();
-    const original = workspace.agents.find((agent) => agent.id === agentId);
-    if (!original) throw new Error("Agent not found.");
-    const copy = { ...structuredClone(original), id: uid("agent"), name: `${original.name} (copy)`, createdAt: nowIso(), updatedAt: nowIso() };
-    workspace.agents.push(copy);
-    writeWorkspace(workspace);
-    return copy;
+    await ensureImported();
+    return publicAgent(await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}/duplicate`, { method: "POST", body: "{}" }));
   },
   async updateAgent(agentId: string, patch: Partial<Omit<AgentRecord, "id" | "createdAt">>): Promise<AgentRecord> {
-    // Allow incomplete drafts, but never credentials, through the graph's immediate-save path.
+    await ensureImported();
     assertNoCredentials(patch);
-    const workspace = readWorkspace();
-    const index = workspace.agents.findIndex((agent) => agent.id === agentId);
-    if (index === -1) throw new Error(`Agent ${agentId} not found`);
-    const original = workspace.agents[index];
-    const updated = { ...migrateAgentRecord({ ...original, ...patch }), ...patch, id: original.id, createdAt: original.createdAt, updatedAt: nowIso() };
-    workspace.agents[index] = updated;
-    writeWorkspace(workspace);
-    return updated;
+    return publicAgent(await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}`, { method: "PATCH", body: JSON.stringify(patch) }));
   },
   async deleteAgent(agentId: string, options?: { removeReferences?: boolean }): Promise<void> {
-    const workspace = readWorkspace();
-    const referenced = workspace.workflows.some((workflow) => workflow.nodes.some((node) => node.type === "agent" && (node.config as { agentId?: string }).agentId === agentId));
-    if (referenced && !options?.removeReferences) throw new Error("Remove this agent’s nodes in the Graph Editor and save the workflows before deleting the agent.");
-    if (options?.removeReferences) workspace.workflows = workspace.workflows.map((workflow) => ({ ...removeAgentNodes(workflow, agentId), updatedAt: nowIso() }));
-    workspace.agents = workspace.agents.filter((agent) => agent.id !== agentId);
-    writeWorkspace(workspace);
+    await ensureImported();
+    const query = options?.removeReferences ? "?removeReferences=true" : "";
+    await request(`/agents/${encodeURIComponent(agentId)}${query}`, { method: "DELETE" });
   },
 
   async getTool(toolId: string): Promise<ToolRecord | null> {
-    return readWorkspace().tools.find((tool) => tool.id === toolId) ?? null;
+    await ensureImported();
+    try { return await request(`/tools/${encodeURIComponent(toolId)}`); } catch { return null; }
   },
-  async listTools(): Promise<ToolRecord[]> { return readWorkspace().tools; },
+  async listTools(): Promise<ToolRecord[]> {
+    await ensureImported();
+    return request("/tools");
+  },
   async createTool(input?: Parameters<typeof createToolRecord>[0]): Promise<ToolRecord> {
+    await ensureImported();
     assertNoCredentials(input);
-    const workspace = readWorkspace();
-    const tool = createToolRecord(input);
-    workspace.tools.push(tool);
-    writeWorkspace(workspace);
-    return tool;
+    return request("/tools", { method: "POST", body: JSON.stringify(input ?? {}) });
   },
   async duplicateTool(toolId: string): Promise<ToolRecord> {
-    const workspace = readWorkspace();
-    const original = workspace.tools.find((tool) => tool.id === toolId);
-    if (!original) throw new Error("Tool not found.");
-    const copy = { ...structuredClone(original), id: uid("tool"), name: `${original.name} (copy)`, createdAt: nowIso(), updatedAt: nowIso() };
-    workspace.tools.push(copy);
-    writeWorkspace(workspace);
-    return copy;
+    await ensureImported();
+    return request(`/tools/${encodeURIComponent(toolId)}/duplicate`, { method: "POST", body: "{}" });
   },
   async updateTool(toolId: string, patch: Partial<Omit<ToolRecord, "id" | "createdAt">>): Promise<ToolRecord> {
+    await ensureImported();
     assertNoCredentials(patch);
-    const workspace = readWorkspace();
-    const index = workspace.tools.findIndex((tool) => tool.id === toolId);
-    if (index === -1) throw new Error(`Tool ${toolId} not found`);
-    const original = workspace.tools[index];
-    const updated = { ...migrateToolRecord({ ...original, ...patch }), ...patch, id: original.id, createdAt: original.createdAt, updatedAt: nowIso() };
-    workspace.tools[index] = updated;
-    writeWorkspace(workspace);
-    return updated;
+    return request(`/tools/${encodeURIComponent(toolId)}`, { method: "PATCH", body: JSON.stringify(patch) });
   },
   async deleteTool(toolId: string, options?: { removeReferences?: boolean }): Promise<void> {
-    const workspace = readWorkspace();
-    const referencedByNode = workspace.workflows.some((workflow) => workflow.nodes.some((node) => node.type === "tool" && (node.config as { toolId?: string | null }).toolId === toolId));
-    const referencedByAgent = workspace.agents.some((agent) => agent.tools.includes(toolId));
-    if ((referencedByNode || referencedByAgent) && !options?.removeReferences) throw new Error("Remove this tool’s nodes in the Graph Editor and agent assignments before deleting the tool.");
-    if (options?.removeReferences) {
-      workspace.workflows = workspace.workflows.map((workflow) => ({ ...removeToolNodes(workflow, toolId), updatedAt: nowIso() }));
-      workspace.agents = workspace.agents.map((agent) => agent.tools.includes(toolId) ? { ...agent, tools: agent.tools.filter((id) => id !== toolId), updatedAt: nowIso() } : agent);
-    }
-    workspace.tools = workspace.tools.filter((tool) => tool.id !== toolId);
-    writeWorkspace(workspace);
+    await ensureImported();
+    const query = options?.removeReferences ? "?removeReferences=true" : "";
+    await request(`/tools/${encodeURIComponent(toolId)}${query}`, { method: "DELETE" });
   },
 };
 
@@ -179,4 +202,4 @@ export function findToolUsages(toolId: string, agents: AgentRecord[], workflows:
   return { assignedAgents, nodeUsages };
 }
 
-export { uid as generateId };
+export { uid as generateId, createAgentRecord, createEmptyDefinition, createToolRecord, migrateAgentRecord, migrateToolRecord, removeAgentNodes, removeToolNodes };

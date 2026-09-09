@@ -4,7 +4,7 @@ import { LangGraphEventAdapter } from "../adapters/langGraphEventAdapter";
 import { compileWorkflow, UnsupportedPhase4NodeError, type AgentExecutionEvent, type CompileOptions } from "../compiler/workflowCompiler";
 
 type CompiledGraph = ReturnType<typeof compileWorkflow>;
-import { RunStore } from "./runStore";
+import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { AgentRuntime, mapAgentExecutionEvent } from "../../../../src/agents/runtime";
 
@@ -23,11 +23,16 @@ export class RunExecutor {
   private pausedContext = new Map<string, PausedContext>();
 
   constructor(
-    private readonly store = new RunStore(),
+    private readonly store: RunStoreContract = new InMemoryRunStore(),
     private readonly agentRuntime: Pick<AgentRuntime, "execute"> = new AgentRuntime(),
     private readonly checkpointer?: CompileOptions["checkpointer"],
   ) { }
   getStore() { return this.store; }
+  /** Restore in-memory pause maps after a durable hydrate so waiting runs can resume. */
+  restorePausedRun(runId: string, context: PausedContext, checkpointer: BaseCheckpointSaver) {
+    this.pausedContext.set(runId, context);
+    this.checkpointers.set(runId, checkpointer);
+  }
   startAgentTest(request: AgentTestRequest, memoryAccess?: MemoryAccessContext) {
     const errors = validateAgent(request.agent);
     if (request.agent.enabled === false) errors.push("Agent is disabled. Enable it before execution.");
@@ -59,7 +64,8 @@ export class RunExecutor {
   start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
     const id = uid("run"); const stamp = nowIso();
     const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: {} };
-    this.store.create(run, memoryAccess); this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
+    this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents });
+    this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     void this.execute(id, request, memoryAccess);
     return id;
   }
@@ -77,6 +83,7 @@ export class RunExecutor {
       }
       this.pausedContext.delete(runId);
       this.checkpointers.delete(runId);
+      this.store.setPausedContext?.(runId, null);
       this.store.update(runId, { status: "cancelled", completedAt: nowIso() });
       this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
       return true;
@@ -165,11 +172,14 @@ export class RunExecutor {
     if ((state as { next: string[] }).next.length > 0) {
       // Paused at a human approval node — leave status as waiting_for_human and
       // retain enough context to recompile and resume once it is resolved.
-      this.pausedContext.set(runId, { workflow, agents, memoryAccess });
+      const context = { workflow, agents, memoryAccess };
+      this.pausedContext.set(runId, context);
+      this.store.setPausedContext?.(runId, context);
       return;
     }
     this.pausedContext.delete(runId);
     this.checkpointers.delete(runId);
+    this.store.setPausedContext?.(runId, null);
     this.store.update(runId, { status: "completed", completedAt: nowIso(), output });
     this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
   }
@@ -187,14 +197,30 @@ export class RunExecutor {
       context: value.context && typeof value.context === "object" ? value.context as Record<string, unknown> : undefined,
       metadata: {},
     };
-    this.store.addApproval(runId, request);
+    this.store.addApproval(runId, request, value.timeoutSeconds);
     this.store.update(runId, { status: "waiting_for_human", currentNodeId: value.nodeId });
-    this.store.append(runId, { id: uid("event"), runId, type: "human_approval.requested", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id, message: value.message, approvalType: value.approvalType } });
+    this.store.append(runId, { id: uid("event"), runId, type: "human_approval.requested", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id, message: value.message, approvalType: value.approvalType, timeoutSeconds: value.timeoutSeconds } });
     if (value.approvalType === "timeout" && value.timeoutSeconds > 0) {
       const timer = setTimeout(() => {
         try { this.resolveApproval(runId, item.id, { decision: "approved" }); } catch { /* already resolved by a human in the meantime */ }
       }, value.timeoutSeconds * 1000);
       this.store.setApprovalTimer(runId, item.id, timer);
+    }
+  }
+
+  /** Re-arm timeout approvals after process restart when remaining time can be computed. */
+  rearmApprovalTimers(runId: string) {
+    for (const approval of this.store.listApprovals(runId)) {
+      if (approval.status !== "requested") continue;
+      const timeoutSeconds = Number((approval.metadata as { timeoutSeconds?: number })?.timeoutSeconds
+        ?? this.store.get(runId)?.events.find((event) => event.type === "human_approval.requested" && (event.payload as { approvalId?: string }).approvalId === approval.id)?.payload?.timeoutSeconds);
+      if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) continue;
+      const elapsedMs = Date.now() - Date.parse(approval.requestedAt);
+      const remaining = Math.max(0, timeoutSeconds * 1000 - elapsedMs);
+      const timer = setTimeout(() => {
+        try { this.resolveApproval(runId, approval.id, { decision: "approved" }); } catch { /* already resolved */ }
+      }, remaining);
+      this.store.setApprovalTimer(runId, approval.id, timer);
     }
   }
 
@@ -204,6 +230,7 @@ export class RunExecutor {
     if (unsupported) this.store.append(runId, { id: uid("event"), runId, type: "node.failed", timestamp: nowIso(), nodeId: error.nodeId, sequence: 0, payload: { error: message } });
     this.pausedContext.delete(runId);
     this.checkpointers.delete(runId);
+    this.store.setPausedContext?.(runId, null);
     this.store.update(runId, { status: this.store.signal(runId)?.aborted ? "cancelled" : "failed", completedAt: nowIso(), error: message });
     this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message } });
   }

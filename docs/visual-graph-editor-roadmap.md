@@ -47,7 +47,7 @@ The web application is the **control plane**. LangGraph is the **execution engin
 - [x] Phase 6 — Tool Management
 - [x] Phase 7 — Human-in-the-Loop & Approval System
 - [x] Phase 8 — Memory Management & Memory Explorer
-- [ ] Phase 9 — Persistence, Runs, History & Recovery
+- [x] Phase 9 — Persistence, Runs, History & Recovery
 - [ ] Phase 10 — Observability & Langfuse Integration
 - [ ] Phase 11 — Validation, Safety & Runtime Guardrails
 - [ ] Phase 12 — Production Hardening & Developer Experience
@@ -957,7 +957,9 @@ Memory behavior is configurable and users can understand what memory exists, who
 
 ---
 
-# Phase 9 — Persistence, Runs, History & Recovery
+# Phase 9 — Persistence, Runs, History & Recovery ✅
+
+Implemented. See [phase-9-persistence.md](phase-9-persistence.md) for operator migrate steps, env vars, run history UI, and restart recovery.
 
 ## Goal
 

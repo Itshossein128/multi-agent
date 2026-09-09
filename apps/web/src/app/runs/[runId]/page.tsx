@@ -20,13 +20,23 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
   const [definition, setDefinition] = useState<WorkflowDefinition | undefined>();
   const load = useRunStore((state) => state.load);
   const attach = useRunStore((state) => state.attach);
-  useEffect(() => { void load(runId); const stored = sessionStorage.getItem(`run-definition:${runId}`); if (stored) setDefinition(JSON.parse(stored) as WorkflowDefinition); const close = attach(runId); return close; }, [runId, load, attach]);
+  useEffect(() => {
+    void load(runId);
+    const close = attach(runId);
+    void runService.getRunDefinition(runId)
+      .then((snapshot) => setDefinition(snapshot.workflow))
+      .catch(() => {
+        const stored = sessionStorage.getItem(`run-definition:${runId}`);
+        if (stored) setDefinition(JSON.parse(stored) as WorkflowDefinition);
+      });
+    return close;
+  }, [runId, load, attach]);
   const nodeStatus = new Map<string, RunEvent["type"]>();
   for (const event of events) if (event.nodeId) nodeStatus.set(event.nodeId, event.type);
 
   return <main className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
     <header className="flex h-14 items-center gap-3 border-b border-zinc-800 px-4">
-      <Button variant="ghost" size="icon" onClick={() => router.push("/")}><ArrowLeft className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" onClick={() => router.push("/runs")}><ArrowLeft className="h-4 w-4" /></Button>
       <div><h1 className="text-sm font-semibold">Run {runId}</h1><p className="text-[10px] uppercase tracking-widest text-zinc-500">{run?.status ?? status}</p></div>
       {run && ["queued", "running", "waiting_for_human"].includes(run.status) && <Button variant="destructive" size="sm" className="ml-auto" onClick={() => void runService.cancelRun(runId)}><Ban className="mr-1.5 h-3.5 w-3.5" />Cancel</Button>}
     </header>

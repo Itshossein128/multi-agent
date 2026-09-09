@@ -41,7 +41,7 @@ describe("Agent run history and server event sanitization", () => {
     store.append("r1", { ...base, id: "b", type: "node.completed", nodeId: "n1" });
     store.append("r1", { ...base, id: "c", type: "agent.started", agentId: "a2", nodeId: "n2" });
     store.append("r1", { ...base, id: "d", type: "node.completed", nodeId: "n2" });
-    const { app } = createRunsRouter({ getStore: () => store } as RunExecutor);
+    const { app } = createRunsRouter({ getStore: () => store } as unknown as RunExecutor);
     const response = await app.request("http://localhost/r1/history?agentId=a1");
     expect(response.status).toBe(200);
     expect((await response.json() as RunEvent[]).map((event) => event.id)).toEqual(["a", "b"]);

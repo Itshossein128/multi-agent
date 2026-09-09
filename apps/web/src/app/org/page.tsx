@@ -37,6 +37,12 @@ export default function OrgPage() {
 
         <div className="flex items-center gap-2">
           <Link
+            href="/runs"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+          >
+            Run history
+          </Link>
+          <Link
             href="/tasks"
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
           >
