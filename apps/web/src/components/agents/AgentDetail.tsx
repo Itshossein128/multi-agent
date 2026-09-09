@@ -123,7 +123,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
         {section === "Test" && <AgentTestPanel agent={detail.agent.data ?? agent} dirty={dirty} />}
         {(section === "Tools" || section === "Workflows") && detail.workflows.isPending && <p role="status">Loading saved workflows…</p>}
         {(section === "Tools" || section === "Workflows") && detail.workflows.isError && <Section title="Workflow data unavailable"><p role="alert">{detail.workflows.error.message}</p><Button onClick={() => void detail.workflows.refetch()}>Retry</Button></Section>}
-        {section === "Tools" && <AgentToolsPanel agent={agent} workflows={detail.workflows.data ?? []} editing={editing && !busy} onChange={(tools) => update({ tools })} />}
+        {section === "Tools" && <AgentToolsPanel agent={agent} tools={detail.tools.data ?? []} editing={editing && !busy} onChange={(tools) => update({ tools })} />}
         {section === "Memory" && <fieldset disabled={!editing || busy}><AgentMemoryPanel agentId={agentId} workflows={detail.workflows.data ?? []} memory={agent.memory} onChange={(memory) => update({ memory })} /></fieldset>}
         {section === "Workflows" && detail.workflows.data && <AgentWorkflowUsage agentId={agentId} workflows={detail.workflows.data} navigate={navigate} />}
         {section === "Executions" && <>

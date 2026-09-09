@@ -14,6 +14,7 @@ import {
   ConditionNodeConfig,
   MemoryNodeConfig,
   ToolNodeConfig,
+  ToolRecord,
   WorkflowDefinition,
   agentHasConfiguredModel,
 } from "./types";
@@ -94,7 +95,7 @@ function findCycles(def: WorkflowDefinition): string[][] {
   return cycles;
 }
 
-export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[]): WorkflowIssue[] {
+export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[], tools: ToolRecord[] = []): WorkflowIssue[] {
   const issues: WorkflowIssue[] = [];
   const error = issueFactory("error", { n: 0 });
   const warning = issueFactory("warning", { n: 0 });
@@ -168,11 +169,11 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[])
       }
       case "tool": {
         const config = node.config as ToolNodeConfig;
-        if (!config.name.trim()) {
-          issues.push(error("Tool node has no name", { nodeId: node.id }));
-        }
-        if (!config.toolId.trim()) {
-          issues.push(error("Tool node has no tool id", { nodeId: node.id }));
+        const tool = config.toolId ? tools.find((t) => t.id === config.toolId) : undefined;
+        if (!config.toolId || !tool) {
+          issues.push(error("Tool node is not linked to a tool", { nodeId: node.id }));
+        } else if (tool.enabled === false) {
+          issues.push(warning(`Tool "${tool.name}" is disabled`, { nodeId: node.id }));
         }
         break;
       }
@@ -281,7 +282,7 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[])
     for (const node of def.nodes) {
       if (!reachable.has(node.id)) {
         issues.push(
-          warning(`"${nodeLabel(node, agents)}" is not reachable from the Input node`, {
+          warning(`"${nodeLabel(node, agents, tools)}" is not reachable from the Input node`, {
             nodeId: node.id,
           })
         );
@@ -297,7 +298,7 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[])
       return node ? exitCapableTypes.has(node.type) : false;
     });
     if (!hasExit) {
-      const names = cycle.map((id) => nodeLabel(nodesById.get(id)!, agents)).join(" → ");
+      const names = cycle.map((id) => nodeLabel(nodesById.get(id)!, agents, tools)).join(" → ");
       issues.push(
         warning(`Cycle ${names} has no Condition or Approval node and may loop forever`, {
           nodeId: cycle[0],
@@ -309,15 +310,18 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[])
   return issues;
 }
 
-function nodeLabel(node: WorkflowDefinition["nodes"][number], agents: AgentRecord[]): string {
+function nodeLabel(node: WorkflowDefinition["nodes"][number], agents: AgentRecord[], tools: ToolRecord[]): string {
   switch (node.type) {
     case "agent": {
       const config = node.config as AgentNodeConfig;
       const agent = agents.find((a) => a.id === config.agentId);
       return agent?.name ?? "Agent node";
     }
-    case "tool":
-      return (node.config as ToolNodeConfig).name || "Tool node";
+    case "tool": {
+      const config = node.config as ToolNodeConfig;
+      const tool = tools.find((t) => t.id === config.toolId);
+      return tool?.name ?? "Tool node";
+    }
     default:
       return node.type;
   }

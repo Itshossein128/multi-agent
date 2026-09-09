@@ -5,6 +5,8 @@
  * share the same contract for workflow definitions and event streams.
  */
 export * from "./memory";
+export * from "./toolConfiguration";
+import type { ToolRecord } from "./toolConfiguration";
 export type WorkflowNodeType = "agent" | "tool" | "approval" | "memory" | "condition" | "input" | "output";
 export type WorkflowPosition = {
     x: number;
@@ -105,10 +107,15 @@ export interface AgentNodeConfig {
     agentId: string | null;
 }
 export interface ToolNodeConfig {
-    toolId: string;
-    name: string;
-    description: string;
-    config: Record<string, string | number | boolean>;
+    /** References a ToolRecord in the tool registry — configuration lives there, shared across nodes. */
+    toolId: string | null;
+}
+/** Legacy inline tool node shape (pre-registry). Detected during migration. */
+export interface LegacyToolNodeConfig {
+    toolId?: string;
+    name?: string;
+    description?: string;
+    config?: Record<string, string | number | boolean>;
 }
 export interface ApprovalNodeConfig {
     message: string;
@@ -181,6 +188,7 @@ export declare function createAgentRecord(input?: {
 }): AgentRecord;
 export declare function createNode(type: WorkflowNodeType, position: WorkflowPosition, options?: {
     agentId?: string;
+    toolId?: string;
 }): WorkflowNode;
 export interface CreateEdgeInput {
     source: string;
@@ -192,6 +200,18 @@ export interface CreateEdgeInput {
 export declare function createEdge(input: CreateEdgeInput): WorkflowEdge;
 export declare function createEmptyDefinition(name?: string): WorkflowDefinition;
 export declare function nodeConfig<T extends WorkflowNodeConfig>(node: WorkflowNode): T;
+/** Remove only this tool's node instances and their incident edges. */
+export declare function removeToolNodes(workflow: WorkflowDefinition, toolId: string): WorkflowDefinition;
+/**
+ * Upgrade legacy inline tool nodes (`{ toolId, name, description, config }`) into
+ * registry references, synthesizing a ToolRecord per unique legacy node when one
+ * isn't already present in `tools`. Idempotent — nodes already in the new
+ * `{ toolId }` shape are left untouched.
+ */
+export declare function migrateWorkflowToolNodes(definition: WorkflowDefinition, tools: ToolRecord[]): {
+    definition: WorkflowDefinition;
+    newTools: ToolRecord[];
+};
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_human";
 export type RunEventType = "run.started" | "run.completed" | "run.failed" | "node.started" | "node.completed" | "node.failed" | "edge.traversed" | "agent.started" | "agent.completed" | "agent.failed" | "tool.started" | "tool.completed" | "tool.failed" | "human_approval.requested" | "human_approval.resolved" | "memory.read" | "memory.write" | "log";
 export interface Run {

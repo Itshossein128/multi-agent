@@ -1,31 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import type { AgentRecord, ToolNodeConfig, WorkflowDefinition } from "@multi-agent/types";
+import type { AgentRecord, ToolRecord, WorkflowDefinition } from "@multi-agent/types";
 import { Button } from "@/components/ui/button";
-import { Field, fieldClass, Section } from "./AgentFields";
+import { Section } from "./AgentFields";
 
-export function AgentToolsPanel({ agent, workflows, editing, onChange }: { agent: AgentRecord; workflows: WorkflowDefinition[]; editing: boolean; onChange: (tools: string[]) => void }) {
+export function AgentToolsPanel({ agent, tools, editing, onChange }: { agent: AgentRecord; tools: ToolRecord[]; editing: boolean; onChange: (tools: string[]) => void }) {
   const [toolId, setToolId] = useState("");
-  const catalog = new Map<string, ToolNodeConfig>();
-  for (const workflow of workflows) for (const node of workflow.nodes) if (node.type === "tool") {
-    const config = node.config as ToolNodeConfig;
-    catalog.set(config.toolId, config);
-  }
+  const catalog = new Map(tools.map((tool) => [tool.id, tool]));
+  const available = tools.filter((tool) => !agent.tools.includes(tool.id));
   return <Section title="Assigned tools">
-    <p className="text-sm text-zinc-400">Assignments reference tool IDs. Names and descriptions below come from saved workflow tool nodes. Remove an assignment to disable that tool for this agent.</p>
+    <p className="text-sm text-zinc-400">Assignments reference the Tool registry (<a className="text-indigo-300 underline" href="/org/tools">/org/tools</a>). Remove an assignment to disable that tool for this agent.</p>
     {!agent.tools.length && <p className="text-sm text-zinc-400">No tools assigned.</p>}
     <ul className="space-y-2">{agent.tools.map((id) => {
       const tool = catalog.get(id);
       return <li key={id} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 p-3">
-        <div className="min-w-0 flex-1"><p className="break-all text-sm font-medium">{tool?.name ?? id}</p><p className="break-all text-xs text-zinc-400">{id} · Assigned · {tool ? "Workflow tool" : "Details unavailable"}</p>
-          {tool && <><p className="mt-1 text-sm text-zinc-400">{tool.description || "No description."}</p><p className="text-xs text-zinc-400">{Object.keys(tool.config).length} configuration fields in Graph Editor</p></>}
+        <div className="min-w-0 flex-1"><p className="break-all text-sm font-medium">{tool?.name ?? id}</p><p className="break-all text-xs text-zinc-400">{id} · {tool ? `${tool.category}${tool.enabled ? "" : " · disabled"}` : "Not found in registry"}</p>
+          {tool && <p className="mt-1 text-sm text-zinc-400">{tool.description || "No description."}</p>}
         </div>
         {editing && <Button variant="outline" size="sm" onClick={() => onChange(agent.tools.filter((tool) => tool !== id))}>Remove {tool?.name ?? id}</Button>}
       </li>;
     })}</ul>
-    {editing && <div className="flex items-end gap-3"><div className="flex-1"><Field label="Tool ID"><input className={fieldClass} list="agent-tool-catalog" value={toolId} onChange={(event) => setToolId(event.target.value)} /></Field><datalist id="agent-tool-catalog">{[...catalog].map(([id, tool]) => <option key={id} value={id}>{tool.name}</option>)}</datalist></div>
-      <Button disabled={!toolId.trim() || agent.tools.includes(toolId.trim())} onClick={() => { onChange([...agent.tools, toolId.trim()]); setToolId(""); }}>Assign tool</Button></div>}
+    {editing && <div className="flex items-end gap-3"><div className="flex-1"><label className="block space-y-1.5 text-sm text-zinc-300"><span>Tool</span>
+      <select className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" value={toolId} onChange={(event) => setToolId(event.target.value)}>
+        <option value="">— select a registered tool —</option>
+        {available.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}{tool.enabled ? "" : " (disabled)"}</option>)}
+      </select></label></div>
+      <Button disabled={!toolId.trim()} onClick={() => { onChange([...agent.tools, toolId.trim()]); setToolId(""); }}>Assign tool</Button></div>}
   </Section>;
 }
 

@@ -6,6 +6,8 @@
  */
 
 export * from "./memory";
+export * from "./toolConfiguration";
+import type { ToolRecord } from "./toolConfiguration";
 
 export type WorkflowNodeType =
   | "agent"
@@ -184,10 +186,16 @@ export interface AgentNodeConfig {
 }
 
 export interface ToolNodeConfig {
-  toolId: string;
-  name: string;
-  description: string;
-  config: Record<string, string | number | boolean>;
+  /** References a ToolRecord in the tool registry — configuration lives there, shared across nodes. */
+  toolId: string | null;
+}
+
+/** Legacy inline tool node shape (pre-registry). Detected during migration. */
+export interface LegacyToolNodeConfig {
+  toolId?: string;
+  name?: string;
+  description?: string;
+  config?: Record<string, string | number | boolean>;
 }
 
 export interface ApprovalNodeConfig {
@@ -381,7 +389,7 @@ export function createAgentRecord(input?: {
 export function createNode(
   type: WorkflowNodeType,
   position: WorkflowPosition,
-  options?: { agentId?: string }
+  options?: { agentId?: string; toolId?: string }
 ): WorkflowNode {
   let config: WorkflowNodeConfig;
   switch (type) {
@@ -389,7 +397,7 @@ export function createNode(
       config = { agentId: options?.agentId ?? null };
       break;
     case "tool":
-      config = { toolId: uid("tool"), name: "New Tool", description: "", config: {} };
+      config = { toolId: options?.toolId ?? null };
       break;
     case "approval":
       config = { message: "Approve to continue?", approvalType: "manual", timeoutSeconds: 300 };
@@ -452,6 +460,52 @@ export function createEmptyDefinition(name?: string): WorkflowDefinition {
 
 export function nodeConfig<T extends WorkflowNodeConfig>(node: WorkflowNode): T {
   return node.config as T;
+}
+
+/** Remove only this tool's node instances and their incident edges. */
+export function removeToolNodes(workflow: WorkflowDefinition, toolId: string): WorkflowDefinition {
+  const removed = new Set(workflow.nodes.filter((node) => node.type === "tool" && (node.config as ToolNodeConfig).toolId === toolId).map((node) => node.id));
+  return { ...workflow, nodes: workflow.nodes.filter((node) => !removed.has(node.id)), edges: workflow.edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)) };
+}
+
+/**
+ * Upgrade legacy inline tool nodes (`{ toolId, name, description, config }`) into
+ * registry references, synthesizing a ToolRecord per unique legacy node when one
+ * isn't already present in `tools`. Idempotent — nodes already in the new
+ * `{ toolId }` shape are left untouched.
+ */
+export function migrateWorkflowToolNodes(
+  definition: WorkflowDefinition,
+  tools: ToolRecord[]
+): { definition: WorkflowDefinition; newTools: ToolRecord[] } {
+  const known = new Set(tools.map((tool) => tool.id));
+  const newTools: ToolRecord[] = [];
+  const nodes = definition.nodes.map((node) => {
+    if (node.type !== "tool") return node;
+    const config = node.config as ToolNodeConfig & LegacyToolNodeConfig;
+    const isLegacy = "name" in config || "description" in config || "config" in config;
+    if (!isLegacy && (config.toolId === null || (typeof config.toolId === "string" && known.has(config.toolId)))) return node;
+    const stamp = nowIso();
+    const id = typeof config.toolId === "string" && config.toolId && !known.has(config.toolId) ? config.toolId : uid("tool");
+    const record: ToolRecord = {
+      id,
+      name: typeof config.name === "string" && config.name.trim() ? config.name : "Migrated Tool",
+      description: typeof config.description === "string" ? config.description : "",
+      category: "function",
+      inputSchema: { type: "object", properties: {} },
+      outputSchema: { type: "object", properties: {} },
+      configuration: config.config && typeof config.config === "object" ? config.config : {},
+      enabled: true,
+      impact: "read-only",
+      metadata: {},
+      createdAt: stamp,
+      updatedAt: stamp,
+    };
+    known.add(id);
+    newTools.push(record);
+    return { ...node, config: { toolId: id } };
+  });
+  return { definition: { ...definition, nodes }, newTools };
 }
 
 export type RunStatus =

@@ -2,6 +2,7 @@ import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { createRunsRouter } from "./api/runs";
+import { createToolsRouter } from "./api/tools";
 import { createMemoriesRouter } from "./api/memories";
 import { createMemoryComposition } from "./memory/composition";
 import { memoryAccessResolverFromEnvironment } from "./memory/access";
@@ -24,6 +25,7 @@ const memory = createMemoryComposition();
 const resolveMemoryAccess = memoryAccessResolverFromEnvironment();
 app.route("/memories", createMemoriesRouter(memory.service, resolveMemoryAccess));
 app.route("/runs", createRunsRouter(new RunExecutor(undefined, new AgentRuntime(undefined, memory.runtime)), resolveMemoryAccess).app);
+app.route("/tools", createToolsRouter());
 
 const port = Number(process.env.PORT ?? 4000);
 const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));

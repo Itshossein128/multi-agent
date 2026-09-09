@@ -34,7 +34,10 @@ exports.createNode = createNode;
 exports.createEdge = createEdge;
 exports.createEmptyDefinition = createEmptyDefinition;
 exports.nodeConfig = nodeConfig;
+exports.removeToolNodes = removeToolNodes;
+exports.migrateWorkflowToolNodes = migrateWorkflowToolNodes;
 __exportStar(require("./memory"), exports);
+__exportStar(require("./toolConfiguration"), exports);
 function createApiBackend(provider = "openai", model = "gpt-4o") {
     return { type: "api", provider, model };
 }
@@ -208,7 +211,7 @@ function createNode(type, position, options) {
             config = { agentId: options?.agentId ?? null };
             break;
         case "tool":
-            config = { toolId: uid("tool"), name: "New Tool", description: "", config: {} };
+            config = { toolId: options?.toolId ?? null };
             break;
         case "approval":
             config = { message: "Approve to continue?", approvalType: "manual", timeoutSeconds: 300 };
@@ -259,6 +262,49 @@ function createEmptyDefinition(name) {
 }
 function nodeConfig(node) {
     return node.config;
+}
+/** Remove only this tool's node instances and their incident edges. */
+function removeToolNodes(workflow, toolId) {
+    const removed = new Set(workflow.nodes.filter((node) => node.type === "tool" && node.config.toolId === toolId).map((node) => node.id));
+    return { ...workflow, nodes: workflow.nodes.filter((node) => !removed.has(node.id)), edges: workflow.edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)) };
+}
+/**
+ * Upgrade legacy inline tool nodes (`{ toolId, name, description, config }`) into
+ * registry references, synthesizing a ToolRecord per unique legacy node when one
+ * isn't already present in `tools`. Idempotent — nodes already in the new
+ * `{ toolId }` shape are left untouched.
+ */
+function migrateWorkflowToolNodes(definition, tools) {
+    const known = new Set(tools.map((tool) => tool.id));
+    const newTools = [];
+    const nodes = definition.nodes.map((node) => {
+        if (node.type !== "tool")
+            return node;
+        const config = node.config;
+        const isLegacy = "name" in config || "description" in config || "config" in config;
+        if (!isLegacy && (config.toolId === null || (typeof config.toolId === "string" && known.has(config.toolId))))
+            return node;
+        const stamp = nowIso();
+        const id = typeof config.toolId === "string" && config.toolId && !known.has(config.toolId) ? config.toolId : uid("tool");
+        const record = {
+            id,
+            name: typeof config.name === "string" && config.name.trim() ? config.name : "Migrated Tool",
+            description: typeof config.description === "string" ? config.description : "",
+            category: "function",
+            inputSchema: { type: "object", properties: {} },
+            outputSchema: { type: "object", properties: {} },
+            configuration: config.config && typeof config.config === "object" ? config.config : {},
+            enabled: true,
+            impact: "read-only",
+            metadata: {},
+            createdAt: stamp,
+            updatedAt: stamp,
+        };
+        known.add(id);
+        newTools.push(record);
+        return { ...node, config: { toolId: id } };
+    });
+    return { definition: { ...definition, nodes }, newTools };
 }
 var agentConfiguration_1 = require("./agentConfiguration");
 Object.defineProperty(exports, "assertNoCredentials", { enumerable: true, get: function () { return agentConfiguration_1.assertNoCredentials; } });

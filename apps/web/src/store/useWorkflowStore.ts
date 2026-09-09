@@ -4,6 +4,7 @@ import { create } from "zustand";
 import {
   AgentRecord,
   CreateEdgeInput,
+  ToolRecord,
   WorkflowDefinition,
   WorkflowEdge,
   WorkflowNodeType,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/workflow/types";
 import { validateWorkflow, WorkflowIssue } from "@/lib/workflow/validation";
 import { workflowService } from "@/services/workflowService";
-import { assertNoCredentials, removeAgentNodes } from "@multi-agent/types";
+import { assertNoCredentials, removeAgentNodes, removeToolNodes } from "@multi-agent/types";
 
 /** Imperative helpers registered by the canvas (React Flow instance). */
 export interface FlowHelpers {
@@ -37,6 +38,7 @@ function clone(definition: WorkflowDefinition): WorkflowDefinition {
 interface WorkflowStoreState {
   definition: WorkflowDefinition;
   agents: AgentRecord[];
+  tools: ToolRecord[];
   loadState: LoadState;
   loadError: string | null;
   isDirty: boolean;
@@ -65,6 +67,8 @@ interface WorkflowStoreState {
   ) => void;
   addAgentAndNode: (position?: WorkflowPosition) => Promise<void>;
   addNodeForAgent: (agentId: string, position?: WorkflowPosition) => void;
+  addToolAndNode: (position?: WorkflowPosition) => Promise<void>;
+  addNodeForTool: (toolId: string, position?: WorkflowPosition) => void;
   moveNodes: (positions: Map<string, WorkflowPosition>) => void;
   removeNodes: (nodeIds: string[]) => void;
   removeEdges: (edgeIds: string[]) => void;
@@ -76,6 +80,11 @@ interface WorkflowStoreState {
     patch: Partial<Omit<AgentRecord, "id" | "createdAt">>
   ) => void;
   deleteAgent: (agentId: string) => Promise<void>;
+  updateToolRecord: (
+    toolId: string,
+    patch: Partial<Omit<ToolRecord, "id" | "createdAt">>
+  ) => void;
+  deleteTool: (toolId: string) => Promise<void>;
 
   // history
   beginHistory: () => void;
@@ -102,7 +111,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
       try { assertNoCredentials(draft); } catch (error) {
         return { saveError: error instanceof Error ? error.message : "Credentials are not allowed in workflow data." };
       }
-      const issues = validateWorkflow(draft, state.agents);
+      const issues = validateWorkflow(draft, state.agents, state.tools);
       const nodeIds = new Set(draft.nodes.map((n) => n.id));
       const edgeIds = new Set(draft.edges.map((e) => e.id));
       return {
@@ -145,6 +154,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
   return {
     definition: createEmptyDefinition(),
     agents: [],
+    tools: [],
     loadState: "loading",
     loadError: null,
     isDirty: false,
@@ -162,20 +172,22 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     loadWorkflow: async (workflowId) => {
       set({ loadState: "loading", loadError: null });
       try {
-        const [storedDefinition, agents] = await Promise.all([
+        const [storedDefinition, agents, tools] = await Promise.all([
           workflowService.getWorkflow(workflowId),
           workflowService.listAgents(),
+          workflowService.listTools(),
         ]);
         if (workflowId && !storedDefinition) throw new Error("Workflow not found.");
         const definition = storedDefinition ?? createEmptyDefinition();
         set({
           definition,
           agents,
+          tools,
           loadState: "ready",
           isDirty: false,
           saveState: "idle",
           saveError: null,
-          issues: validateWorkflow(definition, agents),
+          issues: validateWorkflow(definition, agents, tools),
           selectedNodeIds: [],
           selectedEdgeIds: [],
           undoStack: [],
@@ -252,6 +264,40 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         get().flowHelpers?.getCanvasCenter() ??
         { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
       const node = createNode("agent", pos, { agentId });
+      withDefinition((draft) => {
+        draft.nodes.push(node);
+      });
+      set({ selectedNodeIds: [node.id], selectedEdgeIds: [] });
+    },
+
+    addToolAndNode: async (position) => {
+      pushHistory();
+      const tool = await workflowService
+        .createTool({ name: "New Tool" })
+        .catch(() => null);
+      if (!tool) {
+        set({ saveError: "Failed to create tool" });
+        return;
+      }
+      const pos =
+        position ??
+        get().flowHelpers?.getCanvasCenter() ??
+        { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
+      const node = createNode("tool", pos, { toolId: tool.id });
+      set((state) => ({ tools: [...state.tools, tool] }));
+      withDefinition((draft) => {
+        draft.nodes.push(node);
+      });
+      set({ selectedNodeIds: [node.id], selectedEdgeIds: [] });
+    },
+
+    addNodeForTool: (toolId, position) => {
+      pushHistory();
+      const pos =
+        position ??
+        get().flowHelpers?.getCanvasCenter() ??
+        { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
+      const node = createNode("tool", pos, { toolId });
       withDefinition((draft) => {
         draft.nodes.push(node);
       });
@@ -351,8 +397,8 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         ),
         isDirty: true,
       }));
-      const { agents, definition } = get();
-      set({ issues: validateWorkflow(definition, agents) });
+      const { agents, tools, definition } = get();
+      set({ issues: validateWorkflow(definition, agents, tools) });
       const agent = agents.find((a) => a.id === agentId);
       if (agent) {
         const { id: _id, createdAt: _createdAt, ...recordPatch } = agent;
@@ -373,7 +419,45 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
       });
       set((state) => {
         const agents = state.agents.filter((a) => a.id !== agentId);
-        return { agents, issues: validateWorkflow(state.definition, agents), undoStack: [], redoStack: [], lastEditKey: null };
+        return { agents, issues: validateWorkflow(state.definition, agents, state.tools), undoStack: [], redoStack: [], lastEditKey: null };
+      });
+    },
+
+    updateToolRecord: (toolId, patch) => {
+      try { assertNoCredentials(patch); } catch (error) {
+        set({ saveError: error instanceof Error ? error.message : "Credentials are not allowed in tool data." });
+        return;
+      }
+      pushHistoryCoalesced(`tool:${toolId}`);
+      set((state) => ({
+        tools: state.tools.map((t) =>
+          t.id === toolId ? { ...t, ...patch, updatedAt: nowIso() } : t
+        ),
+        isDirty: true,
+      }));
+      const { agents, tools, definition } = get();
+      set({ issues: validateWorkflow(definition, agents, tools) });
+      const tool = tools.find((t) => t.id === toolId);
+      if (tool) {
+        const { id: _id, createdAt: _createdAt, ...recordPatch } = tool;
+        void _id;
+        void _createdAt;
+        void workflowService.updateTool(toolId, recordPatch).catch(() => {
+          set({ saveError: "Failed to persist tool changes" });
+        });
+      }
+    },
+
+    deleteTool: async (toolId) => {
+      try { await workflowService.deleteTool(toolId, { removeReferences: true }); }
+      catch (error) { set({ saveError: error instanceof Error ? error.message : "Could not delete tool." }); return; }
+      pushHistory();
+      withDefinition((draft) => {
+        Object.assign(draft, removeToolNodes(draft, toolId));
+      });
+      set((state) => {
+        const tools = state.tools.filter((t) => t.id !== toolId);
+        return { tools, issues: validateWorkflow(state.definition, state.agents, tools), undoStack: [], redoStack: [], lastEditKey: null };
       });
     },
 
@@ -390,7 +474,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         undoStack: undoStack.slice(0, -1),
         redoStack: [...redoStack.slice(-(HISTORY_LIMIT - 1)), definition],
         isDirty: true,
-        issues: validateWorkflow(previous, state.agents),
+        issues: validateWorkflow(previous, state.agents, state.tools),
         selectedNodeIds: [],
         selectedEdgeIds: [],
         lastEditKey: null,
@@ -406,7 +490,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         redoStack: redoStack.slice(0, -1),
         undoStack: [...undoStack.slice(-(HISTORY_LIMIT - 1)), definition],
         isDirty: true,
-        issues: validateWorkflow(next, state.agents),
+        issues: validateWorkflow(next, state.agents, state.tools),
         selectedNodeIds: [],
         selectedEdgeIds: [],
         lastEditKey: null,

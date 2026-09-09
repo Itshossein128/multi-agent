@@ -24,11 +24,13 @@ import { workflowEdgeTypes } from "@/components/workflow/edges/WorkflowEdge";
 
 const PALETTE_NODE_MIME = "application/x-workflow-node";
 const PALETTE_AGENT_MIME = "application/x-workflow-agent";
+const PALETTE_TOOL_MIME = "application/x-workflow-tool";
 
 export function FlowCanvas() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const definition = useWorkflowStore((s) => s.definition);
   const agents = useWorkflowStore((s) => s.agents);
+  const tools = useWorkflowStore((s) => s.tools);
   const selectedNodeIds = useWorkflowStore((s) => s.selectedNodeIds);
   const selectedEdgeIds = useWorkflowStore((s) => s.selectedEdgeIds);
   const issues = useWorkflowStore((s) => s.issues);
@@ -57,10 +59,16 @@ export function FlowCanvas() {
                   (a) => a.id === (node.config as { agentId?: string | null }).agentId
                 )
               : undefined,
+          tool:
+            node.type === "tool"
+              ? tools.find(
+                  (t) => t.id === (node.config as { toolId?: string | null }).toolId
+                )
+              : undefined,
           issueCount: issueCountByNode.get(node.id) ?? 0,
         },
       })),
-    [definition.nodes, agents, selectedNodeIds, issueCountByNode]
+    [definition.nodes, agents, tools, selectedNodeIds, issueCountByNode]
   );
 
   const rfEdges = useMemo<Edge[]>(
@@ -158,7 +166,8 @@ export function FlowCanvas() {
       event.preventDefault();
       const nodeType = event.dataTransfer.getData(PALETTE_NODE_MIME);
       const agentId = event.dataTransfer.getData(PALETTE_AGENT_MIME);
-      if (!nodeType && !agentId) return;
+      const toolId = event.dataTransfer.getData(PALETTE_TOOL_MIME);
+      if (!nodeType && !agentId && !toolId) return;
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -166,6 +175,8 @@ export function FlowCanvas() {
       const store = useWorkflowStore.getState();
       if (agentId) {
         store.addNodeForAgent(agentId, position);
+      } else if (toolId) {
+        store.addNodeForTool(toolId, position);
       } else if (isWorkflowNodeType(nodeType)) {
         if (nodeType === "agent") {
           void store.addAgentAndNode(position);

@@ -20,6 +20,7 @@ import {
   MemoryNodeConfig,
   NODE_TYPE_META,
   ToolNodeConfig,
+  ToolRecord,
   WorkflowNode,
   agentBackendLabel,
 } from "@/lib/workflow/types";
@@ -28,6 +29,7 @@ import { cn } from "@/lib/utils";
 export interface WorkflowNodeData extends Record<string, unknown> {
   node: WorkflowNode;
   agent?: AgentRecord;
+  tool?: ToolRecord;
   issueCount: number;
 }
 
@@ -123,7 +125,7 @@ function AgentNodeComponent(props: NodeProps) {
 }
 
 function ToolNodeComponent(props: NodeProps) {
-  const { node, issueCount } = useNodeData(props);
+  const { node, tool, issueCount } = useNodeData(props);
   const config = node.config as ToolNodeConfig;
   return (
     <NodeShell
@@ -131,13 +133,16 @@ function ToolNodeComponent(props: NodeProps) {
       node={node}
       issueCount={issueCount}
       icon={<Wrench className="h-4 w-4" />}
-      title={config.name || "Unnamed tool"}
-      subtitle={config.toolId}
+      title={tool?.name ?? "Unlinked tool"}
+      subtitle={tool ? `${tool.category}${tool.enabled ? "" : " · disabled"}` : "Not linked to a tool"}
     >
-      {config.description && (
+      {tool?.description && (
         <p className="mt-1.5 line-clamp-2 border-t border-zinc-800/80 pt-1.5 text-[10px] leading-snug text-zinc-500">
-          {config.description}
+          {tool.description}
         </p>
+      )}
+      {!config.toolId && (
+        <p className="mt-1 text-[10px] text-amber-400/90">No tool selected</p>
       )}
     </NodeShell>
   );

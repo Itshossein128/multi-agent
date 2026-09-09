@@ -63,21 +63,21 @@ describe("Phase 5 browser workspace", () => {
     const agent = await workflowService.createAgent();
     await workflowService.saveWorkflow(graph(agent.id));
     await useWorkflowStore.getState().loadWorkflow();
-    const before = storage.get("agent-studio.workspace.v2");
+    const before = storage.get("agent-studio.workspace.v3");
     useWorkflowStore.getState().updateAgentRecord(agent.id, { metadata: { apiKey: "private-value" } });
     expect(useWorkflowStore.getState().agents[0].metadata).toEqual({});
     expect(useWorkflowStore.getState().saveError).toMatch(/Credentials/);
     await expect(workflowService.updateAgent(agent.id, { metadata: { token: "private-value" } })).rejects.toThrow(/Credentials/);
-    expect(storage.get("agent-studio.workspace.v2")).toBe(before);
+    expect(storage.get("agent-studio.workspace.v3")).toBe(before);
     const unsafe = { ...graph(agent.id), metadata: { apiKey: "private-value" } };
     await expect(workflowService.saveWorkflow(unsafe)).rejects.toThrow(/Credentials/);
   });
   test("failed atomic deletion leaves registry and workflows intact", async () => {
     const agent = await workflowService.createAgent();
     await workflowService.saveWorkflow(graph(agent.id));
-    const before = storage.get("agent-studio.workspace.v2");
+    const before = storage.get("agent-studio.workspace.v3");
     window.localStorage.setItem = () => { throw new Error("Quota exceeded"); };
     await expect(workflowService.deleteAgent(agent.id, { removeReferences: true })).rejects.toThrow("Quota exceeded");
-    expect(storage.get("agent-studio.workspace.v2")).toBe(before);
+    expect(storage.get("agent-studio.workspace.v3")).toBe(before);
   });
 });

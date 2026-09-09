@@ -44,7 +44,7 @@ The web application is the **control plane**. LangGraph is the **execution engin
 - [x] Phase 3 — Visual Graph Editor
 - [x] Phase 4 — Execution Timeline & Live Execution
 - [x] Phase 5 — Agent Management & Configuration
-- [ ] Phase 6 — Tool Management
+- [x] Phase 6 — Tool Management
 - [ ] Phase 7 — Human-in-the-Loop & Approval System
 - [ ] Phase 8 — Memory Management & Memory Explorer
 - [ ] Phase 9 — Persistence, Runs, History & Recovery
@@ -715,7 +715,9 @@ Users can manage reusable agents independently and reference them from graph wor
 
 ---
 
-# Phase 6 — Tool Management
+# Phase 6 — Tool Management ✅
+
+Implemented as a browser-local Studio registry mirroring the Phase 5 Agent Entity/Node split. See [Tool registry](phase-6-tools.md) for the entity/node migration, configuration, test-tool wiring, and MVP limits (only the `function` category executes; `impact` metadata is not yet enforced — that's Phase 11).
 
 ## Goal
 

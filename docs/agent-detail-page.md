@@ -36,7 +36,7 @@ The editor's workflow selector opens saved workflows by ID and creates new ones.
 - Runs/events are real but retained only in execution server memory; restart clears history. Refresh is explicit on the detail page.
 - Backend diagnostics/authentication status has no endpoint, so health is Unknown. Agent status is labeled as last observed event status and is separate from backend health.
 - CLI session modes, persistent agent memory, and a memory explorer are outside this phase.
-- Tool descriptions are resolved from saved workflow tool nodes. There is no global Tool Detail route or per-agent tool enabled flag.
+- Tool assignment now resolves against the Phase 6 Tool registry (`/org/tools`) rather than saved workflow tool nodes — see [Tool registry](phase-6-tools.md).
 - CLI/local executors and policy sandboxing remain outside this implementation; unsupported tests report a failure.
 - Recorded provider/model values are shown only when present in events. Complete backend/version snapshots are not persisted and are never inferred from current configuration.
 

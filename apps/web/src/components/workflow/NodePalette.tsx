@@ -86,6 +86,10 @@ export function NodePalette() {
   const addNodeForAgent = useWorkflowStore((s) => s.addNodeForAgent);
   const deleteAgent = useWorkflowStore((s) => s.deleteAgent);
   const agents = useWorkflowStore((s) => s.agents);
+  const addToolAndNode = useWorkflowStore((s) => s.addToolAndNode);
+  const addNodeForTool = useWorkflowStore((s) => s.addNodeForTool);
+  const deleteTool = useWorkflowStore((s) => s.deleteTool);
+  const tools = useWorkflowStore((s) => s.tools);
 
   const handleAdd = (type: string) => {
     if (isWorkflowNodeType(type)) {
@@ -93,6 +97,10 @@ export function NodePalette() {
         // Creating an Agent follows the full flow:
         // create agent → configure → node appears → connect.
         void addAgentAndNode();
+        return;
+      }
+      if (type === "tool") {
+        void addToolAndNode();
         return;
       }
       addNode(type);
@@ -157,6 +165,60 @@ export function NodePalette() {
                 }
               }}
               className="flex-shrink-0 text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100 cursor-pointer"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+      </section>
+
+      <section className="space-y-1.5">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+            Tools ({tools.length})
+          </h3>
+        </div>
+        {tools.length === 0 && (
+          <p className="px-1 text-[10px] leading-snug text-zinc-600">
+            No tools yet. Click “Tool” above to create one — it appears on the canvas as a node.
+          </p>
+        )}
+        {tools.map((tool) => (
+          <div
+            key={tool.id}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData("application/x-workflow-tool", tool.id);
+              event.dataTransfer.effectAllowed = "copy";
+            }}
+            className="group flex cursor-grab items-center gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/40 px-2 py-1.5 transition-colors hover:border-amber-500/40 active:cursor-grabbing"
+            title={`Drag onto canvas to add "${tool.name}" as a node`}
+          >
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-amber-500/15 text-amber-300">
+              <Wrench className="h-3 w-3" />
+            </span>
+            <button
+              type="button"
+              onClick={() => addNodeForTool(tool.id)}
+              className="min-w-0 flex-1 text-left cursor-pointer"
+            >
+              <span className="block truncate text-[11px] font-medium text-zinc-200">
+                {tool.name}
+              </span>
+              <span className="block truncate text-[9px] text-zinc-500">
+                {tool.enabled === false ? "Disabled · " : ""}{tool.category}
+              </span>
+            </button>
+            <Link href={`/org/tools/${encodeURIComponent(tool.id)}`} aria-label={`Inspect ${tool.name}`} className="rounded px-1 py-2 text-xs text-indigo-300 underline focus-visible:outline-2 focus-visible:outline-indigo-400">Details</Link>
+            <button
+              type="button"
+              title={`Delete tool "${tool.name}" and its nodes`}
+              onClick={() => {
+                if (window.confirm(`Delete tool "${tool.name}" and all of its nodes from every saved workflow? This cannot be undone.`)) {
+                  void deleteTool(tool.id);
+                }
+              }}
+              className="shrink-0 text-zinc-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100 cursor-pointer"
             >
               <Trash2 className="h-3 w-3" />
             </button>

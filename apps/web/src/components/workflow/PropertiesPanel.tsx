@@ -12,6 +12,8 @@ import {
   MemoryNodeConfig,
   NODE_TYPE_META,
   ToolNodeConfig,
+  ToolRecord,
+  TOOL_CATEGORIES,
   OutputNodeConfig,
   WorkflowEdge,
   WorkflowNode,
@@ -249,38 +251,83 @@ function AgentForm({ node }: { node: WorkflowNode }) {
 
 function ToolForm({ node }: { node: WorkflowNode }) {
   const config = node.config as ToolNodeConfig;
+  const tools = useWorkflowStore((s) => s.tools);
   const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
+  const updateToolRecord = useWorkflowStore((s) => s.updateToolRecord);
+
+  const tool = tools.find((t) => t.id === config.toolId);
+
+  const patchTool = (patch: Partial<ToolRecord>) => {
+    if (!tool) return;
+    updateToolRecord(tool.id, patch);
+  };
+
   return (
     <div className="space-y-3">
-      <Field label="Tool ID">
-        <input
-          type="text"
-          value={config.toolId}
-          onChange={(event) => updateNodeConfig(node.id, { toolId: event.target.value })}
-          className={cn(inputClass, "font-mono text-[11px]")}
-        />
-      </Field>
-      <Field label="Name">
-        <input
-          type="text"
-          value={config.name}
-          onChange={(event) => updateNodeConfig(node.id, { name: event.target.value })}
+      <Field label="Linked Tool">
+        <select
+          value={config.toolId ?? ""}
+          onChange={(event) => updateNodeConfig(node.id, { toolId: event.target.value || null })}
           className={inputClass}
-        />
+        >
+          <option value="">— not linked —</option>
+          {tools.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <p className="text-[10px] text-zinc-600">
+          Tool configuration lives in the registry and is shared between nodes.
+        </p>
       </Field>
-      <Field label="Description">
-        <textarea
-          value={config.description}
-          onChange={(event) => updateNodeConfig(node.id, { description: event.target.value })}
-          rows={3}
-          className={inputClass}
-        />
-      </Field>
-      <JsonField
-        label="Configuration"
-        value={config.config}
-        onChange={(next) => updateNodeConfig(node.id, { config: next })}
-      />
+
+      {tool && (
+        <>
+          <label className="flex items-center gap-2 text-xs text-zinc-300">
+            <input
+              type="checkbox"
+              checked={tool.enabled}
+              onChange={(event) => patchTool({ enabled: event.target.checked })}
+            />
+            Enabled
+          </label>
+          <Field label="Name">
+            <input
+              type="text"
+              value={tool.name}
+              onChange={(event) => patchTool({ name: event.target.value })}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Category">
+            <select
+              value={tool.category}
+              onChange={(event) => patchTool({ category: event.target.value as ToolRecord["category"] })}
+              className={inputClass}
+            >
+              {TOOL_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Description">
+            <textarea
+              value={tool.description}
+              onChange={(event) => patchTool({ description: event.target.value })}
+              rows={3}
+              className={inputClass}
+            />
+          </Field>
+          <JsonField
+            label="Configuration"
+            value={tool.configuration}
+            onChange={(configuration) => patchTool({ configuration })}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -545,6 +592,7 @@ function NodeProperties({ node }: { node: WorkflowNode }) {
 
 function EdgeProperties({ edge }: { edge: WorkflowEdge }) {
   const definition = useWorkflowStore((s) => s.definition);
+  const tools = useWorkflowStore((s) => s.tools);
   const updateEdge = useWorkflowStore((s) => s.updateEdge);
   const removeEdges = useWorkflowStore((s) => s.removeEdges);
 
@@ -585,12 +633,12 @@ function EdgeProperties({ edge }: { edge: WorkflowEdge }) {
       <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-2 text-[11px] text-zinc-400">
         <div className="flex items-center gap-1.5">
           <Bot className="h-3 w-3 text-zinc-500" />
-          <span className="truncate">{sourceNode ? nodeTitle(sourceNode) : edge.source}</span>
+          <span className="truncate">{sourceNode ? nodeTitle(sourceNode, tools) : edge.source}</span>
         </div>
         <div className="ml-1.5 border-l border-zinc-700 pl-2 text-zinc-600">↓</div>
         <div className="flex items-center gap-1.5">
           <Bot className="h-3 w-3 text-zinc-500" />
-          <span className="truncate">{targetNode ? nodeTitle(targetNode) : edge.target}</span>
+          <span className="truncate">{targetNode ? nodeTitle(targetNode, tools) : edge.target}</span>
         </div>
       </div>
 
@@ -731,12 +779,14 @@ function Overview() {
   );
 }
 
-function nodeTitle(node: WorkflowNode): string {
+function nodeTitle(node: WorkflowNode, tools: ToolRecord[]): string {
   switch (node.type) {
     case "agent":
       return "Agent node";
-    case "tool":
-      return (node.config as ToolNodeConfig).name || "Tool node";
+    case "tool": {
+      const config = node.config as ToolNodeConfig;
+      return tools.find((t) => t.id === config.toolId)?.name || "Tool node";
+    }
     case "condition":
       return "Condition / Router";
     case "approval":
