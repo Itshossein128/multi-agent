@@ -5,3 +5,4 @@ export { ApiAgentExecutor } from "./apiAgentExecutor";
 export { NotImplementedAgentExecutor, CodexCliExecutor, ClaudeCodeCliExecutor, AgyCliExecutor, OllamaLocalExecutor, } from "./notImplementedExecutor";
 export { UnsupportedBackendError, AgentExecutionFailedError } from "./errors";
 export { mapAgentExecutionEvent } from "./mapAgentExecutionEvent";
+export type { MemoryAccessContext, RuntimeMemoryDependencies } from "../../memory/contracts";

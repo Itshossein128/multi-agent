@@ -2,11 +2,13 @@ import type { Run, RunEvent } from "@multi-agent/types";
 import { redact } from "../adapters/langGraphEventAdapter";
 
 type Listener = (event: RunEvent) => void;
-interface Entry { run: Run; events: RunEvent[]; listeners: Set<Listener>; abort: AbortController }
+interface MemoryOwner { principalId: string; tenantId: string }
+interface Entry { run: Run; events: RunEvent[]; listeners: Set<Listener>; abort: AbortController; memoryOwner?: MemoryOwner }
 
 export class RunStore {
   private entries = new Map<string, Entry>();
-  create(run: Run) { this.entries.set(run.id, { run, events: [], listeners: new Set(), abort: new AbortController() }); return run; }
+  create(run: Run, memoryOwner?: MemoryOwner) { this.entries.set(run.id, { run, events: [], listeners: new Set(), abort: new AbortController(), memoryOwner: memoryOwner ? { principalId: memoryOwner.principalId, tenantId: memoryOwner.tenantId } : undefined }); return run; }
+  getMemoryOwner(runId: string): MemoryOwner | undefined { const owner = this.entries.get(runId)?.memoryOwner; return owner ? { ...owner } : undefined; }
   get(runId: string) { return this.entries.get(runId); }
   list(agentId?: string): Run[] {
     return [...this.entries.values()]

@@ -31,6 +31,8 @@ class ApiAgentExecutor {
             const result = await model.invoke([
                 { role: "system", content: systemPromptFor(agent) },
                 ...history.flatMap((entry) => [{ role: "user", content: serializeInput(entry.input) }, { role: "assistant", content: serializeInput(entry.output) }]),
+                ...(typeof input.context?.memoryContext === "string" && input.context.memoryContext
+                    ? [{ role: "user", content: input.context.memoryContext }] : []),
                 { role: "user", content: serializeInput(input.input) },
             ], { signal: input.signal });
             const content = result.content;

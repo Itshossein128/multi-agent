@@ -1,11 +1,10 @@
 import { AgentExecutorFactory } from "./agentExecutorFactory";
 import type { AgentExecutionEvent, AgentExecutionInput } from "./types";
-/**
- * Thin runtime boundary: resolve an executor from the agent backend, then stream events.
- * Kept inside the existing server process — not a distributed service.
- */
+import type { RuntimeMemoryDependencies } from "../../memory/contracts";
+/** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export declare class AgentRuntime {
     private readonly executorFactory;
-    constructor(executorFactory?: AgentExecutorFactory);
+    private readonly memoryDependencies?;
+    constructor(executorFactory?: AgentExecutorFactory, memoryDependencies?: RuntimeMemoryDependencies | undefined);
     execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent>;
 }

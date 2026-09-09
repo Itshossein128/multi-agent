@@ -3,9 +3,23 @@ import { streamSSE } from "hono/streaming";
 import { assertNoCredentials, migrateAgentRecord, validateAgent, type AgentTestRequest, type RunCreateRequest } from "@multi-agent/types";
 import { RunExecutor } from "../runtime/runExecutor";
 import { redact } from "../adapters/langGraphEventAdapter";
+import type { MemoryAccessResolver } from "../memory/access";
+import { bodyLimit } from "hono/body-limit";
 
-export function createRunsRouter(executor = new RunExecutor()) {
+export function createRunsRouter(executor = new RunExecutor(), resolveMemoryAccess: MemoryAccessResolver = async () => null) {
   const app = new Hono();
+  const hasLongTermMemory = (agents: RunCreateRequest["agents"]) => agents.some((agent) => agent.memory?.enabled && agent.memory.longTerm?.enabled);
+  const canRead = async (runId: string, request: Request) => {
+    const owner = executor.getStore().getMemoryOwner(runId);
+    if (!owner) return true;
+    const access = await resolveMemoryAccess(request);
+    return access?.principalId === owner.principalId && access.tenantId === owner.tenantId;
+  };
+  app.use("*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "Run request is too large." }, 413) }));
+  app.use("/:runId/*", async (c, next) => {
+    if (!await canRead(c.req.param("runId")!, c.req.raw)) return c.json({ error: "Run not found" }, 404);
+    await next();
+  });
   app.post("/agent-test", async (c) => {
     try {
       const body = await c.req.json<AgentTestRequest>();
@@ -13,13 +27,20 @@ export function createRunsRouter(executor = new RunExecutor()) {
       assertNoCredentials(body.agent);
       const errors = validateAgent(body.agent);
       if (errors.length) return c.json({ error: errors.join(" ") }, 400);
-      return c.json({ runId: executor.startAgentTest({ agent: migrateAgentRecord(body.agent), input: body.input }) }, 202);
+      const access = hasLongTermMemory([body.agent]) ? await resolveMemoryAccess(c.req.raw) : null;
+      if (hasLongTermMemory([body.agent]) && !access) return c.json({ error: "Authenticated memory access is required for this agent." }, 401);
+      const runId = executor.startAgentTest({ agent: migrateAgentRecord(body.agent), input: body.input }, access ?? undefined);
+      return c.json({ runId }, 202);
     } catch (error) { return c.json({ error: error instanceof Error ? error.message : String(error) }, 400); }
   });
-  app.get("/", (c) => c.json(executor.getStore().list(c.req.query("agentId")).map((run) => ({
+  app.get("/", async (c) => {
+    const runs = executor.getStore().list(c.req.query("agentId"));
+    const allowed = await Promise.all(runs.map((run) => canRead(run.id, c.req.raw)));
+    return c.json(runs.filter((_, index) => allowed[index]).map((run) => ({
     ...run, input: undefined, output: undefined,
     error: redact(run.error), metadata: redact(run.metadata),
-  }))));
+  })));
+  });
   app.get("/:runId/history", (c) => {
     const runId = c.req.param("runId");
     if (!executor.getStore().get(runId)) return c.json({ error: "Run not found" }, 404);
@@ -37,12 +58,16 @@ export function createRunsRouter(executor = new RunExecutor()) {
     try {
       const agents = body.agents.map((agent) => migrateAgentRecord(agent));
       assertNoCredentials({ workflow: body.workflow, agents: body.agents });
-      return c.json({ runId: executor.start({ ...(body as RunCreateRequest), agents }) }, 202);
+      const access = hasLongTermMemory(agents) ? await resolveMemoryAccess(c.req.raw) : null;
+      if (hasLongTermMemory(agents) && !access) return c.json({ error: "Authenticated memory access is required for this workflow." }, 401);
+      const runId = executor.start({ ...(body as RunCreateRequest), agents }, access ?? undefined);
+      return c.json({ runId }, 202);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
   });
-  app.get("/:runId", (c) => {
+  app.get("/:runId", async (c) => {
+    if (!await canRead(c.req.param("runId"), c.req.raw)) return c.json({ error: "Run not found" }, 404);
     const entry = executor.getStore().get(c.req.param("runId"));
     return entry ? c.json(redact(entry.run)) : c.json({ error: "Run not found" }, 404);
   });

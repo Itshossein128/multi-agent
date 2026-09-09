@@ -1,5 +1,8 @@
-import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { Annotation, END, START, StateGraph, MemorySaver, type BaseCheckpointSaver } from "@langchain/langgraph";
 import { validateAgent, type AgentRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
+import { AgentRuntime, AgentExecutionFailedError } from "../../../../src/agents/runtime";
+import type { MemoryAccessContext } from "../../../../src/memory/contracts";
+import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
 import { validateWorkflow } from "./validation";
 
 export class UnsupportedPhase4NodeError extends Error {
@@ -13,11 +16,13 @@ export interface RuntimeState {
   input: Record<string, unknown>;
   output: Record<string, unknown>;
   memory: Record<string, unknown>;
+  shortTermHistories?: ShortTermHistories;
   branch?: string;
   lastValue?: unknown;
 }
 
 const State = Annotation.Root({
+  shortTermHistories: Annotation<ShortTermHistories>({ reducer: mergeHistories, default: () => ({}) }),
   input: Annotation<Record<string, unknown>>({ reducer: (_, next) => next, default: () => ({}) }),
   output: Annotation<Record<string, unknown>>({ reducer: (_, next) => next, default: () => ({}) }),
   memory: Annotation<Record<string, unknown>>({
@@ -41,6 +46,10 @@ export interface AgentExecutionEvent {
 
 export interface CompileOptions {
   signal?: AbortSignal;
+  runtime?: Pick<AgentRuntime, "execute">;
+  memoryAccess?: MemoryAccessContext;
+  /** A stable run identity enables checkpoints; anonymous compilation stays stateless. */
+  checkpointer?: BaseCheckpointSaver | false;
   /** @deprecated Prefer AgentRuntime via the default path; kept for tests/overrides. */
   agentRunner?: (
     agent: AgentRecord,
@@ -65,7 +74,7 @@ export function compileWorkflow(
   const nodesById = new Map(definition.nodes.map((node) => [node.id, node]));
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
   const runId = options.runId ?? "run-local";
-  const memoryStore = new Map<string, { input: unknown; output: unknown }[]>();
+  const runtime = options.runtime ?? new AgentRuntime();
 
   for (const node of definition.nodes) {
     graph.addNode(node.id, async (state: RuntimeState) => {
@@ -102,6 +111,7 @@ export function compileWorkflow(
       const agentErrors = validateAgent(agent);
       if (agentErrors.length) throw new Error(agentErrors.join(" "));
 
+      let shortTermHistories: ShortTermHistories = {};
       const value = options.agentRunner
         ? await options.agentRunner(agent, state, { runId, nodeId: node.id })
         : await runAgentThroughRuntime(agent, state, {
@@ -109,10 +119,12 @@ export function compileWorkflow(
           nodeId: node.id,
           workflowId: options.workflowId ?? definition.id,
           onAgentEvent: options.onAgentEvent,
-          memoryStore,
+          runtime,
+          memoryAccess: options.memoryAccess,
+          onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
           signal: options.signal,
         });
-      return { lastValue: value };
+      return { lastValue: value, shortTermHistories };
     });
   }
 
@@ -136,8 +148,9 @@ export function compileWorkflow(
   const output = definition.nodes.find((node) => node.type === "output");
   if (input) (graph as { addEdge: (a: string, b: string) => void }).addEdge(START, input.id);
   if (output) (graph as { addEdge: (a: string, b: string) => void }).addEdge(output.id, END);
+  const compiled = graph.compile({ checkpointer: options.runId ? (options.checkpointer ?? new MemorySaver()) : undefined });
   return {
-    graph: graph.compile(),
+    graph: options.runId ? compiled.withConfig({ configurable: { thread_id: runId } }) : compiled,
     agentByNode: new Map(
       definition.nodes
         .filter((node) => node.type === "agent")
@@ -155,58 +168,34 @@ async function runAgentThroughRuntime(
     nodeId: string;
     workflowId: string;
     signal?: AbortSignal;
-    memoryStore: Map<string, { input: unknown; output: unknown }[]>;
+    runtime: Pick<AgentRuntime, "execute">;
+    memoryAccess?: MemoryAccessContext;
+    onShortTermUpdate: (update: ShortTermHistories) => void;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
   }
 ): Promise<unknown> {
-  // LangGraph nodes delegate to the shared AgentRuntime — no provider SDK here.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { AgentRuntime, AgentExecutionFailedError, UnsupportedBackendError } = require("../../../../src/agents/runtime") as {
-    AgentRuntime: new () => {
-      execute: (input: {
-        agent: AgentRecord;
-        input: unknown;
-        runId: string;
-        nodeId: string;
-        workflowId?: string;
-        context?: Record<string, unknown>;
-        signal?: AbortSignal;
-        memoryStore?: Map<string, { input: unknown; output: unknown }[]>;
-      }) => AsyncIterable<AgentExecutionEvent>;
-    };
-    AgentExecutionFailedError: new (message: string) => Error;
-    UnsupportedBackendError: new (...args: unknown[]) => Error;
-  };
-
-  const runtime = new AgentRuntime();
   let lastContent: unknown;
-  try {
-    for await (const event of runtime.execute({
-      agent,
-      input: state.lastValue ?? state.input,
-      runId: meta.runId,
-      nodeId: meta.nodeId,
-      workflowId: meta.workflowId,
-      signal: meta.signal,
-      memoryStore: meta.memoryStore,
-      context: { memory: state.memory, branch: state.branch },
-    })) {
-      meta.onAgentEvent?.(event);
-      if (event.type === "agent.completed" || event.type === "agent.output") {
-        const payload = event.payload as { content?: unknown } | undefined;
-        if (payload && "content" in payload) lastContent = payload.content;
-        else lastContent = event.payload;
-      }
-      if (event.type === "agent.failed") {
-        const payload = event.payload as { error?: string } | undefined;
-        throw new AgentExecutionFailedError(payload?.error ?? "Agent execution failed");
-      }
+  for await (const event of meta.runtime.execute({
+    agent,
+    input: state.lastValue ?? state.input,
+    runId: meta.runId,
+    nodeId: meta.nodeId,
+    workflowId: meta.workflowId,
+    signal: meta.signal,
+    memoryAccess: meta.memoryAccess,
+    shortTermHistories: state.shortTermHistories ?? {},
+    onShortTermUpdate: meta.onShortTermUpdate,
+    onBackgroundEvent: meta.onAgentEvent,
+    context: { memory: state.memory, branch: state.branch },
+  })) {
+    meta.onAgentEvent?.(event);
+    if (event.type === "agent.completed" || event.type === "agent.output") {
+      const payload = event.payload as { content?: unknown } | undefined;
+      lastContent = payload && "content" in payload ? payload.content : event.payload;
     }
-  } catch (error) {
-    if (error instanceof UnsupportedBackendError || error instanceof AgentExecutionFailedError) {
-      throw error;
+    if (event.type === "agent.failed") {
+      throw new AgentExecutionFailedError((event.payload as { error?: string })?.error ?? "Agent execution failed");
     }
-    throw error;
   }
   return lastContent;
 }

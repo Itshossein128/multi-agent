@@ -4,6 +4,7 @@
  * This package is used by both web and server runtime so execution and UI
  * share the same contract for workflow definitions and event streams.
  */
+export * from "./memory";
 export type WorkflowNodeType = "agent" | "tool" | "approval" | "memory" | "condition" | "input" | "output";
 export type WorkflowPosition = {
     x: number;
@@ -38,13 +39,18 @@ export interface AgentModelSettings {
     topP?: number;
     maxTokens?: number;
 }
-/** Bounded conversation memory, isolated to a run; persistence belongs to Phase 8. */
+/** Legacy run settings remain compatible; long-term memory is an optional separate subsystem. */
 export interface AgentMemoryConfig {
     enabled: boolean;
     type: "run";
     scope: "agent" | "node";
     mode: "read" | "write" | "read_write";
     maxEntries: number;
+    shortTerm?: {
+        enabled: boolean;
+        maxTokens?: number;
+    };
+    longTerm?: import("./memory").LongTermMemoryConfig;
 }
 /** Future CLI/local execution constraints — not fully enforced yet. */
 export interface AgentExecutionPolicy {

@@ -10,7 +10,7 @@ General configuration, lifecycle, API/CLI/local backend fields, execution policy
 
 API model fields come from the shared provider/model schema registry in `packages/types/src/agentConfiguration.ts`. Temperature, Top P and output limits flow through the runtime to provider constructors. Blank fields use provider defaults (Anthropic defaults to 4096 output tokens). Conservative OpenAI reasoning profiles expose output limits only. Unsupported settings must be reset when changing providers/models. Authentication remains server environment configuration.
 
-Agent memory is bounded conversation history inside one run. Agent scope shares history across sequential instances; node scope isolates them. Read, write and read/write modes are enforced by AgentRuntime, with 1–100 entries and normalized memory events. A fresh standalone test starts with empty history. Persistent memory and memory exploration remain later-phase work.
+Phase 5 agent memory is bounded conversation history inside one run. Agent scope shares history across sequential instances; node scope isolates them. Read, write and read/write modes are enforced by AgentRuntime, with 1–100 entries and normalized memory events. A fresh standalone test starts with empty history. [Phase 6 Memory](phase-6-memory.md) extends this with checkpointed short-term state and authenticated backend long-term memory. A full memory explorer remains future work.
 
 Edits remain pending until Save succeeds. Storage failures are surfaced and keep the draft intact. Page actions and browser reload/close protect unsaved changes; browser history navigation within the SPA is not globally intercepted. Deletion is blocked while any saved workflow references the agent, with instructions to remove the nodes and save first.
 

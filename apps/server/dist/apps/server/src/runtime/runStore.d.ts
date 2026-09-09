@@ -1,14 +1,20 @@
 import type { Run, RunEvent } from "@multi-agent/types";
 type Listener = (event: RunEvent) => void;
+interface MemoryOwner {
+    principalId: string;
+    tenantId: string;
+}
 interface Entry {
     run: Run;
     events: RunEvent[];
     listeners: Set<Listener>;
     abort: AbortController;
+    memoryOwner?: MemoryOwner;
 }
 export declare class RunStore {
     private entries;
-    create(run: Run): Run;
+    create(run: Run, memoryOwner?: MemoryOwner): Run;
+    getMemoryOwner(runId: string): MemoryOwner | undefined;
     get(runId: string): Entry | undefined;
     list(agentId?: string): Run[];
     append(runId: string, event: RunEvent): {

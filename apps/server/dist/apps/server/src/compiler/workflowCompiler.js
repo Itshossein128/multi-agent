@@ -4,6 +4,8 @@ exports.UnsupportedPhase4NodeError = void 0;
 exports.compileWorkflow = compileWorkflow;
 const langgraph_1 = require("@langchain/langgraph");
 const types_1 = require("@multi-agent/types");
+const runtime_1 = require("../../../../src/agents/runtime");
+const shortTermMemory_1 = require("../../../../src/agents/runtime/shortTermMemory");
 const validation_1 = require("./validation");
 class UnsupportedPhase4NodeError extends Error {
     nodeId;
@@ -15,6 +17,7 @@ class UnsupportedPhase4NodeError extends Error {
 }
 exports.UnsupportedPhase4NodeError = UnsupportedPhase4NodeError;
 const State = langgraph_1.Annotation.Root({
+    shortTermHistories: (0, langgraph_1.Annotation)({ reducer: shortTermMemory_1.mergeHistories, default: () => ({}) }),
     input: (0, langgraph_1.Annotation)({ reducer: (_, next) => next, default: () => ({}) }),
     output: (0, langgraph_1.Annotation)({ reducer: (_, next) => next, default: () => ({}) }),
     memory: (0, langgraph_1.Annotation)({
@@ -33,7 +36,7 @@ function compileWorkflow(definition, agents, options = {}) {
     const nodesById = new Map(definition.nodes.map((node) => [node.id, node]));
     const agentById = new Map(agents.map((agent) => [agent.id, agent]));
     const runId = options.runId ?? "run-local";
-    const memoryStore = new Map();
+    const runtime = options.runtime ?? new runtime_1.AgentRuntime();
     for (const node of definition.nodes) {
         graph.addNode(node.id, async (state) => {
             if (node.type === "tool" || node.type === "approval")
@@ -71,6 +74,7 @@ function compileWorkflow(definition, agents, options = {}) {
             const agentErrors = (0, types_1.validateAgent)(agent);
             if (agentErrors.length)
                 throw new Error(agentErrors.join(" "));
+            let shortTermHistories = {};
             const value = options.agentRunner
                 ? await options.agentRunner(agent, state, { runId, nodeId: node.id })
                 : await runAgentThroughRuntime(agent, state, {
@@ -78,10 +82,12 @@ function compileWorkflow(definition, agents, options = {}) {
                     nodeId: node.id,
                     workflowId: options.workflowId ?? definition.id,
                     onAgentEvent: options.onAgentEvent,
-                    memoryStore,
+                    runtime,
+                    memoryAccess: options.memoryAccess,
+                    onShortTermUpdate: update => { shortTermHistories = (0, shortTermMemory_1.mergeHistories)(shortTermHistories, update); },
                     signal: options.signal,
                 });
-            return { lastValue: value };
+            return { lastValue: value, shortTermHistories };
         });
     }
     for (const edge of definition.edges) {
@@ -104,8 +110,9 @@ function compileWorkflow(definition, agents, options = {}) {
         graph.addEdge(langgraph_1.START, input.id);
     if (output)
         graph.addEdge(output.id, langgraph_1.END);
+    const compiled = graph.compile({ checkpointer: options.runId ? (options.checkpointer ?? new langgraph_1.MemorySaver()) : undefined });
     return {
-        graph: graph.compile(),
+        graph: options.runId ? compiled.withConfig({ configurable: { thread_id: runId } }) : compiled,
         agentByNode: new Map(definition.nodes
             .filter((node) => node.type === "agent")
             .map((node) => [node.id, agentById.get(node.config.agentId ?? "")])),
@@ -113,41 +120,28 @@ function compileWorkflow(definition, agents, options = {}) {
     };
 }
 async function runAgentThroughRuntime(agent, state, meta) {
-    // LangGraph nodes delegate to the shared AgentRuntime — no provider SDK here.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { AgentRuntime, AgentExecutionFailedError, UnsupportedBackendError } = require("../../../../src/agents/runtime");
-    const runtime = new AgentRuntime();
     let lastContent;
-    try {
-        for await (const event of runtime.execute({
-            agent,
-            input: state.lastValue ?? state.input,
-            runId: meta.runId,
-            nodeId: meta.nodeId,
-            workflowId: meta.workflowId,
-            signal: meta.signal,
-            memoryStore: meta.memoryStore,
-            context: { memory: state.memory, branch: state.branch },
-        })) {
-            meta.onAgentEvent?.(event);
-            if (event.type === "agent.completed" || event.type === "agent.output") {
-                const payload = event.payload;
-                if (payload && "content" in payload)
-                    lastContent = payload.content;
-                else
-                    lastContent = event.payload;
-            }
-            if (event.type === "agent.failed") {
-                const payload = event.payload;
-                throw new AgentExecutionFailedError(payload?.error ?? "Agent execution failed");
-            }
+    for await (const event of meta.runtime.execute({
+        agent,
+        input: state.lastValue ?? state.input,
+        runId: meta.runId,
+        nodeId: meta.nodeId,
+        workflowId: meta.workflowId,
+        signal: meta.signal,
+        memoryAccess: meta.memoryAccess,
+        shortTermHistories: state.shortTermHistories ?? {},
+        onShortTermUpdate: meta.onShortTermUpdate,
+        onBackgroundEvent: meta.onAgentEvent,
+        context: { memory: state.memory, branch: state.branch },
+    })) {
+        meta.onAgentEvent?.(event);
+        if (event.type === "agent.completed" || event.type === "agent.output") {
+            const payload = event.payload;
+            lastContent = payload && "content" in payload ? payload.content : event.payload;
         }
-    }
-    catch (error) {
-        if (error instanceof UnsupportedBackendError || error instanceof AgentExecutionFailedError) {
-            throw error;
+        if (event.type === "agent.failed") {
+            throw new runtime_1.AgentExecutionFailedError(event.payload?.error ?? "Agent execution failed");
         }
-        throw error;
     }
     return lastContent;
 }

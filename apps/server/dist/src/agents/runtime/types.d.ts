@@ -1,4 +1,6 @@
 import type { AgentRecord } from "@multi-agent/types";
+import type { MemoryAccessContext } from "../../memory/contracts";
+import type { ShortTermHistories } from "./shortTermMemory";
 export type AgentExecutionEventType = "agent.started" | "agent.output" | "agent.completed" | "agent.failed" | "tool.started" | "tool.completed" | "tool.failed" | "memory.read" | "memory.write" | "log";
 export interface AgentExecutionEvent {
     type: AgentExecutionEventType;
@@ -16,6 +18,13 @@ export interface AgentExecutionInput {
     workflowId?: string;
     context?: Record<string, unknown>;
     signal?: AbortSignal;
+    /** Trusted server composition only; configuration is never an authorization grant. */
+    memoryAccess?: MemoryAccessContext;
+    shortTermHistories?: ShortTermHistories;
+    onShortTermUpdate?: (update: ShortTermHistories) => void;
+    /** Background events only. The owner maps/appends these to the existing RunStore,
+     * including after the execution iterable and run have completed. Never replay them. */
+    onBackgroundEvent?: (event: AgentExecutionEvent) => void | Promise<void>;
     memoryStore?: Map<string, {
         input: unknown;
         output: unknown;

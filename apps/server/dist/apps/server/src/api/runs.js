@@ -6,8 +6,23 @@ const streaming_1 = require("hono/streaming");
 const types_1 = require("@multi-agent/types");
 const runExecutor_1 = require("../runtime/runExecutor");
 const langGraphEventAdapter_1 = require("../adapters/langGraphEventAdapter");
-function createRunsRouter(executor = new runExecutor_1.RunExecutor()) {
+const body_limit_1 = require("hono/body-limit");
+function createRunsRouter(executor = new runExecutor_1.RunExecutor(), resolveMemoryAccess = async () => null) {
     const app = new hono_1.Hono();
+    const hasLongTermMemory = (agents) => agents.some((agent) => agent.memory?.enabled && agent.memory.longTerm?.enabled);
+    const canRead = async (runId, request) => {
+        const owner = executor.getStore().getMemoryOwner(runId);
+        if (!owner)
+            return true;
+        const access = await resolveMemoryAccess(request);
+        return access?.principalId === owner.principalId && access.tenantId === owner.tenantId;
+    };
+    app.use("*", (0, body_limit_1.bodyLimit)({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "Run request is too large." }, 413) }));
+    app.use("/:runId/*", async (c, next) => {
+        if (!await canRead(c.req.param("runId"), c.req.raw))
+            return c.json({ error: "Run not found" }, 404);
+        await next();
+    });
     app.post("/agent-test", async (c) => {
         try {
             const body = await c.req.json();
@@ -17,16 +32,24 @@ function createRunsRouter(executor = new runExecutor_1.RunExecutor()) {
             const errors = (0, types_1.validateAgent)(body.agent);
             if (errors.length)
                 return c.json({ error: errors.join(" ") }, 400);
-            return c.json({ runId: executor.startAgentTest({ agent: (0, types_1.migrateAgentRecord)(body.agent), input: body.input }) }, 202);
+            const access = hasLongTermMemory([body.agent]) ? await resolveMemoryAccess(c.req.raw) : null;
+            if (hasLongTermMemory([body.agent]) && !access)
+                return c.json({ error: "Authenticated memory access is required for this agent." }, 401);
+            const runId = executor.startAgentTest({ agent: (0, types_1.migrateAgentRecord)(body.agent), input: body.input }, access ?? undefined);
+            return c.json({ runId }, 202);
         }
         catch (error) {
             return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
         }
     });
-    app.get("/", (c) => c.json(executor.getStore().list(c.req.query("agentId")).map((run) => ({
-        ...run, input: undefined, output: undefined,
-        error: (0, langGraphEventAdapter_1.redact)(run.error), metadata: (0, langGraphEventAdapter_1.redact)(run.metadata),
-    }))));
+    app.get("/", async (c) => {
+        const runs = executor.getStore().list(c.req.query("agentId"));
+        const allowed = await Promise.all(runs.map((run) => canRead(run.id, c.req.raw)));
+        return c.json(runs.filter((_, index) => allowed[index]).map((run) => ({
+            ...run, input: undefined, output: undefined,
+            error: (0, langGraphEventAdapter_1.redact)(run.error), metadata: (0, langGraphEventAdapter_1.redact)(run.metadata),
+        })));
+    });
     app.get("/:runId/history", (c) => {
         const runId = c.req.param("runId");
         if (!executor.getStore().get(runId))
@@ -45,13 +68,19 @@ function createRunsRouter(executor = new runExecutor_1.RunExecutor()) {
         try {
             const agents = body.agents.map((agent) => (0, types_1.migrateAgentRecord)(agent));
             (0, types_1.assertNoCredentials)({ workflow: body.workflow, agents: body.agents });
-            return c.json({ runId: executor.start({ ...body, agents }) }, 202);
+            const access = hasLongTermMemory(agents) ? await resolveMemoryAccess(c.req.raw) : null;
+            if (hasLongTermMemory(agents) && !access)
+                return c.json({ error: "Authenticated memory access is required for this workflow." }, 401);
+            const runId = executor.start({ ...body, agents }, access ?? undefined);
+            return c.json({ runId }, 202);
         }
         catch (error) {
             return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
         }
     });
-    app.get("/:runId", (c) => {
+    app.get("/:runId", async (c) => {
+        if (!await canRead(c.req.param("runId"), c.req.raw))
+            return c.json({ error: "Run not found" }, 404);
         const entry = executor.getStore().get(c.req.param("runId"));
         return entry ? c.json((0, langGraphEventAdapter_1.redact)(entry.run)) : c.json({ error: "Run not found" }, 404);
     });

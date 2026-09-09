@@ -16,3 +16,4 @@ export {
 } from "./notImplementedExecutor";
 export { UnsupportedBackendError, AgentExecutionFailedError } from "./errors";
 export { mapAgentExecutionEvent } from "./mapAgentExecutionEvent";
+export type { MemoryAccessContext, RuntimeMemoryDependencies } from "../../memory/contracts";

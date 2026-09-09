@@ -4,7 +4,8 @@ exports.RunStore = void 0;
 const langGraphEventAdapter_1 = require("../adapters/langGraphEventAdapter");
 class RunStore {
     entries = new Map();
-    create(run) { this.entries.set(run.id, { run, events: [], listeners: new Set(), abort: new AbortController() }); return run; }
+    create(run, memoryOwner) { this.entries.set(run.id, { run, events: [], listeners: new Set(), abort: new AbortController(), memoryOwner: memoryOwner ? { principalId: memoryOwner.principalId, tenantId: memoryOwner.tenantId } : undefined }); return run; }
+    getMemoryOwner(runId) { const owner = this.entries.get(runId)?.memoryOwner; return owner ? { ...owner } : undefined; }
     get(runId) { return this.entries.get(runId); }
     list(agentId) {
         return [...this.entries.values()]

@@ -5,6 +5,8 @@
  * share the same contract for workflow definitions and event streams.
  */
 
+export * from "./memory";
+
 export type WorkflowNodeType =
   | "agent"
   | "tool"
@@ -52,13 +54,15 @@ export interface AgentModelSettings {
   maxTokens?: number;
 }
 
-/** Bounded conversation memory, isolated to a run; persistence belongs to Phase 8. */
+/** Legacy run settings remain compatible; long-term memory is an optional separate subsystem. */
 export interface AgentMemoryConfig {
   enabled: boolean;
   type: "run";
   scope: "agent" | "node";
   mode: "read" | "write" | "read_write";
   maxEntries: number;
+  shortTerm?: { enabled: boolean; maxTokens?: number };
+  longTerm?: import("./memory").LongTermMemoryConfig;
 }
 
 /** Future CLI/local execution constraints — not fully enforced yet. */

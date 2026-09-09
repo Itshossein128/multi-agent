@@ -6,6 +6,7 @@ exports.credentialIssues = credentialIssues;
 exports.assertNoCredentials = assertNoCredentials;
 exports.validateAgent = validateAgent;
 exports.removeAgentNodes = removeAgentNodes;
+const memory_1 = require("./memory");
 const sampling = [
     { key: "temperature", label: "Temperature", min: 0, max: 2, step: 0.1 },
     { key: "topP", label: "Top P", min: 0, max: 1, step: 0.05 },
@@ -115,6 +116,28 @@ function validateAgent(agent) {
         const memory = agent.memory;
         if (typeof memory.enabled !== "boolean" || memory.type !== "run" || !["agent", "node"].includes(memory.scope) || !["read", "write", "read_write"].includes(memory.mode) || !Number.isInteger(memory.maxEntries) || memory.maxEntries < 1 || memory.maxEntries > 100)
             errors.push("Memory must use run scope with 1–100 entries and a valid read/write mode.");
+        const boundedInteger = (value, min, max) => typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+        if (memory.shortTerm && (typeof memory.shortTerm.enabled !== "boolean" || (memory.shortTerm.maxTokens !== undefined && !boundedInteger(memory.shortTerm.maxTokens, 64, 8192))))
+            errors.push("Short-term memory requires an enabled flag and a context budget of 64–8192 tokens.");
+        const longTerm = memory.longTerm;
+        if (longTerm) {
+            if (typeof longTerm.enabled !== "boolean" || (longTerm.required !== undefined && typeof longTerm.required !== "boolean"))
+                errors.push("Long-term enabled and required settings must be booleans.");
+            if (longTerm.readableNamespaces && (!Array.isArray(longTerm.readableNamespaces) || longTerm.readableNamespaces.length > 20 || !longTerm.readableNamespaces.every(memory_1.isMemoryNamespace)))
+                errors.push("Readable memory namespaces must be valid explicit scopes (maximum 20).");
+            if (longTerm.writableNamespace && !(0, memory_1.isMemoryNamespace)(longTerm.writableNamespace))
+                errors.push("Writable memory namespace is invalid.");
+            if (longTerm.kinds && (!Array.isArray(longTerm.kinds) || !longTerm.kinds.length || longTerm.kinds.some((kind) => !["semantic", "episodic", "procedural"].includes(kind))))
+                errors.push("Select at least one valid long-term memory kind.");
+            if (longTerm.writeMode && !["hot_path", "background"].includes(longTerm.writeMode))
+                errors.push("Invalid memory write mode.");
+            if (longTerm.retrieval?.maxMemories !== undefined && !boundedInteger(longTerm.retrieval.maxMemories, 1, 50))
+                errors.push("Memory retrieval count must be between 1 and 50.");
+            if (longTerm.retrieval?.maxTokens !== undefined && !boundedInteger(longTerm.retrieval.maxTokens, 64, 8192))
+                errors.push("Memory context budget must be between 64 and 8192 tokens.");
+            if (longTerm.retrieval?.minScore !== undefined && (typeof longTerm.retrieval.minScore !== "number" || !Number.isFinite(longTerm.retrieval.minScore) || longTerm.retrieval.minScore < 0 || longTerm.retrieval.minScore > 1))
+                errors.push("Memory minimum score must be between 0 and 1.");
+        }
     }
     return errors;
 }
