@@ -5,8 +5,9 @@ import { RunExecutor } from "../runtime/runExecutor";
 import { redact } from "../adapters/langGraphEventAdapter";
 import type { MemoryAccessResolver } from "../memory/access";
 import { bodyLimit } from "hono/body-limit";
+import type { StudioStore } from "../../../../src/studio/contracts";
 
-export function createRunsRouter(executor = new RunExecutor(), resolveMemoryAccess: MemoryAccessResolver = async () => null) {
+export function createRunsRouter(executor = new RunExecutor(), resolveMemoryAccess: MemoryAccessResolver = async () => null, studioStore?: StudioStore) {
   const app = new Hono();
   const hasLongTermMemory = (agents: RunCreateRequest["agents"]) => agents.some((agent) => agent.memory?.enabled && agent.memory.longTerm?.enabled);
   const canRead = async (runId: string, request: Request) => {
@@ -93,7 +94,9 @@ export function createRunsRouter(executor = new RunExecutor(), resolveMemoryAcce
       assertNoCredentials({ workflow: body.workflow, agents: body.agents });
       const access = hasLongTermMemory(agents) ? await resolveMemoryAccess(c.req.raw) : null;
       if (hasLongTermMemory(agents) && !access) return c.json({ error: "Authenticated memory access is required for this workflow." }, 401);
-      const runId = executor.start({ ...(body as RunCreateRequest), agents }, access ?? undefined);
+      // Tool definitions are resolved server-side; callers cannot smuggle a replacement registry.
+      const tools = studioStore ? await studioStore.listTools() : (body.tools ?? []);
+      const runId = executor.start({ ...(body as RunCreateRequest), agents, tools }, access ?? undefined);
       return c.json({ runId }, 202);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);

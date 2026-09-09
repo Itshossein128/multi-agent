@@ -554,6 +554,7 @@ export interface Run {
 export interface RunCreateRequest {
   workflow: WorkflowDefinition;
   agents: AgentRecord[];
+  tools?: ToolRecord[];
   input?: Record<string, unknown>;
   taskId?: string;
 }

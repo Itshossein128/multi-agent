@@ -23,6 +23,7 @@ Server-owned limits are configured only through environment variables:
 - `WORKFLOW_RECURSION_LIMIT` (default `100`)
 - `RUN_MAX_DURATION_MS` (default `900000`)
 - `AGENT_MAX_DURATION_MS` (default `120000`; bounds API-backed model calls through cancellation)
+- `TOOL_MAX_DURATION_MS` (default `30000`) and `TOOL_ALLOW_SIDE_EFFECTS` (default `false`)
 
 Run input is capped at 1 MiB. Runtime events, logs, and telemetry pass through redaction before they are persisted or sent to external observability services. Never put credentials in workflows, agent records, tool configuration, or run input.
 

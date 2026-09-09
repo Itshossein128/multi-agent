@@ -9,6 +9,7 @@ import { type RuntimeGuardrails } from "./guardrails";
 interface PausedContext {
     workflow: WorkflowDefinition;
     agents: AgentRecord[];
+    tools?: import("@multi-agent/types").ToolRecord[];
     memoryAccess?: MemoryAccessContext;
 }
 export declare class RunExecutor {

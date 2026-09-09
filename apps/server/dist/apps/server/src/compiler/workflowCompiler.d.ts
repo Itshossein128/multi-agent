@@ -1,8 +1,9 @@
 import { StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { type AgentRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
+import { type AgentRecord, type ToolRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
 import { AgentRuntime } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
+import { ToolRuntime } from "../../../../src/tools";
 export declare class UnsupportedPhase4NodeError extends Error {
     readonly nodeId: string;
     constructor(nodeId: string, node: WorkflowNode);
@@ -46,6 +47,8 @@ export interface CompileOptions {
     runId?: string;
     workflowId?: string;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
+    tools?: ToolRecord[];
+    toolRuntime?: Pick<ToolRuntime, "execute">;
 }
 export declare function compileWorkflow(definition: WorkflowDefinition, agents: AgentRecord[], options?: CompileOptions): {
     graph: import("@langchain/langgraph").CompiledStateGraph<{

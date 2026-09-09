@@ -1,9 +1,10 @@
 import { Annotation, END, START, StateGraph, MemorySaver, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { validateAgent, type AgentRecord, type ApprovalNodeConfig, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
+import { nowIso, validateAgent, type AgentRecord, type ApprovalNodeConfig, type ToolRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
 import { AgentRuntime, AgentExecutionFailedError } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
 import { validateWorkflow } from "./validation";
+import { ToolRuntime } from "../../../../src/tools";
 
 export class UnsupportedPhase4NodeError extends Error {
   constructor(public readonly nodeId: string, node: WorkflowNode) {
@@ -59,6 +60,8 @@ export interface CompileOptions {
   runId?: string;
   workflowId?: string;
   onAgentEvent?: (event: AgentExecutionEvent) => void;
+  tools?: ToolRecord[];
+  toolRuntime?: Pick<ToolRuntime, "execute">;
 }
 
 export function compileWorkflow(
@@ -66,7 +69,7 @@ export function compileWorkflow(
   agents: AgentRecord[],
   options: CompileOptions = {}
 ) {
-  const issues = validateWorkflow(definition, agents);
+  const issues = validateWorkflow(definition, agents, {}, options.tools);
   if (issues.some((issue) => issue.severity === "error")) {
     throw new Error(issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join("; "));
   }
@@ -75,10 +78,25 @@ export function compileWorkflow(
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
   const runId = options.runId ?? "run-local";
   const runtime = options.runtime ?? new AgentRuntime();
+  const toolsById = new Map((options.tools ?? []).map(tool => [tool.id, tool]));
+  const toolRuntime = options.toolRuntime ?? new ToolRuntime();
 
   for (const node of definition.nodes) {
     graph.addNode(node.id, async (state: RuntimeState) => {
-      if (node.type === "tool") throw new UnsupportedPhase4NodeError(node.id, node);
+      if (node.type === "tool") {
+        const tool = toolsById.get((node.config as { toolId?: string | null }).toolId ?? "");
+        if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
+        const emit = (type: string, payload: unknown) => options.onAgentEvent?.({ type, timestamp: nowIso(), runId, nodeId: node.id, payload });
+        emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
+        try {
+          const value = await toolRuntime.execute(tool, asToolInput(state.lastValue ?? state.input), options.signal);
+          emit("tool.completed", { toolId: tool.id, output: value });
+          return { lastValue: value };
+        } catch (error) {
+          emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }
+      }
       if (node.type === "approval") {
         const config = node.config as ApprovalNodeConfig;
         const resume = interrupt({
@@ -172,6 +190,8 @@ export function compileWorkflow(
     issues,
   };
 }
+
+function asToolInput(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : { value }; }
 
 async function runAgentThroughRuntime(
   agent: AgentRecord,

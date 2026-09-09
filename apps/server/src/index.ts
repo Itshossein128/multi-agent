@@ -69,7 +69,7 @@ async function main() {
 
   if (studio.store) app.route("/studio", createStudioRouter(studio.store));
   app.route("/memories", createMemoriesRouter(memory.service, resolveMemoryAccess));
-  app.route("/runs", createRunsRouter(executor, resolveMemoryAccess).app);
+  app.route("/runs", createRunsRouter(executor, resolveMemoryAccess, studio.store).app);
   app.route("/tools", createToolsRouter());
 
   const port = Number(process.env.PORT ?? 4000);

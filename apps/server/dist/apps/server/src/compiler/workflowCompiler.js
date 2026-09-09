@@ -7,6 +7,7 @@ const types_1 = require("@multi-agent/types");
 const runtime_1 = require("../../../../src/agents/runtime");
 const shortTermMemory_1 = require("../../../../src/agents/runtime/shortTermMemory");
 const validation_1 = require("./validation");
+const tools_1 = require("../../../../src/tools");
 class UnsupportedPhase4NodeError extends Error {
     nodeId;
     constructor(nodeId, node) {
@@ -28,7 +29,7 @@ const State = langgraph_1.Annotation.Root({
     lastValue: (0, langgraph_1.Annotation)({ reducer: (_, next) => next, default: () => undefined }),
 });
 function compileWorkflow(definition, agents, options = {}) {
-    const issues = (0, validation_1.validateWorkflow)(definition, agents);
+    const issues = (0, validation_1.validateWorkflow)(definition, agents, {}, options.tools);
     if (issues.some((issue) => issue.severity === "error")) {
         throw new Error(issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join("; "));
     }
@@ -37,10 +38,26 @@ function compileWorkflow(definition, agents, options = {}) {
     const agentById = new Map(agents.map((agent) => [agent.id, agent]));
     const runId = options.runId ?? "run-local";
     const runtime = options.runtime ?? new runtime_1.AgentRuntime();
+    const toolsById = new Map((options.tools ?? []).map(tool => [tool.id, tool]));
+    const toolRuntime = options.toolRuntime ?? new tools_1.ToolRuntime();
     for (const node of definition.nodes) {
         graph.addNode(node.id, async (state) => {
-            if (node.type === "tool")
-                throw new UnsupportedPhase4NodeError(node.id, node);
+            if (node.type === "tool") {
+                const tool = toolsById.get(node.config.toolId ?? "");
+                if (!tool)
+                    throw new UnsupportedPhase4NodeError(node.id, node);
+                const emit = (type, payload) => options.onAgentEvent?.({ type, timestamp: (0, types_1.nowIso)(), runId, nodeId: node.id, payload });
+                emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
+                try {
+                    const value = await toolRuntime.execute(tool, asToolInput(state.lastValue ?? state.input), options.signal);
+                    emit("tool.completed", { toolId: tool.id, output: value });
+                    return { lastValue: value };
+                }
+                catch (error) {
+                    emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message : String(error) });
+                    throw error;
+                }
+            }
             if (node.type === "approval") {
                 const config = node.config;
                 const resume = (0, langgraph_1.interrupt)({
@@ -133,6 +150,7 @@ function compileWorkflow(definition, agents, options = {}) {
         issues,
     };
 }
+function asToolInput(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : { value }; }
 async function runAgentThroughRuntime(agent, state, meta) {
     let lastContent;
     for await (const event of meta.runtime.execute({

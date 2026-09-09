@@ -95,7 +95,7 @@ async function main() {
     if (studio.store)
         app.route("/studio", (0, studio_1.createStudioRouter)(studio.store));
     app.route("/memories", (0, memories_1.createMemoriesRouter)(memory.service, resolveMemoryAccess));
-    app.route("/runs", (0, runs_1.createRunsRouter)(executor, resolveMemoryAccess).app);
+    app.route("/runs", (0, runs_1.createRunsRouter)(executor, resolveMemoryAccess, studio.store).app);
     app.route("/tools", (0, tools_1.createToolsRouter)());
     const port = Number(process.env.PORT ?? 4000);
     const server = (0, node_server_1.serve)({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));

@@ -7,7 +7,7 @@ const types_1 = require("@multi-agent/types");
 const runExecutor_1 = require("../runtime/runExecutor");
 const langGraphEventAdapter_1 = require("../adapters/langGraphEventAdapter");
 const body_limit_1 = require("hono/body-limit");
-function createRunsRouter(executor = new runExecutor_1.RunExecutor(), resolveMemoryAccess = async () => null) {
+function createRunsRouter(executor = new runExecutor_1.RunExecutor(), resolveMemoryAccess = async () => null, studioStore) {
     const app = new hono_1.Hono();
     const hasLongTermMemory = (agents) => agents.some((agent) => agent.memory?.enabled && agent.memory.longTerm?.enabled);
     const canRead = async (runId, request) => {
@@ -112,7 +112,9 @@ function createRunsRouter(executor = new runExecutor_1.RunExecutor(), resolveMem
             const access = hasLongTermMemory(agents) ? await resolveMemoryAccess(c.req.raw) : null;
             if (hasLongTermMemory(agents) && !access)
                 return c.json({ error: "Authenticated memory access is required for this workflow." }, 401);
-            const runId = executor.start({ ...body, agents }, access ?? undefined);
+            // Tool definitions are resolved server-side; callers cannot smuggle a replacement registry.
+            const tools = studioStore ? await studioStore.listTools() : (body.tools ?? []);
+            const runId = executor.start({ ...body, agents, tools }, access ?? undefined);
             return c.json({ runId }, 202);
         }
         catch (error) {

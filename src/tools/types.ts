@@ -3,6 +3,7 @@ import type { ToolRecord } from "@multi-agent/types";
 export interface ToolExecutionInput {
   tool: ToolRecord;
   input: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 /** Backend-agnostic tool execution contract. Category-specific engines implement this. */

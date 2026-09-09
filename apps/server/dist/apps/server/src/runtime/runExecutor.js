@@ -71,7 +71,7 @@ class RunExecutor {
         }
     }
     start(request, memoryAccess) {
-        const issues = (0, validation_1.validateWorkflow)(request.workflow, request.agents, this.guardrails);
+        const issues = (0, validation_1.validateWorkflow)(request.workflow, request.agents, this.guardrails, request.tools);
         const errors = issues.filter(issue => issue.level === "error");
         if (errors.length)
             throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
@@ -135,10 +135,11 @@ class RunExecutor {
                 memoryAccess: context.memoryAccess,
                 signal: this.store.signal(runId),
                 workflowId: context.workflow.id,
+                tools: context.tools,
                 onAgentEvent: (event) => { for (const runEvent of mapAgentEvents(event, runId))
                     this.store.append(runId, runEvent); },
             });
-            await this.runGraph(runId, compiled, new langgraph_1.Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess);
+            await this.runGraph(runId, compiled, new langgraph_1.Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess, context.tools);
         }
         catch (error) {
             this.fail(runId, error);
@@ -167,13 +168,14 @@ class RunExecutor {
                 memoryAccess,
                 signal: this.store.signal(runId),
                 workflowId: request.workflow.id,
+                tools: request.tools,
                 onAgentEvent: (event) => {
                     for (const runEvent of mapAgentEvents(event, runId)) {
                         this.store.append(runId, runEvent);
                     }
                 },
             });
-            await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess);
+            await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess, request.tools);
         }
         catch (error) {
             this.fail(runId, error);
@@ -182,7 +184,7 @@ class RunExecutor {
             clearTimeout(timeout);
         }
     }
-    async runGraph(runId, compiled, input, workflow, agents, memoryAccess) {
+    async runGraph(runId, compiled, input, workflow, agents, memoryAccess, tools) {
         const adapter = new langGraphEventAdapter_1.LangGraphEventAdapter();
         const stream = await compiled.graph.streamEvents(input, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal: this.store.signal(runId), recursionLimit: this.guardrails.recursionLimit, configurable: { thread_id: runId } });
         let output;
@@ -210,7 +212,7 @@ class RunExecutor {
         if (state.next.length > 0) {
             // Paused at a human approval node — leave status as waiting_for_human and
             // retain enough context to recompile and resume once it is resolved.
-            const context = { workflow, agents, memoryAccess };
+            const context = { workflow, agents, tools, memoryAccess };
             this.pausedContext.set(runId, context);
             this.store.setPausedContext?.(runId, context);
             return;

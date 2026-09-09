@@ -1,4 +1,4 @@
-import type { AgentRecord, WorkflowDefinition, WorkflowNode } from "@multi-agent/types";
+import type { AgentRecord, ToolRecord, WorkflowDefinition, WorkflowNode } from "@multi-agent/types";
 import { agentHasConfiguredModel, validateAgent } from "@multi-agent/types";
 
 export interface WorkflowIssue {
@@ -15,7 +15,7 @@ export interface WorkflowIssue {
 
 export interface WorkflowValidationLimits { maxNodes?: number; maxEdges?: number; maxBranches?: number; }
 
-export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRecord[], limits: WorkflowValidationLimits = {}): WorkflowIssue[] {
+export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRecord[], limits: WorkflowValidationLimits = {}, tools: ToolRecord[] = []): WorkflowIssue[] {
   const issues: WorkflowIssue[] = [];
   const add = (level: WorkflowIssue["level"], code: string, message: string, nodeId?: string, edgeId?: string) =>
     issues.push({ id: `${level}-${code}-${issues.length}`, code, level, severity: level, message, nodeId, edgeId });
@@ -67,7 +67,12 @@ export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRe
       if (agent?.enabled === false) add("error", "AGENT_DISABLED", `Agent "${agent.name}" is disabled`, node.id);
       if (agent) for (const message of validateAgent(agent)) add("error", "INVALID_AGENT_CONFIG", message, node.id);
     }
-    if (node.type === "tool" && !(node.config as { toolId?: string | null }).toolId?.trim()) add("error", "MISSING_TOOL_CONFIG", "Tool node is not linked to a tool.", node.id);
+    if (node.type === "tool") {
+      const toolId = (node.config as { toolId?: string | null }).toolId;
+      if (!toolId?.trim()) add("error", "MISSING_TOOL_CONFIG", "Tool node is not linked to a tool.", node.id);
+      else if (!tools.some(tool => tool.id === toolId)) add("error", "UNKNOWN_TOOL", "Tool node references a missing tool.", node.id);
+      else if (tools.find(tool => tool.id === toolId)?.enabled === false) add("error", "DISABLED_TOOL", "Tool node references a disabled tool.", node.id);
+    }
     if (node.type === "memory") {
       const config = node.config as { key?: string; mode?: string; memoryType?: string };
       if (!config.key?.trim()) add("error", "MISSING_MEMORY_KEY", "Memory node has no memory key", node.id);

@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateWorkflow = validateWorkflow;
 exports.nodeLabel = nodeLabel;
 const types_1 = require("@multi-agent/types");
-function validateWorkflow(definition, agents, limits = {}) {
+function validateWorkflow(definition, agents, limits = {}, tools = []) {
     const issues = [];
     const add = (level, code, message, nodeId, edgeId) => issues.push({ id: `${level}-${code}-${issues.length}`, code, level, severity: level, message, nodeId, edgeId });
     if (!definition || typeof definition !== "object")
@@ -76,8 +76,15 @@ function validateWorkflow(definition, agents, limits = {}) {
                 for (const message of (0, types_1.validateAgent)(agent))
                     add("error", "INVALID_AGENT_CONFIG", message, node.id);
         }
-        if (node.type === "tool" && !node.config.toolId?.trim())
-            add("error", "MISSING_TOOL_CONFIG", "Tool node is not linked to a tool.", node.id);
+        if (node.type === "tool") {
+            const toolId = node.config.toolId;
+            if (!toolId?.trim())
+                add("error", "MISSING_TOOL_CONFIG", "Tool node is not linked to a tool.", node.id);
+            else if (!tools.some(tool => tool.id === toolId))
+                add("error", "UNKNOWN_TOOL", "Tool node references a missing tool.", node.id);
+            else if (tools.find(tool => tool.id === toolId)?.enabled === false)
+                add("error", "DISABLED_TOOL", "Tool node references a disabled tool.", node.id);
+        }
         if (node.type === "memory") {
             const config = node.config;
             if (!config.key?.trim())

@@ -1,4 +1,4 @@
-import type { AgentRecord, WorkflowDefinition, WorkflowNode } from "@multi-agent/types";
+import type { AgentRecord, ToolRecord, WorkflowDefinition, WorkflowNode } from "@multi-agent/types";
 export interface WorkflowIssue {
     id: string;
     /** Stable machine-readable reason suitable for API/UI handling. */
@@ -15,5 +15,5 @@ export interface WorkflowValidationLimits {
     maxEdges?: number;
     maxBranches?: number;
 }
-export declare function validateWorkflow(definition: WorkflowDefinition, agents: AgentRecord[], limits?: WorkflowValidationLimits): WorkflowIssue[];
+export declare function validateWorkflow(definition: WorkflowDefinition, agents: AgentRecord[], limits?: WorkflowValidationLimits, tools?: ToolRecord[]): WorkflowIssue[];
 export declare function nodeLabel(node: WorkflowNode, agents: AgentRecord[]): string;
