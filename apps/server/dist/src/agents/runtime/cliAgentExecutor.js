@@ -121,15 +121,34 @@ function defaultExecutable(provider) {
 }
 function commandArgs(backend) {
     const explicit = backend.args?.filter((arg) => arg.length > 0);
-    const args = explicit?.length ? [...explicit] : backend.provider === "codex"
-        ? ["exec", "-"]
+    // Provider-specific non-interactive flags are invariants, not merely defaults.
+    // Saved custom arguments must never be able to accidentally start a TUI in a
+    // child process whose stdin/stderr are pipes rather than terminals.
+    const args = backend.provider === "codex"
+        ? codexArgs(explicit)
         : backend.provider === "claude-code"
-            ? ["--print", "--output-format", "text"]
+            ? ensureFlags(explicit, ["--print", "--output-format", "text"])
             : backend.provider === "agy"
-                ? ["--print", "--output-format", "text", "--disable-slash-commands"]
-                : [];
+                ? ensureFlags(explicit, ["--print", "--output-format", "text", "--disable-slash-commands"])
+                : [...(explicit ?? [])];
     if (backend.model && !args.some((arg) => arg === "--model" || arg === "-m"))
         args.push("--model", backend.model);
+    return args;
+}
+function codexArgs(explicit) {
+    const custom = [...(explicit ?? [])];
+    if (custom[0] === "exec")
+        custom.shift();
+    return ["exec", ...custom, ...(custom.includes("-") ? [] : ["-"])];
+}
+function ensureFlags(explicit, required) {
+    const args = [...(explicit ?? [])];
+    if (!args.includes("--print"))
+        args.unshift("--print");
+    if (!args.includes("--output-format"))
+        args.push("--output-format", "text");
+    if (required.includes("--disable-slash-commands") && !args.includes("--disable-slash-commands"))
+        args.push("--disable-slash-commands");
     return args;
 }
 //# sourceMappingURL=cliAgentExecutor.js.map

@@ -155,7 +155,7 @@ describe("CLI and local executors", () => {
     const events: AgentExecutionEvent[] = [];
     const serverPolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 1024 };
     for await (const event of new CliAgentExecutor(spawn as never, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
-    expect(spawn).toHaveBeenCalledWith("codex", ["exec", "--json"], { cwd: "/workspace", shell: false, stdio: ["pipe", "pipe", "pipe"] });
+    expect(spawn).toHaveBeenCalledWith("codex", ["exec", "--json", "-"], { cwd: "/workspace", shell: false, stdio: ["pipe", "pipe", "pipe"] });
     expect(calls).toContainEqual(["stdin", expect.stringContaining("USER INPUT:\nsummarize")]);
     expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
     expect((events[2].payload as { content: string }).content).toBe("CLI answer");
@@ -187,6 +187,19 @@ describe("CLI and local executors", () => {
     expect(spawn).toHaveBeenCalledWith("agy", ["--print", "--output-format", "text", "--disable-slash-commands", "--model", "gpt-5"], expect.objectContaining({ cwd: "/workspace/project", shell: false }));
     expect(JSON.stringify(calls)).toContain("SYSTEM INSTRUCTIONS");
     expect(JSON.stringify(calls)).toContain("review");
+  });
+
+  test("forces saved Codex options through exec mode instead of starting the TUI", async () => {
+    const process = {
+      stdin: { write: jest.fn(), end: jest.fn() },
+      stdout: (async function* () { yield "Codex answer"; })(), stderr: (async function* () {})(),
+      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); }, kill: jest.fn(),
+    };
+    const spawn = jest.fn(() => process);
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", args: ["--json"] } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    for await (const _event of new CliAgentExecutor(spawn as never, { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "test", runId: "r", nodeId: "n" })) { /* drain */ }
+    expect(spawn).toHaveBeenCalledWith("codex", ["exec", "--json", "-"], expect.objectContaining({ shell: false }));
   });
 
   test("blocks CLI executables and workspaces outside server-owned allowlists", async () => {
