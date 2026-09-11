@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.agentExecutorFactory = exports.AgentExecutorFactory = void 0;
 const apiAgentExecutor_1 = require("./apiAgentExecutor");
 const notImplementedExecutor_1 = require("./notImplementedExecutor");
+const cliAgentExecutor_1 = require("./cliAgentExecutor");
+const localAgentExecutor_1 = require("./localAgentExecutor");
 const telemetry_1 = require("../../observability/telemetry");
 class AgentExecutorFactory {
     telemetry;
@@ -14,21 +16,11 @@ class AgentExecutorFactory {
             return new apiAgentExecutor_1.ApiAgentExecutor(undefined, this.telemetry);
         }
         if (backend.type === "cli") {
-            switch (backend.provider) {
-                case "codex":
-                    return new notImplementedExecutor_1.CodexCliExecutor();
-                case "claude-code":
-                    return new notImplementedExecutor_1.ClaudeCodeCliExecutor();
-                case "agy":
-                    return new notImplementedExecutor_1.AgyCliExecutor();
-                default:
-                    return new notImplementedExecutor_1.NotImplementedAgentExecutor(backend);
-            }
+            return new cliAgentExecutor_1.CliAgentExecutor();
         }
         if (backend.type === "local") {
-            if (backend.provider === "ollama") {
-                return new notImplementedExecutor_1.OllamaLocalExecutor(backend.model);
-            }
+            if (backend.provider === "ollama" || backend.provider === "lmstudio")
+                return new localAgentExecutor_1.LocalAgentExecutor();
             return new notImplementedExecutor_1.NotImplementedAgentExecutor(backend);
         }
         const exhaustive = backend;

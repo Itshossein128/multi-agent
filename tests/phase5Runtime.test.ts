@@ -71,7 +71,12 @@ test("model schemas validate settings and executor forwards settings, history an
 test("single-agent endpoint records a real run and normalized output without a workflow", async () => {
   const store = new RunStore();
   const executor = new RunExecutor(store, { async *execute(input) { yield complete(input); } });
-  const { app } = createRunsRouter(executor);
+  const { app } = createRunsRouter(
+    executor,
+    undefined,
+    undefined,
+    async () => ({ userId: "test-user", tenantId: "test-tenant" }),
+  );
   const agent = createAgentRecord();
   const response = await app.request("http://localhost/agent-test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent, input: { question: "hi" } }) });
   expect(response.status).toBe(202);

@@ -9,9 +9,11 @@ exports.ToolPolicyError = ToolPolicyError;
 class ToolRuntime {
     timeoutMs;
     allowSideEffects;
-    constructor(timeoutMs = configuredTimeout(), allowSideEffects = process.env.TOOL_ALLOW_SIDE_EFFECTS === "true") {
+    executors;
+    constructor(timeoutMs = configuredTimeout(), allowSideEffects = process.env.TOOL_ALLOW_SIDE_EFFECTS === "true", executors = toolExecutorFactory_1.toolExecutorFactory) {
         this.timeoutMs = timeoutMs;
         this.allowSideEffects = allowSideEffects;
+        this.executors = executors;
     }
     async execute(tool, input, parentSignal) {
         if (!tool.enabled)
@@ -19,7 +21,7 @@ class ToolRuntime {
         if (tool.impact !== "read-only" && !this.allowSideEffects)
             throw new ToolPolicyError(`Tool "${tool.name}" requires server approval because it is ${tool.impact}.`);
         const signal = parentSignal ? AbortSignal.any([parentSignal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs);
-        return toolExecutorFactory_1.toolExecutorFactory.create(tool.category).execute({ tool, input, signal });
+        return this.executors.create(tool.category).execute({ tool, input, signal });
     }
 }
 exports.ToolRuntime = ToolRuntime;

@@ -1,18 +1,15 @@
 import { createAgentRecord, createEmptyDefinition, createNode, createEdge, type WorkflowDefinition } from "@multi-agent/types";
-import { workflowService } from "../apps/web/src/services/workflowService";
+import { type createWorkflowService } from "../apps/web/src/services/workflowService";
 import { useWorkflowStore } from "../apps/web/src/store/useWorkflowStore";
+import { createTestStudioService, memoryStorage } from "./fixtures/studioService";
 
 describe("Phase 6 tool registry", () => {
-  let storage: Map<string, string>;
+  let storage: ReturnType<typeof memoryStorage>;
+  let workflowService: ReturnType<typeof createWorkflowService>;
   beforeEach(() => {
-    storage = new Map();
-    Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => storage.set(key, value),
-      removeItem: (key: string) => storage.delete(key),
-    } } });
+    ({ storage, service: workflowService } = createTestStudioService());
+    useWorkflowStore.setState({ agents: [], tools: [], saveError: null });
   });
-  afterEach(() => { Reflect.deleteProperty(globalThis, "window"); });
   const graph = (toolId: string): WorkflowDefinition => {
     const input = createNode("input", { x: 0, y: 0 });
     const output = createNode("output", { x: 300, y: 0 });
@@ -31,7 +28,7 @@ describe("Phase 6 tool registry", () => {
     const input = createNode("input", { x: 0, y: 0 });
     const output = createNode("output", { x: 300, y: 0 });
     const definition = { ...createEmptyDefinition(), nodes: [input, legacyTool, output], edges: [] };
-    storage.set("agent-studio.workspace.v2", JSON.stringify({ version: 2, activeWorkflowId: definition.id, workflows: [definition], agents: [agent] }));
+    storage.setItem("agent-studio.workspace.v2", JSON.stringify({ version: 2, activeWorkflowId: definition.id, workflows: [definition], agents: [agent] }));
 
     const tools = await workflowService.listTools();
     expect(tools).toHaveLength(1);
@@ -81,7 +78,7 @@ describe("Phase 6 tool registry", () => {
   test("rejects credentials before editor state or storage mutation", async () => {
     const tool = await workflowService.createTool();
     await workflowService.saveWorkflow(graph(tool.id));
-    await useWorkflowStore.getState().loadWorkflow();
+    useWorkflowStore.setState({ agents: [], tools: [tool], saveError: null });
     const before = storage.get("agent-studio.workspace.v3");
     useWorkflowStore.getState().updateToolRecord(tool.id, { metadata: { apiKey: "private-value" } });
     expect(useWorkflowStore.getState().tools[0].metadata).toEqual({});

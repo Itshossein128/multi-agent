@@ -16,6 +16,9 @@ export interface ToolRecord {
     metadata: Record<string, string | number | boolean>;
     createdAt: string;
     updatedAt: string;
+    ownerId?: string;
+    tenantId?: string;
+    isSystem?: boolean;
 }
 export declare function createToolRecord(input?: {
     name?: string;

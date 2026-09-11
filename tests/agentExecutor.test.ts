@@ -9,6 +9,9 @@ import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
 import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
+import { ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
+import { CliAgentExecutor } from "../src/agents/runtime/cliAgentExecutor";
+import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
 
 describe("Agent backend abstraction", () => {
@@ -47,8 +50,8 @@ describe("AgentExecutorFactory", () => {
     expect(executor).toBeInstanceOf(ApiAgentExecutor);
   });
 
-  test("unknown / unimplemented backends fail explicitly", async () => {
-    const backend: AgentBackend = { type: "cli", provider: "codex" };
+  test("unknown backends fail explicitly", async () => {
+    const backend: AgentBackend = { type: "local", provider: "unknown", model: "x" };
     const executor = factory.create(backend);
     const agent = createAgentRecord({ backend });
 
@@ -105,6 +108,66 @@ describe("AgentRuntime", () => {
 
     expect(calls).toEqual(["create:api", "executed"]);
     expect(events[0]?.type).toBe("agent.completed");
+  });
+
+  test("blocks CLI execution until a server-side policy explicitly permits it", async () => {
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "codex" } });
+    const runtime = new AgentRuntime({ create: jest.fn() } as unknown as AgentExecutorFactory);
+    const events: AgentExecutionEvent[] = [];
+    await expect(async () => {
+      for await (const event of runtime.execute({ agent, input: "hi", runId: "run", nodeId: "node" })) events.push(event);
+    }).rejects.toBeInstanceOf(ExecutionPolicyError);
+    expect(events).toMatchObject([{ type: "agent.failed", payload: { error: expect.stringMatching(/explicitly allow/i) } }]);
+  });
+
+  test("enforces restricted allowedCommands before dispatching CLI execution", async () => {
+    const create = jest.fn();
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["git"] };
+    await expect(async () => {
+      for await (const _event of new AgentRuntime({ create } as unknown as AgentExecutorFactory).execute({ agent, input: "hi", runId: "run", nodeId: "node" })) { /* drain */ }
+    }).rejects.toThrow(/not permitted/);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  test("blocks networked backends when network is denied", async () => {
+    const agent = createAgentRecord();
+    agent.executionPolicy = { network: false };
+    await expect(async () => {
+      for await (const _event of new AgentRuntime().execute({ agent, input: "hi", runId: "run", nodeId: "node" })) { /* drain */ }
+    }).rejects.toThrow(/forbids network/);
+  });
+});
+
+describe("CLI and local executors", () => {
+  test("runs a permitted CLI command directly with stdin and an approved workspace", async () => {
+    const calls: unknown[] = [];
+    const process = {
+      stdin: { write: (value: string) => calls.push(["stdin", value]), end: () => calls.push(["end"]) },
+      stdout: (async function* () { yield "CLI answer"; })(),
+      stderr: (async function* () {})(),
+      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); },
+      kill: jest.fn(),
+    };
+    const spawn = jest.fn(() => process);
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "codex", args: ["exec", "--json"] } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    const events: AgentExecutionEvent[] = [];
+    for await (const event of new CliAgentExecutor(spawn as never).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
+    expect(spawn).toHaveBeenCalledWith("codex", ["exec", "--json"], { cwd: "/workspace", shell: false, stdio: ["pipe", "pipe", "pipe"] });
+    expect(calls).toContainEqual(["stdin", "summarize"]);
+    expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
+    expect((events[2].payload as { content: string }).content).toBe("CLI answer");
+  });
+
+  test("calls the Ollama local API with its configured model and normalized events", async () => {
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ message: { content: "local answer" } }), { status: 200 }));
+    const agent = createAgentRecord({ backend: { type: "local", provider: "ollama", model: "llama3", baseUrl: "http://ollama.test" } });
+    const events: AgentExecutionEvent[] = [];
+    for await (const event of new LocalAgentExecutor(fetchImpl).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
+    expect(fetchImpl).toHaveBeenCalledWith(new URL("http://ollama.test/api/chat"), expect.objectContaining({ method: "POST" }));
+    expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
+    expect((events[2].payload as { content: string }).content).toBe("local answer");
   });
 });
 

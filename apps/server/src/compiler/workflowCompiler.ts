@@ -98,6 +98,9 @@ export function compileWorkflow(
         }
       }
       if (node.type === "approval") {
+        if (state.branch === "approved" || state.branch === "rejected") {
+          return { branch: state.branch, lastValue: state.lastValue };
+        }
         const config = node.config as ApprovalNodeConfig;
         const resume = interrupt({
           nodeId: node.id,

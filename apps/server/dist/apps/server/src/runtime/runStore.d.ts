@@ -1,6 +1,7 @@
 import type { AgentRecord, ApprovalRequest, Run, RunEvent, RunStatus, WorkflowDefinition } from "@multi-agent/types";
 import type { PgPool } from "../../../../src/memory/infrastructure";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
+import type { RequestPrincipal } from "../auth/principal";
 type Listener = (event: RunEvent) => void;
 export interface MemoryOwner {
     principalId: string;
@@ -34,10 +35,10 @@ export interface RunStoreContract {
     create(run: Run, memoryOwner?: MemoryOwner, snapshots?: {
         workflow?: WorkflowDefinition;
         agents?: AgentRecord[];
-    }): Run;
+    }, principal?: RequestPrincipal): Run;
     getMemoryOwner(runId: string): MemoryOwner | undefined;
     get(runId: string): RunEntry | undefined;
-    list(filters?: string | RunListFilters): Run[];
+    list(filters?: string | RunListFilters, principal?: RequestPrincipal): Run[];
     append(runId: string, event: RunEvent): RunEvent | undefined;
     update(runId: string, patch: Partial<Run>): Run | undefined;
     events(runId: string, after?: number): RunEvent[];
@@ -54,6 +55,7 @@ export interface RunStoreContract {
     getPausedContext?(runId: string): RunEntry["pausedContext"] | undefined;
     getWorkflowSnapshot?(runId: string): WorkflowDefinition | undefined;
     hydrate?(): Promise<void>;
+    flush?(): Promise<void>;
 }
 /** In-process run store. Used directly in tests and as the hot cache for durable adapters. */
 export declare class InMemoryRunStore implements RunStoreContract {
@@ -61,10 +63,10 @@ export declare class InMemoryRunStore implements RunStoreContract {
     create(run: Run, memoryOwner?: MemoryOwner, snapshots?: {
         workflow?: WorkflowDefinition;
         agents?: AgentRecord[];
-    }): Run;
+    }, principal?: RequestPrincipal): Run;
     getMemoryOwner(runId: string): MemoryOwner | undefined;
     get(runId: string): RunEntry | undefined;
-    list(filters?: string | RunListFilters): Run[];
+    list(filters?: string | RunListFilters, principal?: RequestPrincipal): Run[];
     append(runId: string, event: RunEvent): {
         payload: RunEvent["payload"];
         sequence: number;
@@ -109,14 +111,15 @@ export declare class PostgresRunStore implements RunStoreContract {
     private writeChain;
     constructor(pool: PgPool);
     private enqueue;
+    flush(): Promise<void>;
     hydrate(): Promise<void>;
     create(run: Run, memoryOwner?: MemoryOwner, snapshots?: {
         workflow?: WorkflowDefinition;
         agents?: AgentRecord[];
-    }): Run;
+    }, principal?: RequestPrincipal): Run;
     getMemoryOwner(runId: string): MemoryOwner | undefined;
     get(runId: string): RunEntry | undefined;
-    list(filters?: string | RunListFilters): Run[];
+    list(filters?: string | RunListFilters, principal?: RequestPrincipal): Run[];
     append(runId: string, event: RunEvent): {
         payload: RunEvent["payload"];
         sequence: number;

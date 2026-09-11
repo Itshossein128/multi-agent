@@ -59,6 +59,9 @@ function compileWorkflow(definition, agents, options = {}) {
                 }
             }
             if (node.type === "approval") {
+                if (state.branch === "approved" || state.branch === "rejected") {
+                    return { branch: state.branch, lastValue: state.lastValue };
+                }
                 const config = node.config;
                 const resume = (0, langgraph_1.interrupt)({
                     nodeId: node.id,

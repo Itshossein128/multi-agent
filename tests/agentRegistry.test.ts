@@ -1,18 +1,16 @@
 import { createAgentRecord, createEmptyDefinition, createNode, createEdge, type WorkflowDefinition } from "@multi-agent/types";
-import { workflowService } from "../apps/web/src/services/workflowService";
+import { type createWorkflowService } from "../apps/web/src/services/workflowService";
 import { useWorkflowStore } from "../apps/web/src/store/useWorkflowStore";
+import { InMemoryStudioStore } from "../src/studio/infrastructure/in-memory-studio-store";
+import { createTestStudioService, memoryStorage } from "./fixtures/studioService";
 
 describe("Phase 5 browser workspace", () => {
-  let storage: Map<string, string>;
+  let storage: ReturnType<typeof memoryStorage>;
+  let workflowService: ReturnType<typeof createWorkflowService>;
   beforeEach(() => {
-    storage = new Map();
-    Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => storage.set(key, value),
-      removeItem: (key: string) => storage.delete(key),
-    } } });
+    ({ storage, service: workflowService } = createTestStudioService());
+    useWorkflowStore.setState({ agents: [], tools: [], saveError: null });
   });
-  afterEach(() => { Reflect.deleteProperty(globalThis, "window"); });
   const graph = (agentId: string): WorkflowDefinition => {
     const input = createNode("input", { x: 0, y: 0 });
     const output = createNode("output", { x: 300, y: 0 });
@@ -25,8 +23,8 @@ describe("Phase 5 browser workspace", () => {
   test("migrates legacy storage and retains one shared identity across multiple workflows", async () => {
     const agent = createAgentRecord();
     const first = graph(agent.id);
-    storage.set("agent-studio.workflow.v1", JSON.stringify(first));
-    storage.set("agent-studio.agents.v1", JSON.stringify([agent]));
+    storage.setItem("agent-studio.workflow.v1", JSON.stringify(first));
+    storage.setItem("agent-studio.agents.v1", JSON.stringify([agent]));
     expect((await workflowService.getWorkflow())?.id).toBe(first.id);
     const second = graph(agent.id);
     await workflowService.saveWorkflow(second);
@@ -62,7 +60,7 @@ describe("Phase 5 browser workspace", () => {
   test("rejects credentials before editor state or storage mutation", async () => {
     const agent = await workflowService.createAgent();
     await workflowService.saveWorkflow(graph(agent.id));
-    await useWorkflowStore.getState().loadWorkflow();
+    useWorkflowStore.setState({ agents: [agent], tools: [], saveError: null });
     const before = storage.get("agent-studio.workspace.v3");
     useWorkflowStore.getState().updateAgentRecord(agent.id, { metadata: { apiKey: "private-value" } });
     expect(useWorkflowStore.getState().agents[0].metadata).toEqual({});
@@ -73,11 +71,26 @@ describe("Phase 5 browser workspace", () => {
     await expect(workflowService.saveWorkflow(unsafe)).rejects.toThrow(/Credentials/);
   });
   test("failed atomic deletion leaves registry and workflows intact", async () => {
+    class FailingStore extends InMemoryStudioStore {
+      failWorkflowWrites = false;
+      override async saveWorkflow(definition: WorkflowDefinition) {
+        if (this.failWorkflowWrites) throw new Error("simulated workflow write failure");
+        return super.saveWorkflow(definition);
+      }
+    }
+    const store = new FailingStore();
+    ({ storage, service: workflowService } = createTestStudioService(memoryStorage(), store));
     const agent = await workflowService.createAgent();
-    await workflowService.saveWorkflow(graph(agent.id));
-    const before = storage.get("agent-studio.workspace.v3");
-    window.localStorage.setItem = () => { throw new Error("Quota exceeded"); };
-    await expect(workflowService.deleteAgent(agent.id, { removeReferences: true })).rejects.toThrow("Quota exceeded");
-    expect(storage.get("agent-studio.workspace.v3")).toBe(before);
+    const first = graph(agent.id);
+    const second = graph(agent.id);
+    await workflowService.saveWorkflow(first);
+    await workflowService.saveWorkflow(second);
+    const [firstBefore, secondBefore] = await Promise.all([workflowService.getWorkflow(first.id), workflowService.getWorkflow(second.id)]);
+    store.failWorkflowWrites = true;
+
+    await expect(workflowService.deleteAgent(agent.id, { removeReferences: true })).rejects.toThrow(/Studio request failed \(500\)/);
+    expect(await workflowService.getAgent(agent.id)).not.toBeNull();
+    expect(await workflowService.getWorkflow(first.id)).toEqual(firstBefore);
+    expect(await workflowService.getWorkflow(second.id)).toEqual(secondBefore);
   });
 });

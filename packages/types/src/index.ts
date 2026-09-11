@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Canonical shared workflow and run domain models.
  *
  * This package is used by both web and server runtime so execution and UI
@@ -90,6 +90,9 @@ export interface AgentRecord {
   metadata: Record<string, string | number | boolean>;
   createdAt: string;
   updatedAt: string;
+  ownerId?: string;
+  tenantId?: string;
+  isSystem?: boolean;
 }
 
 /** Legacy persisted agent shape (pre-backend abstraction). */
@@ -263,6 +266,8 @@ export interface WorkflowDefinition {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   updatedAt: string;
+  ownerId?: string;
+  tenantId?: string;
 }
 
 export interface WorkflowNodeMeta {
@@ -549,6 +554,8 @@ export interface Run {
   error?: string;
   currentNodeId?: string;
   metadata: Record<string, unknown>;
+  ownerId?: string;
+  tenantId?: string;
 }
 
 export interface RunCreateRequest {
@@ -556,6 +563,7 @@ export interface RunCreateRequest {
   agents: AgentRecord[];
   tools?: ToolRecord[];
   input?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
   taskId?: string;
 }
 

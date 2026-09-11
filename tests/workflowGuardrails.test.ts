@@ -1,5 +1,6 @@
 import { createAgentRecord, createEdge, createEmptyDefinition, createNode } from "@multi-agent/types";
 import { validateWorkflow } from "../apps/server/src/compiler/validation";
+import { compileWorkflow } from "../apps/server/src/compiler/workflowCompiler";
 import { runtimeGuardrailsFromEnvironment } from "../apps/server/src/runtime/guardrails";
 
 function validWorkflow() {
@@ -24,6 +25,12 @@ describe("workflow guardrails", () => {
   test("enforces server-owned graph limits", () => {
     const workflow = validWorkflow();
     expect(validateWorkflow(workflow, [agent], { maxNodes: 2 }).some(issue => issue.code === "NODE_LIMIT_EXCEEDED")).toBe(true);
+  });
+
+  test("rejects a cyclic persisted definition before DAG compilation", () => {
+    const workflow = validWorkflow();
+    workflow.edges.push({ ...workflow.edges[1], id: "cycle", source: workflow.nodes[1].id, target: workflow.nodes[0].id });
+    expect(() => compileWorkflow(workflow, [agent])).toThrow(/Cycles are not supported/);
   });
 
   test("clamps malformed environment values to safe defaults", () => {

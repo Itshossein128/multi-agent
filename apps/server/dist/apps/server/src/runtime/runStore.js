@@ -3,7 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PostgresRunStore = exports.RunStore = exports.InMemoryRunStore = void 0;
 const langGraphEventAdapter_1 = require("../adapters/langGraphEventAdapter");
 function redactApproval(approval) {
-    return { ...approval, message: (0, langGraphEventAdapter_1.redact)(approval.message), context: (0, langGraphEventAdapter_1.redact)(approval.context), response: approval.response !== undefined ? (0, langGraphEventAdapter_1.redact)(approval.response) : undefined };
+    return {
+        ...approval,
+        message: (0, langGraphEventAdapter_1.redact)(approval.message),
+        context: (0, langGraphEventAdapter_1.redact)(approval.context),
+        response: approval.response !== undefined ? (0, langGraphEventAdapter_1.redact)(approval.response) : undefined,
+    };
 }
 function matchesFilters(entry, filters) {
     if (!filters)
@@ -30,13 +35,21 @@ function asIso(value) {
 /** In-process run store. Used directly in tests and as the hot cache for durable adapters. */
 class InMemoryRunStore {
     entries = new Map();
-    create(run, memoryOwner, snapshots) {
+    create(run, memoryOwner, snapshots, principal) {
+        if (principal) {
+            run = { ...run, ownerId: principal.userId, tenantId: principal.tenantId };
+        }
+        const effectiveOwner = memoryOwner
+            ? { principalId: memoryOwner.principalId, tenantId: memoryOwner.tenantId }
+            : run.ownerId && run.tenantId
+                ? { principalId: run.ownerId, tenantId: run.tenantId }
+                : undefined;
         this.entries.set(run.id, {
             run,
             events: [],
             listeners: new Set(),
             abort: new AbortController(),
-            memoryOwner: memoryOwner ? { principalId: memoryOwner.principalId, tenantId: memoryOwner.tenantId } : undefined,
+            memoryOwner: effectiveOwner,
             approvals: [],
             approvalTimers: new Map(),
             workflowSnapshot: snapshots?.workflow,
@@ -48,11 +61,23 @@ class InMemoryRunStore {
         const owner = this.entries.get(runId)?.memoryOwner;
         return owner ? { ...owner } : undefined;
     }
-    get(runId) { return this.entries.get(runId); }
-    list(filters) {
+    get(runId) {
+        return this.entries.get(runId);
+    }
+    list(filters, principal) {
         const normalized = typeof filters === "string" ? { agentId: filters } : filters;
         return [...this.entries.values()]
-            .filter((entry) => matchesFilters(entry, normalized))
+            .filter((entry) => {
+            if (principal) {
+                const ownerId = entry.run.ownerId ?? entry.memoryOwner?.principalId;
+                const tenantId = entry.run.tenantId ?? entry.memoryOwner?.tenantId;
+                // Fail-closed quarantine: unowned legacy runs are never returned to a scoped principal
+                if (!ownerId || !tenantId || ownerId !== principal.userId || tenantId !== principal.tenantId) {
+                    return false;
+                }
+            }
+            return matchesFilters(entry, normalized);
+        })
             .map((entry) => entry.run)
             .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     }
@@ -71,13 +96,17 @@ class InMemoryRunStore {
             entry.run = { ...entry.run, ...patch };
         return entry?.run;
     }
-    events(runId, after = 0) { return this.entries.get(runId)?.events.filter((event) => event.sequence > after) ?? []; }
+    events(runId, after = 0) {
+        return this.entries.get(runId)?.events.filter((event) => event.sequence > after) ?? [];
+    }
     subscribe(runId, listener) {
         const entry = this.entries.get(runId);
         if (!entry)
             return () => undefined;
         entry.listeners.add(listener);
-        return () => { entry.listeners.delete(listener); };
+        return () => {
+            entry.listeners.delete(listener);
+        };
     }
     cancel(runId) {
         const entry = this.entries.get(runId);
@@ -86,8 +115,12 @@ class InMemoryRunStore {
         entry.abort.abort();
         return true;
     }
-    signal(runId) { return this.entries.get(runId)?.abort.signal; }
-    addApproval(runId, approval) { this.entries.get(runId)?.approvals.push(approval); }
+    signal(runId) {
+        return this.entries.get(runId)?.abort.signal;
+    }
+    addApproval(runId, approval) {
+        this.entries.get(runId)?.approvals.push(approval);
+    }
     getApproval(runId, approvalId) {
         return this.entries.get(runId)?.approvals.find((approval) => approval.id === approvalId);
     }
@@ -115,8 +148,12 @@ class InMemoryRunStore {
         if (entry)
             entry.pausedContext = context ?? undefined;
     }
-    getPausedContext(runId) { return this.entries.get(runId)?.pausedContext; }
-    getWorkflowSnapshot(runId) { return this.entries.get(runId)?.workflowSnapshot; }
+    getPausedContext(runId) {
+        return this.entries.get(runId)?.pausedContext;
+    }
+    getWorkflowSnapshot(runId) {
+        return this.entries.get(runId)?.workflowSnapshot;
+    }
 }
 exports.InMemoryRunStore = InMemoryRunStore;
 /** Back-compat alias for existing imports/tests. */
@@ -139,6 +176,9 @@ class PostgresRunStore {
             console.error("Studio run persistence failed:", error instanceof Error ? error.message : error);
         });
     }
+    async flush() {
+        await this.writeChain;
+    }
     async hydrate() {
         const runs = await this.pool.query("SELECT * FROM studio_runs ORDER BY started_at ASC");
         for (const row of runs.rows) {
@@ -154,10 +194,14 @@ class PostgresRunStore {
                 error: row.error ?? undefined,
                 currentNodeId: row.current_node_id ?? undefined,
                 metadata: (row.metadata ?? {}),
+                ownerId: row.owner_id ?? row.memory_owner_principal_id ?? undefined,
+                tenantId: row.tenant_id ?? row.memory_owner_tenant_id ?? undefined,
             };
-            const owner = row.memory_owner_principal_id && row.memory_owner_tenant_id
-                ? { principalId: String(row.memory_owner_principal_id), tenantId: String(row.memory_owner_tenant_id) }
-                : undefined;
+            const owner = row.owner_id && row.tenant_id
+                ? { principalId: String(row.owner_id), tenantId: String(row.tenant_id) }
+                : row.memory_owner_principal_id && row.memory_owner_tenant_id
+                    ? { principalId: String(row.memory_owner_principal_id), tenantId: String(row.memory_owner_tenant_id) }
+                    : undefined;
             this.memory.create(run, owner, {
                 workflow: row.workflow_snapshot,
                 agents: row.agents_snapshot,
@@ -187,27 +231,50 @@ class PostgresRunStore {
             }
         }
     }
-    create(run, memoryOwner, snapshots) {
-        const created = this.memory.create(run, memoryOwner, snapshots);
+    create(run, memoryOwner, snapshots, principal) {
+        if (principal) {
+            run = { ...run, ownerId: principal.userId, tenantId: principal.tenantId };
+        }
+        const created = this.memory.create(run, memoryOwner, snapshots, principal);
         this.enqueue(async () => {
             await this.pool.query(`INSERT INTO studio_runs (
            id, workflow_id, task_id, status, started_at, completed_at, input, output, error, current_node_id, metadata,
-           memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, updated_at
-         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9,$10,$11::jsonb,$12,$13,$14::jsonb,$15::jsonb,now())
-         ON CONFLICT (id) DO NOTHING`, [
-                run.id, run.workflowId, run.taskId ?? null, run.status, run.startedAt, run.completedAt ?? null,
-                run.input ? JSON.stringify(run.input) : null, run.output ? JSON.stringify(run.output) : null,
-                run.error ?? null, run.currentNodeId ?? null, JSON.stringify(run.metadata ?? {}),
-                memoryOwner?.principalId ?? null, memoryOwner?.tenantId ?? null,
+           memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, updated_at,
+           owner_id, tenant_id
+         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9,$10,$11::jsonb,$12,$13,$14::jsonb,$15::jsonb,now(),$16,$17)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status, completed_at = EXCLUDED.completed_at, input = EXCLUDED.input, output = EXCLUDED.output,
+           error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata, updated_at = now()`, [
+                run.id,
+                run.workflowId,
+                run.taskId ?? null,
+                run.status,
+                run.startedAt,
+                run.completedAt ?? null,
+                run.input ? JSON.stringify(run.input) : null,
+                run.output ? JSON.stringify(run.output) : null,
+                run.error ?? null,
+                run.currentNodeId ?? null,
+                JSON.stringify(run.metadata ?? {}),
+                memoryOwner?.principalId ?? run.ownerId ?? null,
+                memoryOwner?.tenantId ?? run.tenantId ?? null,
                 snapshots?.workflow ? JSON.stringify(snapshots.workflow) : null,
                 snapshots?.agents ? JSON.stringify(snapshots.agents) : null,
+                run.ownerId ?? principal?.userId ?? null,
+                run.tenantId ?? principal?.tenantId ?? null,
             ]);
         });
         return created;
     }
-    getMemoryOwner(runId) { return this.memory.getMemoryOwner(runId); }
-    get(runId) { return this.memory.get(runId); }
-    list(filters) { return this.memory.list(filters); }
+    getMemoryOwner(runId) {
+        return this.memory.getMemoryOwner(runId);
+    }
+    get(runId) {
+        return this.memory.get(runId);
+    }
+    list(filters, principal) {
+        return this.memory.list(filters, principal);
+    }
     append(runId, event) {
         const next = this.memory.append(runId, event);
         if (next) {
@@ -225,41 +292,70 @@ class PostgresRunStore {
                 await this.pool.query(`UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
              error = $6, current_node_id = $7, metadata = $8::jsonb, updated_at = now()
            WHERE id = $1`, [
-                    runId, run.status, run.completedAt ?? null,
+                    runId,
+                    run.status,
+                    run.completedAt ?? null,
                     run.input ? JSON.stringify(run.input) : null,
                     run.output ? JSON.stringify(run.output) : null,
-                    run.error ?? null, run.currentNodeId ?? null, JSON.stringify(run.metadata ?? {}),
+                    run.error ?? null,
+                    run.currentNodeId ?? null,
+                    JSON.stringify(run.metadata ?? {}),
                 ]);
             });
         }
         return run;
     }
-    events(runId, after = 0) { return this.memory.events(runId, after); }
-    subscribe(runId, listener) { return this.memory.subscribe(runId, listener); }
-    cancel(runId) { return this.memory.cancel(runId); }
-    signal(runId) { return this.memory.signal(runId); }
+    events(runId, after = 0) {
+        return this.memory.events(runId, after);
+    }
+    subscribe(runId, listener) {
+        return this.memory.subscribe(runId, listener);
+    }
+    cancel(runId) {
+        return this.memory.cancel(runId);
+    }
+    signal(runId) {
+        return this.memory.signal(runId);
+    }
     addApproval(runId, approval, timeoutSeconds) {
         this.memory.addApproval(runId, approval);
         this.enqueue(async () => {
             await this.pool.query(`INSERT INTO studio_approvals (id, run_id, node_id, status, message, requested_at, resolved_at, context, response, metadata, timeout_seconds)
          VALUES ($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8::jsonb,$9,$10::jsonb,$11)
          ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, resolved_at = EXCLUDED.resolved_at, response = EXCLUDED.response, metadata = EXCLUDED.metadata`, [
-                approval.id, approval.runId, approval.nodeId, approval.status, approval.message, approval.requestedAt,
-                approval.resolvedAt ?? null, approval.context ? JSON.stringify(approval.context) : null,
-                approval.response ?? null, JSON.stringify(approval.metadata ?? {}), timeoutSeconds ?? null,
+                approval.id,
+                approval.runId,
+                approval.nodeId,
+                approval.status,
+                approval.message,
+                approval.requestedAt,
+                approval.resolvedAt ?? null,
+                approval.context ? JSON.stringify(approval.context) : null,
+                approval.response ?? null,
+                JSON.stringify(approval.metadata ?? {}),
+                timeoutSeconds ?? null,
             ]);
         });
     }
-    getApproval(runId, approvalId) { return this.memory.getApproval(runId, approvalId); }
-    listApprovals(runId) { return this.memory.listApprovals(runId); }
+    getApproval(runId, approvalId) {
+        return this.memory.getApproval(runId, approvalId);
+    }
+    listApprovals(runId) {
+        return this.memory.listApprovals(runId);
+    }
     updateApproval(runId, approvalId, patch) {
         const approval = this.memory.updateApproval(runId, approvalId, patch);
         if (approval) {
             this.enqueue(async () => {
                 await this.pool.query(`UPDATE studio_approvals SET status = $2, resolved_at = $3::timestamptz, response = $4, context = $5::jsonb, metadata = $6::jsonb
            WHERE run_id = $7 AND id = $1`, [
-                    approvalId, approval.status, approval.resolvedAt ?? null, approval.response ?? null,
-                    approval.context ? JSON.stringify(approval.context) : null, JSON.stringify(approval.metadata ?? {}), runId,
+                    approvalId,
+                    approval.status,
+                    approval.resolvedAt ?? null,
+                    approval.response ?? null,
+                    approval.context ? JSON.stringify(approval.context) : null,
+                    JSON.stringify(approval.metadata ?? {}),
+                    runId,
                 ]);
             });
         }
@@ -275,12 +371,17 @@ class PostgresRunStore {
         this.memory.setPausedContext(runId, context);
         this.enqueue(async () => {
             await this.pool.query("UPDATE studio_runs SET paused_context = $2::jsonb, updated_at = now() WHERE id = $1", [
-                runId, context ? JSON.stringify(context) : null,
+                runId,
+                context ? JSON.stringify(context) : null,
             ]);
         });
     }
-    getPausedContext(runId) { return this.memory.getPausedContext(runId); }
-    getWorkflowSnapshot(runId) { return this.memory.getWorkflowSnapshot(runId); }
+    getPausedContext(runId) {
+        return this.memory.getPausedContext(runId);
+    }
+    getWorkflowSnapshot(runId) {
+        return this.memory.getWorkflowSnapshot(runId);
+    }
 }
 exports.PostgresRunStore = PostgresRunStore;
 //# sourceMappingURL=runStore.js.map

@@ -121,6 +121,22 @@ export function FlowCanvas() {
   }, []);
 
   const onConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target) return;
+    // Current product contract is DAG-only. The server remains authoritative,
+    // but rejecting this interaction prevents a user from designing a graph
+    // that can never compile.
+    const outgoing = new Map<string, string[]>();
+    for (const edge of useWorkflowStore.getState().definition.edges) {
+      outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge.target]);
+    }
+    const seen = new Set<string>();
+    const reachesSource = (id: string): boolean => {
+      if (id === connection.source) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return (outgoing.get(id) ?? []).some(reachesSource);
+    };
+    if (connection.source === connection.target || reachesSource(connection.target)) return;
     useWorkflowStore.getState().addEdge({
       source: connection.source,
       target: connection.target,

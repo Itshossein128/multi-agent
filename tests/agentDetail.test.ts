@@ -33,7 +33,15 @@ describe("Agent detail configuration", () => {
 });
 
 describe("Agent run history and server event sanitization", () => {
-  const run = (id: string): Run => ({ id, workflowId: "workflow-1", startedAt: "2026-09-08T10:00:00Z", status: "running", metadata: {} });
+  const run = (id: string): Run => ({
+    id,
+    workflowId: "workflow-1",
+    startedAt: "2026-09-08T10:00:00Z",
+    status: "running",
+    metadata: {},
+    ownerId: "principal-1",
+    tenantId: "tenant-1",
+  });
   test("history API includes related node events but excludes another agent and missing runs", async () => {
     const store = new RunStore(); store.create(run("r1"));
     const base = { runId: "r1", sequence: 0, timestamp: "2026-09-08T10:00:01Z", payload: {} };
@@ -41,7 +49,12 @@ describe("Agent run history and server event sanitization", () => {
     store.append("r1", { ...base, id: "b", type: "node.completed", nodeId: "n1" });
     store.append("r1", { ...base, id: "c", type: "agent.started", agentId: "a2", nodeId: "n2" });
     store.append("r1", { ...base, id: "d", type: "node.completed", nodeId: "n2" });
-    const { app } = createRunsRouter({ getStore: () => store } as unknown as RunExecutor);
+    const { app } = createRunsRouter(
+      { getStore: () => store } as unknown as RunExecutor,
+      undefined,
+      undefined,
+      async () => ({ userId: "principal-1", tenantId: "tenant-1" }),
+    );
     const response = await app.request("http://localhost/r1/history?agentId=a1");
     expect(response.status).toBe(200);
     expect((await response.json() as RunEvent[]).map((event) => event.id)).toEqual(["a", "b"]);

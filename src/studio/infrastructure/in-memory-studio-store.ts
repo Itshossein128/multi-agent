@@ -1,5 +1,5 @@
 import type { AgentRecord, ToolRecord, WorkflowDefinition } from "@multi-agent/types";
-import type { StudioStore, StudioTask, StudioWorkspaceImport } from "../contracts";
+import type { StudioPrincipal, StudioStore, StudioTask, StudioWorkspaceImport } from "../contracts";
 
 export class InMemoryStudioStore implements StudioStore {
   private workflows = new Map<string, WorkflowDefinition>();
@@ -7,29 +7,220 @@ export class InMemoryStudioStore implements StudioStore {
   private tools = new Map<string, ToolRecord>();
   private tasks = new Map<string, StudioTask>();
 
-  async listWorkflows() { return [...this.workflows.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); }
-  async getWorkflow(id: string) { return structuredClone(this.workflows.get(id) ?? null); }
-  async saveWorkflow(definition: WorkflowDefinition) { this.workflows.set(definition.id, structuredClone(definition)); return structuredClone(definition); }
-  async deleteWorkflow(id: string) { this.workflows.delete(id); }
+  async transaction<T>(operation: (store: StudioStore) => Promise<T>): Promise<T> {
+    const snapshot = {
+      workflows: new Map(structuredClone([...this.workflows])),
+      agents: new Map(structuredClone([...this.agents])),
+      tools: new Map(structuredClone([...this.tools])),
+      tasks: new Map(structuredClone([...this.tasks])),
+    };
+    try {
+      return await operation(this);
+    } catch (error) {
+      this.workflows = snapshot.workflows;
+      this.agents = snapshot.agents;
+      this.tools = snapshot.tools;
+      this.tasks = snapshot.tasks;
+      throw error;
+    }
+  }
 
-  async listAgents() { return [...this.agents.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); }
-  async getAgent(id: string) { return structuredClone(this.agents.get(id) ?? null); }
-  async saveAgent(agent: AgentRecord) { this.agents.set(agent.id, structuredClone(agent)); return structuredClone(agent); }
-  async deleteAgent(id: string) { this.agents.delete(id); }
+  async listWorkflows(principal?: StudioPrincipal) {
+    return [...this.workflows.values()]
+      .filter((wf) => {
+        if (!principal) return true;
+        return Boolean(wf.tenantId && wf.ownerId && wf.tenantId === principal.tenantId && wf.ownerId === principal.userId);
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
 
-  async listTools() { return [...this.tools.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); }
-  async getTool(id: string) { return structuredClone(this.tools.get(id) ?? null); }
-  async saveTool(tool: ToolRecord) { this.tools.set(tool.id, structuredClone(tool)); return structuredClone(tool); }
-  async deleteTool(id: string) { this.tools.delete(id); }
+  async getWorkflow(id: string, principal?: StudioPrincipal) {
+    const wf = this.workflows.get(id);
+    if (!wf) return null;
+    if (principal && (!wf.tenantId || !wf.ownerId || wf.tenantId !== principal.tenantId || wf.ownerId !== principal.userId)) {
+      return null;
+    }
+    return structuredClone(wf);
+  }
 
-  async listTasks() { return [...this.tasks.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); }
-  async getTask(id: string) { return structuredClone(this.tasks.get(id) ?? null); }
-  async saveTask(task: StudioTask) { this.tasks.set(task.id, structuredClone(task)); return structuredClone(task); }
-  async deleteTask(id: string) { this.tasks.delete(id); }
+  async saveWorkflow(definition: WorkflowDefinition, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.workflows.get(definition.id);
+      if (existing && (!existing.tenantId || !existing.ownerId || existing.tenantId !== principal.tenantId || existing.ownerId !== principal.userId)) {
+        throw new Error("Access denied to workflow");
+      }
+      definition = { ...definition, ownerId: principal.userId, tenantId: principal.tenantId };
+    }
+    this.workflows.set(definition.id, structuredClone(definition));
+    return structuredClone(definition);
+  }
 
-  async importWorkspace(workspace: StudioWorkspaceImport) {
-    for (const workflow of workspace.workflows) this.workflows.set(workflow.id, structuredClone(workflow));
-    for (const agent of workspace.agents) this.agents.set(agent.id, structuredClone(agent));
-    for (const tool of workspace.tools) this.tools.set(tool.id, structuredClone(tool));
+  async deleteWorkflow(id: string, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.workflows.get(id);
+      if (existing && (!existing.tenantId || !existing.ownerId || existing.tenantId !== principal.tenantId || existing.ownerId !== principal.userId)) {
+        throw new Error("Access denied to workflow");
+      }
+    }
+    this.workflows.delete(id);
+  }
+
+  async listAgents(principal?: StudioPrincipal) {
+    return [...this.agents.values()]
+      .filter((agent) => {
+        if (!principal) return true;
+        if (agent.isSystem) return true;
+        return Boolean(agent.tenantId && agent.tenantId === principal.tenantId && (!agent.ownerId || agent.ownerId === principal.userId));
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getAgent(id: string, principal?: StudioPrincipal) {
+    const agent = this.agents.get(id);
+    if (!agent) return null;
+    if (principal) {
+      if (agent.isSystem) return structuredClone(agent);
+      if (!agent.tenantId || agent.tenantId !== principal.tenantId) return null;
+      if (agent.ownerId && agent.ownerId !== principal.userId) return null;
+    }
+    return structuredClone(agent);
+  }
+
+  async saveAgent(agent: AgentRecord, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.agents.get(agent.id);
+      if (existing) {
+        if (existing.isSystem) throw new Error("Cannot modify system agent");
+        if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
+          throw new Error("Access denied to agent");
+        }
+      }
+      agent = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+    }
+    this.agents.set(agent.id, structuredClone(agent));
+    return structuredClone(agent);
+  }
+
+  async deleteAgent(id: string, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.agents.get(id);
+      if (existing) {
+        if (existing.isSystem) throw new Error("Cannot delete system agent");
+        if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
+          throw new Error("Access denied to agent");
+        }
+      }
+    }
+    this.agents.delete(id);
+  }
+
+  async listTools(principal?: StudioPrincipal) {
+    return [...this.tools.values()]
+      .filter((tool) => {
+        if (!principal) return true;
+        if (tool.isSystem) return true;
+        return Boolean(tool.tenantId && tool.tenantId === principal.tenantId && (!tool.ownerId || tool.ownerId === principal.userId));
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getTool(id: string, principal?: StudioPrincipal) {
+    const tool = this.tools.get(id);
+    if (!tool) return null;
+    if (principal) {
+      if (tool.isSystem) return structuredClone(tool);
+      if (!tool.tenantId || tool.tenantId !== principal.tenantId) return null;
+      if (tool.ownerId && tool.ownerId !== principal.userId) return null;
+    }
+    return structuredClone(tool);
+  }
+
+  async saveTool(tool: ToolRecord, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.tools.get(tool.id);
+      if (existing) {
+        if (existing.isSystem) throw new Error("Cannot modify system tool");
+        if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
+          throw new Error("Access denied to tool");
+        }
+      }
+      tool = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+    }
+    this.tools.set(tool.id, structuredClone(tool));
+    return structuredClone(tool);
+  }
+
+  async deleteTool(id: string, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.tools.get(id);
+      if (existing) {
+        if (existing.isSystem) throw new Error("Cannot delete system tool");
+        if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
+          throw new Error("Access denied to tool");
+        }
+      }
+    }
+    this.tools.delete(id);
+  }
+
+  async listTasks(principal?: StudioPrincipal) {
+    return [...this.tasks.values()]
+      .filter((task) => {
+        if (!principal) return true;
+        return Boolean(task.tenantId && task.tenantId === principal.tenantId);
+      })
+      .sort((a, b) => ((b.updatedAt ?? b.createdAt) || "").localeCompare((a.updatedAt ?? a.createdAt) || ""));
+  }
+
+  async getTask(id: string, principal?: StudioPrincipal) {
+    const task = this.tasks.get(id);
+    if (!task) return null;
+    if (principal && (!task.tenantId || task.tenantId !== principal.tenantId)) {
+      return null;
+    }
+    return structuredClone(task);
+  }
+
+  async saveTask(task: StudioTask, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.tasks.get(task.id);
+      if (existing && (!existing.tenantId || existing.tenantId !== principal.tenantId)) {
+        throw new Error("Access denied to task");
+      }
+      task = { ...task, tenantId: principal.tenantId, ownerId: task.ownerId ?? principal.userId };
+    }
+    this.tasks.set(task.id, structuredClone(task));
+    return structuredClone(task);
+  }
+
+  async deleteTask(id: string, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.tasks.get(id);
+      if (existing && (!existing.tenantId || existing.tenantId !== principal.tenantId)) {
+        throw new Error("Access denied to task");
+      }
+    }
+    this.tasks.delete(id);
+  }
+
+  async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal) {
+    for (const workflow of workspace.workflows) {
+      const definition = principal
+        ? { ...workflow, ownerId: principal.userId, tenantId: principal.tenantId }
+        : workflow;
+      this.workflows.set(definition.id, structuredClone(definition));
+    }
+    for (const agent of workspace.agents) {
+      const record = principal
+        ? { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false }
+        : agent;
+      this.agents.set(record.id, structuredClone(record));
+    }
+    for (const tool of workspace.tools) {
+      const record = principal
+        ? { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false }
+        : tool;
+      this.tools.set(record.id, structuredClone(record));
+    }
   }
 }

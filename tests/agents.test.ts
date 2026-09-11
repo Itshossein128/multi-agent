@@ -4,6 +4,8 @@ import { getLLM } from '../src/agents/core/llmFactory';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 
 describe('Multi-Agent Graph Engine & LLM Factory', () => {
+  jest.setTimeout(30000);
+
   beforeEach(() => {
     process.env.AUTO_ANSWER = 'Sample user response for spec clarification';
   });

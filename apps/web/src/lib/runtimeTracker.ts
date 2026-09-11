@@ -1,6 +1,17 @@
 /**
- * Shared runtime state tracker for active agents, workflow queue, execution histories,
- * and Langfuse / LLM token usage.
+ * Shared runtime state tracker (legacy in-memory mock/helper).
+ *
+ * NOTE: MultiAgentRuntimeTracker is NOT authoritative for:
+ * - run status,
+ * - task status,
+ * - execution state,
+ * - cancellation state,
+ * - approval state,
+ * - dashboard counters,
+ * - dashboard lists,
+ * - dashboard summaries.
+ *
+ * Authoritative operational state is provided by RunStore and StudioStore via the execution server.
  */
 
 export type TimeFilter = "today" | "week" | "month";
@@ -13,7 +24,7 @@ export interface AgentInstance {
   currentTask?: string;
   uptimeSeconds: number;
   tokensUsed: number;
-  cost: number;
+  cost: number | null;
   model: string;
 }
 
@@ -33,7 +44,7 @@ export interface CompletedTask {
   completedAt: string;
   duration: string;
   tokens: number;
-  cost: number;
+  cost: number | null;
   period: "today" | "week" | "month";
   timestamp: number;
 }
@@ -159,7 +170,7 @@ class MultiAgentRuntimeTracker {
     const agent = this.agents.find((a) => a.name.includes(options.agent) || a.role.includes(options.agent));
     if (agent) {
       agent.tokensUsed += tokens;
-      agent.cost += cost;
+      agent.cost = (agent.cost ?? 0) + cost;
     }
 
     if (options.status === "COMPLETED") {

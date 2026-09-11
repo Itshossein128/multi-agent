@@ -7,7 +7,7 @@ const node_crypto_1 = require("node:crypto");
 /** Explicit operator action only. Never called from a store constructor or server startup. */
 async function runStudioMigrations(pool, options = {}) {
     const directory = options.directory ?? (0, node_path_1.resolve)(process.cwd(), "infrastructure/studio/migrations");
-    const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql"];
+    const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql", "004_ownership.sql"];
     const migrations = await Promise.all(names.map(async (name) => {
         const sql = await (0, promises_1.readFile)((0, node_path_1.resolve)(directory, name), "utf8");
         return { name, sql, checksum: (0, node_crypto_1.createHash)("sha256").update(sql).digest("hex") };

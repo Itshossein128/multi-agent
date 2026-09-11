@@ -5,6 +5,7 @@ import { validateAgent, nowIso } from "@multi-agent/types";
 import { RuntimeMemory } from "./runtimeMemory";
 import { boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
+import { assertExecutionPolicy, ExecutionPolicyError } from "./executionPolicy";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -21,6 +22,13 @@ export class AgentRuntime {
     if (errors.length) {
       yield { type: "agent.failed", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: errors.join(" ") } };
       throw new Error(errors.join(" "));
+    }
+    try {
+      assertExecutionPolicy(input.agent);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      yield { type: "agent.failed", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: message } };
+      throw error instanceof ExecutionPolicyError ? error : new ExecutionPolicyError(message);
     }
     const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(this.maxExecutionMs)]) : AbortSignal.timeout(this.maxExecutionMs);
     signal.throwIfAborted();

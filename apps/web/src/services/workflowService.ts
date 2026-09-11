@@ -2,7 +2,7 @@
 import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, uid, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
 
-const API_URL = process.env.NEXT_PUBLIC_EXECUTION_API_URL ?? "http://localhost:4000";
+const API_URL = "/api/execution";
 const ACTIVE_WORKFLOW_KEY = "agent-studio.active-workflow.v1";
 const WORKSPACE_KEY = "agent-studio.workspace.v3";
 const LEGACY_WORKSPACE_V2_KEY = "agent-studio.workspace.v2";
@@ -13,11 +13,13 @@ const IMPORT_FLAG_KEY = "agent-studio.workspace-imported.v1";
 interface Workspace { version: 3; activeWorkflowId: string | null; workflows: WorkflowDefinition[]; agents: AgentRecord[]; tools: ToolRecord[] }
 interface WorkspaceV2 { version: 2; activeWorkflowId: string | null; workflows: WorkflowDefinition[]; agents: AgentRecord[] }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}/studio${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Studio request failed (${response.status})`);
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+export interface WorkflowServiceDependencies {
+  /** Injectable only to make browser-client contract tests hermetic. */
+  fetch?: typeof fetch;
+  storage?: BrowserStorage;
+  apiUrl?: string;
 }
 
 function upgradeFromV2(v2: WorkspaceV2): Workspace {
@@ -30,19 +32,19 @@ function upgradeFromV2(v2: WorkspaceV2): Workspace {
   return { version: 3, activeWorkflowId: v2.activeWorkflowId, workflows, agents: v2.agents, tools };
 }
 
-function readLegacyWorkspace(): Workspace | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(WORKSPACE_KEY);
+function readLegacyWorkspace(storage: BrowserStorage | undefined): Workspace | null {
+  if (!storage) return null;
+  const raw = storage.getItem(WORKSPACE_KEY);
   if (raw) {
     const workspace = JSON.parse(raw) as Workspace;
     if (workspace.version !== 3 || !Array.isArray(workspace.agents) || !Array.isArray(workspace.workflows) || !Array.isArray(workspace.tools)) return null;
     assertNoCredentials(workspace);
     return workspace;
   }
-  const rawV2 = window.localStorage.getItem(LEGACY_WORKSPACE_V2_KEY);
+  const rawV2 = storage.getItem(LEGACY_WORKSPACE_V2_KEY);
   if (rawV2) return upgradeFromV2(JSON.parse(rawV2) as WorkspaceV2);
-  const oldWorkflow = window.localStorage.getItem(LEGACY_WORKFLOW_KEY);
-  const oldAgents = window.localStorage.getItem(LEGACY_AGENTS_KEY);
+  const oldWorkflow = storage.getItem(LEGACY_WORKFLOW_KEY);
+  const oldAgents = storage.getItem(LEGACY_AGENTS_KEY);
   if (!oldWorkflow && !oldAgents) return null;
   const workflow = oldWorkflow ? JSON.parse(oldWorkflow) as WorkflowDefinition : null;
   const agents = oldAgents ? (JSON.parse(oldAgents) as unknown[]).map(publicAgent) : [];
@@ -52,48 +54,54 @@ function readLegacyWorkspace(): Workspace | null {
   return { version: 3, activeWorkflowId: migratedWorkflow?.definition.id ?? null, workflows: migratedWorkflow ? [migratedWorkflow.definition] : [], agents, tools };
 }
 
-let importPromise: Promise<void> | null = null;
-
-async function ensureImported(): Promise<void> {
-  if (typeof window === "undefined") return;
-  if (window.localStorage.getItem(IMPORT_FLAG_KEY) === "1") return;
-  if (!importPromise) {
-    importPromise = (async () => {
-      const legacy = readLegacyWorkspace();
-      if (legacy && (legacy.workflows.length || legacy.agents.length || legacy.tools.length)) {
-        await request("/workspace/import", {
-          method: "POST",
-          body: JSON.stringify({ workflows: legacy.workflows, agents: legacy.agents, tools: legacy.tools }),
-        });
-        if (legacy.activeWorkflowId) window.localStorage.setItem(ACTIVE_WORKFLOW_KEY, legacy.activeWorkflowId);
-      }
-      window.localStorage.setItem(IMPORT_FLAG_KEY, "1");
-      window.localStorage.removeItem(WORKSPACE_KEY);
-      window.localStorage.removeItem(LEGACY_WORKSPACE_V2_KEY);
-      window.localStorage.removeItem(LEGACY_WORKFLOW_KEY);
-      window.localStorage.removeItem(LEGACY_AGENTS_KEY);
-    })().catch((error) => {
-      importPromise = null;
-      throw error;
-    });
-  }
-  await importPromise;
-}
-
-function getActiveWorkflowId(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(ACTIVE_WORKFLOW_KEY);
-}
-
-function setActiveWorkflowId(id: string | null): void {
-  if (typeof window === "undefined") return;
-  if (id) window.localStorage.setItem(ACTIVE_WORKFLOW_KEY, id);
-  else window.localStorage.removeItem(ACTIVE_WORKFLOW_KEY);
-}
-
 export interface CreateAgentInput { name?: string; model?: string; provider?: string; backend?: AgentRecord["backend"] }
 
-export const workflowService = {
+/**
+ * Creates a Studio client. The application uses the default instance below;
+ * injected transports/storage let tests exercise the exact HTTP contract with
+ * an isolated in-memory router rather than a process running on localhost.
+ */
+export function createWorkflowService(dependencies: WorkflowServiceDependencies = {}) {
+  const fetchImpl = dependencies.fetch ?? globalThis.fetch;
+  const apiUrl = dependencies.apiUrl ?? API_URL;
+  const storage = () => dependencies.storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
+  let importPromise: Promise<void> | null = null;
+
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await fetchImpl(`${apiUrl}/studio${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Studio request failed (${response.status})`);
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
+  }
+
+  async function ensureImported(): Promise<void> {
+    const currentStorage = storage();
+    if (!currentStorage || currentStorage.getItem(IMPORT_FLAG_KEY) === "1") return;
+    if (!importPromise) {
+      importPromise = (async () => {
+        const legacy = readLegacyWorkspace(currentStorage);
+        if (legacy && (legacy.workflows.length || legacy.agents.length || legacy.tools.length)) {
+          await request("/workspace/import", { method: "POST", body: JSON.stringify({ workflows: legacy.workflows, agents: legacy.agents, tools: legacy.tools }) });
+          if (legacy.activeWorkflowId) currentStorage.setItem(ACTIVE_WORKFLOW_KEY, legacy.activeWorkflowId);
+        }
+        currentStorage.setItem(IMPORT_FLAG_KEY, "1");
+        currentStorage.removeItem(WORKSPACE_KEY);
+        currentStorage.removeItem(LEGACY_WORKSPACE_V2_KEY);
+        currentStorage.removeItem(LEGACY_WORKFLOW_KEY);
+        currentStorage.removeItem(LEGACY_AGENTS_KEY);
+      })().catch((error) => { importPromise = null; throw error; });
+    }
+    await importPromise;
+  }
+
+  const getActiveWorkflowId = () => storage()?.getItem(ACTIVE_WORKFLOW_KEY) ?? null;
+  const setActiveWorkflowId = (id: string | null) => {
+    const currentStorage = storage();
+    if (!currentStorage) return;
+    if (id) currentStorage.setItem(ACTIVE_WORKFLOW_KEY, id); else currentStorage.removeItem(ACTIVE_WORKFLOW_KEY);
+  };
+
+  return {
   async getAgent(agentId: string): Promise<AgentRecord | null> {
     await ensureImported();
     try {
@@ -185,7 +193,10 @@ export const workflowService = {
     const query = options?.removeReferences ? "?removeReferences=true" : "";
     await request(`/tools/${encodeURIComponent(toolId)}${query}`, { method: "DELETE" });
   },
-};
+  };
+}
+
+export const workflowService = createWorkflowService();
 
 export function findUnreferencedAgentIds(definition: WorkflowDefinition, agents: AgentRecord[]): string[] {
   const referenced = new Set(definition.nodes.filter((node) => node.type === "agent").map((node) => (node.config as { agentId?: string }).agentId));

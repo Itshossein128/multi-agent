@@ -1,9 +1,7 @@
 /**
  * Task board store backed by the Studio persistence API on the execution server.
- * Keeps dashboard runtimeTracker sync as a side effect of board mutations.
  */
 
-import { runtimeTracker } from "@/lib/runtimeTracker";
 import {
   BoardAgent,
   DEP_GATED_STATUSES,
@@ -14,6 +12,7 @@ import {
   canMoveStatus,
   hasDependencyCycle,
 } from "@/lib/taskStatus";
+import { createInternalPrincipalAssertion, type AuthenticatedPrincipal } from "../../../../src/auth/internalPrincipal";
 
 const API_URL = process.env.NEXT_PUBLIC_EXECUTION_API_URL ?? process.env.EXECUTION_API_URL ?? "http://localhost:4000";
 const TITLE_MAX = 200;
@@ -46,29 +45,57 @@ function randomId(): string {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function studioRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function studioRequest<T>(path: string, init?: RequestInit, principal?: AuthenticatedPrincipal | null): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  const secret = process.env.INTERNAL_PRINCIPAL_SECRET;
+  if (principal && secret) {
+    headers.set("X-Multi-Agent-Principal", createInternalPrincipalAssertion(principal, secret));
+  }
   const response = await fetch(`${API_URL}/studio${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers,
     cache: "no-store",
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { error?: string };
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new TaskActionError(body.error ?? `Studio task request failed (${response.status})`, { statusCode: response.status });
   }
   return response.json() as Promise<T>;
 }
 
-async function loadTasks(): Promise<Task[]> {
+async function loadTasks(principal?: AuthenticatedPrincipal | null): Promise<Task[]> {
   try {
-    return await studioRequest<Task[]>("/tasks");
+    return await studioRequest<Task[]>("/tasks", undefined, principal);
   } catch {
     return [];
   }
 }
 
-async function saveTasks(tasks: Task[]): Promise<void> {
-  await studioRequest("/tasks", { method: "PUT", body: JSON.stringify(tasks) });
+async function loadAgents(principal?: AuthenticatedPrincipal | null): Promise<BoardAgent[]> {
+  try {
+    const agents = await studioRequest<Array<{ id: string; name: string; description?: string; backend?: { model?: string } }>>("/agents", undefined, principal);
+    if (agents && agents.length > 0) {
+      return agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        role: a.description || a.name,
+        model: a.backend?.model || "default",
+        status: "idle",
+      }));
+    }
+  } catch {
+    // fallback below
+  }
+  return [
+    { id: "agent-orchestrator", name: "Orchestrator Agent", role: "Intent Classification & Task Decomposer", model: process.env.LLM_MODEL || "gemini-3.6-flash", status: "idle" },
+    { id: "agent-developer", name: "Developer Agent", role: "Code Generator & Version Control", model: process.env.LLM_MODEL || "gemini-3.6-flash", status: "idle" },
+    { id: "agent-doc-generator", name: "Doc Generator Agent", role: "BookStack Chapter & Specification Author", model: process.env.LLM_MODEL || "gemini-3.6-flash", status: "idle" },
+  ];
+}
+
+async function saveTasks(tasks: Task[], principal?: AuthenticatedPrincipal | null): Promise<void> {
+  await studioRequest("/tasks", { method: "PUT", body: JSON.stringify(tasks) }, principal);
 }
 
 let writeChain: Promise<unknown> = Promise.resolve();
@@ -78,11 +105,13 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function assertAgentExists(assignedAgent: string | null | undefined): void {
+function assertAgentExists(assignedAgent: string | null | undefined, agents?: BoardAgent[]): void {
   if (!assignedAgent) return;
-  const exists = runtimeTracker.agents.some((a) => a.name === assignedAgent);
-  if (!exists) {
-    throw new TaskActionError(`Unknown agent: ${assignedAgent}`);
+  if (agents && agents.length > 0) {
+    const exists = agents.some((a) => a.name === assignedAgent || a.id === assignedAgent);
+    if (!exists) {
+      throw new TaskActionError(`Unknown agent: ${assignedAgent}`);
+    }
   }
 }
 
@@ -102,44 +131,15 @@ function validateDependencies(tasks: Task[], taskId: string, dependencies: strin
   return unique;
 }
 
-function syncAgentActivity(tasks: Task[]): void {
-  const idleMessages: Record<string, string> = {
-    "agent-orchestrator": "Listening for workflow requests & routing to LangGraph nodes",
-  };
-  for (const agent of runtimeTracker.agents) {
+export async function getBoardData(principal?: AuthenticatedPrincipal | null): Promise<TaskBoardData> {
+  const tasks = await loadTasks(principal);
+  const agents = await loadAgents(principal);
+  for (const agent of agents) {
     const active = tasks.find(
-      (t) => t.assignedAgent === agent.name && t.status === "in_progress" && !t.paused
+      (t) => (t.assignedAgent === agent.name || t.assignedAgent === agent.id) && t.status === "in_progress" && !t.paused
     );
-    if (active) {
-      agent.status = "running";
-      agent.currentTask = active.title;
-    } else {
-      agent.status = agent.id === "agent-orchestrator" ? "running" : "idle";
-      agent.currentTask =
-        idleMessages[agent.id] ?? "Standing by for next dispatched task";
-    }
+    agent.status = active ? "running" : "idle";
   }
-}
-
-function recordCompletion(task: Task, status: "COMPLETED" | "FAILED"): void {
-  runtimeTracker.recordExecution({
-    name: task.title,
-    status,
-    agent: task.assignedAgent ?? "Orchestrator Agent",
-    error: status === "FAILED" ? task.output ?? "Marked as failed on the task board" : undefined,
-  });
-}
-
-export async function getBoardData(): Promise<TaskBoardData> {
-  const tasks = await loadTasks();
-  syncAgentActivity(tasks);
-  const agents: BoardAgent[] = runtimeTracker.agents.map((a) => ({
-    id: a.id,
-    name: a.name,
-    role: a.role,
-    model: a.model,
-    status: a.status,
-  }));
   return { tasks, agents, lastUpdated: nowIso() };
 }
 
@@ -152,9 +152,10 @@ export interface CreateTaskInput {
   status?: TaskStatus;
 }
 
-export async function createTask(input: CreateTaskInput): Promise<Task> {
+export async function createTask(input: CreateTaskInput, principal?: AuthenticatedPrincipal | null): Promise<Task> {
   return serialized(async () => {
-    const tasks = await loadTasks();
+    const tasks = await loadTasks(principal);
+    const agents = await loadAgents(principal);
 
     const title = (input.title ?? "").trim();
     if (!title) throw new TaskActionError("Task title is required");
@@ -169,7 +170,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     if (!canCreateInStatus(status)) {
       throw new TaskActionError(`Tasks cannot be created directly in "${status}"`);
     }
-    assertAgentExists(input.assignedAgent ?? null);
+    assertAgentExists(input.assignedAgent ?? null, agents);
     const dependencies = validateDependencies(tasks, randomId() + "-pending", input.dependencies ?? []);
 
     const task: Task = {
@@ -188,8 +189,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     };
 
     tasks.unshift(task);
-    syncAgentActivity(tasks);
-    await saveTasks(tasks);
+    await saveTasks(tasks, principal);
     return task;
   });
 }
@@ -198,9 +198,9 @@ function canCreateInStatus(status: TaskStatus): boolean {
   return status !== "done" && status !== "failed";
 }
 
-export async function moveTask(taskId: string, toStatus: TaskStatus): Promise<Task> {
+export async function moveTask(taskId: string, toStatus: TaskStatus, principal?: AuthenticatedPrincipal | null): Promise<Task> {
   return serialized(async () => {
-    const tasks = await loadTasks();
+    const tasks = await loadTasks(principal);
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new TaskActionError("Task not found", { statusCode: 404 });
     if (task.status === toStatus) return task;
@@ -236,11 +236,7 @@ export async function moveTask(taskId: string, toStatus: TaskStatus): Promise<Ta
       task.output = "Marked as failed during workflow execution";
     }
 
-    if (toStatus === "done") recordCompletion(task, "COMPLETED");
-    if (toStatus === "failed") recordCompletion(task, "FAILED");
-
-    syncAgentActivity(tasks);
-    await saveTasks(tasks);
+    await saveTasks(tasks, principal);
     return task;
   });
 }
@@ -254,9 +250,10 @@ export interface UpdateTaskPatch {
   output?: string | null;
 }
 
-export async function updateTask(taskId: string, patch: UpdateTaskPatch): Promise<Task> {
+export async function updateTask(taskId: string, patch: UpdateTaskPatch, principal?: AuthenticatedPrincipal | null): Promise<Task> {
   return serialized(async () => {
-    const tasks = await loadTasks();
+    const tasks = await loadTasks(principal);
+    const agents = await loadAgents(principal);
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new TaskActionError("Task not found", { statusCode: 404 });
 
@@ -277,7 +274,7 @@ export async function updateTask(taskId: string, patch: UpdateTaskPatch): Promis
     }
     if (patch.priority !== undefined) task.priority = patch.priority;
     if (patch.assignedAgent !== undefined) {
-      assertAgentExists(patch.assignedAgent);
+      assertAgentExists(patch.assignedAgent, agents);
       task.assignedAgent = patch.assignedAgent || null;
     }
     if (patch.dependencies !== undefined) {
@@ -289,15 +286,14 @@ export async function updateTask(taskId: string, patch: UpdateTaskPatch): Promis
     }
 
     task.updatedAt = nowIso();
-    syncAgentActivity(tasks);
-    await saveTasks(tasks);
+    await saveTasks(tasks, principal);
     return task;
   });
 }
 
-export async function retryTask(taskId: string): Promise<Task> {
+export async function retryTask(taskId: string, principal?: AuthenticatedPrincipal | null): Promise<Task> {
   return serialized(async () => {
-    const tasks = await loadTasks();
+    const tasks = await loadTasks(principal);
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new TaskActionError("Task not found", { statusCode: 404 });
     if (task.status !== "failed") {
@@ -310,15 +306,14 @@ export async function retryTask(taskId: string): Promise<Task> {
     task.output = null;
     task.updatedAt = nowIso();
 
-    syncAgentActivity(tasks);
-    await saveTasks(tasks);
+    await saveTasks(tasks, principal);
     return task;
   });
 }
 
-export async function setTaskPaused(taskId: string, paused: boolean): Promise<Task> {
+export async function setTaskPaused(taskId: string, paused: boolean, principal?: AuthenticatedPrincipal | null): Promise<Task> {
   return serialized(async () => {
-    const tasks = await loadTasks();
+    const tasks = await loadTasks(principal);
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new TaskActionError("Task not found", { statusCode: 404 });
     if (task.status === "done" || task.status === "failed") {
@@ -330,15 +325,14 @@ export async function setTaskPaused(taskId: string, paused: boolean): Promise<Ta
 
     task.paused = paused;
     task.updatedAt = nowIso();
-    syncAgentActivity(tasks);
-    await saveTasks(tasks);
+    await saveTasks(tasks, principal);
     return task;
   });
 }
 
-export async function cancelTask(taskId: string): Promise<{ id: string }> {
+export async function cancelTask(taskId: string, principal?: AuthenticatedPrincipal | null): Promise<{ id: string }> {
   return serialized(async () => {
-    const tasks = await loadTasks();
+    const tasks = await loadTasks(principal);
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new TaskActionError("Task not found", { statusCode: 404 });
 
@@ -350,7 +344,7 @@ export async function cancelTask(taskId: string): Promise<{ id: string }> {
           : t
       );
 
-    await saveTasks(remaining);
+    await saveTasks(remaining, principal);
     return { id: taskId };
   });
 }

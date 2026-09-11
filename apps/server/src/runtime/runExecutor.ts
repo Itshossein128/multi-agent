@@ -7,10 +7,12 @@ type CompiledGraph = ReturnType<typeof compileWorkflow>;
 import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { AgentRuntime, mapAgentExecutionEvent } from "../../../../src/agents/runtime";
+import { ToolRuntime } from "../../../../src/tools";
 import { ExecutionTelemetry } from "../../../../src/observability/telemetry";
 import { validateWorkflow } from "../compiler/validation";
 import { runtimeGuardrailsFromEnvironment, type RuntimeGuardrails } from "./guardrails";
 import { log } from "../logging";
+import type { RequestPrincipal } from "../auth/principal";
 
 function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
   return mapAgentExecutionEvent(event as Parameters<typeof mapAgentExecutionEvent>[0], runId);
@@ -33,6 +35,7 @@ export class RunExecutor {
     private readonly checkpointer?: CompileOptions["checkpointer"],
     private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
     private readonly guardrails: RuntimeGuardrails = runtimeGuardrailsFromEnvironment(),
+    private readonly toolRuntime?: Pick<ToolRuntime, "execute">,
   ) { }
   getStore() { return this.store; }
   /** Restore in-memory pause maps after a durable hydrate so waiting runs can resume. */
@@ -40,13 +43,20 @@ export class RunExecutor {
     this.pausedContext.set(runId, context);
     this.checkpointers.set(runId, checkpointer);
   }
-  startAgentTest(request: AgentTestRequest, memoryAccess?: MemoryAccessContext) {
+  startAgentTest(request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     const errors = validateAgent(request.agent);
     if (request.agent.enabled === false) errors.push("Agent is disabled. Enable it before execution.");
     if (errors.length) throw new Error(errors.join(" "));
     const id = uid("run");
     const stamp = nowIso();
-    this.store.create({ id, workflowId: `agent-test:${request.agent.id}`, status: "running", startedAt: stamp, input: request.input, metadata: { kind: "agent-test" } }, memoryAccess);
+    const ownerId = principal?.userId;
+    const tenantId = principal?.tenantId;
+    this.store.create(
+      { id, workflowId: `agent-test:${request.agent.id}`, status: "running", startedAt: stamp, input: request.input, metadata: { kind: "agent-test" }, ownerId, tenantId },
+      memoryAccess,
+      undefined,
+      principal,
+    );
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.started", timestamp: stamp, sequence: 0, payload: {} });
     void this.executeAgentTest(id, request, memoryAccess);
     return id;
@@ -68,13 +78,15 @@ export class RunExecutor {
       this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message } });
     }
   }
-  start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
+  start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     const issues = validateWorkflow(request.workflow, request.agents, this.guardrails, request.tools);
     const errors = issues.filter(issue => issue.level === "error");
     if (errors.length) throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
     const id = uid("run"); const stamp = nowIso();
-    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: {} };
-    this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents });
+    const ownerId = principal?.userId;
+    const tenantId = principal?.tenantId;
+    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId };
+    this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents }, principal);
     log.info("run.started", { runId: id, workflowId: request.workflow.id, taskId: request.taskId });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     void this.execute(id, request, memoryAccess);
@@ -123,6 +135,7 @@ export class RunExecutor {
       const compiled = compileWorkflow(context.workflow, context.agents, {
         runId,
         runtime: this.agentRuntime,
+        toolRuntime: this.toolRuntime,
         checkpointer,
         memoryAccess: context.memoryAccess,
         signal: this.store.signal(runId),
@@ -153,6 +166,7 @@ export class RunExecutor {
       const compiled = compileWorkflow(request.workflow, request.agents, {
         runId,
         runtime: this.agentRuntime,
+        toolRuntime: this.toolRuntime,
         checkpointer,
         memoryAccess,
         signal: this.store.signal(runId),

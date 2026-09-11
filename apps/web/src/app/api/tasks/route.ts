@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedPrincipal } from "@/auth";
 import {
   TaskActionError,
   cancelTask,
@@ -15,7 +16,11 @@ import { TaskPriority, TaskStatus } from "@/lib/taskStatus";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const board = await getBoardData();
+  const principal = await getAuthenticatedPrincipal();
+  if (!principal) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const board = await getBoardData(principal);
   return NextResponse.json(board);
 }
 
@@ -38,6 +43,11 @@ interface TaskActionBody {
 }
 
 export async function POST(request: Request) {
+  const principal = await getAuthenticatedPrincipal();
+  if (!principal) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: TaskActionBody;
   try {
     body = (await request.json()) as TaskActionBody;
@@ -57,7 +67,7 @@ export async function POST(request: Request) {
           assignedAgent: body.assignedAgent ?? null,
           dependencies: body.dependencies ?? [],
           status: body.status,
-        });
+        }, principal);
         return NextResponse.json({ success: true, task });
       }
 
@@ -65,7 +75,7 @@ export async function POST(request: Request) {
         if (!taskId || !body.toStatus) {
           return NextResponse.json({ error: "taskId and toStatus are required" }, { status: 400 });
         }
-        const task = await moveTask(taskId, body.toStatus);
+        const task = await moveTask(taskId, body.toStatus, principal);
         return NextResponse.json({ success: true, task });
       }
 
@@ -73,7 +83,7 @@ export async function POST(request: Request) {
         if (!taskId) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
-        const task = await updateTask(taskId, body.patch ?? {});
+        const task = await updateTask(taskId, body.patch ?? {}, principal);
         return NextResponse.json({ success: true, task });
       }
 
@@ -81,7 +91,7 @@ export async function POST(request: Request) {
         if (!taskId) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
-        const task = await retryTask(taskId);
+        const task = await retryTask(taskId, principal);
         return NextResponse.json({ success: true, task });
       }
 
@@ -90,7 +100,7 @@ export async function POST(request: Request) {
         if (!taskId) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
-        const task = await setTaskPaused(taskId, action === "pause");
+        const task = await setTaskPaused(taskId, action === "pause", principal);
         return NextResponse.json({ success: true, task });
       }
 
@@ -98,7 +108,7 @@ export async function POST(request: Request) {
         if (!taskId) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
-        const result = await cancelTask(taskId);
+        const result = await cancelTask(taskId, principal);
         return NextResponse.json({ success: true, ...result });
       }
 

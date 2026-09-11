@@ -13,7 +13,9 @@ export interface StudioTask {
   retryCount: number;
   paused: boolean;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+  ownerId?: string;
+  tenantId?: string;
 }
 
 export interface StudioWorkspaceImport {
@@ -22,31 +24,38 @@ export interface StudioWorkspaceImport {
   tools: ToolRecord[];
 }
 
+export interface StudioPrincipal {
+  userId: string;
+  tenantId: string;
+}
+
 /**
  * Trusted backend boundary for durable Studio entities.
  * Adapters must not silently fall back between postgres and in-memory.
  */
 export interface StudioStore {
-  listWorkflows(): Promise<WorkflowDefinition[]>;
-  getWorkflow(id: string): Promise<WorkflowDefinition | null>;
-  saveWorkflow(definition: WorkflowDefinition): Promise<WorkflowDefinition>;
-  deleteWorkflow(id: string): Promise<void>;
+  /** Execute related registry/workflow changes atomically. */
+  transaction<T>(operation: (store: StudioStore) => Promise<T>): Promise<T>;
+  listWorkflows(principal?: StudioPrincipal): Promise<WorkflowDefinition[]>;
+  getWorkflow(id: string, principal?: StudioPrincipal): Promise<WorkflowDefinition | null>;
+  saveWorkflow(definition: WorkflowDefinition, principal?: StudioPrincipal): Promise<WorkflowDefinition>;
+  deleteWorkflow(id: string, principal?: StudioPrincipal): Promise<void>;
 
-  listAgents(): Promise<AgentRecord[]>;
-  getAgent(id: string): Promise<AgentRecord | null>;
-  saveAgent(agent: AgentRecord): Promise<AgentRecord>;
-  deleteAgent(id: string): Promise<void>;
+  listAgents(principal?: StudioPrincipal): Promise<AgentRecord[]>;
+  getAgent(id: string, principal?: StudioPrincipal): Promise<AgentRecord | null>;
+  saveAgent(agent: AgentRecord, principal?: StudioPrincipal): Promise<AgentRecord>;
+  deleteAgent(id: string, principal?: StudioPrincipal): Promise<void>;
 
-  listTools(): Promise<ToolRecord[]>;
-  getTool(id: string): Promise<ToolRecord | null>;
-  saveTool(tool: ToolRecord): Promise<ToolRecord>;
-  deleteTool(id: string): Promise<void>;
+  listTools(principal?: StudioPrincipal): Promise<ToolRecord[]>;
+  getTool(id: string, principal?: StudioPrincipal): Promise<ToolRecord | null>;
+  saveTool(tool: ToolRecord, principal?: StudioPrincipal): Promise<ToolRecord>;
+  deleteTool(id: string, principal?: StudioPrincipal): Promise<void>;
 
-  listTasks(): Promise<StudioTask[]>;
-  getTask(id: string): Promise<StudioTask | null>;
-  saveTask(task: StudioTask): Promise<StudioTask>;
-  deleteTask(id: string): Promise<void>;
+  listTasks(principal?: StudioPrincipal): Promise<StudioTask[]>;
+  getTask(id: string, principal?: StudioPrincipal): Promise<StudioTask | null>;
+  saveTask(task: StudioTask, principal?: StudioPrincipal): Promise<StudioTask>;
+  deleteTask(id: string, principal?: StudioPrincipal): Promise<void>;
 
   /** Upsert entire workspace (used by one-shot browser import). */
-  importWorkspace(workspace: StudioWorkspaceImport): Promise<void>;
+  importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal): Promise<void>;
 }

@@ -20,14 +20,16 @@ class RunExecutor {
     checkpointer;
     telemetry;
     guardrails;
+    toolRuntime;
     checkpointers = new Map();
     pausedContext = new Map();
-    constructor(store = new runStore_1.InMemoryRunStore(), agentRuntime = new runtime_1.AgentRuntime(), checkpointer, telemetry = telemetry_1.ExecutionTelemetry.disabled(), guardrails = (0, guardrails_1.runtimeGuardrailsFromEnvironment)()) {
+    constructor(store = new runStore_1.InMemoryRunStore(), agentRuntime = new runtime_1.AgentRuntime(), checkpointer, telemetry = telemetry_1.ExecutionTelemetry.disabled(), guardrails = (0, guardrails_1.runtimeGuardrailsFromEnvironment)(), toolRuntime) {
         this.store = store;
         this.agentRuntime = agentRuntime;
         this.checkpointer = checkpointer;
         this.telemetry = telemetry;
         this.guardrails = guardrails;
+        this.toolRuntime = toolRuntime;
     }
     getStore() { return this.store; }
     /** Restore in-memory pause maps after a durable hydrate so waiting runs can resume. */
@@ -35,7 +37,7 @@ class RunExecutor {
         this.pausedContext.set(runId, context);
         this.checkpointers.set(runId, checkpointer);
     }
-    startAgentTest(request, memoryAccess) {
+    startAgentTest(request, memoryAccess, principal) {
         const errors = (0, types_1.validateAgent)(request.agent);
         if (request.agent.enabled === false)
             errors.push("Agent is disabled. Enable it before execution.");
@@ -43,7 +45,9 @@ class RunExecutor {
             throw new Error(errors.join(" "));
         const id = (0, types_1.uid)("run");
         const stamp = (0, types_1.nowIso)();
-        this.store.create({ id, workflowId: `agent-test:${request.agent.id}`, status: "running", startedAt: stamp, input: request.input, metadata: { kind: "agent-test" } }, memoryAccess);
+        const ownerId = principal?.userId;
+        const tenantId = principal?.tenantId;
+        this.store.create({ id, workflowId: `agent-test:${request.agent.id}`, status: "running", startedAt: stamp, input: request.input, metadata: { kind: "agent-test" }, ownerId, tenantId }, memoryAccess, undefined, principal);
         this.store.append(id, { id: (0, types_1.uid)("event"), runId: id, agentId: request.agent.id, type: "run.started", timestamp: stamp, sequence: 0, payload: {} });
         void this.executeAgentTest(id, request, memoryAccess);
         return id;
@@ -70,15 +74,17 @@ class RunExecutor {
             this.store.append(runId, { id: (0, types_1.uid)("event"), runId, type: "run.failed", timestamp: (0, types_1.nowIso)(), sequence: 0, payload: { error: message } });
         }
     }
-    start(request, memoryAccess) {
+    start(request, memoryAccess, principal) {
         const issues = (0, validation_1.validateWorkflow)(request.workflow, request.agents, this.guardrails, request.tools);
         const errors = issues.filter(issue => issue.level === "error");
         if (errors.length)
             throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
         const id = (0, types_1.uid)("run");
         const stamp = (0, types_1.nowIso)();
-        const run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: {} };
-        this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents });
+        const ownerId = principal?.userId;
+        const tenantId = principal?.tenantId;
+        const run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId };
+        this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents }, principal);
         logging_1.log.info("run.started", { runId: id, workflowId: request.workflow.id, taskId: request.taskId });
         this.store.append(id, { id: (0, types_1.uid)("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
         void this.execute(id, request, memoryAccess);
@@ -131,6 +137,7 @@ class RunExecutor {
             const compiled = (0, workflowCompiler_1.compileWorkflow)(context.workflow, context.agents, {
                 runId,
                 runtime: this.agentRuntime,
+                toolRuntime: this.toolRuntime,
                 checkpointer,
                 memoryAccess: context.memoryAccess,
                 signal: this.store.signal(runId),
@@ -164,6 +171,7 @@ class RunExecutor {
             const compiled = (0, workflowCompiler_1.compileWorkflow)(request.workflow, request.agents, {
                 runId,
                 runtime: this.agentRuntime,
+                toolRuntime: this.toolRuntime,
                 checkpointer,
                 memoryAccess,
                 signal: this.store.signal(runId),

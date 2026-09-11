@@ -6,6 +6,7 @@ const types_1 = require("@multi-agent/types");
 const runtimeMemory_1 = require("./runtimeMemory");
 const shortTermMemory_1 = require("./shortTermMemory");
 const telemetry_1 = require("../../observability/telemetry");
+const executionPolicy_1 = require("./executionPolicy");
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 class AgentRuntime {
     memoryDependencies;
@@ -25,6 +26,14 @@ class AgentRuntime {
         if (errors.length) {
             yield { type: "agent.failed", timestamp: (0, types_1.nowIso)(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: errors.join(" ") } };
             throw new Error(errors.join(" "));
+        }
+        try {
+            (0, executionPolicy_1.assertExecutionPolicy)(input.agent);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            yield { type: "agent.failed", timestamp: (0, types_1.nowIso)(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: message } };
+            throw error instanceof executionPolicy_1.ExecutionPolicyError ? error : new executionPolicy_1.ExecutionPolicyError(message);
         }
         const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(this.maxExecutionMs)]) : AbortSignal.timeout(this.maxExecutionMs);
         signal.throwIfAborted();

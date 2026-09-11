@@ -1,12 +1,10 @@
 import type { AgentBackend } from "@multi-agent/types";
 import { ApiAgentExecutor } from "./apiAgentExecutor";
 import {
-  AgyCliExecutor,
-  ClaudeCodeCliExecutor,
-  CodexCliExecutor,
   NotImplementedAgentExecutor,
-  OllamaLocalExecutor,
 } from "./notImplementedExecutor";
+import { CliAgentExecutor } from "./cliAgentExecutor";
+import { LocalAgentExecutor } from "./localAgentExecutor";
 import type { AgentExecutor } from "./types";
 import { ExecutionTelemetry } from "../../observability/telemetry";
 
@@ -18,22 +16,11 @@ export class AgentExecutorFactory {
     }
 
     if (backend.type === "cli") {
-      switch (backend.provider) {
-        case "codex":
-          return new CodexCliExecutor();
-        case "claude-code":
-          return new ClaudeCodeCliExecutor();
-        case "agy":
-          return new AgyCliExecutor();
-        default:
-          return new NotImplementedAgentExecutor(backend);
-      }
+      return new CliAgentExecutor();
     }
 
     if (backend.type === "local") {
-      if (backend.provider === "ollama") {
-        return new OllamaLocalExecutor(backend.model);
-      }
+      if (backend.provider === "ollama" || backend.provider === "lmstudio") return new LocalAgentExecutor();
       return new NotImplementedAgentExecutor(backend);
     }
 

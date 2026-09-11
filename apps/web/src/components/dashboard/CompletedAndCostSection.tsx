@@ -20,7 +20,7 @@ export function CompletedAndCostSection() {
     return true; // month includes all
   });
 
-  const periodCost = filteredTasks.reduce((acc, t) => acc + t.cost, 0);
+  const periodCost = filteredTasks.reduce((acc, t) => acc + (t.cost || 0), 0);
   const periodTokens = filteredTasks.reduce((acc, t) => acc + t.tokens, 0);
 
   return (
@@ -96,7 +96,7 @@ export function CompletedAndCostSection() {
                         {(task.tokens / 1000).toFixed(1)}k tokens
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        ${task.cost.toFixed(4)}
+                        {task.cost !== null && task.cost !== undefined ? `$${task.cost.toFixed(4)}` : "—"}
                       </div>
                     </div>
                   </div>

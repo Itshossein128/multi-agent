@@ -40,6 +40,7 @@ const runs_1 = require("./api/runs");
 const tools_1 = require("./api/tools");
 const memories_1 = require("./api/memories");
 const studio_1 = require("./api/studio");
+const dashboard_1 = require("./api/dashboard");
 const composition_1 = require("./memory/composition");
 const access_1 = require("./memory/access");
 const composition_2 = require("./studio/composition");
@@ -48,6 +49,7 @@ const runExecutor_1 = require("./runtime/runExecutor");
 const runStore_1 = require("./runtime/runStore");
 const recovery_1 = require("./runtime/recovery");
 const bootstrap_1 = require("./observability/bootstrap");
+const principal_1 = require("./auth/principal");
 async function createDurableCheckpointer(connectionString) {
     try {
         const { PostgresSaver } = await Promise.resolve().then(() => __importStar(require("@langchain/langgraph-checkpoint-postgres")));
@@ -75,6 +77,11 @@ async function main() {
     });
     app.options("/*", (c) => c.body(null, 204));
     app.get("/health", (c) => c.json({ ok: true }));
+    app.use("/*", async (c, next) => {
+        if (!(0, principal_1.resolveRequestPrincipal)(c.req.raw))
+            return c.json({ error: "Authentication required." }, 401);
+        await next();
+    });
     const memory = (0, composition_1.createMemoryComposition)();
     const studio = (0, composition_2.createStudioComposition)();
     const resolveMemoryAccess = (0, access_1.memoryAccessResolverFromEnvironment)();
@@ -94,9 +101,10 @@ async function main() {
     }
     if (studio.store)
         app.route("/studio", (0, studio_1.createStudioRouter)(studio.store));
+    app.route("/dashboard", (0, dashboard_1.createDashboardRouter)(runStore, studio.store, executor));
     app.route("/memories", (0, memories_1.createMemoriesRouter)(memory.service, resolveMemoryAccess));
     app.route("/runs", (0, runs_1.createRunsRouter)(executor, resolveMemoryAccess, studio.store).app);
-    app.route("/tools", (0, tools_1.createToolsRouter)());
+    app.route("/tools", (0, tools_1.createToolsRouter)(undefined, studio.store));
     const port = Number(process.env.PORT ?? 4000);
     const server = (0, node_server_1.serve)({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));
     const shutdown = () => {

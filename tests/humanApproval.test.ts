@@ -49,7 +49,12 @@ describe("Phase 7 human-in-the-loop approvals", () => {
   test("a run pauses at an approval node, surfaces the request, and resumes on approval", async () => {
     const store = new RunStore();
     const executor = new RunExecutor(store);
-    const { app } = createRunsRouter(executor);
+    const { app } = createRunsRouter(
+      executor,
+      undefined,
+      undefined,
+      async () => ({ userId: "test-user", tenantId: "test-tenant" }),
+    );
     const workflow = linearWorkflow({ message: "Ship it?" });
 
     const startResponse = await app.request("http://localhost/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workflow, agents: [], input: {} }) });

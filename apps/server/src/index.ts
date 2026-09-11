@@ -5,6 +5,7 @@ import { createRunsRouter } from "./api/runs";
 import { createToolsRouter } from "./api/tools";
 import { createMemoriesRouter } from "./api/memories";
 import { createStudioRouter } from "./api/studio";
+import { createDashboardRouter } from "./api/dashboard";
 import { createMemoryComposition } from "./memory/composition";
 import { memoryAccessResolverFromEnvironment } from "./memory/access";
 import { createStudioComposition } from "./studio/composition";
@@ -14,6 +15,7 @@ import { InMemoryRunStore, PostgresRunStore } from "./runtime/runStore";
 import { recoverInterruptedRuns } from "./runtime/recovery";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { createObservabilityRuntime } from "./observability/bootstrap";
+import { resolveRequestPrincipal } from "./auth/principal";
 
 async function createDurableCheckpointer(connectionString: string): Promise<(BaseCheckpointSaver & { end?: () => Promise<void> }) | undefined> {
   try {
@@ -41,6 +43,10 @@ async function main() {
   });
   app.options("/*", (c) => c.body(null, 204));
   app.get("/health", (c) => c.json({ ok: true }));
+  app.use("/*", async (c, next) => {
+    if (!resolveRequestPrincipal(c.req.raw)) return c.json({ error: "Authentication required." }, 401);
+    await next();
+  });
 
   const memory = createMemoryComposition();
   const studio = createStudioComposition();
@@ -68,9 +74,10 @@ async function main() {
   }
 
   if (studio.store) app.route("/studio", createStudioRouter(studio.store));
+  app.route("/dashboard", createDashboardRouter(runStore, studio.store, executor));
   app.route("/memories", createMemoriesRouter(memory.service, resolveMemoryAccess));
   app.route("/runs", createRunsRouter(executor, resolveMemoryAccess, studio.store).app);
-  app.route("/tools", createToolsRouter());
+  app.route("/tools", createToolsRouter(undefined, studio.store));
 
   const port = Number(process.env.PORT ?? 4000);
   const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));

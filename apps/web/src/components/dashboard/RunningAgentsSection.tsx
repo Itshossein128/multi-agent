@@ -117,7 +117,7 @@ export function RunningAgentsSection() {
                     </span>
                     <span>•</span>
                     <span className="text-zinc-300 font-medium">
-                      ${agent.cost.toFixed(4)}
+                      {agent.cost !== null && agent.cost !== undefined ? `$${agent.cost.toFixed(4)}` : "—"}
                     </span>
                   </div>
                 </div>
