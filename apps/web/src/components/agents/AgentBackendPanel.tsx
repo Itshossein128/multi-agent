@@ -16,19 +16,19 @@ export function AgentBackendPanel({ backend, onChange }: { backend: AgentBackend
       <Field label={`Model${backend.type === "cli" ? " (optional)" : ""}`}><input className={fieldClass} value={backend.model ?? ""} onChange={(event) => onChange({ ...backend, model: event.target.value })} /></Field>
     </div>
     {backend.type === "cli" && <>
-      <Field label="Executable (optional)"><input className={fieldClass} value={backend.executable ?? ""} onChange={(event) => onChange({ ...backend, executable: event.target.value })} /></Field>
+      <Field label="Executable (optional)"><input className={fieldClass} placeholder="Provider default: codex, claude, or agy" value={backend.executable ?? ""} onChange={(event) => onChange({ ...backend, executable: event.target.value || undefined })} /></Field>
       <Field label="Arguments (one argument per line)"><textarea className={fieldClass} rows={5} value={(backend.args ?? []).join("\n")} onChange={(event) => onChange({ ...backend, args: event.target.value.split("\n") })} /></Field>
-      <p className="text-sm text-zinc-400">Use Workspace root under Execution policy. Session mode is not represented in the current agent model.</p>
+      <p className="text-sm text-zinc-400">Leave arguments blank to use the provider's safe non-interactive mode. The server must explicitly allow the executable and workspace root.</p>
     </>}
-    {backend.type === "local" && <Field label="Base URL (optional)"><input className={fieldClass} type="url" value={backend.baseUrl ?? ""} onChange={(event) => onChange({ ...backend, baseUrl: event.target.value })} /></Field>}
-    {backend.type === "api" && <div className="grid gap-4 md:grid-cols-3">
+    {backend.type === "local" && <Field label="Base URL (optional)"><input className={fieldClass} type="url" placeholder={backend.provider === "lmstudio" ? "http://127.0.0.1:1234" : "http://127.0.0.1:11434"} value={backend.baseUrl ?? ""} onChange={(event) => onChange({ ...backend, baseUrl: event.target.value || undefined })} /></Field>}
+    {(backend.type === "api" || backend.type === "local") && <div className="grid gap-4 md:grid-cols-3">
       {modelSettingsSchema(backend).map((field) => <Field key={field.key} label={field.label}><input type="number" className={fieldClass} min={field.min} max={field.max} step={field.step} placeholder="Provider default" value={backend.settings?.[field.key] ?? ""} onChange={(event) => {
         const settings = { ...backend.settings };
         if (event.target.value === "") delete settings[field.key]; else settings[field.key] = Number(event.target.value);
         onChange({ ...backend, settings });
       }} /></Field>)}
       {!!Object.keys(backend.settings ?? {}).length && <button type="button" onClick={() => onChange({ ...backend, settings: {} })}>Reset model settings</button>}
-      <p className="text-xs text-zinc-400 md:col-span-3">Blank values use provider defaults. Anthropic accepts temperature or Top P. Reasoning models expose output limits only; changing provider/model may require resetting incompatible settings.</p>
+      <p className="text-xs text-zinc-400 md:col-span-3">Blank values use provider defaults. Temperature, Top P, and output limits are sent to supported local runtimes. Anthropic accepts temperature or Top P.</p>
     </div>}
     <p className="text-sm text-zinc-400">Authentication is managed on the execution server. Do not enter credentials here.</p>
   </Section>;
@@ -37,7 +37,7 @@ export function AgentBackendPanel({ backend, onChange }: { backend: AgentBackend
 export function ExecutionPolicyPanel({ policy = {}, onChange }: { policy?: AgentExecutionPolicy; onChange: (policy: AgentExecutionPolicy) => void }) {
   const update = (patch: Partial<AgentExecutionPolicy>) => onChange({ ...policy, ...patch });
   return <Section title="Execution policy">
-    <p className="text-sm text-amber-200">These permissions primarily apply to CLI/local execution. The current runtime does not fully enforce this policy; settings do not provide a sandbox.</p>
+    <p className="text-sm text-amber-200">CLI execution is checked against both this policy and server-owned executable/workspace allowlists. These checks are guardrails, not an operating-system sandbox.</p>
     <div className="grid gap-4 md:grid-cols-2">
       <Field label="Filesystem"><select className={fieldClass} value={policy.filesystem ?? ""} onChange={(event) => {
         const filesystem = event.target.value as AgentExecutionPolicy["filesystem"];

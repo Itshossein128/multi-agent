@@ -35,6 +35,7 @@ export type AgentBackend = {
     provider: "ollama" | "lmstudio" | (string & {});
     model: string;
     baseUrl?: string;
+    settings?: AgentModelSettings;
 };
 export type AgentBackendType = AgentBackend["type"];
 export interface AgentModelSettings {
@@ -55,7 +56,7 @@ export interface AgentMemoryConfig {
     };
     longTerm?: import("./memory").LongTermMemoryConfig;
 }
-/** Future CLI/local execution constraints — not fully enforced yet. */
+/** Per-agent execution constraints. CLI runtime combines these with server-owned allowlists. */
 export interface AgentExecutionPolicy {
     filesystem?: "none" | "read" | "read-write";
     shell?: "disabled" | "restricted" | "full";

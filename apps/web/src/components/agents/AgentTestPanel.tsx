@@ -22,7 +22,7 @@ export function AgentTestPanel({ agent, dirty }: { agent: AgentRecord; dirty: bo
   });
   const active = starting || Boolean(runId && !result.isError && (!result.data || !["completed", "failed", "cancelled"].includes(result.data.run.status)));
   return <Section title="Test agent">
-    <p className="text-sm text-zinc-400">Runs the saved agent with sample input through the execution server and records real run events. API credentials must be configured on the server. CLI/local executors are not implemented yet.</p>
+    <p className="text-sm text-zinc-400">Runs the saved API, CLI, or local-model agent through the execution server and records real run events. Provider credentials, CLI allowlists, and local-model origins are configured on the server.</p>
     {dirty && <p className="text-sm text-amber-200">Save or discard changes before testing.</p>}
     <Field label="Sample input (JSON object)"><textarea rows={5} className={fieldClass} value={input} onChange={(event) => setInput(event.target.value)} /></Field>
     <div className="flex gap-2"><Button disabled={active || dirty || agent.enabled === false} onClick={async () => {

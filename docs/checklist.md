@@ -1795,8 +1795,8 @@ Secrets never appear in:
 The following entire flow works with real backend behavior:
 
 * [ ] User creates a reusable Agent.
-* [ ] User selects API/CLI/local backend.
-* [ ] Backend validates Agent configuration.
+* [x] User selects API/CLI/local backend.
+* [x] Backend validates Agent configuration.
 * [ ] User registers/configures Tools.
 * [ ] Tools can be assigned to Agent.
 * [ ] User opens Graph Editor.

@@ -196,59 +196,7 @@ export default function TaskBoardPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-[1800px] items-center justify-between px-4 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/20 hover:opacity-90"
-              title="Back to Dashboard"
-            >
-              <Layers className="h-5 w-5 text-white" />
-            </Link>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold tracking-tight text-white">TASK BOARD</span>
-                <Badge
-                  variant="outline"
-                  className="border-zinc-700 bg-zinc-900/60 text-[10px] text-zinc-400"
-                >
-                  {tasks.length} tasks
-                </Badge>
-              </div>
-              <p className="text-[11px] text-zinc-400">
-                Plan, dispatch, and track agent work across the pipeline
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-400">
-              <Radio className="h-3 w-3 animate-pulse" />
-              <span>Live · synced {new Date().toLocaleTimeString()}</span>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="h-8 cursor-pointer gap-1.5 text-xs"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => openModal("todo")}
-              className="h-8 cursor-pointer gap-1.5 bg-indigo-600 text-xs font-medium text-white hover:bg-indigo-500"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              New Task
-            </Button>
-          </div>
-        </div>
-      </header>
+      {/* Header managed by layout */}
 
       {/* Filter bar */}
       <div className="mx-auto w-full max-w-[1800px] px-4 pt-4 lg:px-8">

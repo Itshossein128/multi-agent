@@ -153,9 +153,10 @@ describe("CLI and local executors", () => {
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "codex", args: ["exec", "--json"] } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
     const events: AgentExecutionEvent[] = [];
-    for await (const event of new CliAgentExecutor(spawn as never).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
+    const serverPolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 1024 };
+    for await (const event of new CliAgentExecutor(spawn as never, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
     expect(spawn).toHaveBeenCalledWith("codex", ["exec", "--json"], { cwd: "/workspace", shell: false, stdio: ["pipe", "pipe", "pipe"] });
-    expect(calls).toContainEqual(["stdin", "summarize"]);
+    expect(calls).toContainEqual(["stdin", expect.stringContaining("USER INPUT:\nsummarize")]);
     expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
     expect((events[2].payload as { content: string }).content).toBe("CLI answer");
   });
@@ -164,10 +165,53 @@ describe("CLI and local executors", () => {
     const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ message: { content: "local answer" } }), { status: 200 }));
     const agent = createAgentRecord({ backend: { type: "local", provider: "ollama", model: "llama3", baseUrl: "http://ollama.test" } });
     const events: AgentExecutionEvent[] = [];
-    for await (const event of new LocalAgentExecutor(fetchImpl).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
+    for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://ollama.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
     expect(fetchImpl).toHaveBeenCalledWith(new URL("http://ollama.test/api/chat"), expect.objectContaining({ method: "POST" }));
     expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
     expect((events[2].payload as { content: string }).content).toBe("local answer");
+  });
+
+  test("uses safe non-interactive defaults for agy and includes model and prompt context", async () => {
+    const calls: unknown[] = [];
+    const process = {
+      stdin: { write: (value: string) => calls.push(["stdin", value]), end: jest.fn() },
+      stdout: (async function* () { yield "Agy answer"; })(), stderr: (async function* () {})(),
+      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); }, kill: jest.fn(),
+    };
+    const spawn = jest.fn(() => process);
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "agy", model: "gpt-5" } });
+    agent.systemPrompt = "Be concise.";
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace/project", allowedCommands: ["agy"] };
+    const runtimePolicy = { enabled: true, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({ agent, input: { task: "review" }, runId: "r", nodeId: "n" })) { /* drain */ }
+    expect(spawn).toHaveBeenCalledWith("agy", ["--print", "--output-format", "text", "--disable-slash-commands", "--model", "gpt-5"], expect.objectContaining({ cwd: "/workspace/project", shell: false }));
+    expect(JSON.stringify(calls)).toContain("SYSTEM INSTRUCTIONS");
+    expect(JSON.stringify(calls)).toContain("review");
+  });
+
+  test("blocks CLI executables and workspaces outside server-owned allowlists", async () => {
+    const spawn = jest.fn();
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "agy" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/tmp/escape", allowedCommands: ["agy"] };
+    const runtimePolicy = { enabled: true, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    await expect(async () => { for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({ agent, input: {}, runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/workspace.*not allowed/i);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test("calls LM Studio's OpenAI-compatible endpoint with sampling settings", async () => {
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "LM answer" } }] }), { status: 200 }));
+    const agent = createAgentRecord({ backend: { type: "local", provider: "lmstudio", model: "local-model", baseUrl: "http://lm.test", settings: { temperature: 0.2, maxTokens: 300 } } });
+    const events: AgentExecutionEvent[] = [];
+    for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://lm.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
+    expect(fetchImpl).toHaveBeenCalledWith(new URL("http://lm.test/v1/chat/completions"), expect.objectContaining({ body: expect.stringContaining('"max_tokens":300') }));
+    expect((events[2].payload as { content: string }).content).toBe("LM answer");
+  });
+
+  test("blocks unapproved local-model origins before making a request", async () => {
+    const fetchImpl = jest.fn();
+    const agent = createAgentRecord({ backend: { type: "local", provider: "ollama", model: "llama3", baseUrl: "http://169.254.169.254" } });
+    await expect(async () => { for await (const _event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://127.0.0.1:11434"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/not allowed/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

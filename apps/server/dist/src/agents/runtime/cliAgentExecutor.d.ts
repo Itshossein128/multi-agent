@@ -14,11 +14,20 @@ export type CliSpawn = (executable: string, args: string[], options: {
     shell: false;
     stdio: ["pipe", "pipe", "pipe"];
 }) => SpawnedProcess;
+export interface CliRuntimePolicy {
+    enabled: boolean;
+    allowedExecutables: string[];
+    workspaceRoots: string[];
+    maxOutputBytes: number;
+}
+export declare function cliRuntimePolicyFromEnvironment(env?: NodeJS.ProcessEnv): CliRuntimePolicy;
 /** Executes a configured CLI directly (never through a shell) in its approved workspace. */
 export declare class CliAgentExecutor implements AgentExecutor {
     private readonly spawn;
-    constructor(spawn?: CliSpawn);
+    private readonly runtimePolicy;
+    constructor(spawn?: CliSpawn, runtimePolicy?: CliRuntimePolicy);
     execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent>;
     private run;
+    private assertServerPolicy;
 }
 export {};

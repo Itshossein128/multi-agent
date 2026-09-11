@@ -6,6 +6,7 @@ import {
   AgentBackend,
   AgentNodeConfig,
   AgentRecord,
+  AgentExecutionPolicy,
   ApprovalNodeConfig,
   ConditionNodeConfig,
   InputNodeConfig,
@@ -175,8 +176,8 @@ function AgentForm({ node }: { node: WorkflowNode }) {
               className={inputClass}
             >
               <option value="api">API provider</option>
-              <option value="cli">CLI agent (soon)</option>
-              <option value="local">Local model (soon)</option>
+              <option value="cli">CLI agent</option>
+              <option value="local">Local model</option>
             </select>
           </Field>
           <Field label="Provider">
@@ -205,6 +206,15 @@ function AgentForm({ node }: { node: WorkflowNode }) {
               className={inputClass}
             />
           </Field>
+          {agent.backend.type === "cli" && <>
+            <Field label="Executable (optional)"><input className={inputClass} value={agent.backend.executable ?? ""} placeholder="codex, claude, or agy" onChange={(event) => patchAgent({ backend: { ...agent.backend, executable: event.target.value || undefined } as AgentBackend })} /></Field>
+            <Field label="Arguments (one per line)"><textarea className={inputClass} rows={3} value={(agent.backend.args ?? []).join("\n")} onChange={(event) => patchAgent({ backend: { ...agent.backend, args: event.target.value ? event.target.value.split("\n") : undefined } as AgentBackend })} /></Field>
+            <Field label="Workspace root"><input className={inputClass} value={agent.executionPolicy?.workspaceRoot ?? ""} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, workspaceRoot: event.target.value || undefined } })} /></Field>
+            <Field label="Shell access"><select className={inputClass} value={agent.executionPolicy?.shell ?? "disabled"} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, shell: event.target.value as AgentExecutionPolicy["shell"] } })}><option value="disabled">Disabled</option><option value="restricted">Restricted</option><option value="full">Full</option></select></Field>
+            <Field label="Filesystem access"><select className={inputClass} value={agent.executionPolicy?.filesystem ?? "none"} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, filesystem: event.target.value as AgentExecutionPolicy["filesystem"] } })}><option value="none">None</option><option value="read">Read</option><option value="read-write">Read/write</option></select></Field>
+            <Field label="Allowed commands (one per line)"><textarea className={inputClass} rows={3} value={(agent.executionPolicy?.allowedCommands ?? []).join("\n")} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, allowedCommands: event.target.value.split("\n").map((value) => value.trim()).filter(Boolean) } })} /></Field>
+          </>}
+          {agent.backend.type === "local" && <Field label="Base URL (optional)"><input type="url" className={inputClass} value={agent.backend.baseUrl ?? ""} placeholder={agent.backend.provider === "lmstudio" ? "http://127.0.0.1:1234" : "http://127.0.0.1:11434"} onChange={(event) => patchAgent({ backend: { ...agent.backend, baseUrl: event.target.value || undefined } as AgentBackend })} /></Field>}
           <Field label="Description">
             <textarea
               value={agent.description}

@@ -6,7 +6,7 @@ The page reuses `AgentRecord`, `AgentBackend`, `AgentExecutionPolicy`, `Run` and
 
 ## Configuration and navigation
 
-General configuration, lifecycle, API/CLI/local backend fields, execution policy and tool ID assignments can be edited. Duplicate creates an independent ID and deep copy without adding permissions. Disabled agents fail validation before executor creation. Switching backend type asks before resetting incompatible fields and preserves the policy. CLI/local implementations remain unsupported and fail explicitly.
+General configuration, lifecycle, API/CLI/local backend fields, execution policy and tool ID assignments can be edited. Duplicate creates an independent ID and deep copy without adding permissions. Disabled agents fail validation before executor creation. Switching backend type asks before resetting incompatible fields and preserves the policy. Codex CLI, Claude Code, agy, Ollama, and LM Studio are supported by the runtime.
 
 API model fields come from the shared provider/model schema registry in `packages/types/src/agentConfiguration.ts`. Temperature, Top P and output limits flow through the runtime to provider constructors. Blank fields use provider defaults (Anthropic defaults to 4096 output tokens). Conservative OpenAI reasoning profiles expose output limits only. Unsupported settings must be reset when changing providers/models. Authentication remains server environment configuration.
 
@@ -35,9 +35,9 @@ The editor's workflow selector opens saved workflows by ID and creates new ones.
 - Agents and multiple workflows remain browser-local, with no cross-device synchronization or concurrent multi-tab conflict resolution.
 - Runs/events are real but retained only in execution server memory; restart clears history. Refresh is explicit on the detail page.
 - Backend diagnostics/authentication status has no endpoint, so health is Unknown. Agent status is labeled as last observed event status and is separate from backend health.
-- CLI session modes, persistent agent memory, and a memory explorer are outside this phase.
+- Persistent CLI sessions, persistent agent memory, and a memory explorer are outside this phase. CLI invocations are intentionally one-shot and non-interactive.
 - Tool assignment now resolves against the Phase 6 Tool registry (`/org/tools`) rather than saved workflow tool nodes — see [Tool registry](phase-6-tools.md).
-- CLI/local executors and policy sandboxing remain outside this implementation; unsupported tests report a failure.
+- CLI execution requires server-owned executable/workspace allowlists in addition to the agent policy. Local model origins also use a server allowlist. These controls do not replace OS/container sandboxing.
 - Recorded provider/model values are shown only when present in events. Complete backend/version snapshots are not persisted and are never inferred from current configuration.
 
 ## Verification

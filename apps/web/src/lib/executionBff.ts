@@ -16,17 +16,28 @@ const forwardedHeaders = new Set([
   "x-request-id",
 ]);
 export async function proxyExecution(request: Request, path: string): Promise<Response> {
-  return proxyExecutionWith(request, path, { principal: getAuthenticatedPrincipal, fetchImpl: fetch, secret: process.env.INTERNAL_PRINCIPAL_SECRET, base: process.env.EXECUTION_SERVER_URL });
+  const base = process.env.EXECUTION_SERVER_URL ?? "http://localhost:4000";
+  const secret = process.env.INTERNAL_PRINCIPAL_SECRET;
+  return proxyExecutionWith(request, path, { principal: getAuthenticatedPrincipal, fetchImpl: fetch, secret, base });
 }
 export async function proxyExecutionWith(request: Request, path: string, deps: { principal: typeof getAuthenticatedPrincipal; fetchImpl: typeof fetch; secret?: string; base?: string }): Promise<Response> {
   const principal = await deps.principal();
   if (!principal) return Response.json({ error: "Authentication required." }, { status: 401 });
-  const { secret, base } = deps;
+  const { secret, base = "http://localhost:4000" } = deps;
   if (!secret || !base) return Response.json({ error: "Execution gateway is not configured." }, { status: 503 });
   const headers = new Headers();
   request.headers.forEach((value, key) => { if (forwardedHeaders.has(key.toLowerCase())) headers.set(key, value); });
   headers.set("X-Multi-Agent-Principal", createInternalPrincipalAssertion(principal, secret));
   const url = new URL(path, base); url.search = new URL(request.url).search;
-  const upstream = await deps.fetchImpl(url, { method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body, signal: request.signal });
+  const hasBody = !["GET", "HEAD"].includes(request.method) && request.body !== null;
+  const init: RequestInit & { duplex?: "half" } = {
+    method: request.method,
+    headers,
+    body: hasBody ? request.body : undefined,
+    signal: request.signal,
+  };
+  // Node's fetch requires duplex when forwarding a ReadableStream request body.
+  if (hasBody) init.duplex = "half";
+  const upstream = await deps.fetchImpl(url, init);
   return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
 }

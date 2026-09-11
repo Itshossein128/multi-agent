@@ -31,11 +31,7 @@ export default function RunsHistoryPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="flex h-14 items-center gap-3 border-b border-zinc-800 px-4">
-        <Link href="/" className="text-sm text-zinc-400 hover:text-zinc-100">Dashboard</Link>
-        <h1 className="text-sm font-semibold">Run history</h1>
-        <Link href="/org" className="ml-auto text-xs text-indigo-300 underline">Graph editor</Link>
-      </header>
+      {/* Header managed by layout */}
 
       <section className="grid gap-3 border-b border-zinc-800 p-4 md:grid-cols-5">
         <label className="text-xs text-zinc-400">Workflow id

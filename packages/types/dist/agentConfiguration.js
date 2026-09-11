@@ -20,6 +20,8 @@ exports.API_PROVIDER_SCHEMAS = {
     gemini: sampling,
 };
 function modelSettingsSchema(backend) {
+    if (backend.type === "local")
+        return sampling;
     if (backend.type !== "api")
         return [];
     const fields = exports.API_PROVIDER_SCHEMAS[backend.provider.toLowerCase()] ?? [];
@@ -77,14 +79,14 @@ function validateAgent(agent) {
         errors.push("Tool IDs must be nonempty strings.");
     if (!agent.metadata || typeof agent.metadata !== "object" || Array.isArray(agent.metadata) || Object.entries(agent.metadata).some(([key, value]) => !key.trim() || !["string", "number", "boolean"].includes(typeof value)))
         errors.push("Metadata values must be strings, numbers, or booleans.");
-    if (backend.type === "api" && backend.settings) {
+    if ((backend.type === "api" || backend.type === "local") && backend.settings) {
         const fields = modelSettingsSchema(backend);
         for (const [key, value] of Object.entries(backend.settings)) {
             const schema = fields.find((field) => field.key === key);
             if (!schema || typeof value !== "number" || !Number.isFinite(value) || value < schema.min || value > schema.max || (schema.step === 1 && !Number.isInteger(value)))
                 errors.push(`Invalid or unsupported model setting: ${key}.`);
         }
-        if (backend.provider.toLowerCase() === "anthropic" && backend.settings.temperature !== undefined && backend.settings.topP !== undefined)
+        if (backend.type === "api" && backend.provider.toLowerCase() === "anthropic" && backend.settings.temperature !== undefined && backend.settings.topP !== undefined)
             errors.push("Choose temperature or Top P for Anthropic, not both.");
     }
     if (backend.type === "local" && backend.baseUrl) {

@@ -30,6 +30,7 @@ test("BFF reconstructs the destination and forwards only allow-listed headers wi
   expect(response.status).toBe(202); expect(response.headers.get("X-Upstream")).toBe("yes"); expect(response.headers.get("Cache-Control")).toBe("no-store"); expect(response.headers.get("Content-Type")).toContain("application/json");
   const [url, init] = fetchSpy.mock.calls[0]!; const headers = new Headers(init?.headers);
   expect(String(url)).toBe("http://execution.internal/runs/x?after=2&filter=a%20b"); expect(init?.method).toBe("PATCH");
+  expect((init as RequestInit & { duplex?: string })?.duplex).toBe("half");
   expect(headers.get("Accept")).toBe("application/json"); expect(headers.get("Content-Type")).toBe("application/json"); expect(headers.get("X-Request-Id")).toBe("request-1");
   for (const header of ["X-User-Id", "X-Tenant-Id", "Authorization", "Cookie", "X-Other"]) expect(headers.get(header)).toBeNull();
   expect(verifyInternalPrincipalAssertion(headers.get("X-Multi-Agent-Principal"), "transport-secret")).toEqual({ userId: "owner", tenantId: "tenant" });

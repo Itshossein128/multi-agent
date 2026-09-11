@@ -238,11 +238,12 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
 
     addAgentAndNode: async (position) => {
       pushHistory();
-      const agent = await workflowService
-        .createAgent({ name: "New Agent" })
-        .catch(() => null);
-      if (!agent) {
-        set({ saveError: "Failed to create agent" });
+      set({ saveError: null });
+      let agent: AgentRecord;
+      try {
+        agent = await workflowService.createAgent({ name: "New Agent" });
+      } catch (error) {
+        set({ saveError: error instanceof Error ? error.message : "Failed to create agent" });
         return;
       }
       const pos =
@@ -272,11 +273,12 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
 
     addToolAndNode: async (position) => {
       pushHistory();
-      const tool = await workflowService
-        .createTool({ name: "New Tool" })
-        .catch(() => null);
-      if (!tool) {
-        set({ saveError: "Failed to create tool" });
+      set({ saveError: null });
+      let tool: ToolRecord;
+      try {
+        tool = await workflowService.createTool({ name: "New Tool" });
+      } catch (error) {
+        set({ saveError: error instanceof Error ? error.message : "Failed to create tool" });
         return;
       }
       const pos =

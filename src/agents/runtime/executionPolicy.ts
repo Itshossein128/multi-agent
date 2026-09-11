@@ -32,7 +32,7 @@ export function assertExecutionPolicy(agent: AgentRecord): void {
     throw new ExecutionPolicyError(`Agent "${agent.name}" must provide an absolute workspaceRoot for CLI execution.`);
   }
   if (policy.shell === "restricted") {
-    const executable = backend.executable || backend.provider;
+    const executable = backend.executable || (backend.provider === "claude-code" ? "claude" : backend.provider);
     const command = path.basename(executable);
     if (!policy.allowedCommands?.some((allowed) => allowed === executable || allowed === command)) {
       throw new ExecutionPolicyError(`CLI command "${command}" is not permitted by this agent's restricted allowedCommands policy.`);

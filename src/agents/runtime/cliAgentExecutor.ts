@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from "node:child_process";
+import path from "node:path";
 import { nowIso, type AgentBackend } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
@@ -12,16 +13,38 @@ type SpawnedProcess = {
 };
 export type CliSpawn = (executable: string, args: string[], options: { cwd: string; shell: false; stdio: ["pipe", "pipe", "pipe"] }) => SpawnedProcess;
 
+export interface CliRuntimePolicy {
+  enabled: boolean;
+  allowedExecutables: string[];
+  workspaceRoots: string[];
+  maxOutputBytes: number;
+}
+
+export function cliRuntimePolicyFromEnvironment(env: NodeJS.ProcessEnv = process.env): CliRuntimePolicy {
+  const list = (value?: string) => (value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+  const configuredMax = Number(env.CLI_AGENT_MAX_OUTPUT_BYTES ?? 1024 * 1024);
+  return {
+    enabled: env.CLI_AGENT_ENABLED === "true",
+    allowedExecutables: list(env.CLI_AGENT_ALLOWED_EXECUTABLES),
+    workspaceRoots: list(env.CLI_AGENT_WORKSPACE_ROOTS).map((root) => path.resolve(root)),
+    maxOutputBytes: Number.isInteger(configuredMax) && configuredMax >= 1024 && configuredMax <= 16 * 1024 * 1024 ? configuredMax : 1024 * 1024,
+  };
+}
+
 /** Executes a configured CLI directly (never through a shell) in its approved workspace. */
 export class CliAgentExecutor implements AgentExecutor {
-  constructor(private readonly spawn: CliSpawn = nodeSpawn as unknown as CliSpawn) {}
+  constructor(
+    private readonly spawn: CliSpawn = nodeSpawn as unknown as CliSpawn,
+    private readonly runtimePolicy: CliRuntimePolicy = cliRuntimePolicyFromEnvironment(),
+  ) {}
 
   async *execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent> {
     if (input.agent.backend.type !== "cli") throw new AgentExecutionFailedError("CliAgentExecutor requires a CLI backend.");
     const backend = input.agent.backend;
     const policy = input.agent.executionPolicy!;
-    const executable = backend.executable || backend.provider;
-    const args = [...(backend.args ?? [])];
+    const executable = backend.executable || defaultExecutable(backend.provider);
+    this.assertServerPolicy(executable, policy.workspaceRoot!);
+    const args = commandArgs(backend);
     yield event("agent.started", input, { provider: backend.provider, executable, args });
     try {
       const output = await this.run(executable, args, policy.workspaceRoot!, prompt(input), input.signal);
@@ -41,7 +64,11 @@ export class CliAgentExecutor implements AgentExecutor {
     try {
       child.stdin.write(input);
       child.stdin.end();
-      const [stdout, stderr, code] = await Promise.all([read(child.stdout), read(child.stderr), waitForExit(child)]);
+      const [stdout, stderr, code] = await Promise.all([
+        read(child.stdout, this.runtimePolicy.maxOutputBytes, child),
+        read(child.stderr, this.runtimePolicy.maxOutputBytes, child),
+        waitForExit(child),
+      ]);
       signal?.throwIfAborted();
       if (code !== 0) throw new Error(`CLI command "${executable}" exited with code ${code}: ${stderr || "no stderr"}`);
       return stdout;
@@ -49,11 +76,31 @@ export class CliAgentExecutor implements AgentExecutor {
       signal?.removeEventListener("abort", abort);
     }
   }
+
+  private assertServerPolicy(executable: string, cwd: string): void {
+    if (!this.runtimePolicy.enabled) throw new Error("CLI agent execution is disabled on this server. Set CLI_AGENT_ENABLED=true and configure server allowlists.");
+    const executableAllowed = executable.includes(path.sep)
+      ? this.runtimePolicy.allowedExecutables.some((allowed) => path.isAbsolute(allowed) && path.resolve(allowed) === path.resolve(executable))
+      : this.runtimePolicy.allowedExecutables.includes(executable);
+    if (!executableAllowed) throw new Error(`CLI executable "${executable}" is not allowed by the server runtime.`);
+    const resolvedCwd = path.resolve(cwd);
+    const workspaceAllowed = this.runtimePolicy.workspaceRoots.some((root) => resolvedCwd === root || resolvedCwd.startsWith(`${root}${path.sep}`));
+    if (!workspaceAllowed) throw new Error(`CLI workspace "${resolvedCwd}" is not allowed by the server runtime.`);
+  }
 }
 
-async function read(stream: AsyncIterable<Buffer | string>): Promise<string> {
+async function read(stream: AsyncIterable<Buffer | string>, limit: number, child: SpawnedProcess): Promise<string> {
   let value = "";
-  for await (const chunk of stream) value += chunk.toString();
+  let bytes = 0;
+  for await (const chunk of stream) {
+    const text = chunk.toString();
+    bytes += Buffer.byteLength(text);
+    if (bytes > limit) {
+      child.kill("SIGTERM");
+      throw new Error(`CLI output exceeded the ${limit}-byte server limit.`);
+    }
+    value += text;
+  }
   return value;
 }
 function waitForExit(child: SpawnedProcess): Promise<number | null> {
@@ -63,8 +110,32 @@ function waitForExit(child: SpawnedProcess): Promise<number | null> {
   });
 }
 function prompt(input: AgentExecutionInput): string {
-  return typeof input.input === "string" ? input.input : JSON.stringify(input.input ?? {});
+  const serialize = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value ?? {});
+  const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
+  return [
+    input.agent.systemPrompt ? `SYSTEM INSTRUCTIONS:\n${input.agent.systemPrompt}` : "",
+    ...history.map((entry) => `PREVIOUS USER INPUT:\n${serialize(entry.input)}\nPREVIOUS ASSISTANT OUTPUT:\n${serialize(entry.output)}`),
+    typeof input.context?.memoryContext === "string" && input.context.memoryContext ? `MEMORY CONTEXT:\n${input.context.memoryContext}` : "",
+    `USER INPUT:\n${serialize(input.input)}`,
+  ].filter(Boolean).join("\n\n");
 }
 function event(type: AgentExecutionEvent["type"], input: AgentExecutionInput, payload: unknown): AgentExecutionEvent {
   return { type, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload };
+}
+
+function defaultExecutable(provider: string): string {
+  return provider === "claude-code" ? "claude" : provider;
+}
+
+function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>): string[] {
+  const explicit = backend.args?.filter((arg) => arg.length > 0);
+  const args = explicit?.length ? [...explicit] : backend.provider === "codex"
+    ? ["exec", "-"]
+    : backend.provider === "claude-code"
+      ? ["--print", "--output-format", "text"]
+      : backend.provider === "agy"
+        ? ["--print", "--output-format", "text", "--disable-slash-commands"]
+        : [];
+  if (backend.model && !args.some((arg) => arg === "--model" || arg === "-m")) args.push("--model", backend.model);
+  return args;
 }
