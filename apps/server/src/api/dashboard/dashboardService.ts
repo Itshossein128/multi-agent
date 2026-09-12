@@ -46,7 +46,7 @@ export class DashboardService {
     private readonly runStore: RunStoreContract,
     private readonly studioStore?: StudioStore,
     private readonly executor?: Pick<RunExecutor, "cancel">,
-  ) {}
+  ) { }
 
   async get(principal: RequestPrincipal): Promise<StudioDashboardData> {
     const runs = this.runStore.list({}, principal);
@@ -95,29 +95,43 @@ export class DashboardService {
   }
 
   private buildQueue(runs: Run[], tasks: StudioTask[]): QueuedTask[] {
-    const queue: QueuedTask[] = tasks.filter((task) => task.status === "todo" || task.status === "planning").map((task) => ({
-      id: task.id, title: task.title, agentRole: task.assignedAgent || "Orchestrator Agent", priority: task.priority || "medium",
-      queuedAt: task.createdAt || nowIso(), estimatedTokens: 8000,
-    }));
+    const queue: QueuedTask[] = tasks.filter((task) => task.status === "todo" || task.status === "planning").map((task) => {
+      const timestamp = new Date(task.createdAt || nowIso()).getTime();
+      return {
+        id: task.id, title: task.title, agentRole: task.assignedAgent || "Orchestrator Agent", priority: task.priority || "medium",
+        queuedAt: task.createdAt || nowIso(), estimatedTokens: 8000, source: "task" as const, period: periodOf(timestamp), timestamp,
+      };
+    });
     const taskIds = new Set(queue.map((task) => task.id));
     for (const run of runs.filter((item) => item.status === "queued" && (!item.taskId || !taskIds.has(item.taskId)))) {
-      queue.push({ id: run.id, title: this.runTitle(run), agentRole: (run.metadata?.agentName as string) || "Orchestrator Agent", priority: "high", queuedAt: run.startedAt, estimatedTokens: 8000 });
+      const timestamp = new Date(run.startedAt).getTime();
+      queue.push({
+        id: run.id, title: this.runTitle(run), agentRole: (run.metadata?.agentName as string) || "Orchestrator Agent", priority: "high",
+        queuedAt: run.startedAt, estimatedTokens: 8000, source: "run", period: periodOf(timestamp), timestamp,
+      });
     }
-    return queue;
+    return queue.sort((a, b) => b.timestamp - a.timestamp);
   }
 
   private buildCompleted(runs: Run[], tasks: StudioTask[]): CompletedTask[] {
     const completedRuns = runs.filter((run) => run.status === "completed");
     const taskIds = new Set(completedRuns.map((run) => run.taskId).filter(Boolean));
-    const result = completedRuns.map((run) => {
+    const result: CompletedTask[] = completedRuns.map((run) => {
       const timestamp = new Date(run.completedAt || run.startedAt).getTime();
-      return { id: run.id, title: this.runTitle(run), agent: (run.metadata?.agentName as string) || "Orchestrator Agent", completedAt: run.completedAt || run.startedAt,
-        duration: duration(run.startedAt, run.completedAt), tokens: metadataNumber(run, "totalTokens", "tokens"), cost: typeof run.metadata?.cost === "number" ? run.metadata.cost : null,
-        period: periodOf(timestamp), timestamp };
+      return {
+        id: run.id, title: this.runTitle(run), agent: (run.metadata?.agentName as string) || "Orchestrator Agent",
+        completedAt: run.completedAt || run.startedAt, duration: duration(run.startedAt, run.completedAt),
+        tokens: metadataNumber(run, "totalTokens", "tokens"), cost: typeof run.metadata?.cost === "number" ? run.metadata.cost : null,
+        period: periodOf(timestamp), timestamp, source: "run",
+      };
     });
     for (const task of tasks.filter((item) => item.status === "done" && !taskIds.has(item.id))) {
       const timestamp = new Date(task.updatedAt || task.createdAt).getTime();
-      result.push({ id: task.id, title: task.title, agent: task.assignedAgent || "Orchestrator Agent", completedAt: task.updatedAt || task.createdAt, duration: "—", tokens: 0, cost: null, period: periodOf(timestamp), timestamp });
+      result.push({
+        id: task.id, title: task.title, agent: task.assignedAgent || "Orchestrator Agent",
+        completedAt: task.updatedAt || task.createdAt, duration: "—", tokens: 0, cost: null,
+        period: periodOf(timestamp), timestamp, source: "task",
+      });
     }
     return result.sort((a, b) => b.timestamp - a.timestamp);
   }
@@ -125,12 +139,22 @@ export class DashboardService {
   private buildFailures(runs: Run[], tasks: StudioTask[]): FailedTask[] {
     const failedRuns = runs.filter((run) => run.status === "failed");
     const taskIds = new Set(failedRuns.map((run) => run.taskId).filter(Boolean));
-    const result = failedRuns.map((run) => ({ id: run.id, title: this.runTitle(run), agent: (run.metadata?.agentName as string) || "Orchestrator Agent",
-      error: run.error || "Execution failed during workflow run", failedAt: run.completedAt || run.startedAt,
-      retryCount: metadataNumber(run, "retryCount") || 1, recoverable: true, timestamp: new Date(run.completedAt || run.startedAt).getTime() }));
+    const result: FailedTask[] = failedRuns.map((run) => {
+      const timestamp = new Date(run.completedAt || run.startedAt).getTime();
+      return {
+        id: run.id, title: this.runTitle(run), agent: (run.metadata?.agentName as string) || "Orchestrator Agent",
+        error: run.error || "Execution failed during workflow run", failedAt: run.completedAt || run.startedAt,
+        retryCount: metadataNumber(run, "retryCount") || 1, recoverable: true, timestamp, period: periodOf(timestamp), source: "run",
+      };
+    });
     for (const task of tasks.filter((item) => item.status === "failed" && !taskIds.has(item.id))) {
-      result.push({ id: task.id, title: task.title, agent: task.assignedAgent || "Orchestrator Agent", error: task.output || "Marked as failed during workflow execution",
-        failedAt: task.updatedAt || task.createdAt, retryCount: task.retryCount || 1, recoverable: true, timestamp: new Date(task.updatedAt || task.createdAt).getTime() });
+      const timestamp = new Date(task.updatedAt || task.createdAt).getTime();
+      result.push({
+        id: task.id, title: task.title, agent: task.assignedAgent || "Orchestrator Agent",
+        error: task.output || "Marked as failed during workflow execution",
+        failedAt: task.updatedAt || task.createdAt, retryCount: task.retryCount || 1, recoverable: true,
+        timestamp, period: periodOf(timestamp), source: "task",
+      });
     }
     return result.sort((a, b) => b.timestamp - a.timestamp);
   }
@@ -173,8 +197,10 @@ export class DashboardService {
   private async enqueue(command: DashboardCommand, principal: RequestPrincipal) {
     if (!command.title?.trim()) throw new ApiError(400, "Title is required");
     const id = uid("task");
-    if (this.studioStore) await this.studioStore.saveTask({ id, title: command.title.trim(), description: "", priority: command.priority || "medium", status: "todo",
-      assignedAgent: command.role || null, dependencies: [], output: null, retryCount: 0, paused: false, createdAt: nowIso(), updatedAt: nowIso(), ownerId: principal.userId, tenantId: principal.tenantId }, principal);
+    if (this.studioStore) await this.studioStore.saveTask({
+      id, title: command.title.trim(), description: "", priority: command.priority || "medium", status: "todo",
+      assignedAgent: command.role || null, dependencies: [], output: null, retryCount: 0, paused: false, createdAt: nowIso(), updatedAt: nowIso(), ownerId: principal.userId, tenantId: principal.tenantId
+    }, principal);
     return { success: true, id };
   }
 

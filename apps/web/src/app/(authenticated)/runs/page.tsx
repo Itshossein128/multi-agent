@@ -3,16 +3,22 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import type { RunStatus } from "@multi-agent/types";
 import { runService } from "@/services/runService";
 import { formatDateTime } from "@/lib/formatDateTime";
 
 const STATUSES: Array<RunStatus | ""> = ["", "queued", "running", "waiting_for_human", "completed", "failed", "cancelled"];
 
+function initialStatus(value: string | null): RunStatus | "" {
+  return STATUSES.includes(value as RunStatus) ? (value as RunStatus) : "";
+}
+
 export default function RunsHistoryPage() {
+  const searchParams = useSearchParams();
   const [workflowId, setWorkflowId] = useState("");
   const [taskId, setTaskId] = useState("");
-  const [status, setStatus] = useState<RunStatus | "">("");
+  const [status, setStatus] = useState<RunStatus | "">(() => initialStatus(searchParams.get("status")));
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 

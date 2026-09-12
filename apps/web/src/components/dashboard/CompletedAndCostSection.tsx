@@ -11,15 +11,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import { formatDateTime } from "@/lib/formatDateTime";
+import { matchesTimeFilter } from "@/lib/dashboardFilters";
+import Link from "next/link";
 
 export function CompletedAndCostSection() {
   const { completedTasks, tokenMetrics, timeFilter, setTimeFilter } = useStudioStore();
 
-  const filteredTasks = completedTasks.filter((task) => {
-    if (timeFilter === "today") return task.period === "today";
-    if (timeFilter === "week") return task.period === "today" || task.period === "week";
-    return true; // month includes all
-  });
+  const filteredTasks = completedTasks.filter((task) => matchesTimeFilter(task.period, timeFilter));
 
   const periodCost = filteredTasks.reduce((acc, t) => acc + (t.cost || 0), 0);
   const periodTokens = filteredTasks.reduce((acc, t) => acc + t.tokens, 0);
@@ -51,8 +49,8 @@ export function CompletedAndCostSection() {
                 key={filter}
                 onClick={() => setTimeFilter(filter)}
                 className={`px-3 py-1 text-xs font-medium rounded capitalize transition-all cursor-pointer ${timeFilter === filter
-                    ? "bg-purple-600 text-white shadow-sm"
-                    : "text-zinc-400 hover:text-zinc-200"
+                  ? "bg-purple-600 text-white shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200"
                   }`}
               >
                 {filter}
@@ -76,7 +74,10 @@ export function CompletedAndCostSection() {
                   className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800/80 bg-zinc-950/60 p-3.5 hover:border-zinc-700 transition-colors"
                 >
                   <div className="space-y-1 flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-[10px] uppercase">
+                        {task.source === "run" ? "Run" : "Board"}
+                      </Badge>
                       <span className="text-xs font-semibold text-zinc-300">
                         {task.agent}
                       </span>
@@ -86,7 +87,15 @@ export function CompletedAndCostSection() {
                       </span>
                     </div>
                     <p className="text-sm font-medium text-zinc-100 truncate">
-                      {task.title}
+                      {task.source === "run" ? (
+                        <Link href={`/runs/${encodeURIComponent(task.id)}`} className="hover:text-indigo-300 hover:underline">
+                          {task.title}
+                        </Link>
+                      ) : (
+                        <Link href="/tasks" className="hover:text-indigo-300 hover:underline">
+                          {task.title}
+                        </Link>
+                      )}
                     </p>
                   </div>
 

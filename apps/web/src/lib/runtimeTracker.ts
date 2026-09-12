@@ -15,6 +15,7 @@
  */
 
 export type TimeFilter = "today" | "week" | "month";
+export type DashboardItemSource = "task" | "run";
 
 export interface AgentInstance {
   id: string;
@@ -35,6 +36,9 @@ export interface QueuedTask {
   priority: "high" | "medium" | "low";
   queuedAt: string;
   estimatedTokens: number;
+  source: DashboardItemSource;
+  period: TimeFilter;
+  timestamp: number;
 }
 
 export interface CompletedTask {
@@ -47,6 +51,7 @@ export interface CompletedTask {
   cost: number | null;
   period: "today" | "week" | "month";
   timestamp: number;
+  source: DashboardItemSource;
 }
 
 export interface FailedTask {
@@ -58,6 +63,8 @@ export interface FailedTask {
   retryCount: number;
   recoverable: boolean;
   timestamp: number;
+  period: TimeFilter;
+  source: DashboardItemSource;
 }
 
 export interface TokenMetrics {
@@ -134,7 +141,7 @@ class MultiAgentRuntimeTracker {
   public completionTokens: number = 0;
   public totalCost: number = 0;
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): MultiAgentRuntimeTracker {
     if (!MultiAgentRuntimeTracker.instance) {
@@ -184,6 +191,7 @@ class MultiAgentRuntimeTracker {
         cost,
         period: "today",
         timestamp: now,
+        source: "run",
       });
       if (this.completedTasks.length > 50) this.completedTasks.pop();
     } else {
@@ -196,6 +204,8 @@ class MultiAgentRuntimeTracker {
         retryCount: 1,
         recoverable: true,
         timestamp: now,
+        period: "today",
+        source: "run",
       });
       if (this.failedTasks.length > 30) this.failedTasks.pop();
     }
@@ -239,6 +249,7 @@ class MultiAgentRuntimeTracker {
 
   public enqueueTask(title: string, role: string, priority: "high" | "medium" | "low" = "medium") {
     const id = `queue-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const timestamp = Date.now();
     this.queue.push({
       id,
       title,
@@ -246,6 +257,9 @@ class MultiAgentRuntimeTracker {
       priority,
       queuedAt: "Just now",
       estimatedTokens: 8000,
+      source: "task",
+      period: "today",
+      timestamp,
     });
     return id;
   }

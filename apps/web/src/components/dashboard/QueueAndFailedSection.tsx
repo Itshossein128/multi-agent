@@ -16,14 +16,19 @@ import {
   Plus,
 } from "lucide-react";
 import { formatDateTime } from "@/lib/formatDateTime";
+import { matchesTimeFilter } from "@/lib/dashboardFilters";
+import Link from "next/link";
 
 export function QueueAndFailedSection() {
-  const { queue, failedTasks } = useStudioStore();
+  const { queue, failedTasks, timeFilter } = useStudioStore();
   const { retryTask, cancelTask, enqueueTask, isMutating } = useDashboardQuery();
 
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [targetRole, setTargetRole] = useState("Developer Agent");
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const filteredQueue = queue.filter((item) => matchesTimeFilter(item.period, timeFilter));
+  const filteredFailed = failedTasks.filter((item) => matchesTimeFilter(item.period, timeFilter));
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,11 +77,11 @@ export function QueueAndFailedSection() {
                 Execution Queue
               </CardTitle>
               <Badge variant="outline" className="text-blue-400 border-blue-500/30 bg-blue-950/30 text-[11px]">
-                {queue.length} Tasks
+                {filteredQueue.length} pending
               </Badge>
             </div>
             <CardDescription className="text-xs text-zinc-400 mt-1">
-              Live workloads awaiting agent capacity from LangGraph engine.
+              Board tasks (Todo/Planning) plus queued workflow runs — same window as the stat cards.
             </CardDescription>
           </div>
 
@@ -135,29 +140,43 @@ export function QueueAndFailedSection() {
             </form>
           )}
 
-          {queue.length === 0 ? (
+          {filteredQueue.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center text-zinc-500">
               <Sparkles className="h-8 w-8 text-zinc-600 mb-2" />
               <p className="text-sm font-medium text-zinc-300">Queue is currently clear</p>
-              <p className="text-xs text-zinc-500">Active agent runs or scheduled jobs will appear here.</p>
+              <p className="text-xs text-zinc-500">
+                Board Todo/Planning tasks and queued runs for this period appear here.{" "}
+                <Link href="/tasks" className="text-blue-300 hover:underline">Open task board</Link>
+              </p>
             </div>
           ) : (
             <div className="space-y-2.5">
-              {queue.map((task) => (
+              {filteredQueue.map((task) => (
                 <div
                   key={task.id}
                   className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800/80 bg-zinc-950/70 p-3.5 transition-colors hover:border-zinc-700"
                 >
                   <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {getPriorityBadge(task.priority)}
+                      <Badge variant="outline" className="text-[10px] uppercase">
+                        {task.source === "run" ? "Run" : "Board"}
+                      </Badge>
                       <span className="text-xs text-zinc-400 font-medium">
                         Target: {task.agentRole}
                       </span>
                       <span className="text-[11px] text-zinc-600">• {formatDateTime(task.queuedAt)}</span>
                     </div>
                     <p className="text-sm font-medium text-zinc-200 truncate">
-                      {task.title}
+                      {task.source === "run" ? (
+                        <Link href={`/runs/${encodeURIComponent(task.id)}`} className="hover:text-indigo-300 hover:underline">
+                          {task.title}
+                        </Link>
+                      ) : (
+                        <Link href="/tasks" className="hover:text-indigo-300 hover:underline">
+                          {task.title}
+                        </Link>
+                      )}
                     </p>
                     <div className="flex items-center gap-3 text-[11px] text-zinc-500">
                       <span>Est. ~{(task.estimatedTokens / 1000).toFixed(1)}k tokens</span>
@@ -191,43 +210,57 @@ export function QueueAndFailedSection() {
             <div className="flex items-center gap-2">
               <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
                 <AlertOctagon className="h-5 w-5 text-rose-400" />
-                Failed Tasks & Incidents
+                Failures
               </CardTitle>
-              <Badge variant={failedTasks.length > 0 ? "destructive" : "outline"} className="text-[11px]">
-                {failedTasks.length} Issues
+              <Badge variant={filteredFailed.length > 0 ? "destructive" : "outline"} className="text-[11px]">
+                {filteredFailed.length} Issues
               </Badge>
             </div>
             <CardDescription className="text-xs text-zinc-400 mt-1">
-              Exceptions tracked via LangGraph / Langfuse error handlers.
+              Board Failed column plus failed workflow runs for the selected period.
             </CardDescription>
           </div>
         </CardHeader>
 
         <CardContent>
-          {failedTasks.length === 0 ? (
+          {filteredFailed.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center text-zinc-500">
               <ShieldCheck className="h-8 w-8 text-emerald-500/80 mb-2" />
-              <p className="text-sm font-medium text-zinc-300">Zero active failures</p>
-              <p className="text-xs text-zinc-500">All agent executions have completed normally.</p>
+              <p className="text-sm font-medium text-zinc-300">Zero failures in this period</p>
+              <p className="text-xs text-zinc-500">
+                Board failures show on <Link href="/tasks" className="text-rose-300 hover:underline">/tasks</Link>;
+                run failures on <Link href="/runs?status=failed" className="text-rose-300 hover:underline">/runs</Link>.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {failedTasks.map((task) => (
+              {filteredFailed.map((task) => (
                 <div
                   key={task.id}
                   className="rounded-lg border border-red-900/40 bg-red-950/20 p-3.5 space-y-2.5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="destructive" className="text-[10px]">
                           Attempt {task.retryCount} Failed
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px] uppercase">
+                          {task.source === "run" ? "Run" : "Board"}
                         </Badge>
                         <span className="text-xs text-zinc-400">{task.agent}</span>
                         <span className="text-[11px] text-zinc-500">• {formatDateTime(task.failedAt)}</span>
                       </div>
                       <h5 className="text-sm font-semibold text-zinc-200 mt-1">
-                        {task.title}
+                        {task.source === "run" ? (
+                          <Link href={`/runs/${encodeURIComponent(task.id)}`} className="hover:text-indigo-300 hover:underline">
+                            {task.title}
+                          </Link>
+                        ) : (
+                          <Link href="/tasks" className="hover:text-indigo-300 hover:underline">
+                            {task.title}
+                          </Link>
+                        )}
                       </h5>
                     </div>
                   </div>

@@ -1,4 +1,5 @@
 export type TimeFilter = "today" | "week" | "month";
+export type DashboardItemSource = "task" | "run";
 
 export interface AgentInstance {
   id: string;
@@ -19,6 +20,9 @@ export interface QueuedTask {
   priority: "high" | "medium" | "low";
   queuedAt: string;
   estimatedTokens: number;
+  source: DashboardItemSource;
+  period: TimeFilter;
+  timestamp: number;
 }
 
 export interface CompletedTask {
@@ -31,6 +35,7 @@ export interface CompletedTask {
   cost: number | null;
   period: TimeFilter;
   timestamp: number;
+  source: DashboardItemSource;
 }
 
 export interface FailedTask {
@@ -42,6 +47,8 @@ export interface FailedTask {
   retryCount: number;
   recoverable: boolean;
   timestamp: number;
+  period: TimeFilter;
+  source: DashboardItemSource;
 }
 
 export interface TokenMetrics {
