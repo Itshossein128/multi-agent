@@ -11,6 +11,8 @@ node_modules/
 coverage/
 *.log
 .env
+.env.local
+.env.*.local
 workspaces/
 
 # LangGraph API

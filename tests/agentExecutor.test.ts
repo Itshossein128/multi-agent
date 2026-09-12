@@ -10,7 +10,7 @@ import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
 import { ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
-import { CliAgentExecutor } from "../src/agents/runtime/cliAgentExecutor";
+import { CliAgentExecutor, resolveCliSpawnExecutable } from "../src/agents/runtime/cliAgentExecutor";
 import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
 
@@ -145,7 +145,7 @@ describe("CLI and local executors", () => {
     const process = {
       stdin: { write: (value: string) => calls.push(["stdin", value]), end: () => calls.push(["end"]) },
       stdout: (async function* () { yield "CLI answer"; })(),
-      stderr: (async function* () {})(),
+      stderr: (async function* () { })(),
       once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); },
       kill: jest.fn(),
     };
@@ -175,7 +175,7 @@ describe("CLI and local executors", () => {
     const calls: unknown[] = [];
     const process = {
       stdin: { write: (value: string) => calls.push(["stdin", value]), end: jest.fn() },
-      stdout: (async function* () { yield "Agy answer"; })(), stderr: (async function* () {})(),
+      stdout: (async function* () { yield "Agy answer"; })(), stderr: (async function* () { })(),
       once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); }, kill: jest.fn(),
     };
     const spawn = jest.fn(() => process);
@@ -192,7 +192,7 @@ describe("CLI and local executors", () => {
   test("forces saved Codex options through exec mode instead of starting the TUI", async () => {
     const process = {
       stdin: { write: jest.fn(), end: jest.fn() },
-      stdout: (async function* () { yield "Codex answer"; })(), stderr: (async function* () {})(),
+      stdout: (async function* () { yield "Codex answer"; })(), stderr: (async function* () { })(),
       once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); }, kill: jest.fn(),
     };
     const spawn = jest.fn(() => process);
@@ -209,6 +209,24 @@ describe("CLI and local executors", () => {
     const runtimePolicy = { enabled: true, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
     await expect(async () => { for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({ agent, input: {}, runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/workspace.*not allowed/i);
     expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test("resolves bare CLI names to an allowlisted absolute executable for shell-less spawn", async () => {
+    const absolute = process.platform === "win32" ? "C:\\tools\\codex.exe" : "/usr/local/bin/codex";
+    expect(resolveCliSpawnExecutable("codex", ["codex", absolute])).toBe(require("node:path").resolve(absolute));
+
+    const processHandle = {
+      stdin: { write: jest.fn(), end: jest.fn() },
+      stdout: (async function* () { yield "ok"; })(),
+      stderr: (async function* () { })(),
+      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); },
+      kill: jest.fn(),
+    };
+    const spawn = jest.fn(() => processHandle);
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    for await (const _event of new CliAgentExecutor(spawn as never, { enabled: true, allowedExecutables: ["codex", absolute], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+    expect(spawn).toHaveBeenCalledWith(require("node:path").resolve(absolute), expect.any(Array), expect.objectContaining({ shell: false }));
   });
 
   test("calls LM Studio's OpenAI-compatible endpoint with sampling settings", async () => {

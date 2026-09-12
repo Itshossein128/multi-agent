@@ -1,14 +1,16 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { ArrowLeft, Ban, CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle2, Circle, CircleDot, Loader2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { RunEvent, WorkflowDefinition } from "@multi-agent/types";
+import type { RunEvent, RunStatus, WorkflowDefinition } from "@multi-agent/types";
 import { useRunStore } from "@/store/useRunStore";
 import { runService } from "@/services/runService";
 import { Button } from "@/components/ui/button";
 import { ExecutionTimeline } from "@/components/runs/ExecutionTimeline";
 import { ApprovalPanel } from "@/components/runs/ApprovalPanel";
+
+const ACTIVE_RUN_STATUSES: RunStatus[] = ["queued", "running", "waiting_for_human"];
 
 export default function RunPage({ params }: { params: Promise<{ runId: string }> }) {
   const { runId } = use(params);
@@ -33,29 +35,35 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
   }, [runId, load, attach]);
   const nodeStatus = new Map<string, RunEvent["type"]>();
   for (const event of events) if (event.nodeId) nodeStatus.set(event.nodeId, event.type);
+  const runActive = !!run && ACTIVE_RUN_STATUSES.includes(run.status);
 
   return <main className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
     <header className="flex h-14 items-center gap-3 border-b border-zinc-800 px-4">
       <Button variant="ghost" size="icon" onClick={() => router.push("/runs")}><ArrowLeft className="h-4 w-4" /></Button>
       <div><h1 className="text-sm font-semibold">Run {runId}</h1><p className="text-[10px] uppercase tracking-widest text-zinc-500">{run?.status ?? status}</p></div>
-      {run && ["queued", "running", "waiting_for_human"].includes(run.status) && <Button variant="destructive" size="sm" className="ml-auto" onClick={() => void runService.cancelRun(runId)}><Ban className="mr-1.5 h-3.5 w-3.5" />Cancel</Button>}
+      {runActive && <Button variant="destructive" size="sm" className="ml-auto" onClick={() => void runService.cancelRun(runId)}><Ban className="mr-1.5 h-3.5 w-3.5" />Cancel</Button>}
     </header>
     {approvals.some((approval) => approval.status === "requested") && <div className="p-4 pb-0"><ApprovalPanel runId={runId} approvals={approvals} /></div>}
     <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[1.3fr_0.7fr]">
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4"><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Workflow execution</h2><RuntimeGraph definition={definition} nodeStatus={nodeStatus} /></section>
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4"><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Workflow execution</h2><RuntimeGraph definition={definition} nodeStatus={nodeStatus} runActive={runActive} /></section>
       <section className="min-h-0 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4"><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Event timeline</h2><ExecutionTimeline events={events} emptyMessage="Waiting for execution events…" /></section>
     </div>
   </main>;
 }
 
-function RuntimeGraph({ definition, nodeStatus }: { definition?: WorkflowDefinition; nodeStatus: Map<string, RunEvent["type"]> }) {
+function RuntimeGraph({ definition, nodeStatus, runActive }: { definition?: WorkflowDefinition; nodeStatus: Map<string, RunEvent["type"]>; runActive: boolean }) {
   if (!definition) return <div className="flex h-full min-h-80 items-center justify-center text-xs text-zinc-600">Graph state is represented by the live event stream.</div>;
-  return <div className="grid gap-2 sm:grid-cols-2">{definition.nodes.map((node) => <div key={node.id} className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3"><div className="flex items-center gap-2"><EventIcon type={nodeStatus.get(node.id)} /><span className="text-xs font-semibold">{node.type}</span></div><p className="mt-1 truncate text-[10px] text-zinc-600">{node.id}</p></div>)}</div>;
+  return <div className="grid gap-2 sm:grid-cols-2">{definition.nodes.map((node) => <div key={node.id} className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3"><div className="flex items-center gap-2"><EventIcon type={nodeStatus.get(node.id)} runActive={runActive} /><span className="text-xs font-semibold">{node.type}</span></div><p className="mt-1 truncate text-[10px] text-zinc-600">{node.id}</p></div>)}</div>;
 }
 
-function EventIcon({ type }: { type?: string }) {
+function EventIcon({ type, runActive }: { type?: string; runActive: boolean }) {
   if (type?.endsWith("failed") || type === "run.failed") return <XCircle className="h-3.5 w-3.5 text-red-400" />;
   if (type?.endsWith("completed") || type === "run.completed") return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
-  if (type?.endsWith("started") || type === "run.started") return <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />;
+  if (type?.endsWith("started") || type === "run.started") {
+    // Only spin while the run is actually in progress; a stale "started" after
+    // failure/cancel/timeout should not look like live work.
+    if (runActive) return <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />;
+    return <CircleDot className="h-3.5 w-3.5 text-amber-400" />;
+  }
   return <Circle className="h-3.5 w-3.5 text-zinc-600" />;
 }

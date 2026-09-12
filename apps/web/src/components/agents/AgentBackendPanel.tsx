@@ -18,7 +18,7 @@ export function AgentBackendPanel({ backend, onChange }: { backend: AgentBackend
     {backend.type === "cli" && <>
       <Field label="Executable (optional)"><input className={fieldClass} placeholder="Provider default: codex, claude, or agy" value={backend.executable ?? ""} onChange={(event) => onChange({ ...backend, executable: event.target.value || undefined })} /></Field>
       <Field label="Arguments (one argument per line)"><textarea className={fieldClass} rows={5} value={(backend.args ?? []).join("\n")} onChange={(event) => onChange({ ...backend, args: event.target.value.split("\n") })} /></Field>
-      <p className="text-sm text-zinc-400">Leave arguments blank to use the provider's safe non-interactive mode. The server must explicitly allow the executable and workspace root.</p>
+      <p className="text-sm text-zinc-400">Leave executable blank to use the provider default (`codex`, `claude`, or `agy`). On Windows, put the real `.exe` path in `CLI_AGENT_ALLOWED_EXECUTABLES` — npm `.cmd` shims cannot be spawned. Leave arguments blank for non-interactive mode.</p>
     </>}
     {backend.type === "local" && <Field label="Base URL (optional)"><input className={fieldClass} type="url" placeholder={backend.provider === "lmstudio" ? "http://127.0.0.1:1234" : "http://127.0.0.1:11434"} value={backend.baseUrl ?? ""} onChange={(event) => onChange({ ...backend, baseUrl: event.target.value || undefined })} /></Field>}
     {(backend.type === "api" || backend.type === "local") && <div className="grid gap-4 md:grid-cols-3">
