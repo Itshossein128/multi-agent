@@ -80,20 +80,6 @@ export function WorkflowSwitcher() {
       if (!canLeave()) return;
       fileInputRef.current?.click();
     }}>Import package</Button>
-    <Button variant="outline" disabled={busy} onClick={async () => {
-      if (!canLeave()) return;
-      if (!window.confirm("Import the shared PISA Organization workflow and its agents into your organization?")) return;
-      setBusy(true); setError("");
-      try {
-        const response = await fetch(PISA_PACKAGE_URL);
-        if (!response.ok) throw new Error(`Could not load PISA package (${response.status})`);
-        await importPackage(await response.json() as WorkspacePackage);
-        setBusy(false);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-        setBusy(false);
-      }
-    }}>Install PISA sample</Button>
     <Button variant="ghost" onClick={() => { if (canLeave()) router.push("/org/agents"); }}>Agent registry</Button>
     <Button variant="ghost" onClick={() => { if (canLeave()) router.push("/org/tools"); }}>Tool registry</Button>
     <Button variant="ghost" onClick={() => { if (canLeave()) router.push("/org/memory"); }}>Memory explorer</Button>
