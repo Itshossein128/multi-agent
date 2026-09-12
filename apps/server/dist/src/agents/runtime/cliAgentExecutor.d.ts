@@ -1,19 +1,5 @@
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
-type SpawnedProcess = {
-    stdin: {
-        write(value: string): void;
-        end(): void;
-    };
-    stdout: AsyncIterable<Buffer | string>;
-    stderr: AsyncIterable<Buffer | string>;
-    once(event: "error" | "close", listener: (value: Error | number | null) => void): void;
-    kill(signal?: NodeJS.Signals): void;
-};
-export type CliSpawn = (executable: string, args: string[], options: {
-    cwd: string;
-    shell: false;
-    stdio: ["pipe", "pipe", "pipe"];
-}) => SpawnedProcess;
+import type { WorkerRuntime } from "./workerRuntime";
 export interface CliRuntimePolicy {
     enabled: boolean;
     allowedExecutables: string[];
@@ -21,13 +7,10 @@ export interface CliRuntimePolicy {
     maxOutputBytes: number;
 }
 export declare function cliRuntimePolicyFromEnvironment(env?: NodeJS.ProcessEnv): CliRuntimePolicy;
-/** Executes a configured CLI directly (never through a shell) in its approved workspace. */
+export declare function resolveCliSpawnExecutable(executable: string, allowedExecutables: string[], env?: NodeJS.ProcessEnv): string;
 export declare class CliAgentExecutor implements AgentExecutor {
-    private readonly spawn;
+    private readonly workerRuntime;
     private readonly runtimePolicy;
-    constructor(spawn?: CliSpawn, runtimePolicy?: CliRuntimePolicy);
+    constructor(workerRuntime?: WorkerRuntime, runtimePolicy?: CliRuntimePolicy);
     execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent>;
-    private run;
-    private assertServerPolicy;
 }
-export {};

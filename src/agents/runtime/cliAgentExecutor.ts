@@ -1,18 +1,10 @@
-import { spawn as nodeSpawn } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
+import fs from "node:fs";
 import { nowIso, type AgentBackend } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
-
-type SpawnedProcess = {
-  stdin: { write(value: string): void; end(): void };
-  stdout: AsyncIterable<Buffer | string>;
-  stderr: AsyncIterable<Buffer | string>;
-  once(event: "error" | "close", listener: (value: Error | number | null) => void): void;
-  kill(signal?: NodeJS.Signals): void;
-};
-export type CliSpawn = (executable: string, args: string[], options: { cwd: string; shell: false; stdio: ["pipe", "pipe", "pipe"] }) => SpawnedProcess;
+import type { WorkerRuntime, WorkerSpec } from "./workerRuntime";
+import { LocalProcessWorkerRuntime } from "./workerRuntime";
 
 export interface CliRuntimePolicy {
   enabled: boolean;
@@ -32,11 +24,6 @@ export function cliRuntimePolicyFromEnvironment(env: NodeJS.ProcessEnv = process
   };
 }
 
-/**
- * Map a policy-checked command name to something `spawn(..., { shell: false })` can
- * actually execute. On Windows, npm global shims are `.cmd` files and cannot be
- * spawned without a shell — prefer an allowlisted absolute `.exe`, then PATH `.exe`.
- */
 export function resolveCliSpawnExecutable(executable: string, allowedExecutables: string[], env: NodeJS.ProcessEnv = process.env): string {
   if (path.isAbsolute(executable) || executable.includes("/") || executable.includes("\\")) {
     return path.resolve(executable);
@@ -61,7 +48,6 @@ function resolveFromPath(command: string, env: NodeJS.ProcessEnv): string | unde
   const exts = process.platform === "win32"
     ? (env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
     : [""];
-  // Prefer native binaries; skip shell shims that require `shell: true`.
   const ordered = process.platform === "win32"
     ? [...exts.filter((ext) => ext.toUpperCase() === ".EXE"), ...exts.filter((ext) => ![".EXE", ".CMD", ".BAT"].includes(ext.toUpperCase()))]
     : exts;
@@ -81,11 +67,10 @@ function resolveFromPath(command: string, env: NodeJS.ProcessEnv): string | unde
   return undefined;
 }
 
-/** Executes a configured CLI directly (never through a shell) in its approved workspace. */
 export class CliAgentExecutor implements AgentExecutor {
   constructor(
-    private readonly spawn: CliSpawn = nodeSpawn as unknown as CliSpawn,
-    private readonly runtimePolicy: CliRuntimePolicy = cliRuntimePolicyFromEnvironment(),
+    private readonly workerRuntime: WorkerRuntime = new LocalProcessWorkerRuntime(cliRuntimePolicyFromEnvironment()),
+    private readonly runtimePolicy: CliRuntimePolicy = cliRuntimePolicyFromEnvironment()
   ) { }
 
   async *execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent> {
@@ -93,83 +78,53 @@ export class CliAgentExecutor implements AgentExecutor {
     const backend = input.agent.backend;
     const policy = input.agent.executionPolicy!;
     const executable = backend.executable || defaultExecutable(backend.provider);
-    this.assertServerPolicy(executable, policy.workspaceRoot!);
+
+    // The worker runtime also asserts policy, but doing it here provides an early rejection
+    if (!this.runtimePolicy.enabled) throw new Error("CLI agent execution is disabled on this server. Set CLI_AGENT_ENABLED=true and configure server allowlists.");
+
     const spawnExecutable = resolveCliSpawnExecutable(executable, this.runtimePolicy.allowedExecutables);
     const args = commandArgs(backend);
+
     yield event("agent.started", input, { provider: backend.provider, executable: spawnExecutable, args });
+
     try {
-      const output = await this.run(spawnExecutable, args, policy.workspaceRoot!, prompt(input), input.signal);
-      yield event("agent.output", input, { content: output });
-      yield event("agent.completed", input, { content: output });
+      const spec: WorkerSpec = {
+        runId: input.runId,
+        nodeId: input.nodeId,
+        agentId: input.agent.id,
+        executable: spawnExecutable,
+        args,
+        cwd: policy.workspaceRoot!,
+        timeoutMs: Number(process.env.AGENT_MAX_DURATION_MS ?? 120_000),
+        maxOutputBytes: this.runtimePolicy.maxOutputBytes,
+      };
+
+      const handle = await this.workerRuntime.start(spec, input.signal, prompt(input));
+
+      try {
+        const result = await this.workerRuntime.wait(handle.workerId);
+        input.signal?.throwIfAborted();
+
+        if (result.reason === "output_limit") throw new Error(result.error || "Output limit exceeded");
+        if (result.reason === "timeout") throw new Error(result.error || "Process timed out");
+        if (result.reason === "spawn_error") throw new Error(result.error || "Spawn error");
+        if (result.reason === "cancelled") throw new Error("Worker cancelled");
+
+        if (result.code !== 0) throw new Error(`CLI command "${executable}" exited with code ${result.code}: ${result.stderr || "no stderr"}`);
+
+        yield event("agent.output", input, { content: result.stdout });
+        yield event("agent.completed", input, { content: result.stdout });
+      } finally {
+        await this.workerRuntime.cleanup(handle.workerId);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       yield event("agent.failed", input, { error: message });
       throw new AgentExecutionFailedError(message);
     }
   }
-
-  private async run(executable: string, args: string[], cwd: string, input: string, signal?: AbortSignal): Promise<string> {
-    const child = this.spawn(executable, args, { cwd, shell: false, stdio: ["pipe", "pipe", "pipe"] });
-    const abort = () => child.kill("SIGTERM");
-    signal?.addEventListener("abort", abort, { once: true });
-    try {
-      child.stdin.write(input);
-      child.stdin.end();
-      const [stdout, stderr, code] = await Promise.all([
-        read(child.stdout, this.runtimePolicy.maxOutputBytes, child),
-        read(child.stderr, this.runtimePolicy.maxOutputBytes, child),
-        waitForExit(child),
-      ]);
-      signal?.throwIfAborted();
-      if (code !== 0) throw new Error(`CLI command "${executable}" exited with code ${code}: ${stderr || "no stderr"}`);
-      return stdout;
-    } finally {
-      signal?.removeEventListener("abort", abort);
-    }
-  }
-
-  private assertServerPolicy(executable: string, cwd: string): void {
-    if (!this.runtimePolicy.enabled) throw new Error("CLI agent execution is disabled on this server. Set CLI_AGENT_ENABLED=true and configure server allowlists.");
-    const executableAllowed = executable.includes(path.sep) || path.isAbsolute(executable)
-      ? this.runtimePolicy.allowedExecutables.some((allowed) => path.isAbsolute(allowed) && path.resolve(allowed) === path.resolve(executable))
-      : this.runtimePolicy.allowedExecutables.includes(executable)
-      || this.runtimePolicy.allowedExecutables.some((allowed) => path.isAbsolute(allowed) && matchesBareCommand(allowed, executable));
-    if (!executableAllowed) throw new Error(`CLI executable "${executable}" is not allowed by the server runtime.`);
-    const resolvedCwd = path.resolve(cwd);
-    const workspaceAllowed = this.runtimePolicy.workspaceRoots.some((root) => {
-      const resolvedRoot = path.resolve(root);
-      return resolvedCwd === resolvedRoot || resolvedCwd.startsWith(`${resolvedRoot}${path.sep}`);
-    });
-    if (!workspaceAllowed) throw new Error(`CLI workspace "${resolvedCwd}" is not allowed by the server runtime.`);
-  }
 }
 
-function matchesBareCommand(absoluteAllowed: string, bare: string): boolean {
-  const base = path.basename(absoluteAllowed).toLowerCase();
-  const name = bare.toLowerCase();
-  return base === name || base === `${name}.exe` || base.replace(/\.exe$/i, "") === name;
-}
-
-async function read(stream: AsyncIterable<Buffer | string>, limit: number, child: SpawnedProcess): Promise<string> {
-  let value = "";
-  let bytes = 0;
-  for await (const chunk of stream) {
-    const text = chunk.toString();
-    bytes += Buffer.byteLength(text);
-    if (bytes > limit) {
-      child.kill("SIGTERM");
-      throw new Error(`CLI output exceeded the ${limit}-byte server limit.`);
-    }
-    value += text;
-  }
-  return value;
-}
-function waitForExit(child: SpawnedProcess): Promise<number | null> {
-  return new Promise((resolve, reject) => {
-    child.once("error", (error) => reject(error));
-    child.once("close", (code) => resolve(code as number | null));
-  });
-}
 function prompt(input: AgentExecutionInput): string {
   const serialize = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value ?? {});
   const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
@@ -180,6 +135,7 @@ function prompt(input: AgentExecutionInput): string {
     `USER INPUT:\n${serialize(input.input)}`,
   ].filter(Boolean).join("\n\n");
 }
+
 function event(type: AgentExecutionEvent["type"], input: AgentExecutionInput, payload: unknown): AgentExecutionEvent {
   return { type, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload };
 }
@@ -190,9 +146,6 @@ function defaultExecutable(provider: string): string {
 
 function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>): string[] {
   const explicit = backend.args?.filter((arg) => arg.length > 0);
-  // Provider-specific non-interactive flags are invariants, not merely defaults.
-  // Saved custom arguments must never be able to accidentally start a TUI in a
-  // child process whose stdin/stderr are pipes rather than terminals.
   const args = backend.provider === "codex"
     ? codexArgs(explicit)
     : backend.provider === "claude-code"

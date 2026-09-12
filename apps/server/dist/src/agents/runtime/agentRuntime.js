@@ -7,16 +7,18 @@ const runtimeMemory_1 = require("./runtimeMemory");
 const shortTermMemory_1 = require("./shortTermMemory");
 const telemetry_1 = require("../../observability/telemetry");
 const executionPolicy_1 = require("./executionPolicy");
+const workerRuntime_1 = require("./workerRuntime");
+const cliAgentExecutor_1 = require("./cliAgentExecutor");
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 class AgentRuntime {
     memoryDependencies;
     telemetry;
     executorFactory;
     maxExecutionMs;
-    constructor(executorFactory = undefined, memoryDependencies, telemetry = telemetry_1.ExecutionTelemetry.disabled(), maxExecutionMs = configuredAgentTimeout()) {
+    constructor(executorFactory = undefined, memoryDependencies, telemetry = telemetry_1.ExecutionTelemetry.disabled(), maxExecutionMs = configuredAgentTimeout(), workerRuntime) {
         this.memoryDependencies = memoryDependencies;
         this.telemetry = telemetry;
-        this.executorFactory = executorFactory ?? new agentExecutorFactory_1.AgentExecutorFactory(telemetry);
+        this.executorFactory = executorFactory ?? new agentExecutorFactory_1.AgentExecutorFactory(telemetry, workerRuntime ?? new workerRuntime_1.LocalProcessWorkerRuntime((0, cliAgentExecutor_1.cliRuntimePolicyFromEnvironment)()));
         this.maxExecutionMs = maxExecutionMs;
     }
     async *execute(input) {

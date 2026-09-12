@@ -6,13 +6,22 @@ import { RuntimeMemory } from "./runtimeMemory";
 import { boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
 import { assertExecutionPolicy, ExecutionPolicyError } from "./executionPolicy";
+import type { WorkerRuntime } from "./workerRuntime";
+import { LocalProcessWorkerRuntime } from "./workerRuntime";
+import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
   private readonly executorFactory: Pick<AgentExecutorFactory, "create">;
   private readonly maxExecutionMs: number;
-  constructor(executorFactory: Pick<AgentExecutorFactory, "create"> | undefined = undefined, private readonly memoryDependencies?: RuntimeMemoryDependencies, readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(), maxExecutionMs = configuredAgentTimeout()) {
-    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry);
+  constructor(
+    executorFactory: Pick<AgentExecutorFactory, "create"> | undefined = undefined,
+    private readonly memoryDependencies?: RuntimeMemoryDependencies,
+    readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
+    maxExecutionMs = configuredAgentTimeout(),
+    workerRuntime?: WorkerRuntime
+  ) {
+    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? new LocalProcessWorkerRuntime(cliRuntimePolicyFromEnvironment()));
     this.maxExecutionMs = maxExecutionMs;
   }
 

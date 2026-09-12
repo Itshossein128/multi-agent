@@ -569,12 +569,12 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
     test("deterministic migration backfills memory_owner to owner_id and tenant_id", async () => {
       // Direct SQL verification: check that columns exist on studio_runs and studio_workflows
       const checkRuns = await pool.query(
-        "SELECT column_name FROM information_schema.columns WHERE table_name = 'studio_runs' AND column_name IN ('owner_id', 'tenant_id')",
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'studio_runs' AND column_name IN ('owner_id', 'tenant_id')",
       );
       expect(checkRuns.rows).toHaveLength(2);
 
       const checkWfs = await pool.query(
-        "SELECT column_name FROM information_schema.columns WHERE table_name = 'studio_workflows' AND column_name IN ('owner_id', 'tenant_id')",
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'studio_workflows' AND column_name IN ('owner_id', 'tenant_id')",
       );
       expect(checkWfs.rows).toHaveLength(2);
     });

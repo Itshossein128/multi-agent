@@ -5,18 +5,24 @@ import {
 } from "./notImplementedExecutor";
 import { CliAgentExecutor } from "./cliAgentExecutor";
 import { LocalAgentExecutor } from "./localAgentExecutor";
-import type { AgentExecutor } from "./types";
+import type { AgentExecutor, AgentExecutionInput, AgentExecutionEvent } from "./types";
 import { ExecutionTelemetry } from "../../observability/telemetry";
+import type { WorkerRuntime } from "./workerRuntime";
+import { LocalProcessWorkerRuntime } from "./workerRuntime";
+import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 
 export class AgentExecutorFactory {
-  constructor(private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled()) {}
+  constructor(
+    private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
+    private readonly workerRuntime: WorkerRuntime = new LocalProcessWorkerRuntime(cliRuntimePolicyFromEnvironment())
+  ) {}
   create(backend: AgentBackend): AgentExecutor {
     if (backend.type === "api") {
       return new ApiAgentExecutor(undefined, this.telemetry);
     }
 
     if (backend.type === "cli") {
-      return new CliAgentExecutor();
+      return new CliAgentExecutor(this.workerRuntime);
     }
 
     if (backend.type === "local") {
