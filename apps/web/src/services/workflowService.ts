@@ -102,97 +102,111 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
   };
 
   return {
-  async getAgent(agentId: string): Promise<AgentRecord | null> {
-    await ensureImported();
-    try {
-      const agent = await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}`);
-      return publicAgent(agent);
-    } catch {
-      return null;
-    }
-  },
-  async listAgents(): Promise<AgentRecord[]> {
-    await ensureImported();
-    return (await request<AgentRecord[]>("/agents")).map(publicAgent);
-  },
-  async listWorkflows(): Promise<WorkflowDefinition[]> {
-    await ensureImported();
-    return request("/workflows");
-  },
-  async getWorkflow(workflowId?: string): Promise<WorkflowDefinition | null> {
-    await ensureImported();
-    const id = workflowId ?? getActiveWorkflowId();
-    if (!id) {
-      const workflows = await request<WorkflowDefinition[]>("/workflows");
-      return workflows[0] ?? null;
-    }
-    try {
-      return await request(`/workflows/${encodeURIComponent(id)}`);
-    } catch {
-      return null;
-    }
-  },
-  async saveWorkflow(definition: WorkflowDefinition): Promise<WorkflowDefinition> {
-    await ensureImported();
-    assertNoCredentials(definition);
-    const stamped = { ...definition, updatedAt: nowIso() };
-    const saved = await request<WorkflowDefinition>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(stamped) });
-    setActiveWorkflowId(saved.id);
-    return saved;
-  },
-  async createWorkflow(name = "Untitled Workflow"): Promise<WorkflowDefinition> {
-    await ensureImported();
-    const created = await request<WorkflowDefinition>("/workflows", { method: "POST", body: JSON.stringify({ name }) });
-    setActiveWorkflowId(created.id);
-    return created;
-  },
-  async createAgent(input?: CreateAgentInput): Promise<AgentRecord> {
-    await ensureImported();
-    assertNoCredentials(input);
-    return publicAgent(await request<AgentRecord>("/agents", { method: "POST", body: JSON.stringify(input ?? {}) }));
-  },
-  async duplicateAgent(agentId: string): Promise<AgentRecord> {
-    await ensureImported();
-    return publicAgent(await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}/duplicate`, { method: "POST", body: "{}" }));
-  },
-  async updateAgent(agentId: string, patch: Partial<Omit<AgentRecord, "id" | "createdAt">>): Promise<AgentRecord> {
-    await ensureImported();
-    assertNoCredentials(patch);
-    return publicAgent(await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}`, { method: "PATCH", body: JSON.stringify(patch) }));
-  },
-  async deleteAgent(agentId: string, options?: { removeReferences?: boolean }): Promise<void> {
-    await ensureImported();
-    const query = options?.removeReferences ? "?removeReferences=true" : "";
-    await request(`/agents/${encodeURIComponent(agentId)}${query}`, { method: "DELETE" });
-  },
+    async getAgent(agentId: string): Promise<AgentRecord | null> {
+      await ensureImported();
+      try {
+        const agent = await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}`);
+        return publicAgent(agent);
+      } catch {
+        return null;
+      }
+    },
+    async listAgents(): Promise<AgentRecord[]> {
+      await ensureImported();
+      return (await request<AgentRecord[]>("/agents")).map(publicAgent);
+    },
+    async listWorkflows(): Promise<WorkflowDefinition[]> {
+      await ensureImported();
+      return request("/workflows");
+    },
+    async getWorkflow(workflowId?: string): Promise<WorkflowDefinition | null> {
+      await ensureImported();
+      const id = workflowId ?? getActiveWorkflowId();
+      if (!id) {
+        const workflows = await request<WorkflowDefinition[]>("/workflows");
+        return workflows[0] ?? null;
+      }
+      try {
+        return await request(`/workflows/${encodeURIComponent(id)}`);
+      } catch {
+        return null;
+      }
+    },
+    async saveWorkflow(definition: WorkflowDefinition): Promise<WorkflowDefinition> {
+      await ensureImported();
+      assertNoCredentials(definition);
+      const stamped = { ...definition, updatedAt: nowIso() };
+      const saved = await request<WorkflowDefinition>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(stamped) });
+      setActiveWorkflowId(saved.id);
+      return saved;
+    },
+    async createWorkflow(name = "Untitled Workflow"): Promise<WorkflowDefinition> {
+      await ensureImported();
+      const created = await request<WorkflowDefinition>("/workflows", { method: "POST", body: JSON.stringify({ name }) });
+      setActiveWorkflowId(created.id);
+      return created;
+    },
+    async createAgent(input?: CreateAgentInput): Promise<AgentRecord> {
+      await ensureImported();
+      assertNoCredentials(input);
+      return publicAgent(await request<AgentRecord>("/agents", { method: "POST", body: JSON.stringify(input ?? {}) }));
+    },
+    async duplicateAgent(agentId: string): Promise<AgentRecord> {
+      await ensureImported();
+      return publicAgent(await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}/duplicate`, { method: "POST", body: "{}" }));
+    },
+    async updateAgent(agentId: string, patch: Partial<Omit<AgentRecord, "id" | "createdAt">>): Promise<AgentRecord> {
+      await ensureImported();
+      assertNoCredentials(patch);
+      return publicAgent(await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}`, { method: "PATCH", body: JSON.stringify(patch) }));
+    },
+    async deleteAgent(agentId: string, options?: { removeReferences?: boolean }): Promise<void> {
+      await ensureImported();
+      const query = options?.removeReferences ? "?removeReferences=true" : "";
+      await request(`/agents/${encodeURIComponent(agentId)}${query}`, { method: "DELETE" });
+    },
 
-  async getTool(toolId: string): Promise<ToolRecord | null> {
-    await ensureImported();
-    try { return await request(`/tools/${encodeURIComponent(toolId)}`); } catch { return null; }
-  },
-  async listTools(): Promise<ToolRecord[]> {
-    await ensureImported();
-    return request("/tools");
-  },
-  async createTool(input?: Parameters<typeof createToolRecord>[0]): Promise<ToolRecord> {
-    await ensureImported();
-    assertNoCredentials(input);
-    return request("/tools", { method: "POST", body: JSON.stringify(input ?? {}) });
-  },
-  async duplicateTool(toolId: string): Promise<ToolRecord> {
-    await ensureImported();
-    return request(`/tools/${encodeURIComponent(toolId)}/duplicate`, { method: "POST", body: "{}" });
-  },
-  async updateTool(toolId: string, patch: Partial<Omit<ToolRecord, "id" | "createdAt">>): Promise<ToolRecord> {
-    await ensureImported();
-    assertNoCredentials(patch);
-    return request(`/tools/${encodeURIComponent(toolId)}`, { method: "PATCH", body: JSON.stringify(patch) });
-  },
-  async deleteTool(toolId: string, options?: { removeReferences?: boolean }): Promise<void> {
-    await ensureImported();
-    const query = options?.removeReferences ? "?removeReferences=true" : "";
-    await request(`/tools/${encodeURIComponent(toolId)}${query}`, { method: "DELETE" });
-  },
+    async getTool(toolId: string): Promise<ToolRecord | null> {
+      await ensureImported();
+      try { return await request(`/tools/${encodeURIComponent(toolId)}`); } catch { return null; }
+    },
+    async listTools(): Promise<ToolRecord[]> {
+      await ensureImported();
+      return request("/tools");
+    },
+    async createTool(input?: Parameters<typeof createToolRecord>[0]): Promise<ToolRecord> {
+      await ensureImported();
+      assertNoCredentials(input);
+      return request("/tools", { method: "POST", body: JSON.stringify(input ?? {}) });
+    },
+    async duplicateTool(toolId: string): Promise<ToolRecord> {
+      await ensureImported();
+      return request(`/tools/${encodeURIComponent(toolId)}/duplicate`, { method: "POST", body: "{}" });
+    },
+    async updateTool(toolId: string, patch: Partial<Omit<ToolRecord, "id" | "createdAt">>): Promise<ToolRecord> {
+      await ensureImported();
+      assertNoCredentials(patch);
+      return request(`/tools/${encodeURIComponent(toolId)}`, { method: "PATCH", body: JSON.stringify(patch) });
+    },
+    async deleteTool(toolId: string, options?: { removeReferences?: boolean }): Promise<void> {
+      await ensureImported();
+      const query = options?.removeReferences ? "?removeReferences=true" : "";
+      await request(`/tools/${encodeURIComponent(toolId)}${query}`, { method: "DELETE" });
+    },
+    async importWorkspace(workspace: { workflows?: WorkflowDefinition[]; agents?: AgentRecord[]; tools?: ToolRecord[] }): Promise<void> {
+      await ensureImported();
+      assertNoCredentials(workspace);
+      await request("/workspace/import", {
+        method: "POST",
+        body: JSON.stringify({
+          workflows: workspace.workflows ?? [],
+          agents: workspace.agents ?? [],
+          tools: workspace.tools ?? [],
+        }),
+      });
+      const firstWorkflowId = workspace.workflows?.[0]?.id;
+      if (firstWorkflowId) setActiveWorkflowId(firstWorkflowId);
+    },
   };
 }
 
