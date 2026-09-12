@@ -465,6 +465,21 @@ export function createEmptyDefinition(name?: string): WorkflowDefinition {
   };
 }
 
+export function createSingleAgentWorkflow(agent: AgentRecord, name = "Single Agent Task Workflow"): WorkflowDefinition {
+  const inputNode = createNode("input", { x: 100, y: 100 });
+  const agentNode = createNode("agent", { x: 300, y: 100 }, { agentId: agent.id });
+  const outputNode = createNode("output", { x: 500, y: 100 });
+  const edge1 = createEdge({ source: inputNode.id, target: agentNode.id });
+  const edge2 = createEdge({ source: agentNode.id, target: outputNode.id });
+  return {
+    id: uid("wf-task"),
+    name,
+    nodes: [inputNode, agentNode, outputNode],
+    edges: [edge1, edge2],
+    updatedAt: nowIso(),
+  };
+}
+
 export function nodeConfig<T extends WorkflowNodeConfig>(node: WorkflowNode): T {
   return node.config as T;
 }
@@ -587,4 +602,103 @@ export interface RunEvent {
   parentEventId?: string;
   sequence: number;
   payload: Record<string, unknown>;
+}
+
+export type Phase2TaskStatus =
+  | "backlog"
+  | "ready"
+  | "queued"
+  | "running"
+  | "blocked"
+  | "waiting_for_human"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type LegacyTaskStatus =
+  | "todo"
+  | "planning"
+  | "in_progress"
+  | "waiting_tool"
+  | "review"
+  | "done";
+
+export type TaskStatus = Phase2TaskStatus | LegacyTaskStatus;
+
+export type TaskPriority = "high" | "medium" | "low";
+
+export interface TaskRecord {
+  id: string;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  assignedAgent: string | null;
+  assignedAgents: string[];
+  workflowId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  parentTaskId?: string | null;
+  dependencies: string[];
+  runId?: string | null;
+  output: string | null;
+  lastError?: string | null;
+  retryCount: number;
+  paused: boolean;
+  metadata: Record<string, unknown>;
+  ownerId?: string;
+  tenantId?: string;
+}
+
+export const LEGACY_TO_CANONICAL_STATUS: Record<LegacyTaskStatus, Phase2TaskStatus> = {
+  todo: "backlog",
+  planning: "ready",
+  in_progress: "running",
+  waiting_tool: "blocked",
+  review: "waiting_for_human",
+  done: "completed",
+};
+
+export function toCanonicalStatus(status: TaskStatus): Phase2TaskStatus {
+  if (status in LEGACY_TO_CANONICAL_STATUS) {
+    return LEGACY_TO_CANONICAL_STATUS[status as LegacyTaskStatus];
+  }
+  return status as Phase2TaskStatus;
+}
+
+export const CANONICAL_STATUS_TRANSITIONS: Record<Phase2TaskStatus, Phase2TaskStatus[]> = {
+  backlog: ["ready", "queued", "running", "cancelled"],
+  ready: ["backlog", "queued", "running", "cancelled"],
+  queued: ["running", "ready", "cancelled"],
+  running: ["blocked", "waiting_for_human", "completed", "failed", "cancelled", "ready"],
+  blocked: ["running", "ready", "failed", "cancelled"],
+  waiting_for_human: ["running", "completed", "failed", "cancelled"],
+  completed: ["ready", "backlog"],
+  failed: ["ready", "queued", "running", "backlog"],
+  cancelled: ["ready", "backlog"],
+};
+
+export const DEP_GATED_CANONICAL_STATUSES: Phase2TaskStatus[] = [
+  "queued",
+  "running",
+  "waiting_for_human",
+  "completed",
+];
+
+export function canTransitionStatus(from: TaskStatus, to: TaskStatus): boolean {
+  if (from === to) return false;
+  const canonicalFrom = toCanonicalStatus(from);
+  const canonicalTo = toCanonicalStatus(to);
+  if (canonicalFrom === canonicalTo) return true;
+  return (CANONICAL_STATUS_TRANSITIONS[canonicalFrom] ?? []).includes(canonicalTo);
+}
+
+export function isStatusDependencyGated(status: TaskStatus): boolean {
+  return DEP_GATED_CANONICAL_STATUSES.includes(toCanonicalStatus(status));
+}
+
+export function isCompletedStatus(status: TaskStatus): boolean {
+  return toCanonicalStatus(status) === "completed";
 }

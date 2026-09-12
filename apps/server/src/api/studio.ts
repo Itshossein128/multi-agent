@@ -9,12 +9,18 @@ import { StudioToolService } from "./studio/toolService";
 import { TaskService } from "./studio/taskService";
 import { WorkspaceService, type WorkspaceImport } from "./studio/workspaceService";
 
-export function createStudioRouter(store: StudioStore, resolvePrincipal: PrincipalResolver = resolveRequestPrincipal) {
+import type { RunExecutor } from "../runtime/runExecutor";
+
+export function createStudioRouter(
+  store: StudioStore,
+  resolvePrincipal: PrincipalResolver = resolveRequestPrincipal,
+  executor?: RunExecutor,
+) {
   const app = new Hono<{ Variables: PrincipalVariables }>();
   const workflows = new WorkflowService(store);
   const agents = new AgentService(store);
   const tools = new StudioToolService(store);
-  const tasks = new TaskService(store);
+  const tasks = new TaskService(store, executor);
   const workspace = new WorkspaceService(store);
   app.use("/*", requirePrincipal(resolvePrincipal));
   app.onError(respondWithApiError);
@@ -42,9 +48,15 @@ export function createStudioRouter(store: StudioStore, resolvePrincipal: Princip
   app.get("/tasks", async (c) => c.json(await tasks.list(c.get("principal"))));
   app.get("/tasks/:id", async (c) => c.json(await tasks.get(c.req.param("id"), c.get("principal"))));
   app.put("/tasks/:id", async (c) => c.json(await tasks.save(c.req.param("id"), await c.req.json<StudioTask>(), c.get("principal"))));
-  app.post("/tasks", async (c) => c.json(await tasks.create(await c.req.json<StudioTask>(), c.get("principal")), 201));
+  app.patch("/tasks/:id", async (c) => c.json(await tasks.patch(c.req.param("id"), await c.req.json<Partial<StudioTask>>(), c.get("principal"))));
+  app.post("/tasks", async (c) => c.json(await tasks.create(await c.req.json<Partial<StudioTask>>(), c.get("principal")), 201));
   app.delete("/tasks/:id", async (c) => { await tasks.delete(c.req.param("id"), c.get("principal")); return c.json({ ok: true }); });
   app.put("/tasks", async (c) => c.json(await tasks.replace(await c.req.json<StudioTask[]>(), c.get("principal"))));
+  app.post("/tasks/:id/start", async (c) => c.json(await tasks.start(c.req.param("id"), c.get("principal")), 200));
+  app.post("/tasks/:id/cancel", async (c) => c.json(await tasks.cancel(c.req.param("id"), c.get("principal")), 200));
+  app.post("/tasks/:id/retry", async (c) => c.json(await tasks.retry(c.req.param("id"), c.get("principal")), 200));
+  app.post("/tasks/:id/pause", async (c) => c.json(await tasks.pause(c.req.param("id"), c.get("principal")), 200));
+  app.post("/tasks/:id/resume", async (c) => c.json(await tasks.resume(c.req.param("id"), c.get("principal")), 200));
 
   app.post("/workspace/import", async (c) => { await workspace.import(await c.req.json<WorkspaceImport>(), c.get("principal")); return c.json({ ok: true }); });
   app.get("/workspace", async (c) => c.json(await workspace.export(c.get("principal"))));

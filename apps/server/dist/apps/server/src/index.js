@@ -100,7 +100,7 @@ async function main() {
         console.log(`Run recovery: restored=${recovery.restored.length} failed=${recovery.failed.length}`);
     }
     if (studio.store)
-        app.route("/studio", (0, studio_1.createStudioRouter)(studio.store));
+        app.route("/studio", (0, studio_1.createStudioRouter)(studio.store, undefined, executor));
     app.route("/dashboard", (0, dashboard_1.createDashboardRouter)(runStore, studio.store, executor));
     app.route("/memories", (0, memories_1.createMemoriesRouter)(memory.service, resolveMemoryAccess));
     app.route("/runs", (0, runs_1.createRunsRouter)(executor, resolveMemoryAccess, studio.store).app);

@@ -73,7 +73,7 @@ export class DashboardService {
 
   private buildAgents(runs: Run[], tasks: StudioTask[], records: AgentRecord[]): AgentInstance[] {
     const activeRuns = runs.filter((run) => run.status === "running");
-    const activeTasks = tasks.filter((task) => task.status === "in_progress" && !task.paused);
+    const activeTasks = tasks.filter((task) => (task.status === "in_progress" || task.status === "running") && !task.paused);
     const base = records.length
       ? records.map((agent) => ({ id: agent.id, name: agent.name, role: agent.description || agent.name, model: agent.backend?.model || DEFAULT_MODEL() }))
       : DEFAULT_AGENTS();
@@ -95,7 +95,9 @@ export class DashboardService {
   }
 
   private buildQueue(runs: Run[], tasks: StudioTask[]): QueuedTask[] {
-    const queue: QueuedTask[] = tasks.filter((task) => task.status === "todo" || task.status === "planning").map((task) => {
+    const queue: QueuedTask[] = tasks.filter((task) =>
+      task.status === "todo" || task.status === "planning" || task.status === "backlog" || task.status === "ready" || task.status === "queued"
+    ).map((task) => {
       const timestamp = new Date(task.createdAt || nowIso()).getTime();
       return {
         id: task.id, title: task.title, agentRole: task.assignedAgent || "Orchestrator Agent", priority: task.priority || "medium",
@@ -125,7 +127,7 @@ export class DashboardService {
         period: periodOf(timestamp), timestamp, source: "run",
       };
     });
-    for (const task of tasks.filter((item) => item.status === "done" && !taskIds.has(item.id))) {
+    for (const task of tasks.filter((item) => (item.status === "done" || item.status === "completed") && !taskIds.has(item.id))) {
       const timestamp = new Date(task.updatedAt || task.createdAt).getTime();
       result.push({
         id: task.id, title: task.title, agent: task.assignedAgent || "Orchestrator Agent",
@@ -151,7 +153,7 @@ export class DashboardService {
       const timestamp = new Date(task.updatedAt || task.createdAt).getTime();
       result.push({
         id: task.id, title: task.title, agent: task.assignedAgent || "Orchestrator Agent",
-        error: task.output || "Marked as failed during workflow execution",
+        error: task.lastError || task.output || "Marked as failed during workflow execution",
         failedAt: task.updatedAt || task.createdAt, retryCount: task.retryCount || 1, recoverable: true,
         timestamp, period: periodOf(timestamp), source: "task",
       });

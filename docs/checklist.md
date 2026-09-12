@@ -197,70 +197,70 @@ The system consistently understands relevant states such as:
 
 Each task supports:
 
-* [ ] ID
-* [ ] Title/name
-* [ ] Description
-* [ ] Status
-* [ ] Priority
-* [ ] Assigned agents
-* [ ] Workflow reference
-* [ ] Creation timestamp
-* [ ] Update timestamp
-* [ ] Start timestamp
-* [ ] Completion timestamp
-* [ ] Parent task where applicable
-* [ ] Dependencies
-* [ ] Run/result reference
-* [ ] Metadata
+* [x] ID
+* [x] Title/name
+* [x] Description
+* [x] Status
+* [x] Priority
+* [x] Assigned agents
+* [x] Workflow reference
+* [x] Creation timestamp
+* [x] Update timestamp
+* [x] Start timestamp
+* [x] Completion timestamp
+* [x] Parent task where applicable
+* [x] Dependencies
+* [x] Run/result reference
+* [x] Metadata
 
 ## CRUD / Operations
 
-* [ ] Create task.
-* [ ] Edit task.
-* [ ] Archive/delete task.
-* [ ] Assign one agent.
-* [ ] Assign multiple agents where supported.
-* [ ] Select workflow.
-* [ ] Set priority.
-* [ ] Start task.
-* [ ] Cancel task.
-* [ ] Retry failed task.
-* [ ] Pause task where runtime supports it.
-* [ ] Resume task where runtime supports it.
-* [ ] Open related run.
-* [ ] Inspect final result.
-* [ ] Inspect last failure.
+* [x] Create task.
+* [x] Edit task.
+* [x] Archive/delete task.
+* [x] Assign one agent.
+* [x] Assign multiple agents where supported.
+* [x] Select workflow.
+* [x] Set priority.
+* [x] Start task.
+* [x] Cancel task.
+* [x] Retry failed task.
+* [x] Pause task where runtime supports it.
+* [x] Resume task where runtime supports it.
+* [x] Open related run.
+* [x] Inspect final result.
+* [x] Inspect last failure.
 
 ## Task Dependencies
 
-* [ ] Dependencies can be represented structurally.
-* [ ] Dependency references are validated.
-* [ ] Downstream task waits for required upstream tasks.
-* [ ] Failed dependency behavior is deterministic.
-* [ ] Dependency cycles are validated or handled explicitly.
-* [ ] Dependency enforcement occurs server-side/runtime-side.
+* [x] Dependencies can be represented structurally.
+* [x] Dependency references are validated.
+* [x] Downstream task waits for required upstream tasks.
+* [x] Failed dependency behavior is deterministic.
+* [x] Dependency cycles are validated or handled explicitly.
+* [x] Dependency enforcement occurs server-side/runtime-side.
 
 ## Statuses
 
 Relevant domain states exist:
 
-* [ ] `backlog`
-* [ ] `ready`
-* [ ] `queued`
-* [ ] `running`
-* [ ] `blocked`
-* [ ] `waiting_for_human`
-* [ ] `completed`
-* [ ] `failed`
-* [ ] `cancelled`
+* [x] `backlog`
+* [x] `ready`
+* [x] `queued`
+* [x] `running`
+* [x] `blocked`
+* [x] `waiting_for_human`
+* [x] `completed`
+* [x] `failed`
+* [x] `cancelled`
 
 ## Execution Integration
 
-* [ ] Starting a task creates/starts a backend Run.
-* [ ] Task execution never happens directly in browser code.
-* [ ] Task references the resulting Run.
-* [ ] Task status can follow runtime status.
-* [ ] Task output can reference actual execution output.
+* [x] Starting a task creates/starts a backend Run.
+* [x] Task execution never happens directly in browser code.
+* [x] Task references the resulting Run.
+* [x] Task status can follow runtime status.
+* [x] Task output can reference actual execution output.
 
 ---
 

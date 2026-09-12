@@ -1,13 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { TaskBoardData, TaskPriority, TaskStatus } from "@/lib/taskStatus";
+import { BoardAgent, BoardWorkflow, Task, TaskBoardData, TaskPriority, TaskStatus } from "@/lib/taskStatus";
 
 export interface CreateTaskInput {
   title: string;
   description?: string;
   priority?: TaskPriority;
   assignedAgent?: string | null;
+  assignedAgents?: string[];
+  workflowId?: string | null;
+  parentTaskId?: string | null;
   dependencies?: string[];
   status?: TaskStatus;
 }
@@ -17,7 +20,11 @@ export interface UpdateTaskInput {
   title?: string;
   description?: string;
   priority?: TaskPriority;
+  status?: TaskStatus;
   assignedAgent?: string | null;
+  assignedAgents?: string[];
+  workflowId?: string | null;
+  parentTaskId?: string | null;
   dependencies?: string[];
   output?: string | null;
 }
@@ -74,8 +81,7 @@ export function useTasksQuery() {
     onSuccess: invalidate,
   });
 
-  // Optimistic move: update the cache immediately so drag & drop feels instant,
-  // roll back and refetch if the API rejects the transition.
+  // Optimistic move: update cache immediately, roll back on rejection
   const moveMutation = useMutation({
     mutationFn: (vars: { taskId: string; toStatus: TaskStatus }) =>
       postTaskAction({ action: "move", taskId: vars.taskId, toStatus: vars.toStatus }),
@@ -89,10 +95,10 @@ export function useTasksQuery() {
               tasks: old.tasks.map((t) =>
                 t.id === taskId
                   ? { ...t, status: toStatus, paused: false, updatedAt: new Date().toISOString() }
-                  : t
+                  : t,
               ),
             }
-          : old
+          : old,
       );
       return { previous };
     },
@@ -112,6 +118,11 @@ export function useTasksQuery() {
     onSuccess: invalidate,
   });
 
+  const startMutation = useMutation({
+    mutationFn: (taskId: string) => postTaskAction({ action: "start", taskId }),
+    onSuccess: invalidate,
+  });
+
   const retryMutation = useMutation({
     mutationFn: (taskId: string) => postTaskAction({ action: "retry", taskId }),
     onSuccess: invalidate,
@@ -128,30 +139,42 @@ export function useTasksQuery() {
     onSuccess: invalidate,
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (taskId: string) => postTaskAction({ action: "delete", taskId }),
+    onSuccess: invalidate,
+  });
+
   return {
     ...query,
     tasks: query.data?.tasks ?? [],
     agents: query.data?.agents ?? [],
+    workflows: query.data?.workflows ?? [],
     createTask: createMutation.mutateAsync,
     moveTask: moveMutation.mutateAsync,
     updateTask: updateMutation.mutateAsync,
+    startTask: startMutation.mutateAsync,
     retryTask: retryMutation.mutateAsync,
     setTaskPaused: pauseMutation.mutateAsync,
     cancelTask: cancelMutation.mutateAsync,
+    deleteTask: deleteMutation.mutateAsync,
     isMutating:
       createMutation.isPending ||
       moveMutation.isPending ||
       updateMutation.isPending ||
+      startMutation.isPending ||
       retryMutation.isPending ||
       pauseMutation.isPending ||
-      cancelMutation.isPending,
+      cancelMutation.isPending ||
+      deleteMutation.isPending,
     mutations: {
       create: createMutation,
       move: moveMutation,
       update: updateMutation,
+      start: startMutation,
       retry: retryMutation,
       pause: pauseMutation,
       cancel: cancelMutation,
+      delete: deleteMutation,
     },
   };
 }

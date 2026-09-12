@@ -8,19 +8,33 @@ function asIso(value) {
     return String(value);
 }
 function decodeTask(row) {
+    const assignedAgents = Array.isArray(row.assigned_agents)
+        ? row.assigned_agents
+        : row.assigned_agent
+            ? [String(row.assigned_agent)]
+            : [];
+    const assignedAgent = row.assigned_agent ?? (assignedAgents[0] ?? null);
     return {
         id: String(row.id),
         title: String(row.title),
         description: String(row.description ?? ""),
         priority: row.priority,
         status: row.status,
-        assignedAgent: row.assigned_agent ?? null,
+        assignedAgent,
+        assignedAgents,
+        workflowId: row.workflow_id ?? null,
+        startedAt: row.started_at ? asIso(row.started_at) : null,
+        completedAt: row.completed_at ? asIso(row.completed_at) : null,
+        parentTaskId: row.parent_task_id ?? null,
         dependencies: Array.isArray(row.dependencies) ? row.dependencies : [],
+        runId: row.run_id ?? null,
         output: row.output ?? null,
+        lastError: row.last_error ?? null,
         retryCount: Number(row.retry_count ?? 0),
         paused: Boolean(row.paused),
         createdAt: asIso(row.created_at),
         updatedAt: asIso(row.updated_at),
+        metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata : {},
         ownerId: row.owner_id ?? undefined,
         tenantId: row.tenant_id ?? undefined,
     };
@@ -198,28 +212,105 @@ class PostgresStudioStore {
         return result.rows[0] ? decodeTask(result.rows[0]) : null;
     }
     async saveTask(task, principal) {
+        const assignedAgents = Array.isArray(task.assignedAgents)
+            ? task.assignedAgents
+            : task.assignedAgent
+                ? [task.assignedAgent]
+                : [];
+        const assignedAgent = task.assignedAgent ?? (assignedAgents[0] ?? null);
+        const workflowId = task.workflowId ?? null;
+        const startedAt = task.startedAt ?? null;
+        const completedAt = task.completedAt ?? null;
+        const parentTaskId = task.parentTaskId ?? null;
+        const runId = task.runId ?? null;
+        const lastError = task.lastError ?? null;
+        const metadata = task.metadata ?? {};
         if (principal) {
             const existing = await this.query("SELECT tenant_id FROM studio_tasks WHERE id = $1", [task.id]);
             if (existing.rows.length && existing.rows[0].tenant_id !== principal.tenantId) {
                 throw new Error("Access denied to task");
             }
             const updatedAt = task.updatedAt ?? task.createdAt ?? (0, types_1.nowIso)();
-            task = { ...task, tenantId: principal.tenantId, ownerId: task.ownerId ?? principal.userId, updatedAt };
-            await this.query(`INSERT INTO studio_tasks (id, title, description, priority, status, assigned_agent, dependencies, output, retry_count, paused, created_at, updated_at, owner_id, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::timestamptz,$12::timestamptz,$13,$14)
-         ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
+            task = {
+                ...task,
+                assignedAgent,
+                assignedAgents,
+                workflowId,
+                startedAt,
+                completedAt,
+                parentTaskId,
+                runId,
+                lastError,
+                metadata,
+                tenantId: principal.tenantId,
+                ownerId: task.ownerId ?? principal.userId,
+                updatedAt,
+            };
+            await this.query(`INSERT INTO studio_tasks (
+           id, title, description, priority, status, assigned_agent, dependencies, output,
+           retry_count, paused, created_at, updated_at, owner_id, tenant_id,
+           workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata
+         )
+         VALUES (
+           $1, $2, $3, $4, $5, $6, $7::jsonb, $8,
+           $9, $10, $11::timestamptz, $12::timestamptz, $13, $14,
+           $15, $16::jsonb, $17::timestamptz, $18::timestamptz, $19, $20, $21, $22::jsonb
+         )
+         ON CONFLICT (id) DO UPDATE SET
+           title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
            status = EXCLUDED.status, assigned_agent = EXCLUDED.assigned_agent, dependencies = EXCLUDED.dependencies,
            output = EXCLUDED.output, retry_count = EXCLUDED.retry_count, paused = EXCLUDED.paused, updated_at = EXCLUDED.updated_at,
-           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id`, [task.id, task.title, task.description, task.priority, task.status, task.assignedAgent, JSON.stringify(task.dependencies), task.output, task.retryCount, task.paused, task.createdAt, updatedAt, task.ownerId, principal.tenantId]);
+           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id,
+           workflow_id = EXCLUDED.workflow_id, assigned_agents = EXCLUDED.assigned_agents,
+           started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
+           parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
+           last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata`, [
+                task.id, task.title, task.description, task.priority, task.status, assignedAgent,
+                JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
+                task.createdAt, updatedAt, task.ownerId, principal.tenantId,
+                workflowId, JSON.stringify(assignedAgents), startedAt, completedAt,
+                parentTaskId, runId, lastError, JSON.stringify(metadata),
+            ]);
         }
         else {
             const updatedAt = task.updatedAt ?? task.createdAt ?? (0, types_1.nowIso)();
-            task = { ...task, updatedAt };
-            await this.query(`INSERT INTO studio_tasks (id, title, description, priority, status, assigned_agent, dependencies, output, retry_count, paused, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11::timestamptz,$12::timestamptz)
-         ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
+            task = {
+                ...task,
+                assignedAgent,
+                assignedAgents,
+                workflowId,
+                startedAt,
+                completedAt,
+                parentTaskId,
+                runId,
+                lastError,
+                metadata,
+                updatedAt,
+            };
+            await this.query(`INSERT INTO studio_tasks (
+           id, title, description, priority, status, assigned_agent, dependencies, output,
+           retry_count, paused, created_at, updated_at,
+           workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata
+         )
+         VALUES (
+           $1, $2, $3, $4, $5, $6, $7::jsonb, $8,
+           $9, $10, $11::timestamptz, $12::timestamptz,
+           $13, $14::jsonb, $15::timestamptz, $16::timestamptz, $17, $18, $19, $20::jsonb
+         )
+         ON CONFLICT (id) DO UPDATE SET
+           title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
            status = EXCLUDED.status, assigned_agent = EXCLUDED.assigned_agent, dependencies = EXCLUDED.dependencies,
-           output = EXCLUDED.output, retry_count = EXCLUDED.retry_count, paused = EXCLUDED.paused, updated_at = EXCLUDED.updated_at`, [task.id, task.title, task.description, task.priority, task.status, task.assignedAgent, JSON.stringify(task.dependencies), task.output, task.retryCount, task.paused, task.createdAt, updatedAt]);
+           output = EXCLUDED.output, retry_count = EXCLUDED.retry_count, paused = EXCLUDED.paused, updated_at = EXCLUDED.updated_at,
+           workflow_id = EXCLUDED.workflow_id, assigned_agents = EXCLUDED.assigned_agents,
+           started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
+           parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
+           last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata`, [
+                task.id, task.title, task.description, task.priority, task.status, assignedAgent,
+                JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
+                task.createdAt, updatedAt,
+                workflowId, JSON.stringify(assignedAgents), startedAt, completedAt,
+                parentTaskId, runId, lastError, JSON.stringify(metadata),
+            ]);
         }
         return task;
     }

@@ -20,7 +20,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.removeAgentNodes = exports.API_PROVIDER_SCHEMAS = exports.modelSettingsSchema = exports.validateAgent = exports.credentialIssues = exports.assertNoCredentials = exports.WORKFLOW_NODE_TYPES = exports.NODE_TYPE_META = void 0;
+exports.DEP_GATED_CANONICAL_STATUSES = exports.CANONICAL_STATUS_TRANSITIONS = exports.LEGACY_TO_CANONICAL_STATUS = exports.removeAgentNodes = exports.API_PROVIDER_SCHEMAS = exports.modelSettingsSchema = exports.validateAgent = exports.credentialIssues = exports.assertNoCredentials = exports.WORKFLOW_NODE_TYPES = exports.NODE_TYPE_META = void 0;
 exports.createApiBackend = createApiBackend;
 exports.agentBackendLabel = agentBackendLabel;
 exports.agentRequiresModel = agentRequiresModel;
@@ -33,9 +33,14 @@ exports.createAgentRecord = createAgentRecord;
 exports.createNode = createNode;
 exports.createEdge = createEdge;
 exports.createEmptyDefinition = createEmptyDefinition;
+exports.createSingleAgentWorkflow = createSingleAgentWorkflow;
 exports.nodeConfig = nodeConfig;
 exports.removeToolNodes = removeToolNodes;
 exports.migrateWorkflowToolNodes = migrateWorkflowToolNodes;
+exports.toCanonicalStatus = toCanonicalStatus;
+exports.canTransitionStatus = canTransitionStatus;
+exports.isStatusDependencyGated = isStatusDependencyGated;
+exports.isCompletedStatus = isCompletedStatus;
 __exportStar(require("./memory"), exports);
 __exportStar(require("./toolConfiguration"), exports);
 __exportStar(require("./approval"), exports);
@@ -261,6 +266,20 @@ function createEmptyDefinition(name) {
         updatedAt: nowIso(),
     };
 }
+function createSingleAgentWorkflow(agent, name = "Single Agent Task Workflow") {
+    const inputNode = createNode("input", { x: 100, y: 100 });
+    const agentNode = createNode("agent", { x: 300, y: 100 }, { agentId: agent.id });
+    const outputNode = createNode("output", { x: 500, y: 100 });
+    const edge1 = createEdge({ source: inputNode.id, target: agentNode.id });
+    const edge2 = createEdge({ source: agentNode.id, target: outputNode.id });
+    return {
+        id: uid("wf-task"),
+        name,
+        nodes: [inputNode, agentNode, outputNode],
+        edges: [edge1, edge2],
+        updatedAt: nowIso(),
+    };
+}
 function nodeConfig(node) {
     return node.config;
 }
@@ -314,4 +333,50 @@ Object.defineProperty(exports, "validateAgent", { enumerable: true, get: functio
 Object.defineProperty(exports, "modelSettingsSchema", { enumerable: true, get: function () { return agentConfiguration_1.modelSettingsSchema; } });
 Object.defineProperty(exports, "API_PROVIDER_SCHEMAS", { enumerable: true, get: function () { return agentConfiguration_1.API_PROVIDER_SCHEMAS; } });
 Object.defineProperty(exports, "removeAgentNodes", { enumerable: true, get: function () { return agentConfiguration_1.removeAgentNodes; } });
+exports.LEGACY_TO_CANONICAL_STATUS = {
+    todo: "backlog",
+    planning: "ready",
+    in_progress: "running",
+    waiting_tool: "blocked",
+    review: "waiting_for_human",
+    done: "completed",
+};
+function toCanonicalStatus(status) {
+    if (status in exports.LEGACY_TO_CANONICAL_STATUS) {
+        return exports.LEGACY_TO_CANONICAL_STATUS[status];
+    }
+    return status;
+}
+exports.CANONICAL_STATUS_TRANSITIONS = {
+    backlog: ["ready", "queued", "running", "cancelled"],
+    ready: ["backlog", "queued", "running", "cancelled"],
+    queued: ["running", "ready", "cancelled"],
+    running: ["blocked", "waiting_for_human", "completed", "failed", "cancelled", "ready"],
+    blocked: ["running", "ready", "failed", "cancelled"],
+    waiting_for_human: ["running", "completed", "failed", "cancelled"],
+    completed: ["ready", "backlog"],
+    failed: ["ready", "queued", "running", "backlog"],
+    cancelled: ["ready", "backlog"],
+};
+exports.DEP_GATED_CANONICAL_STATUSES = [
+    "queued",
+    "running",
+    "waiting_for_human",
+    "completed",
+];
+function canTransitionStatus(from, to) {
+    if (from === to)
+        return false;
+    const canonicalFrom = toCanonicalStatus(from);
+    const canonicalTo = toCanonicalStatus(to);
+    if (canonicalFrom === canonicalTo)
+        return true;
+    return (exports.CANONICAL_STATUS_TRANSITIONS[canonicalFrom] ?? []).includes(canonicalTo);
+}
+function isStatusDependencyGated(status) {
+    return exports.DEP_GATED_CANONICAL_STATUSES.includes(toCanonicalStatus(status));
+}
+function isCompletedStatus(status) {
+    return toCanonicalStatus(status) === "completed";
+}
 //# sourceMappingURL=index.js.map

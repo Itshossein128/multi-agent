@@ -1,18 +1,27 @@
-import type { AgentRecord, ToolRecord, WorkflowDefinition } from "@multi-agent/types";
+import type { AgentRecord, ToolRecord, WorkflowDefinition, TaskPriority, TaskStatus } from "@multi-agent/types";
+export type { TaskPriority, TaskStatus, Phase2TaskStatus, LegacyTaskStatus, TaskRecord, } from "@multi-agent/types";
 /** Task board record persisted by the Studio store (shared with the web task board model). */
 export interface StudioTask {
     id: string;
     title: string;
     description: string;
-    priority: "high" | "medium" | "low";
-    status: "todo" | "planning" | "in_progress" | "waiting_tool" | "review" | "done" | "failed";
+    priority: TaskPriority;
+    status: TaskStatus;
     assignedAgent: string | null;
-    dependencies: string[];
-    output: string | null;
-    retryCount: number;
-    paused: boolean;
+    assignedAgents?: string[];
+    workflowId?: string | null;
     createdAt: string;
     updatedAt?: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    parentTaskId?: string | null;
+    dependencies: string[];
+    runId?: string | null;
+    output: string | null;
+    lastError?: string | null;
+    retryCount: number;
+    paused: boolean;
+    metadata?: Record<string, unknown>;
     ownerId?: string;
     tenantId?: string;
 }

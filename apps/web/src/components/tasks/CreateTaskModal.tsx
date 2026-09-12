@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Link2, Sparkles, X } from "lucide-react";
+import { GitBranch, Link2, Sparkles, X } from "lucide-react";
 import {
   BoardAgent,
+  BoardWorkflow,
   TASK_COLUMNS,
   TASK_PRIORITIES,
   Task,
@@ -17,6 +18,7 @@ interface CreateTaskModalProps {
   defaultStatus: TaskStatus;
   tasks: Task[];
   agents: BoardAgent[];
+  workflows: BoardWorkflow[];
   isMutating: boolean;
   errorMessage: string | null;
   onClose: () => void;
@@ -31,6 +33,7 @@ export function CreateTaskModal({
   defaultStatus,
   tasks,
   agents,
+  workflows,
   isMutating,
   errorMessage,
   onClose,
@@ -41,11 +44,13 @@ export function CreateTaskModal({
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [status, setStatus] = useState<TaskStatus>(defaultStatus);
   const [assignedAgent, setAssignedAgent] = useState("");
+  const [workflowId, setWorkflowId] = useState("");
+  const [parentTaskId, setParentTaskId] = useState("");
   const [dependencies, setDependencies] = useState<string[]>([]);
 
   const toggleDependency = (taskId: string) => {
     setDependencies((prev) =>
-      prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId]
+      prev.includes(taskId) ? prev.filter((id) => id !== taskId) : [...prev, taskId],
     );
   };
 
@@ -58,6 +63,9 @@ export function CreateTaskModal({
       priority,
       status,
       assignedAgent: assignedAgent || null,
+      assignedAgents: assignedAgent ? [assignedAgent] : [],
+      workflowId: workflowId || null,
+      parentTaskId: parentTaskId || null,
       dependencies,
     });
   };
@@ -68,7 +76,7 @@ export function CreateTaskModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl"
+        className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
@@ -85,7 +93,7 @@ export function CreateTaskModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4">
+        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4 overflow-y-auto flex-1">
           <div className="space-y-1.5">
             <label className={labelClass}>Title *</label>
             <input
@@ -131,28 +139,61 @@ export function CreateTaskModal({
                 onChange={(e) => setStatus(e.target.value as TaskStatus)}
                 className={selectClass}
               >
-                {TASK_COLUMNS.filter((c) => c.status !== "done" && c.status !== "failed").map(
+                {TASK_COLUMNS.filter((c) => c.id !== "done" && c.id !== "failed").map(
                   (c) => (
-                    <option key={c.status} value={c.status}>
+                    <option key={c.targetStatus} value={c.targetStatus}>
                       {c.label}
                     </option>
-                  )
+                  ),
                 )}
               </select>
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className={labelClass}>Assign Agent</label>
+              <select
+                value={assignedAgent}
+                onChange={(e) => setAssignedAgent(e.target.value)}
+                className={selectClass}
+              >
+                <option value="">Unassigned</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.name}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className={labelClass}>Workflow (Optional)</label>
+              <select
+                value={workflowId}
+                onChange={(e) => setWorkflowId(e.target.value)}
+                className={selectClass}
+              >
+                <option value="">No workflow selected</option>
+                {workflows.map((wf) => (
+                  <option key={wf.id} value={wf.id}>
+                    {wf.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
-            <label className={labelClass}>Assign Agent</label>
+            <label className={labelClass}>Parent Task (Optional)</label>
             <select
-              value={assignedAgent}
-              onChange={(e) => setAssignedAgent(e.target.value)}
+              value={parentTaskId}
+              onChange={(e) => setParentTaskId(e.target.value)}
               className={selectClass}
             >
-              <option value="">Unassigned</option>
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.name}>
-                  {agent.name} — {agent.role}
+              <option value="">None (Top-level task)</option>
+              {tasks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
                 </option>
               ))}
             </select>
@@ -163,7 +204,7 @@ export function CreateTaskModal({
               <Link2 className="h-3 w-3" />
               Dependencies ({dependencies.length})
             </label>
-            <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
+            <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
               {tasks.length === 0 && (
                 <p className="px-1 py-2 text-xs text-zinc-600">No other tasks to depend on yet.</p>
               )}
@@ -193,7 +234,7 @@ export function CreateTaskModal({
             </p>
           )}
 
-          <div className="flex justify-end gap-2 pt-1">
+          <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800/60">
             <Button
               type="button"
               variant="ghost"

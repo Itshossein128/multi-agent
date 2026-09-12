@@ -1,19 +1,16 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import Link from "next/link";
 import {
   AlertOctagon,
-  Layers,
-  Plus,
-  Radio,
+  GitBranch,
   RefreshCw,
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
+  ColumnId,
   DEP_GATED_STATUSES,
   TASK_COLUMNS,
   TASK_PRIORITIES,
@@ -21,6 +18,7 @@ import {
   TaskPriority,
   TaskStatus,
   canMoveStatus,
+  getColumnForStatus,
   getDependencyBlockers,
 } from "@/lib/taskStatus";
 import { useTasksQuery, CreateTaskInput, TaskRequestError } from "@/hooks/useTasksQuery";
@@ -34,30 +32,34 @@ export default function TaskBoardPage() {
   const {
     tasks,
     agents,
+    workflows,
     isLoading,
     isError,
     refetch,
-    isFetching,
     isMutating,
     createTask,
     moveTask,
     updateTask,
+    startTask,
     retryTask,
     setTaskPaused,
     cancelTask,
+    deleteTask,
     mutations,
   } = useTasksQuery();
 
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "all">("all");
   const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [workflowFilter, setWorkflowFilter] = useState<string>("all");
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalDefaultStatus, setModalDefaultStatus] = useState<TaskStatus>("todo");
+  const [modalDefaultStatus, setModalDefaultStatus] = useState<TaskStatus>("backlog");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const workflowsById = useMemo(() => new Map(workflows.map((w) => [w.id, w.name])), [workflows]);
 
   const filteredTasks = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -70,16 +72,24 @@ export default function TaskBoardPage() {
         return false;
       }
       if (priorityFilter !== "all" && task.priority !== priorityFilter) return false;
-      if (agentFilter !== "all" && task.assignedAgent !== agentFilter) return false;
+      if (agentFilter !== "all") {
+        const matchesAgent =
+          task.assignedAgent === agentFilter ||
+          (task.assignedAgents && task.assignedAgents.includes(agentFilter));
+        if (!matchesAgent) return false;
+      }
+      if (workflowFilter !== "all" && task.workflowId !== workflowFilter) return false;
       return true;
     });
-  }, [tasks, search, priorityFilter, agentFilter]);
+  }, [tasks, search, priorityFilter, agentFilter, workflowFilter]);
 
-  const tasksByStatus = useMemo(() => {
-    const grouped = new Map<TaskStatus, Task[]>();
-    for (const column of TASK_COLUMNS) grouped.set(column.status, []);
+  // Separate UI columns from domain status
+  const tasksByColumn = useMemo(() => {
+    const grouped = new Map<ColumnId, Task[]>();
+    for (const column of TASK_COLUMNS) grouped.set(column.id, []);
     for (const task of filteredTasks) {
-      grouped.get(task.status)?.push(task);
+      const colId = getColumnForStatus(task.status);
+      grouped.get(colId)?.push(task);
     }
     for (const list of grouped.values()) {
       list.sort((a, b) => {
@@ -93,7 +103,16 @@ export default function TaskBoardPage() {
 
   const detailTask = detailTaskId ? tasksById.get(detailTaskId) ?? null : null;
 
-  const mutationError = [mutations.move, mutations.create, mutations.update, mutations.retry, mutations.pause, mutations.cancel]
+  const mutationError = [
+    mutations.move,
+    mutations.create,
+    mutations.update,
+    mutations.start,
+    mutations.retry,
+    mutations.pause,
+    mutations.cancel,
+    mutations.delete,
+  ]
     .map((m) => m.error)
     .find((e): e is Error => Boolean(e));
 
@@ -104,9 +123,11 @@ export default function TaskBoardPage() {
     mutations.move.reset();
     mutations.create.reset();
     mutations.update.reset();
+    mutations.start.reset();
     mutations.retry.reset();
     mutations.pause.reset();
     mutations.cancel.reset();
+    mutations.delete.reset();
   };
 
   const handleMove = async (taskId: string, toStatus: TaskStatus) => {
@@ -115,7 +136,7 @@ export default function TaskBoardPage() {
     if (!task || task.status === toStatus) return;
     if (!canMoveStatus(task.status, toStatus)) {
       setActionError(
-        `Invalid transition: ${task.status.replace("_", " ")} → ${toStatus.replace("_", " ")}`
+        `Invalid transition: ${task.status.replace("_", " ")} → ${toStatus.replace("_", " ")}`,
       );
       return;
     }
@@ -125,7 +146,7 @@ export default function TaskBoardPage() {
         setActionError(
           `"${task.title}" is blocked by unfinished dependencies: ${blockers
             .map((b) => `"${b.title}"`)
-            .join(", ")}`
+            .join(", ")}`,
         );
         return;
       }
@@ -139,13 +160,33 @@ export default function TaskBoardPage() {
     }
   };
 
+  const handleStart = async (task: Task) => {
+    setActionError(null);
+    const blockers = getDependencyBlockers(task, tasksById);
+    if (blockers.length > 0) {
+      setActionError(
+        `Cannot start: blocked by unfinished dependencies: ${blockers
+          .map((b) => `"${b.title}"`)
+          .join(", ")}`,
+      );
+      return;
+    }
+    try {
+      await startTask(task.id);
+    } catch (err) {
+      if (err instanceof TaskRequestError) {
+        setActionError(err.message);
+      }
+    }
+  };
+
   const handleCreate = async (input: CreateTaskInput) => {
     setActionError(null);
     try {
       await createTask(input);
       setModalOpen(false);
     } catch {
-      // Error is surfaced through mutations.create.error -> bannerError
+      // Error surfaced through mutations.create.error -> bannerError
     }
   };
 
@@ -153,6 +194,15 @@ export default function TaskBoardPage() {
     setActionError(null);
     try {
       await cancelTask(task.id);
+    } catch {
+      // surfaced via banner
+    }
+  };
+
+  const handleDeleteTask = async (task: Task) => {
+    setActionError(null);
+    try {
+      await deleteTask(task.id);
       if (detailTaskId === task.id) setDetailTaskId(null);
     } catch {
       // surfaced via banner
@@ -183,7 +233,7 @@ export default function TaskBoardPage() {
             <AlertOctagon className="h-8 w-8 text-red-400" />
             <p className="text-sm font-medium text-zinc-200">Could not load the task board</p>
             <p className="text-xs text-zinc-500">
-              The /api/tasks endpoint is unreachable. Is the web server running?
+              The /api/tasks endpoint is unreachable. Is the server running?
             </p>
             <Button size="sm" onClick={() => refetch()} className="cursor-pointer">
               Retry
@@ -196,8 +246,6 @@ export default function TaskBoardPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-      {/* Header managed by layout */}
-
       {/* Filter bar */}
       <div className="mx-auto w-full max-w-[1800px] px-4 pt-4 lg:px-8">
         <div className="flex flex-wrap items-center gap-2.5">
@@ -239,7 +287,20 @@ export default function TaskBoardPage() {
             <option value="">Unassigned</option>
           </select>
 
-          <span className="text-[11px] text-zinc-500">
+          <select
+            value={workflowFilter}
+            onChange={(e) => setWorkflowFilter(e.target.value)}
+            className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none"
+          >
+            <option value="all">All workflows</option>
+            {workflows.map((wf) => (
+              <option key={wf.id} value={wf.id}>
+                {wf.name}
+              </option>
+            ))}
+          </select>
+
+          <span className="text-[11px] text-zinc-500 ml-auto">
             Drag cards between columns · click a card for details
           </span>
         </div>
@@ -267,14 +328,16 @@ export default function TaskBoardPage() {
         <div className="flex gap-4 overflow-x-auto pb-4">
           {TASK_COLUMNS.map((config) => (
             <TaskBoardColumn
-              key={config.status}
+              key={config.id}
               config={config}
-              tasks={tasksByStatus.get(config.status) ?? []}
+              tasks={tasksByColumn.get(config.id) ?? []}
               tasksById={tasksById}
+              workflowsById={workflowsById}
               isMutating={isMutating}
               draggingTaskId={draggingTaskId}
               onOpenTask={(task) => setDetailTaskId(task.id)}
               onMoveTask={handleMove}
+              onStartTask={handleStart}
               onPauseToggle={(task) => {
                 setActionError(null);
                 setTaskPaused({ taskId: task.id, paused: !task.paused });
@@ -292,12 +355,13 @@ export default function TaskBoardPage() {
         </div>
       </main>
 
-      {/* Create Task Modal (unmounted when closed so form state resets) */}
+      {/* Create Task Modal */}
       {modalOpen && (
         <CreateTaskModal
           defaultStatus={modalDefaultStatus}
           tasks={tasks}
           agents={agents}
+          workflows={workflows}
           isMutating={mutations.create.isPending}
           errorMessage={mutations.create.error?.message ?? null}
           onClose={() => {
@@ -308,17 +372,19 @@ export default function TaskBoardPage() {
         />
       )}
 
-      {/* Task Detail Panel (keyed by task so switching tasks reseeds the form) */}
+      {/* Task Detail Panel */}
       {detailTask && (
         <TaskDetailPanel
           key={detailTask.id}
           task={detailTask}
           tasks={tasks}
           agents={agents}
+          workflows={workflows}
           isMutating={isMutating}
           errorMessage={
             actionError ??
             mutations.update.error?.message ??
+            mutations.start.error?.message ??
             mutations.retry.error?.message ??
             null
           }
@@ -328,6 +394,7 @@ export default function TaskBoardPage() {
             await updateTask(input);
           }}
           onMove={handleMove}
+          onStart={handleStart}
           onPauseToggle={(task) => {
             setActionError(null);
             setTaskPaused({ taskId: task.id, paused: !task.paused });
@@ -337,6 +404,7 @@ export default function TaskBoardPage() {
             retryTask(task.id);
           }}
           onCancel={handleCancelTask}
+          onDelete={handleDeleteTask}
         />
       )}
     </div>

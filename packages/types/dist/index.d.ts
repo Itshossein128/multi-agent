@@ -206,6 +206,7 @@ export interface CreateEdgeInput {
 }
 export declare function createEdge(input: CreateEdgeInput): WorkflowEdge;
 export declare function createEmptyDefinition(name?: string): WorkflowDefinition;
+export declare function createSingleAgentWorkflow(agent: AgentRecord, name?: string): WorkflowDefinition;
 export declare function nodeConfig<T extends WorkflowNodeConfig>(node: WorkflowNode): T;
 /** Remove only this tool's node instances and their incident edges. */
 export declare function removeToolNodes(workflow: WorkflowDefinition, toolId: string): WorkflowDefinition;
@@ -264,3 +265,38 @@ export interface RunEvent {
     sequence: number;
     payload: Record<string, unknown>;
 }
+export type Phase2TaskStatus = "backlog" | "ready" | "queued" | "running" | "blocked" | "waiting_for_human" | "completed" | "failed" | "cancelled";
+export type LegacyTaskStatus = "todo" | "planning" | "in_progress" | "waiting_tool" | "review" | "done";
+export type TaskStatus = Phase2TaskStatus | LegacyTaskStatus;
+export type TaskPriority = "high" | "medium" | "low";
+export interface TaskRecord {
+    id: string;
+    title: string;
+    description: string;
+    priority: TaskPriority;
+    status: TaskStatus;
+    assignedAgent: string | null;
+    assignedAgents: string[];
+    workflowId?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    parentTaskId?: string | null;
+    dependencies: string[];
+    runId?: string | null;
+    output: string | null;
+    lastError?: string | null;
+    retryCount: number;
+    paused: boolean;
+    metadata: Record<string, unknown>;
+    ownerId?: string;
+    tenantId?: string;
+}
+export declare const LEGACY_TO_CANONICAL_STATUS: Record<LegacyTaskStatus, Phase2TaskStatus>;
+export declare function toCanonicalStatus(status: TaskStatus): Phase2TaskStatus;
+export declare const CANONICAL_STATUS_TRANSITIONS: Record<Phase2TaskStatus, Phase2TaskStatus[]>;
+export declare const DEP_GATED_CANONICAL_STATUSES: Phase2TaskStatus[];
+export declare function canTransitionStatus(from: TaskStatus, to: TaskStatus): boolean;
+export declare function isStatusDependencyGated(status: TaskStatus): boolean;
+export declare function isCompletedStatus(status: TaskStatus): boolean;

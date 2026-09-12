@@ -32,6 +32,9 @@ const LEGACY_SCHEMA_REQUIREMENTS: Record<string, LegacySchemaRequirements> = {
   "005_users.sql": {
     studio_users: ["id", "email", "password_hash", "tenant_id", "status", "created_at", "updated_at"],
   },
+  "006_task_domain.sql": {
+    studio_tasks: ["workflow_id", "assigned_agents", "started_at", "completed_at", "parent_task_id", "run_id", "last_error", "metadata"],
+  },
 };
 
 async function reconcileLegacySchema(client: { query(text: string, values?: any[]): Promise<{ rows: any[] }> }, migrationName: string): Promise<boolean> {
@@ -60,7 +63,7 @@ async function reconcileLegacySchema(client: { query(text: string, values?: any[
   if (!complete) {
     // Later migrations are intentionally idempotent and can finish a schema
     // that is still being created in this same transaction.
-    if (migrationName === "004_ownership.sql" || migrationName === "005_users.sql") return false;
+    if (migrationName === "004_ownership.sql" || migrationName === "005_users.sql" || migrationName === "006_task_domain.sql") return false;
     throw new Error(`Studio migration ${migrationName} found an existing but incomplete schema; inspect it and create a reviewed migration before retrying`);
   }
   return true;
@@ -69,7 +72,7 @@ async function reconcileLegacySchema(client: { query(text: string, values?: any[
 /** Explicit operator action only. Never called from a store constructor or server startup. */
 export async function runStudioMigrations(pool: PgPool, options: { directory?: string } = {}): Promise<string[]> {
   const directory = options.directory ?? resolve(process.cwd(), "infrastructure/studio/migrations");
-  const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql", "004_ownership.sql", "005_users.sql"];
+  const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql", "004_ownership.sql", "005_users.sql", "006_task_domain.sql"];
   const migrations = await Promise.all(names.map(async (name) => {
     const sql = await readFile(resolve(directory, name), "utf8");
     return { name, sql, checksum: createHash("sha256").update(sql).digest("hex") };
