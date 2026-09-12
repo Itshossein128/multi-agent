@@ -6,6 +6,7 @@ import type { Memory, MemoryKind, MemoryNamespace } from "@multi-agent/types";
 import { memoryService } from "@/services/memoryService";
 import { Button } from "@/components/ui/button";
 import { Field, fieldClass, Section } from "@/components/agents/AgentFields";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 const TOKEN_KEY = "agent-studio.memory-token.v1";
 const SCOPES: MemoryNamespace["scope"][] = ["agent", "workflow", "project", "organization", "user"];
@@ -82,7 +83,7 @@ export default function MemoryExplorer() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setExpandedId(expandedId === memory.id ? null : memory.id)}>
             <p className="break-words text-sm font-medium">{memory.subject || memory.title || memory.content.slice(0, 80)}</p>
-            <p className="mt-1 text-xs text-zinc-400">{memory.kind} · {memory.status} · importance {memory.importance} · created {memory.createdAt}</p>
+            <p className="mt-1 text-xs text-zinc-400">{memory.kind} · {memory.status} · importance {memory.importance} · created {formatDateTime(memory.createdAt)}</p>
             <p className="text-xs text-zinc-500">Source: {memory.source.type}{memory.source.agentId ? ` · agent ${memory.source.agentId}` : ""}{memory.source.runId ? ` · run ${memory.source.runId}` : ""}{memory.source.workflowId ? ` · workflow ${memory.source.workflowId}` : ""}</p>
           </button>
           <Button variant="destructive" size="sm" onClick={() => void remove(memory.id)}>Delete</Button>

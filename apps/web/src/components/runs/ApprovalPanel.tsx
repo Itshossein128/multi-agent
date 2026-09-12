@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ApprovalDecision, ApprovalRequest } from "@multi-agent/types";
 import { runService } from "@/services/runService";
 import { Button } from "@/components/ui/button";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 /** Pending human-approval requests for a run, with Approve/Reject actions. */
 export function ApprovalPanel({ runId, approvals, onResolved }: { runId: string; approvals: ApprovalRequest[]; onResolved?: () => void }) {
@@ -29,7 +30,7 @@ function ApprovalCard({ runId, approval, onResolved }: { runId: string; approval
 
   return <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 text-sm">
     <p className="text-zinc-100">{approval.message || "Approval requested."}</p>
-    <p className="text-xs text-zinc-500">Node: {approval.nodeId} · Requested: {approval.requestedAt}</p>
+    <p className="text-xs text-zinc-500">Node: {approval.nodeId} · Requested: {formatDateTime(approval.requestedAt)}</p>
     {approval.context !== undefined && <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-zinc-900 p-2 text-xs text-zinc-400">{JSON.stringify(approval.context, null, 2)}</pre>}
     <textarea rows={2} placeholder="Optional response / notes" className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-2 focus:outline-indigo-400" value={response} onChange={(event) => setResponse(event.target.value)} />
     <div className="flex gap-2">

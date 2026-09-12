@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { RunStatus } from "@multi-agent/types";
 import { runService } from "@/services/runService";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 const STATUSES: Array<RunStatus | ""> = ["", "queued", "running", "waiting_for_human", "completed", "failed", "cancelled"];
 
@@ -62,7 +63,7 @@ export default function RunsHistoryPage() {
             <li key={run.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
               <div className="min-w-0 flex-1">
                 <Link href={`/runs/${encodeURIComponent(run.id)}`} className="text-sm font-medium text-indigo-300 underline">{run.id}</Link>
-                <p className="text-[11px] text-zinc-500">{run.workflowId}{run.taskId ? ` · task ${run.taskId}` : ""} · {run.startedAt}</p>
+                <p className="text-[11px] text-zinc-500">{run.workflowId}{run.taskId ? ` · task ${run.taskId}` : ""} · {formatDateTime(run.startedAt)}</p>
               </div>
               <span className="rounded border border-zinc-700 px-2 py-0.5 text-[10px] uppercase tracking-wider text-zinc-300">{run.status}</span>
               <Link href={`/runs/${encodeURIComponent(run.id)}`} className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800">Open</Link>

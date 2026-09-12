@@ -8,6 +8,7 @@ import { CompletedAndCostSection } from "@/components/dashboard/CompletedAndCost
 import { GraphFlowPreview } from "@/components/dashboard/GraphFlowPreview";
 import { useStudioStore } from "@/store/useStudioStore";
 import { ShieldCheck } from "lucide-react";
+import { formatTime } from "@/lib/formatDateTime";
 
 export default function DashboardPage() {
   const { isLive, lastUpdated } = useStudioStore();
@@ -48,7 +49,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-emerald-500" />
             <span>Multi-Agent Platform • Self-Hosted Studio</span>
-            {lastUpdated && <span>(Synced: {new Date(lastUpdated).toLocaleTimeString()})</span>}
+            {lastUpdated && <span>(Synced: {formatTime(lastUpdated)})</span>}
           </div>
           <div className="flex items-center gap-4 text-zinc-400">
             <span>LangGraph Engine</span>

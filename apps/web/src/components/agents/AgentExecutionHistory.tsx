@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ExecutionTimeline } from "@/components/runs/ExecutionTimeline";
 import { useAgentRunEvents } from "@/hooks/useAgentDetail";
 import { runDuration } from "@/lib/agentConfiguration";
+import { formatDateTime } from "@/lib/formatDateTime";
 import { Section } from "./AgentFields";
 
 export function AgentExecutionHistory({ agentId, runs, navigate }: { agentId: string; runs: Run[]; navigate: (url: string) => void }) {
@@ -25,7 +26,7 @@ export function AgentExecutionHistory({ agentId, runs, navigate }: { agentId: st
       <thead className="text-zinc-400"><tr>{["Run", "Workflow", "Run status", "Started", "Run duration"].map((label) => <th key={label} className="p-2 font-medium">{label}</th>)}</tr></thead>
       <tbody>{runs.map((item) => <tr key={item.id} className={item.id === runId ? "bg-indigo-950/40" : "border-t border-zinc-800"}>
         <td className="p-2"><button className="text-indigo-300 underline underline-offset-4" aria-pressed={item.id === runId} onClick={() => setSelection(item.id)}>{item.id}</button></td>
-        <td className="p-2">{item.workflowId}</td><td className="p-2">{item.status}</td><td className="whitespace-nowrap p-2">{item.startedAt}</td><td className="p-2">{runDuration(item.startedAt, item.completedAt)}</td>
+        <td className="p-2">{item.workflowId}</td><td className="p-2">{item.status}</td><td className="whitespace-nowrap p-2">{formatDateTime(item.startedAt)}</td><td className="p-2">{runDuration(item.startedAt, item.completedAt)}</td>
       </tr>)}</tbody>
     </table></div>}
     {run && <div className="space-y-4 border-t border-zinc-800 pt-4">

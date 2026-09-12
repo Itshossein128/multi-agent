@@ -9,6 +9,7 @@ import { useToolDetail } from "@/hooks/useToolDetail";
 import { Field, fieldClass, Section } from "@/components/agents/AgentFields";
 import { ToolAssignedAgents, ToolWorkflowUsage } from "./ToolResources";
 import { ToolTestPanel } from "./ToolTestPanel";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 const sections = ["Overview", "Configuration", "Agents", "Workflows", "Test"] as const;
 
@@ -81,7 +82,7 @@ export function ToolDetail({ toolId }: { toolId: string }) {
               }}>Delete</Button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-300"><span>Category: {tool.category}</span><span>Impact: {tool.impact}</span><span>{tool.enabled === false ? "Disabled" : "Enabled"}</span><span>Updated: {tool.updatedAt}</span></div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-300"><span>Category: {tool.category}</span><span>Impact: {tool.impact}</span><span>{tool.enabled === false ? "Disabled" : "Enabled"}</span><span>Updated: {formatDateTime(tool.updatedAt)}</span></div>
         </header>
         {dirty && <p role="status" className="text-sm text-amber-200">Unsaved changes</p>}
         {notice && <p role="status" className="text-sm text-emerald-300">{notice}</p>}
@@ -89,9 +90,11 @@ export function ToolDetail({ toolId }: { toolId: string }) {
         <nav aria-label="Tool sections" className="flex flex-wrap gap-2">{sections.map((name) => <Button key={name} variant={section === name ? "secondary" : "ghost"} aria-pressed={section === name} onClick={() => setSection(name)}>{name}</Button>)}</nav>
         {section === "Overview" && <div className="grid gap-5 lg:grid-cols-2">
           <Section title="Tool overview"><dl className="grid grid-cols-2 gap-4 text-sm">
-            {Object.entries({ Purpose: tool.description || "Not specified", Category: tool.category, Impact: tool.impact, Lifecycle: tool.enabled === false ? "Disabled" : "Enabled",
+            {Object.entries({
+              Purpose: tool.description || "Not specified", Category: tool.category, Impact: tool.impact, Lifecycle: tool.enabled === false ? "Disabled" : "Enabled",
               "Configuration fields": Object.keys(tool.configuration).length,
-              "Assigned agents": detail.agents.data ? detail.agents.data.filter((agent) => agent.tools.includes(toolId)).length : "Unavailable" }).map(([label, value]) => <div key={label}><dt className="text-zinc-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
+              "Assigned agents": detail.agents.data ? detail.agents.data.filter((agent) => agent.tools.includes(toolId)).length : "Unavailable"
+            }).map(([label, value]) => <div key={label}><dt className="text-zinc-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
           </dl></Section>
           <Section title="Schemas"><p className="text-xs uppercase tracking-widest text-zinc-500">Input</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-sm text-zinc-300">{JSON.stringify(tool.inputSchema, null, 2)}</pre><p className="mt-3 text-xs uppercase tracking-widest text-zinc-500">Output</p><pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words text-sm text-zinc-300">{JSON.stringify(tool.outputSchema, null, 2)}</pre></Section>
         </div>}

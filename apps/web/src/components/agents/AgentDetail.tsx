@@ -13,6 +13,7 @@ import { AgentBackendPanel, ExecutionPolicyPanel } from "./AgentBackendPanel";
 import { AgentToolsPanel, AgentWorkflowUsage } from "./AgentResources";
 import { AgentExecutionHistory } from "./AgentExecutionHistory";
 import { Field, fieldClass, Section } from "./AgentFields";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 const sections = ["Overview", "Configuration", "Backend", "Tools", "Memory", "Workflows", "Executions", "Test"] as const;
 
@@ -24,9 +25,9 @@ export function AgentDetail({ agentId }: { agentId: string }) {
   const lastActivity = latestEvents.data?.filter((event) => event.type.startsWith("agent.") || event.type.startsWith("human_approval.")).at(-1);
   const runtimeStatus = lastActivity?.type === "agent.failed" ? "failed"
     : lastActivity?.type === "agent.completed" ? "idle"
-    : lastActivity?.type === "human_approval.requested" && latestRun?.status === "waiting_for_human" ? "waiting"
-    : lastActivity?.type === "agent.started" && latestRun?.status === "running" ? "running"
-    : "unknown";
+      : lastActivity?.type === "human_approval.requested" && latestRun?.status === "waiting_for_human" ? "waiting"
+        : lastActivity?.type === "agent.started" && latestRun?.status === "running" ? "running"
+          : "unknown";
   const [draft, setDraft] = useState<AgentRecord | null>(null);
   const [editing, setEditing] = useState(false);
   const [section, setSection] = useState<typeof sections[number]>("Overview");
@@ -94,7 +95,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
               }}>Delete</Button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-300"><span>Last observed agent status: {runtimeStatus}</span><span>Backend: {agent.backend.type} / {agent.backend.provider}</span><span>Model: {agent.backend.model || "Runtime default"}</span><span>Updated: {agent.updatedAt}</span><span>Last execution: {latestRun?.startedAt ?? (detail.runs.isError ? "Unavailable" : detail.runs.isPending ? "Loading…" : "None recorded")}</span></div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-300"><span>Last observed agent status: {runtimeStatus}</span><span>Backend: {agent.backend.type} / {agent.backend.provider}</span><span>Model: {agent.backend.model || "Runtime default"}</span><span>Updated: {formatDateTime(agent.updatedAt)}</span><span>Last execution: {latestRun?.startedAt ? formatDateTime(latestRun.startedAt) : (detail.runs.isError ? "Unavailable" : detail.runs.isPending ? "Loading…" : "None recorded")}</span></div>
         </header>
         {dirty && <p role="status" className="text-sm text-amber-200">Unsaved changes</p>}
         {notice && <p role="status" className="text-sm text-emerald-300">{notice}</p>}
@@ -102,9 +103,11 @@ export function AgentDetail({ agentId }: { agentId: string }) {
         <nav aria-label="Agent sections" className="flex flex-wrap gap-2">{sections.map((name) => <Button key={name} variant={section === name ? "secondary" : "ghost"} aria-pressed={section === name} onClick={() => setSection(name)}>{name}</Button>)}</nav>
         {section === "Overview" && <div className="grid gap-5 lg:grid-cols-2">
           <Section title="Agent overview"><dl className="grid grid-cols-2 gap-4 text-sm">
-            {Object.entries({ Purpose: agent.description || "Not specified", Backend: `${agent.backend.type} / ${agent.backend.provider}`, Model: agent.backend.model || "Runtime default", "Assigned tools": agent.tools.length,
+            {Object.entries({
+              Purpose: agent.description || "Not specified", Backend: `${agent.backend.type} / ${agent.backend.provider}`, Model: agent.backend.model || "Runtime default", "Assigned tools": agent.tools.length,
               "Saved workflows": detail.workflows.data ? detail.workflows.data.filter((workflow) => workflow.nodes.some((node) => node.type === "agent" && (node.config as { agentId?: string }).agentId === agentId)).length : "Unavailable",
-              "Last run status": detail.runs.isError ? "Unavailable" : detail.runs.data?.[0]?.status ?? "No executions", "Last run duration": detail.runs.data?.[0] ? runDuration(detail.runs.data[0].startedAt, detail.runs.data[0].completedAt) : "Not available", Memory: agent.memory?.enabled ? `Run / ${agent.memory.scope} / ${agent.memory.mode}` : "Disabled", Lifecycle: agent.enabled === false ? "Disabled" : "Enabled" }).map(([label, value]) => <div key={label}><dt className="text-zinc-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
+              "Last run status": detail.runs.isError ? "Unavailable" : detail.runs.data?.[0]?.status ?? "No executions", "Last run duration": detail.runs.data?.[0] ? runDuration(detail.runs.data[0].startedAt, detail.runs.data[0].completedAt) : "Not available", Memory: agent.memory?.enabled ? `Run / ${agent.memory.scope} / ${agent.memory.mode}` : "Disabled", Lifecycle: agent.enabled === false ? "Disabled" : "Enabled"
+            }).map(([label, value]) => <div key={label}><dt className="text-zinc-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
           </dl></Section>
           <Section title="System prompt"><pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm text-zinc-300">{agent.systemPrompt || "No system prompt configured."}</pre></Section>
           <Section title="Backend health"><p className="text-sm">Unknown</p><p className="text-sm text-zinc-400">Runtime diagnostics and authentication status are not exposed by the current server. Availability has not been checked.</p></Section>

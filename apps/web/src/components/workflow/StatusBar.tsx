@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { cn } from "@/lib/utils";
+import { formatTime } from "@/lib/formatDateTime";
 
 export function StatusBar() {
   const definition = useWorkflowStore((s) => s.definition);
@@ -27,7 +28,7 @@ export function StatusBar() {
         : isDirty
           ? "Unsaved changes"
           : lastSavedAt
-            ? `Saved · ${new Date(lastSavedAt).toLocaleTimeString()}`
+            ? `Saved · ${formatTime(lastSavedAt)}`
             : "Ready";
 
   return (

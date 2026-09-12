@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Plus,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 export function QueueAndFailedSection() {
   const { queue, failedTasks } = useStudioStore();
@@ -153,7 +154,7 @@ export function QueueAndFailedSection() {
                       <span className="text-xs text-zinc-400 font-medium">
                         Target: {task.agentRole}
                       </span>
-                      <span className="text-[11px] text-zinc-600">• {task.queuedAt}</span>
+                      <span className="text-[11px] text-zinc-600">• {formatDateTime(task.queuedAt)}</span>
                     </div>
                     <p className="text-sm font-medium text-zinc-200 truncate">
                       {task.title}
@@ -223,7 +224,7 @@ export function QueueAndFailedSection() {
                           Attempt {task.retryCount} Failed
                         </Badge>
                         <span className="text-xs text-zinc-400">{task.agent}</span>
-                        <span className="text-[11px] text-zinc-500">• {task.failedAt}</span>
+                        <span className="text-[11px] text-zinc-500">• {formatDateTime(task.failedAt)}</span>
                       </div>
                       <h5 className="text-sm font-semibold text-zinc-200 mt-1">
                         {task.title}

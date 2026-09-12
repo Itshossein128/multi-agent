@@ -10,6 +10,7 @@ import {
   Clock,
   Sparkles,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 export function CompletedAndCostSection() {
   const { completedTasks, tokenMetrics, timeFilter, setTimeFilter } = useStudioStore();
@@ -49,11 +50,10 @@ export function CompletedAndCostSection() {
               <button
                 key={filter}
                 onClick={() => setTimeFilter(filter)}
-                className={`px-3 py-1 text-xs font-medium rounded capitalize transition-all cursor-pointer ${
-                  timeFilter === filter
+                className={`px-3 py-1 text-xs font-medium rounded capitalize transition-all cursor-pointer ${timeFilter === filter
                     ? "bg-purple-600 text-white shadow-sm"
                     : "text-zinc-400 hover:text-zinc-200"
-                }`}
+                  }`}
               >
                 {filter}
               </button>
@@ -80,7 +80,7 @@ export function CompletedAndCostSection() {
                       <span className="text-xs font-semibold text-zinc-300">
                         {task.agent}
                       </span>
-                      <span className="text-[11px] text-zinc-500">• {task.completedAt}</span>
+                      <span className="text-[11px] text-zinc-500">• {formatDateTime(task.completedAt)}</span>
                       <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500">
                         <Clock className="h-3 w-3" /> {task.duration}
                       </span>
