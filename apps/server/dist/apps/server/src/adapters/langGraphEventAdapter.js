@@ -11,10 +11,12 @@ class LangGraphEventAdapter {
         const nodeId = event.params?.node ?? event.params?.namespace?.[0];
         const node = workflow.nodes.find((candidate) => candidate.id === nodeId);
         const payload = redact(event.params?.data);
-        const eventType = event.method === "tasks" ? "node.completed" : "log";
+        // Node lifecycle is emitted by the compiler wrapper, which has the actual
+        // node identity and can also emit failures/edge traversals. LangGraph task
+        // frames remain safe diagnostic log events here to avoid duplicate
+        // node.completed entries and unstable task IDs in the public contract.
+        const eventType = "log";
         const result = [{ id: (0, types_1.uid)("event"), runId, type: eventType, timestamp: (0, types_1.nowIso)(), nodeId, agentId: node?.type === "agent" ? node.config.agentId ?? undefined : undefined, sequence: 0, payload: { method: event.method ?? "unknown", data: payload } }];
-        if (event.method === "tasks" && node?.type === "agent")
-            result.unshift({ ...result[0], id: (0, types_1.uid)("event"), type: "agent.completed" });
         return result;
     }
 }

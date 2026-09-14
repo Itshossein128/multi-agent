@@ -25,11 +25,13 @@ export declare class RunExecutor {
     private pausedContext;
     constructor(store?: RunStoreContract, agentRuntime?: Pick<AgentRuntime, "execute">, checkpointer?: CompileOptions["checkpointer"], telemetry?: ExecutionTelemetry, guardrails?: RuntimeGuardrails, toolRuntime?: Pick<ToolRuntime, "execute"> | undefined);
     getStore(): RunStoreContract;
+    private appendAgentEvent;
     /** Restore in-memory pause maps after a durable hydrate so waiting runs can resume. */
     restorePausedRun(runId: string, context: PausedContext, checkpointer: BaseCheckpointSaver): void;
     startAgentTest(request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal): string;
     private executeAgentTest;
     start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal): string;
+    retry(runId: string, memoryAccess?: MemoryAccessContext): string;
     cancel(runId: string): boolean;
     resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest): void;
     private continueAfterApproval;

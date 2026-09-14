@@ -713,7 +713,7 @@ describe("Operational End-to-End Acceptance Test Suite", () => {
         // Timeline verification
         const events = runStore.events(runId);
         const lastEvent = events[events.length - 1];
-        expect(lastEvent.type).toBe("run.failed");
+        expect(lastEvent.type).toBe("run.cancelled");
         expect(
           String((lastEvent.payload as any)?.error || (lastEvent.payload as any)?.cancelled)
         ).toMatch(/aborted|cancelled|true/i);

@@ -52,6 +52,7 @@ export function EditorToolbar() {
   const router = useRouter();
   const definition = useWorkflowStore((s) => s.definition);
   const agents = useWorkflowStore((s) => s.agents);
+  const tools = useWorkflowStore((s) => s.tools);
   const issues = useWorkflowStore((s) => s.issues);
   const name = useWorkflowStore((s) => s.definition.name);
   const isDirty = useWorkflowStore((s) => s.isDirty);
@@ -64,8 +65,7 @@ export function EditorToolbar() {
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
-  const removeNodes = useWorkflowStore((s) => s.removeNodes);
-  const removeEdges = useWorkflowStore((s) => s.removeEdges);
+  const removeSelection = useWorkflowStore((s) => s.removeSelection);
 
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
@@ -102,10 +102,7 @@ export function EditorToolbar() {
       <ToolButton
         title="Delete selected nodes/edges (Del)"
         disabled={!hasSelection}
-        onClick={() => {
-          removeNodes(selectedNodeIds);
-          removeEdges(selectedEdgeIds);
-        }}
+        onClick={() => removeSelection(selectedNodeIds, selectedEdgeIds)}
       >
         <Trash2 className="h-4 w-4" />
       </ToolButton>
@@ -146,7 +143,7 @@ export function EditorToolbar() {
             const value = window.prompt("Input for this run", "");
             if (value === null) return;
             try {
-              const { runId } = await runService.startRun(definition, agents, { input: value });
+              const { runId } = await runService.startRun(definition, agents, { input: value }, undefined, tools);
               sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
               router.push(`/runs/${runId}`);
             } catch (error) {

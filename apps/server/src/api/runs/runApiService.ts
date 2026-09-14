@@ -66,7 +66,7 @@ export class RunApiService {
     }
     await this.ensureWorkflowAccess(body.workflow.id, principal);
     const agents = body.agents.map(migrateAgentRecord);
-    assertNoCredentials({ workflow: body.workflow, agents: body.agents });
+    assertNoCredentials({ workflow: body.workflow, agents: body.agents, tools: body.tools ?? [] });
     for (const agent of agents) await this.ensureAgentAccess(agent.id, principal);
     const needsMemory = this.hasLongTermMemory(agents);
     const access = needsMemory ? await this.resolveMemoryAccess(request) : null;
@@ -79,7 +79,7 @@ export class RunApiService {
     const entry = this.requireRun(runId);
     const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
     if (!workflow) throw new ApiError(404, "Run definition snapshot not available");
-    return { workflow, agents: entry.agentsSnapshot ?? [] };
+    return { workflow, agents: entry.agentsSnapshot ?? [], tools: entry.toolsSnapshot ?? [] };
   }
 
   approvals(runId: string) { this.requireRun(runId); return this.store.listApprovals(runId); }
@@ -103,6 +103,23 @@ export class RunApiService {
     this.requireRun(runId);
     this.executor.cancel(runId);
     return { runId, status: "cancelling" };
+  }
+
+  async retry(runId: string, request: Request, principal?: RequestPrincipal) {
+    if (!principal) throw new ApiError(401, "Authentication required.");
+    const entry = this.requireRun(runId);
+    if (entry.run.status !== "failed" && entry.run.status !== "cancelled") {
+      throw new ApiError(409, "Only failed or cancelled runs can be retried.");
+    }
+    const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot ?? [];
+    const needsMemory = this.hasLongTermMemory(agents);
+    const access = needsMemory ? await this.resolveMemoryAccess(request) : null;
+    if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required to retry this run.");
+    try {
+      return { runId: this.executor.retry(runId, access ?? undefined) };
+    } catch (error) {
+      throw new ApiError(409, error instanceof Error ? error.message : "Unable to retry run");
+    }
   }
 
   private requireRun(runId: string) {

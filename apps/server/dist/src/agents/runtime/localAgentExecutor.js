@@ -24,13 +24,17 @@ class LocalAgentExecutor {
             throw new errors_1.AgentExecutionFailedError("LocalAgentExecutor requires a local backend.");
         const backend = input.agent.backend;
         yield event("agent.started", input, { provider: backend.provider, model: backend.model });
+        const startedAt = Date.now();
+        yield event("llm.started", input, { provider: backend.provider, model: backend.model });
         try {
             const content = await this.invoke(backend, input);
+            yield event("llm.completed", input, { provider: backend.provider, model: backend.model, durationMs: Date.now() - startedAt });
             yield event("agent.output", input, { content });
             yield event("agent.completed", input, { content });
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            yield event("llm.failed", input, { provider: backend.provider, model: backend.model, error: message.slice(0, 500) });
             yield event("agent.failed", input, { error: message });
             throw new errors_1.AgentExecutionFailedError(message);
         }

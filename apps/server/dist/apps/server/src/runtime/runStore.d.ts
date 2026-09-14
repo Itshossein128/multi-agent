@@ -17,9 +17,11 @@ export interface RunEntry {
     approvalTimers: Map<string, NodeJS.Timeout>;
     workflowSnapshot?: WorkflowDefinition;
     agentsSnapshot?: AgentRecord[];
+    toolsSnapshot?: import("@multi-agent/types").ToolRecord[];
     pausedContext?: {
         workflow: WorkflowDefinition;
         agents: AgentRecord[];
+        tools?: import("@multi-agent/types").ToolRecord[];
         memoryAccess?: MemoryAccessContext;
     };
 }
@@ -35,6 +37,7 @@ export interface RunStoreContract {
     create(run: Run, memoryOwner?: MemoryOwner, snapshots?: {
         workflow?: WorkflowDefinition;
         agents?: AgentRecord[];
+        tools?: import("@multi-agent/types").ToolRecord[];
     }, principal?: RequestPrincipal): Run;
     getMemoryOwner(runId: string): MemoryOwner | undefined;
     get(runId: string): RunEntry | undefined;
@@ -54,6 +57,8 @@ export interface RunStoreContract {
     setPausedContext?(runId: string, context: RunEntry["pausedContext"] | null): void;
     getPausedContext?(runId: string): RunEntry["pausedContext"] | undefined;
     getWorkflowSnapshot?(runId: string): WorkflowDefinition | undefined;
+    getAgentSnapshot?(runId: string): AgentRecord[] | undefined;
+    getToolSnapshot?(runId: string): import("@multi-agent/types").ToolRecord[] | undefined;
     hydrate?(): Promise<void>;
     flush?(): Promise<void>;
 }
@@ -63,6 +68,7 @@ export declare class InMemoryRunStore implements RunStoreContract {
     create(run: Run, memoryOwner?: MemoryOwner, snapshots?: {
         workflow?: WorkflowDefinition;
         agents?: AgentRecord[];
+        tools?: import("@multi-agent/types").ToolRecord[];
     }, principal?: RequestPrincipal): Run;
     getMemoryOwner(runId: string): MemoryOwner | undefined;
     get(runId: string): RunEntry | undefined;
@@ -94,9 +100,12 @@ export declare class InMemoryRunStore implements RunStoreContract {
     getPausedContext(runId: string): {
         workflow: WorkflowDefinition;
         agents: AgentRecord[];
+        tools?: import("@multi-agent/types").ToolRecord[];
         memoryAccess?: MemoryAccessContext;
     } | undefined;
     getWorkflowSnapshot(runId: string): WorkflowDefinition | undefined;
+    getAgentSnapshot(runId: string): AgentRecord[] | undefined;
+    getToolSnapshot(runId: string): import("@multi-agent/types").ToolRecord[] | undefined;
 }
 /** Back-compat alias for existing imports/tests. */
 export declare class RunStore extends InMemoryRunStore {
@@ -116,6 +125,7 @@ export declare class PostgresRunStore implements RunStoreContract {
     create(run: Run, memoryOwner?: MemoryOwner, snapshots?: {
         workflow?: WorkflowDefinition;
         agents?: AgentRecord[];
+        tools?: import("@multi-agent/types").ToolRecord[];
     }, principal?: RequestPrincipal): Run;
     getMemoryOwner(runId: string): MemoryOwner | undefined;
     get(runId: string): RunEntry | undefined;
@@ -147,8 +157,11 @@ export declare class PostgresRunStore implements RunStoreContract {
     getPausedContext(runId: string): {
         workflow: WorkflowDefinition;
         agents: AgentRecord[];
+        tools?: import("@multi-agent/types").ToolRecord[];
         memoryAccess?: MemoryAccessContext;
     } | undefined;
     getWorkflowSnapshot(runId: string): WorkflowDefinition | undefined;
+    getAgentSnapshot(runId: string): AgentRecord[] | undefined;
+    getToolSnapshot(runId: string): import("@multi-agent/types").ToolRecord[] | undefined;
 }
 export {};

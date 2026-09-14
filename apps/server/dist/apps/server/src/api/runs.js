@@ -35,6 +35,7 @@ function createRunsRouter(executor = new runExecutor_1.RunExecutor(), resolveMem
     app.get("/:runId/history", (c) => c.json(service.history(c.req.param("runId"), c.req.query("agentId"))));
     app.get("/:runId", (c) => c.json(service.get(c.req.param("runId"))));
     app.post("/:runId/cancel", (c) => c.json(service.cancel(c.req.param("runId")), 202));
+    app.post("/:runId/retry", async (c) => c.json(await service.retry(c.req.param("runId"), c.req.raw, c.get("principal")), 202));
     app.get("/:runId/events", (c) => (0, eventStream_1.streamRunEvents)(c, service.store, c.req.param("runId"), Number(c.req.query("sequence") ?? c.req.header("Last-Event-ID") ?? 0) || 0));
     return { app, executor };
 }

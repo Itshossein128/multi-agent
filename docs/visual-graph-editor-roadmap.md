@@ -640,7 +640,7 @@ A user can start a workflow/task and watch execution evolve in real time, inspec
 
 # Phase 5 — Agent Management & Configuration
 
-Implemented for browser-local Studio persistence and API execution. See [agent detail implementation](agent-detail-page.md) for configuration, standalone testing, migration, regression coverage, and limits. Agent memory is bounded to one run; CLI/local executors and persistent memory remain later work.
+Implemented through the Studio execution-server boundary. See [agent detail implementation](agent-detail-page.md) for configuration, standalone testing, migration, regression coverage, durable run history, diagnostics, and limits. Agent memory is bounded to one run; persistent memory remains later work.
 
 ## Goal
 

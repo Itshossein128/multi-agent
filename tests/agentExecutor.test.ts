@@ -167,8 +167,8 @@ describe("CLI and local executors", () => {
     const events: AgentExecutionEvent[] = [];
     for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://ollama.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
     expect(fetchImpl).toHaveBeenCalledWith(new URL("http://ollama.test/api/chat"), expect.objectContaining({ method: "POST" }));
-    expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
-    expect((events[2].payload as { content: string }).content).toBe("local answer");
+    expect(events.map(event => event.type)).toEqual(["agent.started", "llm.started", "llm.completed", "agent.output", "agent.completed"]);
+    expect((events[4].payload as { content: string }).content).toBe("local answer");
   });
 
   test("uses safe non-interactive defaults for agy and includes model and prompt context", async () => {
@@ -242,7 +242,7 @@ describe("CLI and local executors", () => {
     const events: AgentExecutionEvent[] = [];
     for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://lm.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
     expect(fetchImpl).toHaveBeenCalledWith(new URL("http://lm.test/v1/chat/completions"), expect.objectContaining({ body: expect.stringContaining('"max_tokens":300') }));
-    expect((events[2].payload as { content: string }).content).toBe("LM answer");
+    expect((events[4].payload as { content: string }).content).toBe("LM answer");
   });
 
   test("blocks unapproved local-model origins before making a request", async () => {
@@ -282,10 +282,12 @@ describe("ApiAgentExecutor", () => {
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(events.map((e) => e.type)).toEqual([
       "agent.started",
+      "llm.started",
+      "llm.completed",
       "agent.output",
       "agent.completed",
     ]);
-    expect((events[2]?.payload as { content: string }).content).toBe("answer");
+    expect((events[4]?.payload as { content: string }).content).toBe("answer");
   });
 });
 

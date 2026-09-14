@@ -36,14 +36,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 /** JSON object field that only commits valid JSON. */
-function JsonField({
+function JsonField<T extends Record<string, unknown>>({
   label,
   value,
   onChange,
 }: {
   label: string;
-  value: Record<string, string | number | boolean>;
-  onChange: (next: Record<string, string | number | boolean>) => void;
+  value: T;
+  onChange: (next: T) => void;
 }) {
   const [raw, setRaw] = useState(() => JSON.stringify(value, null, 2));
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +52,7 @@ function JsonField({
     setRaw(next);
     if (next.trim() === "") {
       setError(null);
-      onChange({});
+      onChange({} as T);
       return;
     }
     try {
@@ -62,7 +62,7 @@ function JsonField({
         return;
       }
       setError(null);
-      onChange(parsed as Record<string, string | number | boolean>);
+      onChange(parsed as T);
     } catch {
       setError("Invalid JSON");
     }
@@ -702,6 +702,12 @@ function EdgeProperties({ edge }: { edge: WorkflowEdge }) {
           className={inputClass}
         />
       </Field>
+
+      <JsonField
+        label="Metadata"
+        value={edge.metadata ?? {}}
+        onChange={(metadata) => updateEdge(edge.id, { metadata })}
+      />
     </div>
   );
 }

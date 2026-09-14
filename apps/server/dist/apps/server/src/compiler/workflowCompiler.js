@@ -42,83 +42,114 @@ function compileWorkflow(definition, agents, options = {}) {
     const toolRuntime = options.toolRuntime ?? new tools_1.ToolRuntime();
     for (const node of definition.nodes) {
         graph.addNode(node.id, async (state) => {
-            if (node.type === "tool") {
-                const tool = toolsById.get(node.config.toolId ?? "");
-                if (!tool)
-                    throw new UnsupportedPhase4NodeError(node.id, node);
-                const emit = (type, payload) => options.onAgentEvent?.({ type, timestamp: (0, types_1.nowIso)(), runId, nodeId: node.id, payload });
-                emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
-                try {
-                    const value = await toolRuntime.execute(tool, asToolInput(state.lastValue ?? state.input), options.signal);
-                    emit("tool.completed", { toolId: tool.id, output: value });
-                    return { lastValue: value };
+            const emit = (type, payload = {}) => options.onAgentEvent?.({ type, timestamp: (0, types_1.nowIso)(), runId, nodeId: node.id, payload });
+            emit("node.started", { nodeType: node.type });
+            try {
+                let result;
+                if (node.type === "tool") {
+                    const tool = toolsById.get(node.config.toolId ?? "");
+                    if (!tool)
+                        throw new UnsupportedPhase4NodeError(node.id, node);
+                    emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
+                    try {
+                        const value = await toolRuntime.execute(tool, asToolInput(state.lastValue ?? state.input), options.signal);
+                        emit("tool.completed", { toolId: tool.id, output: value });
+                        result = { lastValue: value };
+                    }
+                    catch (error) {
+                        emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message : String(error) });
+                        throw error;
+                    }
                 }
-                catch (error) {
-                    emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message : String(error) });
-                    throw error;
+                else if (node.type === "approval") {
+                    if (state.branch === "approved" || state.branch === "rejected") {
+                        result = { branch: state.branch, lastValue: state.lastValue };
+                    }
+                    else {
+                        const config = node.config;
+                        // interrupt() throws a graph-control exception on the first pass. It is
+                        // intentionally allowed through without becoming a node failure.
+                        const resume = (0, langgraph_1.interrupt)({
+                            nodeId: node.id,
+                            message: config.message,
+                            approvalType: config.approvalType,
+                            timeoutSeconds: config.timeoutSeconds,
+                            context: state.lastValue ?? state.input,
+                        });
+                        result = { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
+                    }
                 }
-            }
-            if (node.type === "approval") {
-                if (state.branch === "approved" || state.branch === "rejected") {
-                    return { branch: state.branch, lastValue: state.lastValue };
+                else if (node.type === "input") {
+                    result = { input: state.input, lastValue: state.input };
                 }
-                const config = node.config;
-                const resume = (0, langgraph_1.interrupt)({
-                    nodeId: node.id,
-                    message: config.message,
-                    approvalType: config.approvalType,
-                    timeoutSeconds: config.timeoutSeconds,
-                    context: state.lastValue ?? state.input,
-                });
-                return { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
+                else if (node.type === "output") {
+                    result = {
+                        output: state.lastValue && typeof state.lastValue === "object"
+                            ? state.lastValue
+                            : state.lastValue === undefined ? state.input : { content: state.lastValue },
+                    };
+                }
+                else if (node.type === "memory") {
+                    const config = node.config;
+                    if (config.mode === "read")
+                        result = { lastValue: state.memory[config.key] };
+                    else {
+                        const value = state.lastValue ?? state.input;
+                        result = { memory: { [config.key]: value }, lastValue: value };
+                    }
+                    emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
+                }
+                else if (node.type === "condition") {
+                    const config = node.config;
+                    const lastValueBranch = state.lastValue && typeof state.lastValue === "object"
+                        ? state.lastValue.branch ?? state.lastValue.branchKey
+                        : undefined;
+                    const requested = state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? lastValueBranch;
+                    const branch = typeof requested === "string" && config.branches.some((item) => item.key === requested)
+                        ? requested
+                        : config.branches[0]?.key;
+                    result = { branch, lastValue: state.lastValue };
+                    emit("state.updated", { branch });
+                }
+                else {
+                    const config = node.config;
+                    const agent = config.agentId ? agentById.get(config.agentId) : undefined;
+                    if (!agent)
+                        throw new Error(`Agent node "${node.id}" has no linked agent`);
+                    if (agent.enabled === false)
+                        throw new Error(`Agent "${agent.name}" is disabled`);
+                    const agentErrors = (0, types_1.validateAgent)(agent);
+                    if (agentErrors.length)
+                        throw new Error(agentErrors.join(" "));
+                    let shortTermHistories = {};
+                    const value = options.agentRunner
+                        ? await options.agentRunner(agent, state, { runId, nodeId: node.id })
+                        : await runAgentThroughRuntime(agent, state, {
+                            runId,
+                            nodeId: node.id,
+                            workflowId: options.workflowId ?? definition.id,
+                            onAgentEvent: options.onAgentEvent,
+                            runtime,
+                            memoryAccess: options.memoryAccess,
+                            onShortTermUpdate: update => { shortTermHistories = (0, shortTermMemory_1.mergeHistories)(shortTermHistories, update); },
+                            signal: options.signal,
+                        });
+                    result = { lastValue: value, shortTermHistories };
+                }
+                emit("node.completed", { nodeType: node.type });
+                const branch = result.branch;
+                for (const edge of definition.edges.filter((candidate) => candidate.source === node.id)) {
+                    if (edge.kind === "conditional" && edge.branchKey !== branch)
+                        continue;
+                    emit("edge.traversed", { edgeId: edge.id, source: edge.source, target: edge.target, branchKey: edge.branchKey });
+                }
+                return result;
             }
-            if (node.type === "input")
-                return { input: state.input, lastValue: state.input };
-            if (node.type === "output") {
-                return {
-                    output: state.lastValue && typeof state.lastValue === "object"
-                        ? state.lastValue
-                        : state.lastValue === undefined ? state.input : { content: state.lastValue },
-                };
+            catch (error) {
+                if (!isGraphInterrupt(error))
+                    emit("node.failed", { nodeType: node.type, error: error instanceof Error ? error.message : String(error) });
+                throw error;
             }
-            if (node.type === "memory") {
-                const config = node.config;
-                if (config.mode === "read")
-                    return { lastValue: state.memory[config.key] };
-                const value = state.lastValue ?? state.input;
-                return { memory: { [config.key]: value }, lastValue: value };
-            }
-            if (node.type === "condition") {
-                const config = node.config;
-                const requested = state.input.branch ?? state.input.condition ?? state.input["branchKey"];
-                const branch = typeof requested === "string" && config.branches.some((item) => item.key === requested)
-                    ? requested
-                    : config.branches[0]?.key;
-                return { branch, lastValue: state.lastValue };
-            }
-            const config = node.config;
-            const agent = config.agentId ? agentById.get(config.agentId) : undefined;
-            if (!agent)
-                throw new Error(`Agent node "${node.id}" has no linked agent`);
-            if (agent.enabled === false)
-                throw new Error(`Agent "${agent.name}" is disabled`);
-            const agentErrors = (0, types_1.validateAgent)(agent);
-            if (agentErrors.length)
-                throw new Error(agentErrors.join(" "));
-            let shortTermHistories = {};
-            const value = options.agentRunner
-                ? await options.agentRunner(agent, state, { runId, nodeId: node.id })
-                : await runAgentThroughRuntime(agent, state, {
-                    runId,
-                    nodeId: node.id,
-                    workflowId: options.workflowId ?? definition.id,
-                    onAgentEvent: options.onAgentEvent,
-                    runtime,
-                    memoryAccess: options.memoryAccess,
-                    onShortTermUpdate: update => { shortTermHistories = (0, shortTermMemory_1.mergeHistories)(shortTermHistories, update); },
-                    signal: options.signal,
-                });
-            return { lastValue: value, shortTermHistories };
         });
     }
     for (const edge of definition.edges) {
@@ -154,6 +185,10 @@ function compileWorkflow(definition, agents, options = {}) {
     };
 }
 function asToolInput(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : { value }; }
+function isGraphInterrupt(error) {
+    const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
+    return name === "GraphInterrupt" || name === "GraphBubbleUp" || String(error).includes("GraphInterrupt");
+}
 async function runAgentThroughRuntime(agent, state, meta) {
     let lastContent;
     for await (const event of meta.runtime.execute({

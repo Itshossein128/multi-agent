@@ -16,7 +16,8 @@ export interface RunEntry {
   approvalTimers: Map<string, NodeJS.Timeout>;
   workflowSnapshot?: WorkflowDefinition;
   agentsSnapshot?: AgentRecord[];
-  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; memoryAccess?: MemoryAccessContext };
+  toolsSnapshot?: import("@multi-agent/types").ToolRecord[];
+  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[]; memoryAccess?: MemoryAccessContext };
 }
 
 export interface RunListFilters {
@@ -32,7 +33,7 @@ export interface RunStoreContract {
   create(
     run: Run,
     memoryOwner?: MemoryOwner,
-    snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[] },
+    snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
   ): Run;
   getMemoryOwner(runId: string): MemoryOwner | undefined;
@@ -53,6 +54,8 @@ export interface RunStoreContract {
   setPausedContext?(runId: string, context: RunEntry["pausedContext"] | null): void;
   getPausedContext?(runId: string): RunEntry["pausedContext"] | undefined;
   getWorkflowSnapshot?(runId: string): WorkflowDefinition | undefined;
+  getAgentSnapshot?(runId: string): AgentRecord[] | undefined;
+  getToolSnapshot?(runId: string): import("@multi-agent/types").ToolRecord[] | undefined;
   hydrate?(): Promise<void>;
   flush?(): Promise<void>;
 }
@@ -89,7 +92,7 @@ export class InMemoryRunStore implements RunStoreContract {
   create(
     run: Run,
     memoryOwner?: MemoryOwner,
-    snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[] },
+    snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
   ) {
     if (principal) {
@@ -111,6 +114,7 @@ export class InMemoryRunStore implements RunStoreContract {
       approvalTimers: new Map(),
       workflowSnapshot: snapshots?.workflow,
       agentsSnapshot: snapshots?.agents,
+      toolsSnapshot: snapshots?.tools,
     });
     return run;
   }
@@ -147,7 +151,7 @@ export class InMemoryRunStore implements RunStoreContract {
     if (!entry) return;
     const next = { ...event, payload: redact(event.payload) as RunEvent["payload"], sequence: entry.events.length + 1 };
     entry.events.push(next);
-    entry.listeners.forEach((listener) => listener(next));
+    entry.listeners.forEach((listener) => listener(structuredClone(next)));
     return next;
   }
 
@@ -158,7 +162,7 @@ export class InMemoryRunStore implements RunStoreContract {
   }
 
   events(runId: string, after = 0) {
-    return this.entries.get(runId)?.events.filter((event) => event.sequence > after) ?? [];
+    return structuredClone(this.entries.get(runId)?.events.filter((event) => event.sequence > after) ?? []);
   }
 
   subscribe(runId: string, listener: Listener): () => void {
@@ -222,6 +226,14 @@ export class InMemoryRunStore implements RunStoreContract {
   getWorkflowSnapshot(runId: string) {
     return this.entries.get(runId)?.workflowSnapshot;
   }
+
+  getAgentSnapshot(runId: string) {
+    return this.entries.get(runId)?.agentsSnapshot;
+  }
+
+  getToolSnapshot(runId: string) {
+    return this.entries.get(runId)?.toolsSnapshot;
+  }
 }
 
 /** Back-compat alias for existing imports/tests. */
@@ -275,6 +287,7 @@ export class PostgresRunStore implements RunStoreContract {
       this.memory.create(run, owner, {
         workflow: row.workflow_snapshot as WorkflowDefinition | undefined,
         agents: row.agents_snapshot as AgentRecord[] | undefined,
+        tools: row.tools_snapshot as import("@multi-agent/types").ToolRecord[] | undefined,
       });
       if (row.paused_context) this.memory.setPausedContext(run.id, row.paused_context as RunEntry["pausedContext"]);
 
@@ -306,7 +319,7 @@ export class PostgresRunStore implements RunStoreContract {
   create(
     run: Run,
     memoryOwner?: MemoryOwner,
-    snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[] },
+    snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
   ) {
     if (principal) {
@@ -317,12 +330,13 @@ export class PostgresRunStore implements RunStoreContract {
       await this.pool.query(
         `INSERT INTO studio_runs (
            id, workflow_id, task_id, status, started_at, completed_at, input, output, error, current_node_id, metadata,
-           memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, updated_at,
+           memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, tools_snapshot, updated_at,
            owner_id, tenant_id
-         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9,$10,$11::jsonb,$12,$13,$14::jsonb,$15::jsonb,now(),$16,$17)
+         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9,$10,$11::jsonb,$12,$13,$14::jsonb,$15::jsonb,$16::jsonb,now(),$17,$18)
          ON CONFLICT (id) DO UPDATE SET
            status = EXCLUDED.status, completed_at = EXCLUDED.completed_at, input = EXCLUDED.input, output = EXCLUDED.output,
-           error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata, updated_at = now()`,
+           error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata,
+           tools_snapshot = EXCLUDED.tools_snapshot, updated_at = now()`,
         [
           run.id,
           run.workflowId,
@@ -339,6 +353,7 @@ export class PostgresRunStore implements RunStoreContract {
           memoryOwner?.tenantId ?? run.tenantId ?? null,
           snapshots?.workflow ? JSON.stringify(snapshots.workflow) : null,
           snapshots?.agents ? JSON.stringify(snapshots.agents) : null,
+          snapshots?.tools ? JSON.stringify(snapshots.tools) : null,
           run.ownerId ?? principal?.userId ?? null,
           run.tenantId ?? principal?.tenantId ?? null,
         ],
@@ -482,5 +497,11 @@ export class PostgresRunStore implements RunStoreContract {
   }
   getWorkflowSnapshot(runId: string) {
     return this.memory.getWorkflowSnapshot(runId);
+  }
+  getAgentSnapshot(runId: string) {
+    return this.memory.getAgentSnapshot(runId);
+  }
+  getToolSnapshot(runId: string) {
+    return this.memory.getToolSnapshot(runId);
   }
 }

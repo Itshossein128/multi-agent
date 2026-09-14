@@ -1,6 +1,6 @@
 # Implementation gaps from `checklist.md`
 
-Audit date: 2026-09-09. This report lists only checklist items that are incomplete, contradicted by the current implementation, or have not yet been verified by an automated test. A modeled type or UI is not counted as a working runtime feature.
+Audit date: 2026-09-13. This report lists only checklist items that are incomplete, contradicted by the current implementation, or have not yet been verified by an automated test. A modeled type or UI is not counted as a working runtime feature.
 
 ## Critical — executable workflow and safety gaps
 
@@ -8,18 +8,18 @@ Audit date: 2026-09-09. This report lists only checklist items that are incomple
 - **Tool registry execution is now server-authoritative when Studio persistence is configured.** The runs router resolves persisted tool records and carries that snapshot through approval resume. Browser-supplied records remain a fallback only when no Studio store is configured. Non-function categories, retries, telemetry, and approval policies remain incomplete. Evidence: `apps/server/src/api/runs.ts`, `apps/server/src/runtime/runExecutor.ts`.
 - **CLI policies are guardrails, not an OS sandbox.** CLI execution now requires both per-agent permissions and server-owned executable/workspace allowlists, bounds output, supports cancellation, and uses non-interactive provider defaults. A compromised allowed executable can still exceed declarative filesystem/network intent unless deployed inside an OS/container sandbox. Evidence: `src/agents/runtime/cliAgentExecutor.ts` and `src/agents/runtime/executionPolicy.ts`.
 - **CLI and local backends are implemented.** Codex CLI, Claude Code, agy, Ollama, and LM Studio execute through their real runtime adapters. Local endpoints are restricted to server-owned exact-origin allowlists. Deployment health checks and container-level isolation remain operational work. Evidence: `src/agents/runtime/cliAgentExecutor.ts`, `src/agents/runtime/localAgentExecutor.ts`, and `tests/agentExecutor.test.ts`.
-- **Loops are deliberately blocked, not supported.** Server validation rejects every cycle while the editor can represent one. Therefore LangGraph loop compilation, exits, and loop-runtime semantics are incomplete. Evidence: `apps/server/src/compiler/validation.ts`.
-- **Parallel branches are structurally possible but lack verified runtime semantics.** There is no dedicated compiler/runtime test proving fan-out, concurrent execution, convergence, cancellation, and event ordering. Evidence: `apps/server/src/compiler/workflowCompiler.ts`, `tests/`.
+- **Loop semantics are intentionally bounded.** Cycles compile through LangGraph, and a condition can select an exit from the previous node value; the server recursion limit remains the hard safety bound. Rich loop counters/iteration metadata are still missing. Evidence: `apps/server/src/compiler/workflowCompiler.ts`, `apps/server/src/runtime/guardrails.ts`, `tests/phase4Phase5Completion.test.ts`.
+- **Parallel branches have a verified basic path but lack production-scale controls.** Real LangGraph fan-out/fan-in is covered; live concurrency caps, branch-level cancellation and detailed parallel ordering guarantees remain future hardening. Evidence: `apps/server/src/compiler/workflowCompiler.ts`, `tests/phase4Phase5Completion.test.ts`.
 
 ## High — validation and runtime guardrails
 
 - **Node-type validation is incomplete.** The server does not explicitly reject an unknown `node.type`; a malformed inbound node can reach compiler fallback behavior. Evidence: `apps/server/src/compiler/validation.ts`.
 - **Connection validation is not a complete compatibility matrix.** It covers input/output direction, condition edge kind, and conditional source, but does not validate every supported source/target pair. Evidence: `apps/server/src/compiler/validation.ts`.
 - **Approval branch vocabulary is not enforced.** Conditional approval routes are not limited to the runtime decisions `approved` and `rejected`. Evidence: `apps/server/src/compiler/workflowCompiler.ts` and `apps/server/src/compiler/validation.ts`.
-- **Retry limits are absent.** The runtime has no general agent/model/tool retry policy or attempt tracking. Evidence: `apps/server/src/runtime/runExecutor.ts`, `src/agents/runtime/apiAgentExecutor.ts`.
+- **Run retry is implemented, but general attempt policy is absent.** Failed/cancelled runs can be retried from their persisted definition snapshot; per-node/agent/model/tool retry limits and `node.retrying` attempt metadata are still missing. Evidence: `apps/server/src/runtime/runExecutor.ts`, `apps/server/src/api/runs/runApiService.ts`.
 - **Concurrent-branch limits are absent.** `WORKFLOW_MAX_BRANCHES` limits configured router branches, not live concurrent work. Evidence: `apps/server/src/runtime/guardrails.ts`.
 - **Token and cost budgets are absent.** API generations do not normalize token usage or enforce run/agent budgets. Evidence: `src/agents/runtime/apiAgentExecutor.ts`, `src/observability/telemetry.ts`.
-- **Redaction is not yet a single persistence boundary.** Some direct agent events and failed-run messages are appended before a shared sanitizer, and the history endpoint returns stored events directly. Evidence: `apps/server/src/runtime/runExecutor.ts`, `apps/server/src/runtime/runStore.ts`, `apps/server/src/api/runs.ts`.
+- **Redaction is enforced at the run-event store boundary.** Stored and subscriber-delivered events are sanitized, and history reads the sanitized store stream; generic payload size limits and a wider audit of non-run logs remain. Evidence: `apps/server/src/runtime/runStore.ts`, `apps/server/src/api/runs/runApiService.ts`.
 - **Resource controls need broader coverage.** Run request bodies are capped at 1 MiB, graph/runtime durations are bounded, and memory retrieval is bounded, but tool output, generic RunEvent payloads, and streaming-client buffering have no explicit limits. Evidence: `apps/server/src/api/runs.ts`, `apps/server/src/runtime/guardrails.ts`.
 
 ## High — observability and evaluation

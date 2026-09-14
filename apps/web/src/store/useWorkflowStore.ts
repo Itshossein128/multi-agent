@@ -72,9 +72,13 @@ interface WorkflowStoreState {
   moveNodes: (positions: Map<string, WorkflowPosition>) => void;
   removeNodes: (nodeIds: string[]) => void;
   removeEdges: (edgeIds: string[]) => void;
+  removeSelection: (nodeIds: string[], edgeIds: string[]) => void;
   addEdge: (connection: { source: string; target: string; sourceHandle?: string | null }) => void;
   updateNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void;
-  updateEdge: (edgeId: string, patch: Partial<Omit<WorkflowEdge, "id">>) => void;
+  updateEdge: (
+    edgeId: string,
+    patch: Partial<Pick<WorkflowEdge, "kind" | "branchKey" | "label" | "metadata">>
+  ) => void;
   updateAgentRecord: (
     agentId: string,
     patch: Partial<Omit<AgentRecord, "id" | "createdAt">>
@@ -343,18 +347,46 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
       });
     },
 
+    removeSelection: (nodeIds, edgeIds) => {
+      const nodeIdSet = new Set(nodeIds);
+      const edgeIdSet = new Set(edgeIds);
+      if (nodeIdSet.size === 0 && edgeIdSet.size === 0) return;
+      pushHistory();
+      withDefinition((draft) => {
+        draft.nodes = draft.nodes.filter((node) => !nodeIdSet.has(node.id));
+        draft.edges = draft.edges.filter(
+          (edge) =>
+            !edgeIdSet.has(edge.id) &&
+            !nodeIdSet.has(edge.source) &&
+            !nodeIdSet.has(edge.target)
+        );
+      });
+    },
+
     addEdge: (connection) => {
       const { definition } = get();
       if (!connection.source || !connection.target) return;
+      if (connection.source === connection.target) return;
       const sourceNode = definition.nodes.find((n) => n.id === connection.source);
+      const targetNode = definition.nodes.find((n) => n.id === connection.target);
+      if (!sourceNode || !targetNode) return;
       const isCondition = sourceNode?.type === "condition";
       const branchKey = isCondition ? connection.sourceHandle ?? "" : "";
+      const kind = isCondition ? "conditional" : "normal";
+      const duplicate = definition.edges.some(
+        (edge) =>
+          edge.source === connection.source &&
+          edge.target === connection.target &&
+          edge.kind === kind &&
+          edge.branchKey === branchKey
+      );
+      if (duplicate) return;
       pushHistory();
       withDefinition((draft) => {
         const input: CreateEdgeInput = {
           source: connection.source,
           target: connection.target,
-          kind: isCondition ? "conditional" : "normal",
+          kind,
           branchKey,
         };
         draft.edges.push(createEdge(input));
@@ -375,12 +407,26 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     },
 
     updateEdge: (edgeId, patch) => {
+      const current = get().definition.edges.find((edge) => edge.id === edgeId);
+      if (!current) return;
+      const nextKind = patch.kind ?? current.kind;
+      if (nextKind !== "normal" && nextKind !== "conditional") return;
+      if (patch.branchKey !== undefined && typeof patch.branchKey !== "string") return;
+      if (patch.label !== undefined && typeof patch.label !== "string") return;
+      const next = {
+        ...current,
+        kind: nextKind,
+        branchKey: nextKind === "normal" ? "" : patch.branchKey ?? current.branchKey,
+        label: patch.label ?? current.label,
+        ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),
+      };
+      if (JSON.stringify(current) === JSON.stringify(next)) return;
       pushHistoryCoalesced(`edge:${edgeId}`);
       withDefinition(
         (draft) => {
           const edge = draft.edges.find((e) => e.id === edgeId);
           if (edge) {
-            Object.assign(edge, patch);
+            Object.assign(edge, next);
           }
         },
         { keepSelection: true }

@@ -286,30 +286,29 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     };
     signal?.addEventListener("abort", abort, { once: true });
 
-    // Node's ChildProcess `close` event is emitted after stdio streams close.
-    // Waiting on a second set of stream-close listeners makes adapters and test
-    // doubles prone to deadlock, so the child close event is the sole completion
-    // signal while data handlers continue buffering output until then.
-    state.waitPromise = new Promise<number | null>((resolve) => child.on("close", resolve)).then((code) => {
-      state.completed = true;
-      clearTimeout(timer);
-      clearTimeout(state.killTimer);
-      signal?.removeEventListener("abort", abort);
+    // Resolve only after the process and both stdio streams have closed. This
+    // prevents a fast process from returning before the final stdout chunk has
+    // reached the data handler (which is observable with short-lived CLIs).
+    state.waitPromise = new Promise<WorkerResult>((resolve) => {
+      let childClosed = false;
+      let code: number | null = null;
+      let stdoutClosed = !child.stdout;
+      let stderrClosed = !child.stderr;
+      const finish = () => {
+        if (!childClosed || !stdoutClosed || !stderrClosed) return;
+        state.completed = true;
+        clearTimeout(timer);
+        clearTimeout(state.killTimer);
+        signal?.removeEventListener("abort", abort);
 
-      if (state.reason === "completed" && code !== 0) {
-        state.reason = "failed";
-      }
-
-      emit({ type: "exit", code: code ?? undefined });
-      this.log("worker.completed", { workerId, runId: spec.runId, reason: state.reason, exitCode: code, durationMs: Date.now() - startMs });
-
-      return {
-        code: code ?? null,
-        stdout: state.stdout,
-        stderr: state.stderr,
-        reason: state.reason,
-        error: state.errorMsg
+        if (state.reason === "completed" && code !== 0) state.reason = "failed";
+        emit({ type: "exit", code: code ?? undefined });
+        this.log("worker.completed", { workerId, runId: spec.runId, reason: state.reason, exitCode: code, durationMs: Date.now() - startMs });
+        resolve({ code, stdout: state.stdout, stderr: state.stderr, reason: state.reason, error: state.errorMsg });
       };
+      child.stdout?.on("close", () => { stdoutClosed = true; finish(); });
+      child.stderr?.on("close", () => { stderrClosed = true; finish(); });
+      child.on("close", (exitCode) => { code = exitCode ?? null; childClosed = true; finish(); });
     });
 
     if (input) {

@@ -1,7 +1,7 @@
 import type { AgentRecord } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../memory/contracts";
 import type { ShortTermHistories } from "./shortTermMemory";
-export type AgentExecutionEventType = "agent.started" | "agent.output" | "agent.completed" | "agent.failed" | "tool.started" | "tool.completed" | "tool.failed" | "memory.read" | "memory.write" | "log";
+export type AgentExecutionEventType = "agent.started" | "agent.output" | "agent.completed" | "agent.failed" | "llm.started" | "llm.completed" | "llm.failed" | "tool.started" | "tool.completed" | "tool.failed" | "memory.read" | "memory.write" | "log";
 export interface AgentExecutionEvent {
     type: AgentExecutionEventType;
     timestamp: string;

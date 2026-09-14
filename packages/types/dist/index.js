@@ -32,6 +32,8 @@ exports.nowIso = nowIso;
 exports.createAgentRecord = createAgentRecord;
 exports.createNode = createNode;
 exports.createEdge = createEdge;
+exports.serializeWorkflowDefinition = serializeWorkflowDefinition;
+exports.deserializeWorkflowDefinition = deserializeWorkflowDefinition;
 exports.createEmptyDefinition = createEmptyDefinition;
 exports.createSingleAgentWorkflow = createSingleAgentWorkflow;
 exports.nodeConfig = nodeConfig;
@@ -255,7 +257,85 @@ function createEdge(input) {
         kind: input.kind ?? "normal",
         label: input.label ?? "",
         branchKey: input.branchKey ?? "",
+        ...(input.metadata ? { metadata: structuredCloneSafe(input.metadata) } : {}),
     };
+}
+/**
+ * Return the workflow domain payload without React Flow-only fields.
+ * Positions remain as layout metadata on domain nodes; execution is defined
+ * exclusively by node types/configuration and edge endpoints.
+ */
+function serializeWorkflowDefinition(definition) {
+    if (!definition || typeof definition !== "object")
+        throw new Error("Workflow definition must be an object.");
+    if (!Array.isArray(definition.nodes) || !Array.isArray(definition.edges)) {
+        throw new Error("Workflow definition must contain nodes and edges arrays.");
+    }
+    return structuredCloneSafe({
+        id: definition.id,
+        name: definition.name,
+        nodes: definition.nodes.map((node) => ({
+            id: node.id,
+            type: node.type,
+            position: { x: node.position.x, y: node.position.y },
+            config: node.config,
+        })),
+        edges: definition.edges.map((edge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            kind: edge.kind,
+            label: edge.label,
+            branchKey: edge.branchKey,
+            ...(edge.metadata ? { metadata: edge.metadata } : {}),
+        })),
+        updatedAt: definition.updatedAt,
+        ...(definition.ownerId ? { ownerId: definition.ownerId } : {}),
+        ...(definition.tenantId ? { tenantId: definition.tenantId } : {}),
+    });
+}
+/**
+ * Normalize a persisted workflow back into the domain model. The legacy edge
+ * `type` field is accepted during migration, but never emitted by serialization.
+ */
+function deserializeWorkflowDefinition(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new Error("Workflow definition must be an object.");
+    }
+    const value = raw;
+    if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) {
+        throw new Error("Workflow definition must contain nodes and edges arrays.");
+    }
+    const definition = {
+        ...value,
+        nodes: value.nodes.map((rawNode) => {
+            const node = (rawNode ?? {});
+            const position = (node.position ?? {});
+            return {
+                ...node,
+                id: typeof node.id === "string" ? node.id : "",
+                type: node.type,
+                position: {
+                    x: typeof position.x === "number" && Number.isFinite(position.x) ? position.x : 0,
+                    y: typeof position.y === "number" && Number.isFinite(position.y) ? position.y : 0,
+                },
+                config: node.config && typeof node.config === "object" && !Array.isArray(node.config) ? node.config : {},
+            };
+        }),
+        edges: value.edges.map((rawEdge) => {
+            const edge = (rawEdge ?? {});
+            return {
+                ...edge,
+                kind: edge.kind ?? edge.type ?? "normal",
+                label: typeof edge.label === "string" ? edge.label : "",
+                branchKey: typeof edge.branchKey === "string" ? edge.branchKey : "",
+            };
+        }),
+    };
+    return serializeWorkflowDefinition(definition);
+}
+function structuredCloneSafe(value) {
+    return JSON.parse(JSON.stringify(value));
 }
 function createEmptyDefinition(name) {
     return {

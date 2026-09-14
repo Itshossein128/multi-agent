@@ -8,6 +8,9 @@ function validateWorkflow(definition, agents, limits = {}, tools = []) {
     const add = (level, code, message, nodeId, edgeId) => issues.push({ id: `${level}-${code}-${issues.length}`, code, level, severity: level, message, nodeId, edgeId });
     if (!definition || typeof definition !== "object")
         return [{ id: "error-invalid-definition", code: "INVALID_WORKFLOW", level: "error", severity: "error", message: "Workflow definition must be an object." }];
+    if (!Array.isArray(definition.nodes) || !Array.isArray(definition.edges)) {
+        return [{ id: "error-invalid-definition-shape", code: "INVALID_WORKFLOW", level: "error", severity: "error", message: "Workflow definition must contain nodes and edges arrays." }];
+    }
     const maxNodes = limits.maxNodes ?? 100;
     const maxEdges = limits.maxEdges ?? 250;
     const maxBranches = limits.maxBranches ?? 25;
@@ -16,10 +19,11 @@ function validateWorkflow(definition, agents, limits = {}, tools = []) {
     if (definition.edges.length > maxEdges)
         add("error", "EDGE_LIMIT_EXCEEDED", `Workflow exceeds the ${maxEdges}-edge limit.`);
     const nodes = new Map(definition.nodes.map((node) => [node.id, node]));
-    const ids = new Set(), edgeIds = new Set();
+    const ids = new Set(), edgeIds = new Set(), edgeKeys = new Set();
     for (const node of definition.nodes) {
-        if (!node.id?.trim())
-            add("error", "INVALID_NODE_ID", "Node id is required.", node.id);
+        const nodeId = typeof node.id === "string" ? node.id : "";
+        if (!nodeId.trim())
+            add("error", "INVALID_NODE_ID", "Node id is required.", nodeId);
         if (ids.has(node.id))
             add("error", "DUPLICATE_NODE_ID", `Duplicate node id "${node.id}"`, node.id);
         ids.add(node.id);
@@ -27,30 +31,40 @@ function validateWorkflow(definition, agents, limits = {}, tools = []) {
             add("error", "INVALID_NODE_CONFIG", "Node configuration must be an object.", node.id);
     }
     for (const edge of definition.edges) {
-        if (!edge.id?.trim())
-            add("error", "INVALID_EDGE_ID", "Edge id is required.", undefined, edge.id);
+        const edgeId = typeof edge.id === "string" ? edge.id : "";
+        const sourceId = typeof edge.source === "string" ? edge.source : "";
+        const targetId = typeof edge.target === "string" ? edge.target : "";
+        const branchKey = typeof edge.branchKey === "string" ? edge.branchKey : "";
+        if (!edgeId.trim())
+            add("error", "INVALID_EDGE_ID", "Edge id is required.", undefined, edgeId);
         if (edgeIds.has(edge.id))
             add("error", "DUPLICATE_EDGE_ID", `Duplicate edge id "${edge.id}"`, undefined, edge.id);
         edgeIds.add(edge.id);
-        if (!nodes.has(edge.source))
-            add("error", "INVALID_EDGE_REFERENCE", `Edge references missing source node "${edge.source}"`, undefined, edge.id);
-        if (!nodes.has(edge.target))
-            add("error", "INVALID_EDGE_REFERENCE", `Edge references missing target node "${edge.target}"`, undefined, edge.id);
-        if (edge.source === edge.target)
-            add("error", "UNSAFE_CYCLE", "Self-referential edges are not supported.", edge.source, edge.id);
-        if (edge.kind === "conditional" && !edge.branchKey.trim())
-            add("error", "MISSING_BRANCH_KEY", "Conditional edge is missing a branch key", undefined, edge.id);
-        if (edge.kind !== "conditional" && edge.branchKey.trim())
-            add("warning", "UNUSED_BRANCH_KEY", "Normal edges ignore branch keys.", undefined, edge.id);
-        const source = nodes.get(edge.source), target = nodes.get(edge.target);
+        if (edge.kind !== "normal" && edge.kind !== "conditional")
+            add("error", "INVALID_EDGE_KIND", "Edge kind must be normal or conditional.", undefined, edgeId);
+        const edgeKey = `${sourceId}\u0000${targetId}\u0000${edge.kind}\u0000${branchKey}`;
+        if (edgeKeys.has(edgeKey))
+            add("error", "DUPLICATE_EDGE", "Duplicate edge connection.", undefined, edgeId);
+        edgeKeys.add(edgeKey);
+        if (!nodes.has(sourceId))
+            add("error", "INVALID_EDGE_REFERENCE", `Edge references missing source node "${sourceId}"`, undefined, edgeId);
+        if (!nodes.has(targetId))
+            add("error", "INVALID_EDGE_REFERENCE", `Edge references missing target node "${targetId}"`, undefined, edgeId);
+        if (sourceId === targetId && sourceId)
+            add("error", "UNSAFE_CYCLE", "Self-referential edges are not supported.", sourceId, edgeId);
+        if (edge.kind === "conditional" && !branchKey.trim())
+            add("error", "MISSING_BRANCH_KEY", "Conditional edge is missing a branch key", undefined, edgeId);
+        if (edge.kind !== "conditional" && branchKey.trim())
+            add("warning", "UNUSED_BRANCH_KEY", "Normal edges ignore branch keys.", undefined, edgeId);
+        const source = nodes.get(sourceId), target = nodes.get(targetId);
         if (target?.type === "input")
-            add("error", "INVALID_CONNECTION", "Input nodes cannot have incoming edges.", target.id, edge.id);
+            add("error", "INVALID_CONNECTION", "Input nodes cannot have incoming edges.", target.id, edgeId);
         if (source?.type === "output")
-            add("error", "INVALID_CONNECTION", "Output nodes cannot have outgoing edges.", source.id, edge.id);
+            add("error", "INVALID_CONNECTION", "Output nodes cannot have outgoing edges.", source.id, edgeId);
         if (source?.type === "condition" && edge.kind !== "conditional")
-            add("error", "AMBIGUOUS_BRANCHING", "Condition nodes require conditional outgoing edges.", source.id, edge.id);
+            add("error", "AMBIGUOUS_BRANCHING", "Condition nodes require conditional outgoing edges.", source.id, edgeId);
         if (edge.kind === "conditional" && source?.type !== "condition" && source?.type !== "approval")
-            add("error", "INVALID_CONDITIONAL_SOURCE", "Conditional edges may only leave condition or approval nodes.", source?.id, edge.id);
+            add("error", "INVALID_CONDITIONAL_SOURCE", "Conditional edges may only leave condition or approval nodes.", source?.id, edgeId);
     }
     const inputs = definition.nodes.filter((node) => node.type === "input");
     const outputs = definition.nodes.filter((node) => node.type === "output");
@@ -130,7 +144,7 @@ function detectCycles(definition, nodes, add) {
     const visiting = new Set(), visited = new Set();
     const walk = (id) => {
         if (visiting.has(id)) {
-            add("error", "UNSAFE_CYCLE", "Cycles are not supported until explicit loop semantics are implemented.", id);
+            add("warning", "CYCLE_REQUIRES_GUARDRAIL", "Cycle will be bounded by the server recursion limit.", id);
             return;
         }
         if (visited.has(id))

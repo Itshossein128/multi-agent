@@ -25,6 +25,7 @@ function createStudioRouter(store, resolvePrincipal = principal_1.resolveRequest
     app.delete("/workflows/:id", async (c) => { await workflows.delete(c.req.param("id"), c.get("principal")); return c.json({ ok: true }); });
     app.get("/agents", async (c) => c.json(await agents.list(c.get("principal"))));
     app.get("/agents/:id", async (c) => c.json(await agents.get(c.req.param("id"), c.get("principal"))));
+    app.get("/agents/:id/diagnostics", async (c) => c.json(await agents.diagnostics(c.req.param("id"), c.get("principal"))));
     app.post("/agents", async (c) => c.json(await agents.create(await c.req.json().catch(() => ({})), c.get("principal")), 201));
     app.post("/agents/:id/duplicate", async (c) => c.json(await agents.duplicate(c.req.param("id"), c.get("principal")), 201));
     app.patch("/agents/:id", async (c) => c.json(await agents.update(c.req.param("id"), await c.req.json(), c.get("principal"))));

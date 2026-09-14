@@ -101,6 +101,10 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
   const warning = issueFactory("warning", { n: 0 });
   const info = issueFactory("info", { n: 0 });
 
+  if (!def || typeof def !== "object" || !Array.isArray(def.nodes) || !Array.isArray(def.edges)) {
+    return [error("Workflow definition must contain nodes and edges arrays")];
+  }
+
   const nodesById = new Map(def.nodes.map((n) => [n.id, n]));
 
   // -- Structural integrity -------------------------------------------------
@@ -112,7 +116,18 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
     seenIds.add(node.id);
   }
 
+  const seenEdgeIds = new Set<string>();
+  const seenEdgeKeys = new Set<string>();
   for (const edge of def.edges) {
+    if (!edge.id?.trim()) issues.push(error("Edge id is required", { edgeId: edge.id }));
+    if (seenEdgeIds.has(edge.id)) issues.push(error(`Duplicate edge id "${edge.id}"`, { edgeId: edge.id }));
+    seenEdgeIds.add(edge.id);
+    if (edge.kind !== "normal" && edge.kind !== "conditional") {
+      issues.push(error("Edge kind must be normal or conditional", { edgeId: edge.id }));
+    }
+    const edgeKey = `${edge.source}\u0000${edge.target}\u0000${edge.kind}\u0000${edge.branchKey}`;
+    if (seenEdgeKeys.has(edgeKey)) issues.push(error("Duplicate edge connection", { edgeId: edge.id }));
+    seenEdgeKeys.add(edgeKey);
     if (!nodesById.has(edge.source)) {
       issues.push(error(`Edge references missing source node "${edge.source}"`, { edgeId: edge.id }));
       continue;
@@ -122,7 +137,7 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
       continue;
     }
     if (edge.source === edge.target) {
-      issues.push(warning("Edge connects a node to itself", { edgeId: edge.id }));
+      issues.push(error("Self-referential edges are not supported", { edgeId: edge.id, nodeId: edge.source }));
     }
     if (edge.kind === "conditional") {
       const sourceNode = nodesById.get(edge.source);
@@ -305,8 +320,13 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
       const node = nodesById.get(nodeId);
       return node ? exitCapableTypes.has(node.type) : false;
     });
+    const names = cycle.map((id) => nodeLabel(nodesById.get(id)!, agents, tools)).join(" → ");
+    issues.push(
+      warning(`Cycle ${names} will be bounded by the server recursion limit`, {
+        nodeId: cycle[0],
+      })
+    );
     if (!hasExit) {
-      const names = cycle.map((id) => nodeLabel(nodesById.get(id)!, agents, tools)).join(" → ");
       issues.push(
         warning(`Cycle ${names} has no Condition or Approval node and may loop forever`, {
           nodeId: cycle[0],

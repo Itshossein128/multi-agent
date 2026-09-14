@@ -26,6 +26,8 @@ class ApiAgentExecutor {
             model: agent.backend.model,
         });
         try {
+            const startedAt = Date.now();
+            yield baseEvent("llm.started", input, { provider: agent.backend.provider, model: agent.backend.model });
             const model = this.getFactory().getModel(agent.backend.provider, {
                 model: agent.backend.model,
                 settings: agent.backend.settings,
@@ -41,11 +43,13 @@ class ApiAgentExecutor {
             const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };
             const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
             const content = result.content;
+            yield baseEvent("llm.completed", input, { provider: agent.backend.provider, model: agent.backend.model, durationMs: Date.now() - startedAt });
             yield baseEvent("agent.output", input, { content });
             yield baseEvent("agent.completed", input, { content });
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            yield baseEvent("llm.failed", input, { provider: agent.backend.provider, model: agent.backend.model, error: message.slice(0, 500) });
             yield baseEvent("agent.failed", input, { error: message });
             throw new errors_1.AgentExecutionFailedError(message);
         }

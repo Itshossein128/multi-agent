@@ -38,6 +38,14 @@ export class RunExecutor {
     private readonly toolRuntime?: Pick<ToolRuntime, "execute">,
   ) { }
   getStore() { return this.store; }
+  private appendAgentEvent(runId: string, event: AgentExecutionEvent) {
+    for (const runEvent of mapAgentEvents(event, runId)) {
+      if (runEvent.nodeId && (runEvent.type === "node.started" || runEvent.type === "agent.started" || runEvent.type === "tool.started")) {
+        this.store.update(runId, { currentNodeId: runEvent.nodeId });
+      }
+      this.store.append(runId, runEvent);
+    }
+  }
   /** Restore in-memory pause maps after a durable hydrate so waiting runs can resume. */
   restorePausedRun(runId: string, context: PausedContext, checkpointer: BaseCheckpointSaver) {
     this.pausedContext.set(runId, context);
@@ -57,6 +65,7 @@ export class RunExecutor {
       undefined,
       principal,
     );
+    this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.created", timestamp: stamp, sequence: 0, payload: {} });
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.started", timestamp: stamp, sequence: 0, payload: {} });
     void this.executeAgentTest(id, request, memoryAccess);
     return id;
@@ -64,8 +73,8 @@ export class RunExecutor {
   private async executeAgentTest(runId: string, request: AgentTestRequest, memoryAccess?: MemoryAccessContext) {
     try {
       let output: Record<string, unknown> = {};
-      for await (const event of this.agentRuntime.execute({ agent: request.agent, input: request.input, runId, nodeId: `test:${request.agent.id}`, signal: this.store.signal(runId), memoryStore: new Map(), memoryAccess, onBackgroundEvent: event => { for (const mapped of mapAgentEvents(event, runId)) this.store.append(runId, mapped); } })) {
-        for (const mapped of mapAgentEvents(event, runId)) this.store.append(runId, mapped);
+      for await (const event of this.agentRuntime.execute({ agent: request.agent, input: request.input, runId, nodeId: `test:${request.agent.id}`, signal: this.store.signal(runId), memoryStore: new Map(), memoryAccess, onBackgroundEvent: event => { this.appendAgentEvent(runId, event); } })) {
+        this.appendAgentEvent(runId, event);
         if (event.type === "agent.completed") output = { content: (event.payload as { content?: unknown })?.content };
         if (event.type === "agent.failed") throw new Error((event.payload as { error?: string })?.error ?? "Agent failed");
       }
@@ -74,8 +83,9 @@ export class RunExecutor {
       this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.store.update(runId, { status: this.store.signal(runId)?.aborted ? "cancelled" : "failed", completedAt: nowIso(), error: message });
-      this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message } });
+      const cancelled = Boolean(this.store.signal(runId)?.aborted);
+      this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message });
+      this.store.append(runId, { id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message, ...(cancelled ? { cancelled: true } : {}) } });
     }
   }
   start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
@@ -86,15 +96,36 @@ export class RunExecutor {
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
     const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId };
-    this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents }, principal);
+    this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents, tools: request.tools }, principal);
     log.info("run.started", { runId: id, workflowId: request.workflow.id, taskId: request.taskId });
+    this.store.append(id, { id: uid("event"), runId: id, type: "run.created", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     void this.execute(id, request, memoryAccess);
     return id;
   }
+  retry(runId: string, memoryAccess?: MemoryAccessContext) {
+    const entry = this.store.get(runId);
+    if (!entry) throw new Error("Run not found");
+    if (entry.run.status !== "failed" && entry.run.status !== "cancelled") {
+      throw new Error("Only failed or cancelled runs can be retried");
+    }
+    const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+    const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
+    const tools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
+    if (!workflow || !agents?.length) throw new Error("Run definition snapshot is not available for retry");
+    return this.start({
+      workflow,
+      agents,
+      tools,
+      input: entry.run.input ?? {},
+      metadata: { ...entry.run.metadata, retriedFromRunId: runId },
+      taskId: entry.run.taskId,
+    }, memoryAccess, entry.run.ownerId && entry.run.tenantId ? { userId: entry.run.ownerId, tenantId: entry.run.tenantId } : undefined);
+  }
   cancel(runId: string) {
     const entry = this.store.get(runId);
     if (!entry) return false;
+    if (["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
     if (entry.run.status === "waiting_for_human") {
       // No in-flight promise is awaiting the abort signal — the stream already
       // returned when the graph paused. Finalize cancellation directly.
@@ -108,7 +139,7 @@ export class RunExecutor {
       this.checkpointers.delete(runId);
       this.store.setPausedContext?.(runId, null);
       this.store.update(runId, { status: "cancelled", completedAt: nowIso() });
-      this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
       return true;
     }
     return this.store.cancel(runId);
@@ -121,7 +152,9 @@ export class RunExecutor {
     this.store.clearApprovalTimer(runId, approvalId);
     const stamp = nowIso();
     this.store.updateApproval(runId, approvalId, { status: decision.decision, resolvedAt: stamp, response: decision.response });
+    this.store.append(runId, { id: uid("event"), runId, type: decision.decision === "approved" ? "human_approval.approved" : "human_approval.rejected", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: decision.response } });
     this.store.append(runId, { id: uid("event"), runId, type: "human_approval.resolved", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: decision.response } });
+    this.store.append(runId, { id: uid("event"), runId, type: "run.resumed", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId } });
     this.store.update(runId, { status: "running" });
     void this.continueAfterApproval(runId, decision);
   }
@@ -141,7 +174,7 @@ export class RunExecutor {
         signal: this.store.signal(runId),
         workflowId: context.workflow.id,
         tools: context.tools,
-        onAgentEvent: (event) => { for (const runEvent of mapAgentEvents(event, runId)) this.store.append(runId, runEvent); },
+          onAgentEvent: (event) => { this.appendAgentEvent(runId, event); },
       });
       await this.runGraph(runId, compiled, new Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess, context.tools);
     } catch (error) { this.fail(runId, error); }
@@ -173,9 +206,7 @@ export class RunExecutor {
         workflowId: request.workflow.id,
         tools: request.tools,
         onAgentEvent: (event) => {
-          for (const runEvent of mapAgentEvents(event, runId)) {
-            this.store.append(runId, runEvent);
-          }
+          this.appendAgentEvent(runId, event);
         },
       });
       await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess, request.tools);
@@ -234,6 +265,7 @@ export class RunExecutor {
     };
     this.store.addApproval(runId, request, value.timeoutSeconds);
     this.store.update(runId, { status: "waiting_for_human", currentNodeId: value.nodeId });
+    this.store.append(runId, { id: uid("event"), runId, type: "run.paused", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id } });
     this.store.append(runId, { id: uid("event"), runId, type: "human_approval.requested", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id, message: value.message, approvalType: value.approvalType, timeoutSeconds: value.timeoutSeconds } });
     if (value.approvalType === "timeout" && value.timeoutSeconds > 0) {
       const timer = setTimeout(() => {
@@ -266,8 +298,11 @@ export class RunExecutor {
     this.pausedContext.delete(runId);
     this.checkpointers.delete(runId);
     this.store.setPausedContext?.(runId, null);
-    this.store.update(runId, { status: this.store.signal(runId)?.aborted ? "cancelled" : "failed", completedAt: nowIso(), error: message });
-    this.store.append(runId, { id: uid("event"), runId, type: "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message } });
-    log.error("run.failed", { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message });
+    const cancelled = Boolean(this.store.signal(runId)?.aborted);
+    this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message });
+    this.store.append(runId, { id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message, ...(cancelled ? { cancelled: true } : {}) } });
+    const logPayload = { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message };
+    if (cancelled) log.info("run.cancelled", logPayload);
+    else log.error("run.failed", logPayload);
   }
 }

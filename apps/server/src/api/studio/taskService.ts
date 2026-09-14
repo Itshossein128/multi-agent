@@ -426,7 +426,7 @@ export class TaskService {
     }
 
     const unsubscribe = this.executor.getStore().subscribe(runId, async (event) => {
-      if (event.type === "run.completed" || event.type === "run.failed") {
+      if (event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled") {
         unsubscribe();
         try {
           const fresh = await this.store.getTask(task.id, principal);

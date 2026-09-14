@@ -1,23 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RunEvent } from "@multi-agent/types";
 import { formatDateTime } from "@/lib/formatDateTime";
 
 /** One normalized timeline for run and agent inspection. Payloads are sanitized by the server. */
 export function ExecutionTimeline({ events, emptyMessage = "No execution events yet." }: { events: RunEvent[]; emptyMessage?: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = events.find((event) => event.id === selectedId);
+  const listRef = useRef<HTMLOListElement>(null);
+  const followTail = useRef(true);
+  const ordered = useMemo(() => [...events].sort((a, b) => a.sequence - b.sequence), [events]);
+  const selected = ordered.find((event) => event.id === selectedId);
+  useEffect(() => {
+    if (!selected && ordered.length) setSelectedId(ordered[ordered.length - 1].id);
+  }, [ordered, selected]);
+  useEffect(() => {
+    const list = listRef.current;
+    if (list && followTail.current) list.scrollTop = list.scrollHeight;
+  }, [ordered.length]);
+  const onScroll = () => {
+    const list = listRef.current;
+    if (!list) return;
+    followTail.current = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+  };
   return <div className="space-y-3">
     {!events.length && <p className="text-sm text-zinc-400">{emptyMessage}</p>}
-    <ol className="max-h-96 space-y-2 overflow-auto" aria-label="Execution timeline">
-      {events.map((event) => <li key={event.id}>
+    <ol ref={listRef} onScroll={onScroll} className="max-h-96 space-y-2 overflow-auto" aria-label="Execution timeline">
+      {ordered.map((event, index) => <li key={event.id}>
         <button type="button" aria-pressed={event.id === selectedId} onClick={() => setSelectedId(event.id)}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-left text-xs hover:border-indigo-400 focus-visible:outline-2 focus-visible:outline-indigo-400 aria-pressed:border-indigo-400">
-          <span className={event.type.endsWith("failed") ? "text-red-300" : "text-zinc-100"}>{event.type}</span>
+          <span className={event.type.endsWith("failed") || event.type === "run.cancelled" ? "text-red-300" : event.type.endsWith("completed") ? "text-emerald-300" : event.type.includes("requested") || event.type === "run.paused" ? "text-amber-300" : "text-zinc-100"}>{eventLabel(event.type)}</span>
           <span className="float-right text-zinc-400">#{event.sequence}</span>
           <time className="mt-1 block text-zinc-400" dateTime={event.timestamp}>{formatDateTime(event.timestamp)}</time>
-          {event.nodeId && <span className="mt-1 block break-all text-zinc-400">Node: {event.nodeId}</span>}
+          <span className="mt-1 block text-zinc-400">{eventStatus(event.type)}{durationFor(event, ordered, index) ? ` · ${durationFor(event, ordered, index)}` : ""}</span>
+          {event.nodeId && <span className="mt-1 block break-all text-zinc-400">Node: {event.nodeId}{event.agentId ? ` · Agent: ${event.agentId}` : ""}{event.toolId ? ` · Tool: ${event.toolId}` : ""}</span>}
         </button>
       </li>)}
     </ol>
@@ -32,4 +48,28 @@ export function ExecutionTimeline({ events, emptyMessage = "No execution events 
       <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs text-zinc-300">{JSON.stringify(selected.payload, null, 2)}</pre>
     </section>}
   </div>;
+}
+
+function eventLabel(type: string): string {
+  return type.split(".").map((part) => part.replaceAll("_", " ")).join(" · ");
+}
+
+function eventStatus(type: string): string {
+  if (type.endsWith("failed") || type === "run.cancelled") return "Failed / cancelled";
+  if (type.endsWith("completed")) return "Completed";
+  if (type.endsWith("started")) return "Running";
+  if (type.includes("requested") || type === "run.paused") return "Waiting";
+  return "Recorded";
+}
+
+function durationFor(event: RunEvent, events: RunEvent[], index: number): string | undefined {
+  const raw = event.payload.durationMs;
+  const milliseconds = typeof raw === "number" && Number.isFinite(raw) ? raw : (() => {
+    if (!event.type.endsWith("completed") && !event.type.endsWith("failed")) return undefined;
+    const start = [...events.slice(0, index)].reverse().find((candidate) => candidate.type === event.type.replace(/completed$|failed$/, "started") && candidate.nodeId === event.nodeId && candidate.agentId === event.agentId);
+    if (!start) return undefined;
+    const value = Date.parse(event.timestamp) - Date.parse(start.timestamp);
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+  })();
+  return milliseconds === undefined ? undefined : `${(milliseconds / 1000).toFixed(1)}s`;
 }

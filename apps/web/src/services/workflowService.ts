@@ -1,5 +1,5 @@
 /** Studio persistence client. Entities live on the execution server; activeWorkflowId stays local. */
-import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, uid, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
+import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, deserializeWorkflowDefinition, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, serializeWorkflowDefinition, uid, type AgentDiagnostics, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
 
 const API_URL = "/api/execution";
@@ -115,9 +115,14 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       await ensureImported();
       return (await request<AgentRecord[]>("/agents")).map(publicAgent);
     },
+    async getAgentDiagnostics(agentId: string): Promise<AgentDiagnostics> {
+      await ensureImported();
+      return request<AgentDiagnostics>(`/agents/${encodeURIComponent(agentId)}/diagnostics`);
+    },
     async listWorkflows(): Promise<WorkflowDefinition[]> {
       await ensureImported();
-      return request("/workflows");
+      const workflows = await request<unknown[]>("/workflows");
+      return workflows.map(deserializeWorkflowDefinition);
     },
     async getWorkflow(workflowId?: string): Promise<WorkflowDefinition | null> {
       await ensureImported();
@@ -127,7 +132,7 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
         return workflows[0] ?? null;
       }
       try {
-        return await request(`/workflows/${encodeURIComponent(id)}`);
+        return deserializeWorkflowDefinition(await request(`/workflows/${encodeURIComponent(id)}`));
       } catch {
         return null;
       }
@@ -136,7 +141,7 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       await ensureImported();
       assertNoCredentials(definition);
       const stamped = { ...definition, updatedAt: nowIso() };
-      const saved = await request<WorkflowDefinition>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(stamped) });
+      const saved = deserializeWorkflowDefinition(await request<unknown>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(serializeWorkflowDefinition(stamped)) }));
       setActiveWorkflowId(saved.id);
       return saved;
     },
@@ -199,7 +204,7 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       await request("/workspace/import", {
         method: "POST",
         body: JSON.stringify({
-          workflows: workspace.workflows ?? [],
+          workflows: (workspace.workflows ?? []).map(serializeWorkflowDefinition),
           agents: workspace.agents ?? [],
           tools: workspace.tools ?? [],
         }),

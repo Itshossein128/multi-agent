@@ -81,6 +81,18 @@ export interface AgentRecord {
     tenantId?: string;
     isSystem?: boolean;
 }
+export type AgentDiagnosticStatus = "ready" | "unavailable" | "not_authenticated" | "misconfigured" | "unsupported" | "unknown";
+/** Safe server-side capability status; never contains credentials or credential paths. */
+export interface AgentDiagnostics {
+    status: AgentDiagnosticStatus;
+    checkedAt: string;
+    backend: {
+        type: AgentBackendType;
+        provider: string;
+        model?: string;
+    };
+    message: string;
+}
 /** Legacy persisted agent shape (pre-backend abstraction). */
 export interface LegacyAgentRecord {
     id: string;
@@ -163,6 +175,8 @@ export interface WorkflowEdge {
     label: string;
     /** Branch key for conditional edges leaving a condition/router node. */
     branchKey: string;
+    /** Structured, non-secret edge data used by routers and future compiler passes. */
+    metadata?: Record<string, unknown>;
 }
 export interface WorkflowDefinition {
     id: string;
@@ -203,8 +217,20 @@ export interface CreateEdgeInput {
     kind?: WorkflowEdgeKind;
     label?: string;
     branchKey?: string;
+    metadata?: Record<string, unknown>;
 }
 export declare function createEdge(input: CreateEdgeInput): WorkflowEdge;
+/**
+ * Return the workflow domain payload without React Flow-only fields.
+ * Positions remain as layout metadata on domain nodes; execution is defined
+ * exclusively by node types/configuration and edge endpoints.
+ */
+export declare function serializeWorkflowDefinition(definition: WorkflowDefinition): WorkflowDefinition;
+/**
+ * Normalize a persisted workflow back into the domain model. The legacy edge
+ * `type` field is accepted during migration, but never emitted by serialization.
+ */
+export declare function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition;
 export declare function createEmptyDefinition(name?: string): WorkflowDefinition;
 export declare function createSingleAgentWorkflow(agent: AgentRecord, name?: string): WorkflowDefinition;
 export declare function nodeConfig<T extends WorkflowNodeConfig>(node: WorkflowNode): T;
@@ -221,7 +247,7 @@ export declare function migrateWorkflowToolNodes(definition: WorkflowDefinition,
     newTools: ToolRecord[];
 };
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_human";
-export type RunEventType = "run.started" | "run.completed" | "run.failed" | "node.started" | "node.completed" | "node.failed" | "edge.traversed" | "agent.started" | "agent.completed" | "agent.failed" | "tool.started" | "tool.completed" | "tool.failed" | "human_approval.requested" | "human_approval.resolved" | "memory.read" | "memory.write" | "log";
+export type RunEventType = "run.created" | "run.started" | "run.paused" | "run.resumed" | "run.completed" | "run.failed" | "run.cancelled" | "node.started" | "node.completed" | "node.failed" | "node.retrying" | "edge.traversed" | "agent.started" | "agent.completed" | "agent.failed" | "llm.started" | "llm.completed" | "llm.failed" | "tool.started" | "tool.completed" | "tool.failed" | "human_approval.requested" | "human_approval.approved" | "human_approval.rejected" | "human_approval.resolved" | "state.updated" | "memory.read" | "memory.write" | "log";
 export interface Run {
     id: string;
     workflowId: string;
