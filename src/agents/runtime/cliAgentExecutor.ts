@@ -157,8 +157,11 @@ export class CliAgentExecutor implements AgentExecutor {
         if (result.reason === "spawn_error") throw new Error(result.error || "Spawn error");
         if (result.reason === "cancelled") throw new Error("Worker cancelled");
 
-        if (result.code !== 0) throw new Error(`CLI command "${executable}" exited with code ${result.code}: ${result.stderr || "no stderr"}`);
-
+        if (result.code !== 0) {
+          const detail = (result.stderr || result.stdout || "no output").trim();
+          const clipped = detail.length > 2_000 ? `${detail.slice(0, 2_000)}…` : detail;
+          throw new Error(`CLI command "${executable}" exited with code ${result.code}: ${clipped || "no output"}`);
+        }
         yield event("agent.output", input, { content: result.stdout });
         yield event("agent.completed", input, { content: result.stdout });
       } finally {
@@ -196,7 +199,7 @@ function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>): string[] 
   const args = backend.provider === "codex"
     ? codexArgs(explicit)
     : backend.provider === "claude-code"
-      ? ensureFlags(explicit, ["--print", "--output-format", "text"])
+      ? claudeArgs(explicit)
       : backend.provider === "agy"
         ? ensureFlags(explicit, ["--print", "--output-format", "text", "--disable-slash-commands"])
         : [...(explicit ?? [])];
@@ -208,6 +211,19 @@ function codexArgs(explicit?: string[]): string[] {
   const custom = [...(explicit ?? [])];
   if (custom[0] === "exec") custom.shift();
   return ["exec", ...custom, ...(custom.includes("-") ? [] : ["-"])];
+}
+
+/** Non-interactive Claude defaults for an externally Docker-isolated worker. */
+function claudeArgs(explicit?: string[]): string[] {
+  const args = ensureFlags(explicit, ["--print", "--output-format", "text"]);
+  // Nested Claude permission prompts conflict with headless container runs.
+  // Docker remains the security sandbox; do not use --bare (it disables OAuth).
+  if (!args.includes("--dangerously-skip-permissions")
+    && !args.includes("--permission-mode")
+    && !args.includes("--allow-dangerously-skip-permissions")) {
+    args.push("--dangerously-skip-permissions");
+  }
+  return args;
 }
 
 function ensureFlags(explicit: string[] | undefined, required: string[]): string[] {

@@ -9,7 +9,7 @@ import { createDashboardRouter } from "./api/dashboard";
 import { createMemoryComposition } from "./memory/composition";
 import { memoryAccessResolverFromEnvironment } from "./memory/access";
 import { createStudioComposition } from "./studio/composition";
-import { AgentRuntime, environmentWorkerCredentialResolverFromEnvironment } from "../../../src/agents/runtime";
+import { AgentRuntime, workerCredentialResolverFromEnvironment } from "../../../src/agents/runtime";
 import { RunExecutor } from "./runtime/runExecutor";
 import { InMemoryRunStore, PostgresRunStore } from "./runtime/runStore";
 import { recoverInterruptedRuns } from "./runtime/recovery";
@@ -71,7 +71,7 @@ async function main() {
       undefined,
       undefined,
       undefined,
-      environmentWorkerCredentialResolverFromEnvironment(),
+      workerCredentialResolverFromEnvironment(),
     ),
     checkpointer,
     observability.telemetry,
@@ -106,4 +106,4 @@ main().catch((error) => {
   process.exit(1);
 });
 
-export {};
+export { };

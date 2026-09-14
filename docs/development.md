@@ -42,7 +42,15 @@ For untrusted work use `CLI_WORKER_MODE=container` and set `CLI_WORKER_IMAGE` to
 
 Build, smoke-test, publish, and configure the dedicated Codex/Claude worker by following [Immutable CLI worker image](cli-worker-image.md). Authentication is intentionally separate from the image.
 
-CLI launch credentials use a server-only resolver and never belong in workflows, agents, tools, run input, or `WorkerSpec.env`. The initial development adapter is disabled unless `CLI_CREDENTIAL_ENVIRONMENT_ENABLED=true`. It accepts only a provider-constrained variable name through `CLI_CODEX_CREDENTIAL_ENV_VAR` or `CLI_CLAUDE_CREDENTIAL_ENV_VAR`; `WORKER_ALLOWED_ENV_KEYS` is not a container credential channel. Environment delivery exposes a credential to the CLI process and to Docker daemon/container inspection, so it is not the final production multi-tenant boundary. Prefer short-lived tokens or an external credential-injecting gateway for production.
+CLI launch credentials use a server-only resolver and never belong in workflows, agents, tools, run input, or `WorkerSpec.env`. Two development adapters exist and are disabled by default:
+
+- File delivery (`CLI_CREDENTIAL_FILE_ENABLED=true`) resolves provider credential files on the server and injects only the allowlisted unit into the per-run worker tmpfs:
+  - Codex: `auth.json` → `/home/worker/.codex/auth.json` (source `CLI_CODEX_AUTH_FILE` or `~/.codex/auth.json`)
+  - Claude Code: `.credentials.json` → `/home/worker/.claude/.credentials.json` (source `CLI_CLAUDE_CREDENTIALS_FILE` or `~/.claude/.credentials.json`). The resolver fail-closes when OAuth access/refresh material is empty or the refresh token is expired.
+  Refreshed bytes may write back under an exclusive lock with compare-and-swap. Host credential paths are never exposed to the container. Host `.codex` / `.claude` directories are never mounted.
+- Environment delivery (`CLI_CREDENTIAL_ENVIRONMENT_ENABLED=true`) accepts only a provider-constrained variable name through `CLI_CODEX_CREDENTIAL_ENV_VAR` or `CLI_CLAUDE_CREDENTIAL_ENV_VAR`; `WORKER_ALLOWED_ENV_KEYS` is not a container credential channel. Environment delivery exposes a credential to the CLI process and to Docker daemon/container inspection.
+
+File delivery takes precedence when both are enabled. Container workers set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0` because Claude Code 2.1.270 requires bubblewrap for scrubbing and this worker image does not include it; the hardened Docker profile remains the isolation boundary. Neither adapter is the final production multi-tenant boundary. Prefer short-lived tokens or an external credential-injecting gateway for production.
 
 ## Browser E2E
 

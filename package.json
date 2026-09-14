@@ -19,7 +19,9 @@
     "db:dev:down": "docker compose -f infrastructure/memory/compose.yml --profile memory down",
     "db:migrate": "node -r dotenv/config infrastructure/memory/migrate.cjs && node -r dotenv/config infrastructure/studio/migrate.cjs",
     "worker:image:build": "docker build --pull --platform linux/amd64 --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY --file infrastructure/docker/worker.Dockerfile --tag multi-agent-cli-worker:local infrastructure/docker",
-    "worker:image:smoke": "ts-node --transpile-only infrastructure/docker/smoke-worker-image.ts"
+    "worker:image:smoke": "ts-node --transpile-only infrastructure/docker/smoke-worker-image.ts",
+    "worker:e2e:codex-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-codex-auth-file.ts",
+    "worker:e2e:claude-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-claude-auth-file.ts"
   },
   "license": "MIT",
   "dependencies": {

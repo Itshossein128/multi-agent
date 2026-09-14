@@ -93,7 +93,7 @@ try {
       "test \"$XDG_CACHE_HOME\" = /home/worker/.cache",
       "test \"$CODEX_HOME\" = /home/worker/.codex",
       "test \"$CLAUDE_CONFIG_DIR\" = /home/worker/.claude",
-      "test \"$CLAUDE_CODE_SUBPROCESS_ENV_SCRUB\" = 1",
+      "test \"$CLAUDE_CODE_SUBPROCESS_ENV_SCRUB\" = 0",
       "test \"$CLAUDE_CODE_SKIP_PROMPT_HISTORY\" = 1",
       "for directory in \"$CODEX_HOME\" \"$CLAUDE_CONFIG_DIR\" \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" /home/worker/.local/share; do test -d \"$directory\"; test \"$(stat -c %u:%g \"$directory\")\" = 65534:65534; test \"$(stat -c %a \"$directory\")\" = 700; done",
       "touch \"$HOME/home-write\" \"$XDG_CONFIG_HOME/config-write\" \"$XDG_CACHE_HOME/cache-write\" \"$CODEX_HOME/codex-write\" \"$CLAUDE_CONFIG_DIR/claude-write\"",

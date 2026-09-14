@@ -273,6 +273,27 @@ describe("CLI and local executors", () => {
     );
   });
 
+  test("uses non-interactive Claude defaults with permission bypass for isolated workers", async () => {
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "Claude answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "claude-code", model: "claude-sonnet-4-5" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["claude"] };
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "local", allowedExecutables: ["claude"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "edit", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executable: expect.stringContaining("claude"),
+        args: ["--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", "claude-sonnet-4-5"],
+      }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
+  });
+
   test("blocks CLI executables and workspaces outside server-owned allowlists", async () => {
     const start = jest.fn().mockRejectedValue(new Error("workspace is not allowed"));
     const workerRuntime = { start } as any;

@@ -1,9 +1,10 @@
-import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, type WorkerSpec, buildContainerArgs, buildWorkerEnv, CONTAINER_CLI_PATHS, CONTAINER_HOME_INIT_SCRIPT } from "../../../src/agents/runtime/workerRuntime";
+import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, type WorkerSpec, buildContainerArgs, buildContainerCreateArgs, buildContainerExecArgs, buildWorkerEnv, CONTAINER_CLI_PATHS, CONTAINER_CREDENTIAL_HOLDER_SCRIPT, CONTAINER_HOME_INIT_SCRIPT } from "../../../src/agents/runtime/workerRuntime";
 import type { CliRuntimePolicy } from "../../../src/agents/runtime/cliAgentExecutor";
 import { uid } from "@multi-agent/types";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import { sha256Hex } from "../../../src/agents/runtime/workerCredentials";
 
 jest.setTimeout(15000);
 
@@ -270,7 +271,7 @@ describe("LocalProcessWorkerRuntime", () => {
       "--env", `XDG_CACHE_HOME=${CONTAINER_CLI_PATHS.cache}`,
       "--env", `CODEX_HOME=${CONTAINER_CLI_PATHS.codexHome}`,
       "--env", `CLAUDE_CONFIG_DIR=${CONTAINER_CLI_PATHS.claudeConfig}`,
-      "--env", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1",
+      "--env", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0",
       "--env", "CLAUDE_CODE_SKIP_PROMPT_HISTORY=1",
     ]));
     expect(args.slice(-7)).toEqual(["/bin/bash", "-c", CONTAINER_HOME_INIT_SCRIPT, "worker-init", "codex", "exec", "-"]);
@@ -279,6 +280,38 @@ describe("LocalProcessWorkerRuntime", () => {
     expect(args.filter((arg) => arg.startsWith("type=bind,"))).toEqual([
       expect.stringContaining("target=/workspace"),
     ]);
+  });
+
+  test("builds credential-holder create and exec args without host credential paths", () => {
+    const spec = createSpec("codex", ["exec", "-"]);
+    const policy = {
+      image: `registry.example/agent@sha256:${"a".repeat(64)}`,
+      dockerExecutable: "docker",
+      allowNetwork: true,
+      memory: "512m",
+      cpus: "0.5",
+      pidsLimit: 64,
+      user: "65534:65534",
+    };
+    const createArgs = buildContainerCreateArgs({ ...spec, network: true }, policy, "worker-cred", [], []);
+    expect(createArgs[0]).toBe("create");
+    expect(createArgs).not.toContain("--rm");
+    expect(createArgs.slice(-3)).toEqual(["/bin/bash", "-c", CONTAINER_CREDENTIAL_HOLDER_SCRIPT]);
+    expect(createArgs.join(" ")).not.toContain("auth.json");
+    expect(createArgs.join(" ")).not.toContain("USERPROFILE");
+    expect(createArgs.join(" ")).toContain("CODEX_HOME=/home/worker/.codex");
+    expect(createArgs.join(" ")).toContain("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0");
+    expect(createArgs.filter((arg) => arg.startsWith("type=bind,"))).toEqual([
+      expect.stringContaining("target=/workspace"),
+    ]);
+    expect(createArgs.filter((arg) => arg.startsWith("type=bind,")).join(" ")).not.toMatch(/\.codex|auth\.json|\.credentials\.json|\.claude\\/i);
+
+    const execArgs = buildContainerExecArgs(spec, policy, "worker-cred", []);
+    expect(execArgs.slice(0, 3)).toEqual(["exec", "--interactive", "-u"]);
+    expect(execArgs).toContain("codex");
+    expect(execArgs.join(" ")).not.toContain("auth.json");
+    expect(execArgs.join(" ")).not.toMatch(/OPENAI_API_KEY=/);
+    expect(execArgs).toEqual(expect.arrayContaining(["--env", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0"]));
   });
 
   test("protected global allowlist entries cannot bypass the trusted container secret channel", () => {

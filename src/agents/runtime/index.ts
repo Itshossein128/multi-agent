@@ -15,13 +15,26 @@ export { UnsupportedBackendError, AgentExecutionFailedError } from "./errors";
 export { mapAgentExecutionEvent } from "./mapAgentExecutionEvent";
 export type { MemoryAccessContext, RuntimeMemoryDependencies } from "../../memory/contracts";
 export {
+  ClaudeCredentialsFileCredentialResolver,
+  CodexAuthFileCredentialResolver,
+  CompositeWorkerCredentialResolver,
   EnvironmentWorkerCredentialResolver,
   NO_WORKER_CREDENTIALS,
+  CLAUDE_CONTAINER_CREDENTIALS_PATH,
+  CODEX_CONTAINER_AUTH_PATH,
+  assertClaudeCredentialsFileUsable,
   environmentWorkerCredentialResolverFromEnvironment,
+  workerCredentialResolverFromEnvironment,
+  persistCodexAuthFile,
+  persistCredentialFile,
+  resolveClaudeCredentialsFilePath,
+  resolveCodexAuthFilePath,
+  sha256Hex,
 } from "./workerCredentials";
 export type {
   CredentialResolutionContext,
   TrustedCredentialPrincipal,
+  WorkerCredentialFile,
   WorkerCredentialResolver,
   WorkerLaunchSecrets,
 } from "./workerCredentials";

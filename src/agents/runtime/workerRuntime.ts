@@ -3,7 +3,13 @@ import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { CliRuntimePolicy } from "./cliAgentExecutor";
-import { PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES, type WorkerLaunchSecrets } from "./workerCredentials";
+import {
+  assertAllowedCredentialContainerPath,
+  PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES,
+  sha256Hex,
+  type WorkerCredentialFile,
+  type WorkerLaunchSecrets,
+} from "./workerCredentials";
 
 export type WorkerTerminationReason =
   | "completed"
@@ -138,7 +144,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     private readonly policy: CliRuntimePolicy,
     private readonly spawnFn: typeof spawn = spawn,
     private readonly explicitlyAllowedEnvironmentKeys?: ReadonlyArray<string>,
-  ) {}
+  ) { }
 
   private assertServerPolicy(spec: WorkerSpec): void {
     if (!this.policy.enabled) throw new Error("CLI agent execution is disabled on this server. Set CLI_AGENT_ENABLED=true and configure server allowlists.");
@@ -201,6 +207,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       ? [...this.explicitlyAllowedEnvironmentKeys]
       : workerAllowedEnvironmentKeys();
     const launchEnvironment = validatedLaunchEnvironment(launchSecrets);
+    const redactionEnvironment = launchSecretRedactionValues(launchSecrets);
     const env = { ...buildWorkerEnv(process.env, spec.env, explicitlyAllowedEnv), ...launchEnvironment };
 
     const child = this.spawnFn(spec.executable, spec.args, { cwd: spec.cwd, shell: false, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcess;
@@ -242,8 +249,8 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       while (state.resolvers.length) state.resolvers.shift()!(event);
     };
 
-    const stdoutRedactor = new LaunchSecretStreamRedactor(launchEnvironment);
-    const stderrRedactor = new LaunchSecretStreamRedactor(launchEnvironment);
+    const stdoutRedactor = new LaunchSecretStreamRedactor(redactionEnvironment);
+    const stderrRedactor = new LaunchSecretStreamRedactor(redactionEnvironment);
     const appendSafeText = (safeText: string, isErr: boolean) => {
       if (!safeText) return;
       if (isErr) state.stderr += safeText;
@@ -271,9 +278,9 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     child.on("error", (error) => {
       if (!state.completed && state.reason === "completed") {
         state.reason = "spawn_error";
-        state.errorMsg = redactLaunchSecretValues(error.message, launchEnvironment);
+        state.errorMsg = redactLaunchSecretValues(error.message, redactionEnvironment);
       }
-      const safeError = new Error(redactLaunchSecretValues(error.message, launchEnvironment));
+      const safeError = new Error(redactLaunchSecretValues(error.message, redactionEnvironment));
       emit({ type: "error", error: safeError });
       this.log("worker.error", { workerId, runId: spec.runId, error: safeError.message, durationMs: Date.now() - startMs });
     });
@@ -399,6 +406,15 @@ function isSupportedLaunchSecretName(key: string): boolean {
   return TRUSTED_LAUNCH_SECRET_ENV_NAMES.has(key) && !INJECTION_ENV_NAMES.has(key.toUpperCase());
 }
 
+function launchSecretRedactionValues(launchSecrets?: WorkerLaunchSecrets): Record<string, string> {
+  const values: Record<string, string> = { ...validatedLaunchEnvironment(launchSecrets) };
+  for (const file of launchSecrets?.files ?? []) {
+    const asUtf8 = file.content.toString("utf8");
+    if (asUtf8) values[`file:${file.containerPath}`] = asUtf8;
+  }
+  return values;
+}
+
 function workerAllowedEnvironmentKeys(): string[] {
   return (process.env.WORKER_ALLOWED_ENV_KEYS ?? "").split(",").map((key) => key.trim()).filter(Boolean);
 }
@@ -516,7 +532,10 @@ const CONTAINER_ENVIRONMENT: Readonly<Record<string, string>> = {
   XDG_DATA_HOME: CONTAINER_CLI_PATHS.data,
   CODEX_HOME: CONTAINER_CLI_PATHS.codexHome,
   CLAUDE_CONFIG_DIR: CONTAINER_CLI_PATHS.claudeConfig,
-  CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+  // Claude Code 2.1.270 requires bubblewrap when subprocess env scrub is enabled.
+  // This worker image does not ship bubblewrap; the hardened Docker profile is
+  // already the isolation boundary, so scrub stays off for container workers only.
+  CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "0",
   CLAUDE_CODE_SKIP_PROMPT_HISTORY: "1",
   TMPDIR: CONTAINER_CLI_PATHS.temp,
   TMP: CONTAINER_CLI_PATHS.temp,
@@ -530,6 +549,14 @@ export const CONTAINER_HOME_INIT_SCRIPT = [
   `mkdir -p ${CONTAINER_CLI_PATHS.codexHome} ${CONTAINER_CLI_PATHS.claudeConfig} ${CONTAINER_CLI_PATHS.config} ${CONTAINER_CLI_PATHS.cache} ${CONTAINER_CLI_PATHS.data}`,
   `chmod 700 ${CONTAINER_CLI_PATHS.codexHome} ${CONTAINER_CLI_PATHS.claudeConfig} ${CONTAINER_CLI_PATHS.config} ${CONTAINER_CLI_PATHS.cache} ${CONTAINER_CLI_PATHS.data}`,
   'exec "$@"',
+].join("; ");
+
+/** Keeps the container (and home tmpfs) alive so credentials can be injected and recovered. */
+export const CONTAINER_CREDENTIAL_HOLDER_SCRIPT = [
+  "umask 077",
+  `mkdir -p ${CONTAINER_CLI_PATHS.codexHome} ${CONTAINER_CLI_PATHS.claudeConfig} ${CONTAINER_CLI_PATHS.config} ${CONTAINER_CLI_PATHS.cache} ${CONTAINER_CLI_PATHS.data}`,
+  `chmod 700 ${CONTAINER_CLI_PATHS.codexHome} ${CONTAINER_CLI_PATHS.claudeConfig} ${CONTAINER_CLI_PATHS.config} ${CONTAINER_CLI_PATHS.cache} ${CONTAINER_CLI_PATHS.data}`,
+  "while [ ! -f /tmp/.worker-stop ]; do sleep 0.2; done",
 ].join("; ");
 
 export function containerWorkerPolicyFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): ContainerWorkerPolicy {
@@ -552,8 +579,8 @@ export function assertContainerWorkerConfiguration(
   if (!cliPolicy.enabled) {
     throw new Error("CLI agent execution is disabled on this server. Set CLI_AGENT_ENABLED=true and configure server allowlists.");
   }
-  if (!/@sha256:[a-f0-9]{64}$/i.test(containerPolicy.image)) {
-    throw new Error("Hardened CLI worker requires CLI_WORKER_IMAGE pinned with an @sha256 digest.");
+  if (!/(@sha256:[a-f0-9]{64}|^sha256:[a-f0-9]{64})$/i.test(containerPolicy.image)) {
+    throw new Error("Hardened CLI worker requires CLI_WORKER_IMAGE pinned with an @sha256 digest or content-addressed sha256 image id.");
   }
   if (executable.includes("\\") || /^[A-Za-z]:[\\/]/.test(executable)) {
     throw new Error(`Container CLI executable "${executable}" must be an in-container command name or POSIX path.`);
@@ -563,15 +590,26 @@ export function assertContainerWorkerConfiguration(
   }
 }
 
+type ContainerSession = {
+  name: string;
+  files: ReadonlyArray<WorkerCredentialFile>;
+  persistRefreshedFiles?: WorkerLaunchSecrets["persistRefreshedFiles"];
+  holderOnly: boolean;
+};
+
 /**
  * Docker-backed isolation profile for untrusted CLI work. The container image
  * and all isolation settings are server-owned; workflow/agent records cannot
  * weaken them. Images must be pinned by digest to prevent tag drift.
+ *
+ * Credential files use a create → inject → exec → recover → rm lifecycle so
+ * material lives only in the per-run home tmpfs and is destroyed with the
+ * container. Environment credentials still use docker run --rm.
  */
 export class ContainerWorkerRuntime implements WorkerRuntime {
   private readonly delegate: LocalProcessWorkerRuntime;
   private readonly dockerExecutable: string;
-  private readonly containers = new Map<string, string>();
+  private readonly sessions = new Map<string, ContainerSession>();
 
   constructor(
     private readonly cliPolicy: CliRuntimePolicy,
@@ -589,21 +627,60 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
 
   async start(spec: WorkerSpec, signal?: AbortSignal, input?: string, launchSecrets?: WorkerLaunchSecrets): Promise<WorkerHandle> {
     assertContainerWorkerConfiguration(spec.executable, this.cliPolicy, this.containerPolicy);
+    const files = [...(launchSecrets?.files ?? [])];
+    for (const file of files) {
+      assertAllowedCredentialContainerPath(file.containerPath);
+      if (!file.content.length) throw new Error("Trusted credential files must not be empty.");
+      if (!Number.isInteger(file.mode) || (file.mode !== 0o600 && file.mode !== 0o400)) {
+        throw new Error("Trusted credential files require a restrictive file mode.");
+      }
+    }
+
     const containerName = `agent-worker-${randomUUID()}`;
     const allowedEnvKeys = workerAllowedEnvironmentKeys();
     const launchEnvironment = validatedLaunchEnvironment(launchSecrets);
     for (const key of Object.keys(launchEnvironment)) {
       if (CONTAINER_RESERVED_ENV_KEYS.has(key)) throw new Error("Trusted launch secrets cannot override fixed container environment paths or hardening settings.");
     }
-    const dockerSpec: WorkerSpec = {
-      ...spec,
-      env: undefined,
-      executable: this.dockerExecutable,
-      args: buildContainerArgs(spec, this.containerPolicy, containerName, allowedEnvKeys, Object.keys(launchEnvironment)),
-    };
-    const handle = await this.delegate.start(dockerSpec, signal, input, launchSecrets);
-    this.containers.set(handle.workerId, containerName);
-    return handle;
+
+    if (files.length === 0) {
+      const dockerSpec: WorkerSpec = {
+        ...spec,
+        env: undefined,
+        executable: this.dockerExecutable,
+        args: buildContainerArgs(spec, this.containerPolicy, containerName, allowedEnvKeys, Object.keys(launchEnvironment)),
+      };
+      const handle = await this.delegate.start(dockerSpec, signal, input, launchSecrets);
+      this.sessions.set(handle.workerId, { name: containerName, files: [], holderOnly: false });
+      return handle;
+    }
+
+    await this.dockerCommand([
+      ...buildContainerCreateArgs(spec, this.containerPolicy, containerName, allowedEnvKeys, Object.keys(launchEnvironment)),
+    ]);
+
+    try {
+      await this.dockerCommand(["start", containerName]);
+      await this.injectCredentialFiles(containerName, files);
+
+      const dockerSpec: WorkerSpec = {
+        ...spec,
+        env: undefined,
+        executable: this.dockerExecutable,
+        args: buildContainerExecArgs(spec, this.containerPolicy, containerName, Object.keys(launchEnvironment)),
+      };
+      const handle = await this.delegate.start(dockerSpec, signal, input, launchSecrets);
+      this.sessions.set(handle.workerId, {
+        name: containerName,
+        files,
+        persistRefreshedFiles: launchSecrets?.persistRefreshedFiles,
+        holderOnly: true,
+      });
+      return handle;
+    } catch (error) {
+      await this.forceRemoveContainer(containerName);
+      throw error;
+    }
   }
 
   stream(workerId: string): AsyncIterable<WorkerEvent> { return this.delegate.stream(workerId); }
@@ -611,22 +688,114 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
 
   async cancel(workerId: string, reason?: string): Promise<void> {
     await this.delegate.cancel(workerId, reason);
-    await this.removeContainer(workerId);
+    await this.finalizeSession(workerId);
   }
 
   async cleanup(workerId: string): Promise<void> {
     try { await this.delegate.cleanup(workerId); }
-    finally { await this.removeContainer(workerId); }
+    finally { await this.finalizeSession(workerId); }
   }
 
-  private async removeContainer(workerId: string): Promise<void> {
-    const name = this.containers.get(workerId);
-    if (!name) return;
-    this.containers.delete(workerId);
+  private async finalizeSession(workerId: string): Promise<void> {
+    const session = this.sessions.get(workerId);
+    if (!session) return;
+    this.sessions.delete(workerId);
+    try {
+      if (session.holderOnly && session.files.length) {
+        await this.recoverAndPersistCredentialFiles(session);
+      }
+    } finally {
+      await this.forceRemoveContainer(session.name);
+    }
+  }
+
+  private async injectCredentialFiles(containerName: string, files: ReadonlyArray<WorkerCredentialFile>): Promise<void> {
+    for (const file of files) {
+      const mode = (file.mode & 0o777).toString(8).padStart(3, "0");
+      const marker = `/tmp/.credential-mode-${file.containerPath.replace(/[^\w.-]+/g, "_")}`;
+      await this.dockerCommandWithStdin(
+        [
+          "exec", "-i", "-u", this.containerPolicy.user,
+          containerName, "/bin/bash", "-c",
+          `umask 077; cat > '${file.containerPath}' && chmod ${mode} '${file.containerPath}' && actual="$(stat -c %a '${file.containerPath}')" && test "$actual" = "${mode}" && printf '%s' "$actual" > '${marker}'`,
+        ],
+        file.content,
+      );
+    }
+  }
+
+  private async recoverAndPersistCredentialFiles(session: ContainerSession): Promise<void> {
+    const refreshed: WorkerCredentialFile[] = [];
+    for (const original of session.files) {
+      try {
+        const content = await this.dockerCommandCapture([
+          "exec", "-u", this.containerPolicy.user, session.name, "/bin/cat", original.containerPath,
+        ]);
+        const contentSha256 = sha256Hex(content);
+        if (contentSha256 === original.contentSha256) continue;
+        refreshed.push({
+          containerPath: original.containerPath,
+          content,
+          mode: original.mode,
+          contentSha256,
+        });
+      } catch {
+        // Missing or unreadable credential after failure/cancel: skip writeback.
+      }
+    }
+    if (refreshed.length && session.persistRefreshedFiles) {
+      await session.persistRefreshedFiles(refreshed);
+    }
+  }
+
+  private async forceRemoveContainer(name: string): Promise<void> {
     await new Promise<void>((resolve) => {
       const child = this.spawnFn(this.dockerExecutable, ["rm", "-f", name], { shell: false, stdio: "ignore" });
       child.once("error", () => resolve());
       child.once("close", () => resolve());
+    });
+  }
+
+  private dockerCommand(args: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+      let stderr = "";
+      child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+      child.once("error", reject);
+      child.once("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Docker command failed with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
+      });
+    });
+  }
+
+  private dockerCommandCapture(args: string[]): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["ignore", "pipe", "pipe"] });
+      const chunks: Buffer[] = [];
+      let stderr = "";
+      child.stdout?.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+      child.once("error", reject);
+      child.once("close", (code) => {
+        if (code === 0) resolve(Buffer.concat(chunks));
+        else reject(new Error(`Docker capture failed with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
+      });
+    });
+  }
+
+  private dockerCommandWithStdin(args: string[], input: Buffer): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["pipe", "pipe", "pipe"] });
+      let stderr = "";
+      child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+      child.once("error", reject);
+      child.once("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Docker inject failed with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
+      });
+      child.stdin?.write(input);
+      child.stdin?.end();
     });
   }
 }
@@ -638,10 +807,62 @@ export function buildContainerArgs(
   allowedEnvKeys: string[],
   launchSecretNames: string[] = [],
 ): string[] {
+  return [
+    "run", "--rm",
+    ...buildContainerIsolationArgs(spec, policy, name, allowedEnvKeys, launchSecretNames),
+    policy.image,
+    "/bin/bash", "-c", CONTAINER_HOME_INIT_SCRIPT, "worker-init", spec.executable,
+    ...spec.args,
+  ];
+}
+
+export function buildContainerCreateArgs(
+  spec: WorkerSpec,
+  policy: ContainerWorkerPolicy,
+  name: string,
+  allowedEnvKeys: string[],
+  launchSecretNames: string[] = [],
+): string[] {
+  return [
+    "create",
+    ...buildContainerIsolationArgs(spec, policy, name, allowedEnvKeys, launchSecretNames),
+    policy.image,
+    "/bin/bash", "-c", CONTAINER_CREDENTIAL_HOLDER_SCRIPT,
+  ];
+}
+
+export function buildContainerExecArgs(
+  spec: WorkerSpec,
+  policy: ContainerWorkerPolicy,
+  name: string,
+  launchSecretNames: string[] = [],
+): string[] {
+  return [
+    "exec",
+    "--interactive",
+    "-u", policy.user,
+    "-w", "/workspace",
+    ...Object.entries(CONTAINER_ENVIRONMENT).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+    ...launchSecretNames
+      .filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !CONTAINER_RESERVED_ENV_KEYS.has(key) && isSupportedLaunchSecretName(key))
+      .flatMap((key) => ["--env", key]),
+    name,
+    spec.executable,
+    ...spec.args,
+  ];
+}
+
+function buildContainerIsolationArgs(
+  spec: WorkerSpec,
+  policy: ContainerWorkerPolicy,
+  name: string,
+  allowedEnvKeys: string[],
+  launchSecretNames: string[],
+): string[] {
   const network = spec.network === true && policy.allowNetwork ? "bridge" : "none";
   const mountMode = spec.workspaceAccess === "read-write" ? "rw" : "ro";
   return [
-    "run", "--rm", "--name", name, "--interactive",
+    "--name", name, "--interactive",
     "--network", network,
     "--read-only",
     "--cap-drop", "ALL",
@@ -661,9 +882,6 @@ export function buildContainerArgs(
     ...launchSecretNames
       .filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !CONTAINER_RESERVED_ENV_KEYS.has(key) && isSupportedLaunchSecretName(key))
       .flatMap((key) => ["--env", key]),
-    policy.image,
-    "/bin/bash", "-c", CONTAINER_HOME_INIT_SCRIPT, "worker-init", spec.executable,
-    ...spec.args,
   ];
 }
 
