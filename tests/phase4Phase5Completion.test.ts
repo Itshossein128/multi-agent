@@ -39,16 +39,28 @@ test("real LangGraph fan-out and fan-in execute without serializing the branches
   const nodeA = createNode("agent", { x: 1, y: -1 }, { agentId: agentA.id });
   const nodeB = createNode("agent", { x: 1, y: 1 }, { agentId: agentB.id });
   const output = createNode("output", { x: 2, y: 0 });
-  const workflow = { ...createEmptyDefinition(), nodes: [input, nodeA, nodeB, output], edges: [
-    createEdge({ source: input.id, target: nodeA.id }), createEdge({ source: input.id, target: nodeB.id }),
-    createEdge({ source: nodeA.id, target: output.id }), createEdge({ source: nodeB.id, target: output.id }),
-  ] };
+  const workflow = {
+    ...createEmptyDefinition(), nodes: [input, nodeA, nodeB, output], edges: [
+      createEdge({ source: input.id, target: nodeA.id }), createEdge({ source: input.id, target: nodeB.id }),
+      createEdge({ source: nodeA.id, target: output.id }), createEdge({ source: nodeB.id, target: output.id }),
+    ]
+  };
   const started: string[] = [];
   const graph = compileWorkflow(workflow, [agentA, agentB], {
     runtime: { async *execute(input) { started.push(input.agent.name); yield { type: "agent.completed" as const, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { content: input.agent.name } }; } },
   });
   await graph.graph.invoke({ input: { request: "fan out" } });
   expect(started.sort()).toEqual(["A", "B"]);
+});
+
+test("condition nodes coerce JSON branch carriers from CLI agent text", async () => {
+  const { coerceBranchCarrier } = await import("../apps/server/src/compiler/workflowCompiler");
+  expect(coerceBranchCarrier('noise {"branch":"fail","status":1} trailing')).toEqual({ branch: "fail", status: 1 });
+  expect(coerceBranchCarrier('{"verdict":"approve","reasoning":"ok"}')).toEqual({
+    verdict: "approve",
+    reasoning: "ok",
+    branch: "approved",
+  });
 });
 
 test("condition nodes can drive a bounded loop from the previous node value", async () => {
@@ -58,12 +70,14 @@ test("condition nodes can drive a bounded loop from the previous node value", as
   condition.config = { branches: [{ key: "loop", label: "Loop" }, { key: "exit", label: "Exit" }] };
   const body = createNode("agent", { x: 2, y: 0 }, { agentId: agent.id });
   const output = createNode("output", { x: 3, y: 0 });
-  const workflow = { ...createEmptyDefinition(), nodes: [input, condition, body, output], edges: [
-    createEdge({ source: input.id, target: condition.id }),
-    createEdge({ source: condition.id, target: body.id, kind: "conditional", branchKey: "loop" }),
-    createEdge({ source: condition.id, target: output.id, kind: "conditional", branchKey: "exit" }),
-    createEdge({ source: body.id, target: condition.id }),
-  ] };
+  const workflow = {
+    ...createEmptyDefinition(), nodes: [input, condition, body, output], edges: [
+      createEdge({ source: input.id, target: condition.id }),
+      createEdge({ source: condition.id, target: body.id, kind: "conditional", branchKey: "loop" }),
+      createEdge({ source: condition.id, target: output.id, kind: "conditional", branchKey: "exit" }),
+      createEdge({ source: body.id, target: condition.id }),
+    ]
+  };
   let executions = 0;
   const graph = compileWorkflow(workflow, [agent], {
     runtime: { async *execute(input) { executions += 1; yield { type: "agent.completed" as const, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { content: { branch: "exit" } } }; } },

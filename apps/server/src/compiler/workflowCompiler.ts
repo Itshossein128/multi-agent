@@ -120,96 +120,98 @@ export function compileWorkflow(
         }
         emit("node.started", { nodeType: node.type, attempt, maxAttempts: retry.maxAttempts, step });
         try {
-        let result: Partial<RuntimeState>;
-        if (node.type === "tool") {
-          const tool = toolsById.get((node.config as { toolId?: string | null }).toolId ?? "");
-          if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
-          emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
-          try {
-            const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), options.signal);
-            emit("tool.completed", { toolId: tool.id, output: value });
-            result = { lastValue: value };
-          } catch (error) {
-            emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message : String(error) });
-            throw error;
-          }
-        } else if (node.type === "approval") {
-          if (state.branch === "approved" || state.branch === "rejected") {
-            result = { branch: state.branch, lastValue: state.lastValue };
+          let result: Partial<RuntimeState>;
+          if (node.type === "tool") {
+            const tool = toolsById.get((node.config as { toolId?: string | null }).toolId ?? "");
+            if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
+            emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
+            try {
+              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), options.signal);
+              emit("tool.completed", { toolId: tool.id, output: value });
+              result = { lastValue: value };
+            } catch (error) {
+              emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message : String(error) });
+              throw error;
+            }
+          } else if (node.type === "approval") {
+            if (state.branch === "approved" || state.branch === "rejected") {
+              result = { branch: state.branch, lastValue: state.lastValue };
+            } else {
+              const config = node.config as ApprovalNodeConfig;
+              // interrupt() throws a graph-control exception on the first pass. It is
+              // intentionally allowed through without becoming a node failure.
+              const resume = interrupt({
+                nodeId: node.id,
+                message: config.message,
+                approvalType: config.approvalType,
+                timeoutSeconds: config.timeoutSeconds,
+                context: nodeInput ?? state.input,
+              }) as { decision?: string; response?: string } | undefined;
+              result = { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
+            }
+          } else if (node.type === "input") {
+            result = { input: state.input, lastValue: state.input };
+          } else if (node.type === "output") {
+            result = {
+              output:
+                nodeInput && typeof nodeInput === "object"
+                  ? (nodeInput as Record<string, unknown>)
+                  : nodeInput === undefined ? state.input : { content: nodeInput },
+            };
+          } else if (node.type === "memory") {
+            const config = node.config as { mode: string; key: string };
+            if (config.mode === "read") result = { lastValue: state.memory[config.key] };
+            else {
+              const value = nodeInput ?? state.input;
+              result = { memory: { [config.key]: value }, lastValue: value };
+            }
+            emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
+          } else if (node.type === "condition") {
+            const config = node.config as { branches: { key: string }[] };
+            // CLI agents often return JSON text; coerce so branch keys transfer through workflow state.
+            const routedValue = coerceBranchCarrier(state.lastValue);
+            const lastValueBranch = routedValue && typeof routedValue === "object"
+              ? (routedValue as { branch?: unknown; branchKey?: unknown }).branch ?? (routedValue as { branchKey?: unknown }).branchKey
+              : undefined;
+            const requested = state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? lastValueBranch;
+            const branch =
+              typeof requested === "string" && config.branches.some((item) => item.key === requested)
+                ? requested
+                : config.branches[0]?.key;
+            result = { branch, lastValue: routedValue ?? state.lastValue };
+            emit("state.updated", { branch });
           } else {
-            const config = node.config as ApprovalNodeConfig;
-            // interrupt() throws a graph-control exception on the first pass. It is
-            // intentionally allowed through without becoming a node failure.
-            const resume = interrupt({
-              nodeId: node.id,
-              message: config.message,
-              approvalType: config.approvalType,
-              timeoutSeconds: config.timeoutSeconds,
-              context: nodeInput ?? state.input,
-            }) as { decision?: string; response?: string } | undefined;
-            result = { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
-          }
-        } else if (node.type === "input") {
-          result = { input: state.input, lastValue: state.input };
-        } else if (node.type === "output") {
-          result = {
-            output:
-              nodeInput && typeof nodeInput === "object"
-                ? (nodeInput as Record<string, unknown>)
-                : nodeInput === undefined ? state.input : { content: nodeInput },
-          };
-        } else if (node.type === "memory") {
-          const config = node.config as { mode: string; key: string };
-          if (config.mode === "read") result = { lastValue: state.memory[config.key] };
-          else {
-            const value = nodeInput ?? state.input;
-            result = { memory: { [config.key]: value }, lastValue: value };
-          }
-          emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
-        } else if (node.type === "condition") {
-          const config = node.config as { branches: { key: string }[] };
-          const lastValueBranch = state.lastValue && typeof state.lastValue === "object"
-            ? (state.lastValue as { branch?: unknown; branchKey?: unknown }).branch ?? (state.lastValue as { branchKey?: unknown }).branchKey
-            : undefined;
-          const requested = state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? lastValueBranch;
-          const branch =
-            typeof requested === "string" && config.branches.some((item) => item.key === requested)
-              ? requested
-              : config.branches[0]?.key;
-          result = { branch, lastValue: state.lastValue };
-          emit("state.updated", { branch });
-        } else {
-          const config = node.config as { agentId?: string | null };
-          const agent = config.agentId ? agentById.get(config.agentId) : undefined;
-          if (!agent) throw new Error(`Agent node "${node.id}" has no linked agent`);
-          if (agent.enabled === false) throw new Error(`Agent "${agent.name}" is disabled`);
-          const agentErrors = validateAgent(agent);
-          if (agentErrors.length) throw new Error(agentErrors.join(" "));
+            const config = node.config as { agentId?: string | null };
+            const agent = config.agentId ? agentById.get(config.agentId) : undefined;
+            if (!agent) throw new Error(`Agent node "${node.id}" has no linked agent`);
+            if (agent.enabled === false) throw new Error(`Agent "${agent.name}" is disabled`);
+            const agentErrors = validateAgent(agent);
+            if (agentErrors.length) throw new Error(agentErrors.join(" "));
 
-          let shortTermHistories: ShortTermHistories = {};
-          const value = options.agentRunner
-            ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id })
-            : await runAgentThroughRuntime(agent, executionState, {
-              runId,
-              nodeId: node.id,
-              workflowId: options.workflowId ?? definition.id,
-              onAgentEvent: options.onAgentEvent,
-              runtime,
-              memoryAccess: options.memoryAccess,
-              credentialPrincipal: options.credentialPrincipal,
-              onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
-              signal: options.signal,
-            });
-          result = { lastValue: value, shortTermHistories };
-        }
-        const nodeValue = result.output ?? result.lastValue;
-        result.nodeResults = { [node.id]: nodeValue };
-        emit("node.completed", { nodeType: node.type, attempt, maxAttempts: retry.maxAttempts, step });
-        const branch = result.branch;
-        for (const edge of definition.edges.filter((candidate) => candidate.source === node.id)) {
-          if (edge.kind === "conditional" && edge.branchKey !== branch) continue;
-          emit("edge.traversed", { edgeId: edge.id, source: edge.source, target: edge.target, branchKey: edge.branchKey });
-        }
+            let shortTermHistories: ShortTermHistories = {};
+            const value = options.agentRunner
+              ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id })
+              : await runAgentThroughRuntime(agent, executionState, {
+                runId,
+                nodeId: node.id,
+                workflowId: options.workflowId ?? definition.id,
+                onAgentEvent: options.onAgentEvent,
+                runtime,
+                memoryAccess: options.memoryAccess,
+                credentialPrincipal: options.credentialPrincipal,
+                onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
+                signal: options.signal,
+              });
+            result = { lastValue: value, shortTermHistories };
+          }
+          const nodeValue = result.output ?? result.lastValue;
+          result.nodeResults = { [node.id]: nodeValue };
+          emit("node.completed", { nodeType: node.type, attempt, maxAttempts: retry.maxAttempts, step });
+          const branch = result.branch;
+          for (const edge of definition.edges.filter((candidate) => candidate.source === node.id)) {
+            if (edge.kind === "conditional" && edge.branchKey !== branch) continue;
+            emit("edge.traversed", { edgeId: edge.id, source: edge.source, target: edge.target, branchKey: edge.branchKey });
+          }
           return result;
         } catch (error) {
           if (isGraphInterrupt(error)) throw error;
@@ -337,7 +339,7 @@ class AbortableSemaphore {
     onAbort?: () => void;
   }> = [];
 
-  constructor(private readonly limit: number) {}
+  constructor(private readonly limit: number) { }
 
   acquire(signal?: AbortSignal): Promise<() => void> {
     if (signal?.aborted) return Promise.reject(abortError());
@@ -382,6 +384,30 @@ class AbortableSemaphore {
 }
 
 function asToolInput(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : { value }; }
+
+/** Extract a JSON object that carries branch/branchKey from free-form agent text. */
+export function coerceBranchCarrier(value: unknown): unknown {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end <= start) return value;
+  try {
+    const parsed = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return value;
+    const record = parsed as { branch?: unknown; branchKey?: unknown; verdict?: unknown };
+    if (typeof record.branch === "string" || typeof record.branchKey === "string") return parsed;
+    if (typeof record.verdict === "string") {
+      const verdict = record.verdict.toLowerCase();
+      if (verdict === "approve" || verdict === "approved") return { ...record, branch: "approved" };
+      if (verdict === "reject" || verdict === "rejected") return { ...record, branch: "rejected" };
+    }
+    return value;
+  } catch {
+    return value;
+  }
+}
 
 function isGraphInterrupt(error: unknown): boolean {
   const name = error && typeof error === "object" && "name" in error ? String((error as { name?: unknown }).name) : "";
