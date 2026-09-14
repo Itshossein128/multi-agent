@@ -9,7 +9,7 @@ import { createDashboardRouter } from "./api/dashboard";
 import { createMemoryComposition } from "./memory/composition";
 import { memoryAccessResolverFromEnvironment } from "./memory/access";
 import { createStudioComposition } from "./studio/composition";
-import { AgentRuntime } from "../../../src/agents/runtime";
+import { AgentRuntime, environmentWorkerCredentialResolverFromEnvironment } from "../../../src/agents/runtime";
 import { RunExecutor } from "./runtime/runExecutor";
 import { InMemoryRunStore, PostgresRunStore } from "./runtime/runStore";
 import { recoverInterruptedRuns } from "./runtime/recovery";
@@ -64,7 +64,15 @@ async function main() {
 
   const executor = new RunExecutor(
     runStore,
-    new AgentRuntime(undefined, memory.runtime, observability.telemetry),
+    new AgentRuntime(
+      undefined,
+      memory.runtime,
+      observability.telemetry,
+      undefined,
+      undefined,
+      undefined,
+      environmentWorkerCredentialResolverFromEnvironment(),
+    ),
     checkpointer,
     observability.telemetry,
   );

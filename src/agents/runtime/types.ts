@@ -1,6 +1,7 @@
 import type { AgentRecord } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../memory/contracts";
 import type { ShortTermHistories } from "./shortTermMemory";
+import type { TrustedCredentialPrincipal } from "./workerCredentials";
 
 export type AgentExecutionEventType =
   | "agent.started"
@@ -36,6 +37,8 @@ export interface AgentExecutionInput {
   signal?: AbortSignal;
   /** Trusted server composition only; configuration is never an authorization grant. */
   memoryAccess?: MemoryAccessContext;
+  /** Trusted server composition only; never derive this from workflow/agent configuration. */
+  credentialPrincipal?: TrustedCredentialPrincipal;
   shortTermHistories?: ShortTermHistories;
   onShortTermUpdate?: (update: ShortTermHistories) => void;
   /** Background events only. The owner maps/appends these to the existing RunStore,

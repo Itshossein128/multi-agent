@@ -6,7 +6,7 @@ import { compileWorkflow, UnsupportedPhase4NodeError, type AgentExecutionEvent, 
 type CompiledGraph = ReturnType<typeof compileWorkflow>;
 import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
-import { AgentRuntime, mapAgentExecutionEvent } from "../../../../src/agents/runtime";
+import { AgentRuntime, mapAgentExecutionEvent, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
 import { ToolRuntime } from "../../../../src/tools";
 import { ExecutionTelemetry } from "../../../../src/observability/telemetry";
 import { validateWorkflow } from "../compiler/validation";
@@ -16,6 +16,10 @@ import type { RequestPrincipal } from "../auth/principal";
 
 function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
   return mapAgentExecutionEvent(event as Parameters<typeof mapAgentExecutionEvent>[0], runId);
+}
+
+function asCredentialPrincipal(principal?: RequestPrincipal): TrustedCredentialPrincipal | undefined {
+  return principal ? { tenantId: principal.tenantId, principalId: principal.userId } : undefined;
 }
 
 interface PausedContext {
@@ -39,6 +43,10 @@ export class RunExecutor {
     private readonly toolRuntime?: Pick<ToolRuntime, "execute">,
   ) { }
   getStore() { return this.store; }
+  private credentialPrincipalForRun(runId: string): TrustedCredentialPrincipal | undefined {
+    const run = this.store.get(runId)?.run;
+    return run?.tenantId && run.ownerId ? { tenantId: run.tenantId, principalId: run.ownerId } : undefined;
+  }
   private appendAgentEvent(runId: string, event: AgentExecutionEvent) {
     for (const runEvent of mapAgentEvents(event, runId)) {
       if (runEvent.nodeId && (runEvent.type === "node.started" || runEvent.type === "agent.started" || runEvent.type === "tool.started")) {
@@ -68,13 +76,13 @@ export class RunExecutor {
     );
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.created", timestamp: stamp, sequence: 0, payload: {} });
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.started", timestamp: stamp, sequence: 0, payload: {} });
-    void this.executeAgentTest(id, request, memoryAccess);
+    void this.executeAgentTest(id, request, memoryAccess, principal);
     return id;
   }
-  private async executeAgentTest(runId: string, request: AgentTestRequest, memoryAccess?: MemoryAccessContext) {
+  private async executeAgentTest(runId: string, request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     try {
       let output: Record<string, unknown> = {};
-      for await (const event of this.agentRuntime.execute({ agent: request.agent, input: request.input, runId, nodeId: `test:${request.agent.id}`, signal: this.store.signal(runId), memoryStore: new Map(), memoryAccess, onBackgroundEvent: event => { this.appendAgentEvent(runId, event); } })) {
+      for await (const event of this.agentRuntime.execute({ agent: request.agent, input: request.input, runId, nodeId: `test:${request.agent.id}`, signal: this.store.signal(runId), memoryStore: new Map(), memoryAccess, credentialPrincipal: asCredentialPrincipal(principal), onBackgroundEvent: event => { this.appendAgentEvent(runId, event); } })) {
         this.appendAgentEvent(runId, event);
         if (event.type === "agent.completed") output = { content: (event.payload as { content?: unknown })?.content };
         if (event.type === "agent.failed") throw new Error((event.payload as { error?: string })?.error ?? "Agent failed");
@@ -101,7 +109,7 @@ export class RunExecutor {
     log.info("run.started", { runId: id, workflowId: request.workflow.id, taskId: request.taskId });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.created", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
-    void this.execute(id, request, memoryAccess);
+    void this.execute(id, request, memoryAccess, principal);
     return id;
   }
   retry(runId: string, memoryAccess?: MemoryAccessContext) {
@@ -172,6 +180,7 @@ export class RunExecutor {
         toolRuntime: this.toolRuntime,
         checkpointer,
         memoryAccess: context.memoryAccess,
+        credentialPrincipal: this.credentialPrincipalForRun(runId),
         signal: this.store.signal(runId),
         workflowId: context.workflow.id,
         tools: context.tools,
@@ -183,14 +192,14 @@ export class RunExecutor {
     } catch (error) { this.fail(runId, error); }
   }
 
-  private async execute(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
+  private async execute(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     if (this.telemetry.enabled) {
       const traceId = await this.telemetry.traceIdForRun(runId);
       this.store.update(runId, { metadata: { ...(this.store.get(runId)?.run.metadata ?? {}), observability: { provider: "langfuse", traceId } } });
     }
-    return this.telemetry.withWorkflow({ runId, workflowId: request.workflow.id, taskId: request.taskId, input: request.input }, () => this.executeWorkflow(runId, request, memoryAccess));
+    return this.telemetry.withWorkflow({ runId, workflowId: request.workflow.id, taskId: request.taskId, input: request.input }, () => this.executeWorkflow(runId, request, memoryAccess, principal));
   }
-  private async executeWorkflow(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext) {
+  private async executeWorkflow(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     this.store.update(runId, { status: "running" });
     const timeout = setTimeout(() => this.store.cancel(runId), this.guardrails.maxRunDurationMs);
     // Approvals require checkpointing to pause/resume — a per-run MemorySaver is
@@ -206,6 +215,7 @@ export class RunExecutor {
         toolRuntime: this.toolRuntime,
         checkpointer,
         memoryAccess,
+        credentialPrincipal: asCredentialPrincipal(principal),
         signal: this.store.signal(runId),
         workflowId: request.workflow.id,
         tools: request.tools,

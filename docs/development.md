@@ -42,6 +42,8 @@ For untrusted work use `CLI_WORKER_MODE=container` and set `CLI_WORKER_IMAGE` to
 
 Build, smoke-test, publish, and configure the dedicated Codex/Claude worker by following [Immutable CLI worker image](cli-worker-image.md). Authentication is intentionally separate from the image.
 
+CLI launch credentials use a server-only resolver and never belong in workflows, agents, tools, run input, or `WorkerSpec.env`. The initial development adapter is disabled unless `CLI_CREDENTIAL_ENVIRONMENT_ENABLED=true`. It accepts only a provider-constrained variable name through `CLI_CODEX_CREDENTIAL_ENV_VAR` or `CLI_CLAUDE_CREDENTIAL_ENV_VAR`; `WORKER_ALLOWED_ENV_KEYS` is not a container credential channel. Environment delivery exposes a credential to the CLI process and to Docker daemon/container inspection, so it is not the final production multi-tenant boundary. Prefer short-lived tokens or an external credential-injecting gateway for production.
+
 ## Browser E2E
 
 With PostgreSQL migrations applied and the normal web/server environment configured:

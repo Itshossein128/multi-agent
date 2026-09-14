@@ -14,3 +14,14 @@ export { NotImplementedAgentExecutor } from "./notImplementedExecutor";
 export { UnsupportedBackendError, AgentExecutionFailedError } from "./errors";
 export { mapAgentExecutionEvent } from "./mapAgentExecutionEvent";
 export type { MemoryAccessContext, RuntimeMemoryDependencies } from "../../memory/contracts";
+export {
+  EnvironmentWorkerCredentialResolver,
+  NO_WORKER_CREDENTIALS,
+  environmentWorkerCredentialResolverFromEnvironment,
+} from "./workerCredentials";
+export type {
+  CredentialResolutionContext,
+  TrustedCredentialPrincipal,
+  WorkerCredentialResolver,
+  WorkerLaunchSecrets,
+} from "./workerCredentials";

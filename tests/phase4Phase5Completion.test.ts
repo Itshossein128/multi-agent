@@ -140,13 +140,19 @@ test("agent diagnostics are server-side and do not expose credentials", async ()
 });
 
 test("container CLI diagnostics validate image and inner command without requiring a host executable", async () => {
-  const keys = ["CLI_AGENT_ENABLED", "CLI_WORKER_MODE", "CLI_WORKER_IMAGE", "CLI_AGENT_ALLOWED_EXECUTABLES"] as const;
+  const keys = [
+    "CLI_AGENT_ENABLED", "CLI_WORKER_MODE", "CLI_WORKER_IMAGE", "CLI_AGENT_ALLOWED_EXECUTABLES",
+    "CLI_CREDENTIAL_ENVIRONMENT_ENABLED", "CLI_CODEX_CREDENTIAL_ENV_VAR", "OPENAI_API_KEY",
+  ] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   try {
     process.env.CLI_AGENT_ENABLED = "true";
     process.env.CLI_WORKER_MODE = "container";
     process.env.CLI_WORKER_IMAGE = `registry.example/agent@sha256:${"a".repeat(64)}`;
     process.env.CLI_AGENT_ALLOWED_EXECUTABLES = "/usr/local/bin/codex";
+    process.env.CLI_CREDENTIAL_ENVIRONMENT_ENABLED = "true";
+    process.env.CLI_CODEX_CREDENTIAL_ENV_VAR = "OPENAI_API_KEY";
+    process.env.OPENAI_API_KEY = "dummy-diagnostic-secret";
 
     const store = new InMemoryStudioStore();
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "/usr/local/bin/codex" } });
@@ -155,10 +161,12 @@ test("container CLI diagnostics validate image and inner command without requiri
     const response = await app.request(`http://localhost/agents/${agent.id}/diagnostics`);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(expect.objectContaining({
+    const diagnostic = await response.json();
+    expect(diagnostic).toEqual(expect.objectContaining({
       status: "unknown",
       message: expect.stringMatching(/Digest-pinned worker image and container executable are configured/),
     }));
+    expect(JSON.stringify(diagnostic)).not.toContain("dummy-diagnostic-secret");
   } finally {
     for (const key of keys) {
       const value = previous[key];

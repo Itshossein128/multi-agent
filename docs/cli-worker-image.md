@@ -54,3 +54,7 @@ CLI_WORKER_ALLOW_NETWORK=false
 ```
 
 The image expects `/home/worker` and `/tmp` to be runtime tmpfs mounts and `/workspace` to be the sole project bind. CLI provider calls cannot succeed while network access is disabled; enabling network later requires both the server setting and the individual agent policy. Authentication and credential injection are deliberately not configured by this image.
+
+Every runtime launch recreates `.codex`, `.claude`, `.config`, `.cache`, and `.local/share` inside the fresh `/home/worker` tmpfs as the configured non-root worker, with mode `0700`. The runtime fixes `CLAUDE_CONFIG_DIR=/home/worker/.claude`, enables Claude subprocess credential scrubbing, and disables Claude prompt-history persistence. These paths and hardening values cannot be overridden by worker configuration.
+
+The server includes a disabled-by-default development adapter for environment credential delivery. When explicitly enabled, only the selected provider credential name is included in Docker arguments; its value is supplied through the Docker client's initial environment and is redacted from worker output. Docker still stores environment credentials in container configuration, and the CLI itself can read them. This mechanism is therefore for controlled development, not a production multi-tenant security boundary. No local login files, host home directories, `.codex`, or `.claude` directories are mounted.

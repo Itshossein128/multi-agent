@@ -156,10 +156,73 @@ describe("CLI and local executors", () => {
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--json", "-"], cwd: "/workspace" }),
       undefined,
-      expect.stringContaining("USER INPUT:\nsummarize")
+      expect.stringContaining("USER INPUT:\nsummarize"),
+      undefined,
     );
     expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
     expect((events[2].payload as { content: string }).content).toBe("CLI answer");
+  });
+
+  test("resolves trusted launch secrets from the exact server credential context", async () => {
+    const secret = "dummy-credential-value";
+    const start = jest.fn(async (..._arguments: any[]) => ({ workerId: "w1", runId: "run-credential" }));
+    const workerRuntime = { start, wait: jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" })), cleanup: jest.fn() } as any;
+    const resolve = jest.fn(async () => ({ environment: { OPENAI_API_KEY: secret } }));
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.id = "agent-credential";
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    const events: AgentExecutionEvent[] = [];
+
+    for await (const event of new CliAgentExecutor(workerRuntime, {
+      enabled: true,
+      workerMode: "container",
+      allowedExecutables: ["codex"],
+      workspaceRoots: ["/workspace"],
+      maxOutputBytes: 4096,
+    }, { resolve }).execute({
+      agent,
+      input: "hi",
+      runId: "run-credential",
+      nodeId: "node-credential",
+      credentialPrincipal: { tenantId: "tenant-a", principalId: "user-a" },
+    })) events.push(event);
+
+    expect(resolve).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      principalId: "user-a",
+      runId: "run-credential",
+      agentId: "agent-credential",
+      provider: "codex",
+    });
+    expect(start.mock.calls[0][3]).toEqual({ environment: { OPENAI_API_KEY: secret } });
+    expect(JSON.stringify(start.mock.calls[0][0])).not.toContain(secret);
+    expect(JSON.stringify(events)).not.toContain(secret);
+  });
+
+  test("does not resolve credentials without trusted principal context and sanitizes resolver failures", async () => {
+    const secret = "dummy-resolver-error-secret";
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const workerRuntime = { start, wait: jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" })), cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    const runtimePolicy = { enabled: true, workerMode: "container" as const, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    const resolve = jest.fn(async () => { throw new Error(secret); });
+
+    for await (const _event of new CliAgentExecutor(workerRuntime, runtimePolicy, { resolve }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+    expect(resolve).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledWith(expect.anything(), undefined, expect.any(String), undefined);
+
+    const events: AgentExecutionEvent[] = [];
+    await expect(async () => {
+      for await (const event of new CliAgentExecutor(workerRuntime, runtimePolicy, { resolve }).execute({
+        agent,
+        input: "hi",
+        runId: "r2",
+        nodeId: "n2",
+        credentialPrincipal: { tenantId: "tenant", principalId: "user" },
+      })) events.push(event);
+    }).rejects.toThrow("CLI credential resolution failed");
+    expect(JSON.stringify(events)).not.toContain(secret);
   });
 
   test("calls the Ollama local API with its configured model and normalized events", async () => {
@@ -187,7 +250,8 @@ describe("CLI and local executors", () => {
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ executable: expect.stringContaining("agy"), args: ["--print", "--output-format", "text", "--disable-slash-commands", "--model", "gpt-5"], cwd: "/workspace/project" }),
       undefined,
-      expect.stringContaining("SYSTEM INSTRUCTIONS")
+      expect.stringContaining("SYSTEM INSTRUCTIONS"),
+      undefined,
     );
     expect((start.mock.calls[0] as any[])[2]).toContain("review");
   });
@@ -204,7 +268,8 @@ describe("CLI and local executors", () => {
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--json", "-"] }),
       undefined,
-      expect.any(String)
+      expect.any(String),
+      undefined,
     );
   });
 
@@ -233,7 +298,8 @@ describe("CLI and local executors", () => {
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ executable: require("node:path").resolve(absolute) }),
       undefined,
-      expect.any(String)
+      expect.any(String),
+      undefined,
     );
   });
 
@@ -249,7 +315,7 @@ describe("CLI and local executors", () => {
 
     for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "container", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
 
-    expect(start).toHaveBeenCalledWith(expect.objectContaining({ executable: "codex" }), undefined, expect.any(String));
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ executable: "codex" }), undefined, expect.any(String), undefined);
     expect(JSON.stringify(start.mock.calls)).not.toContain(hostExecutable);
   });
 

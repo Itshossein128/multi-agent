@@ -5,6 +5,7 @@ import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./
 import { AgentExecutionFailedError } from "./errors";
 import type { WorkerRuntime, WorkerSpec } from "./workerRuntime";
 import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
+import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver, type WorkerLaunchSecrets } from "./workerCredentials";
 
 export interface CliRuntimePolicy {
   enabled: boolean;
@@ -90,7 +91,8 @@ export class CliAgentExecutor implements AgentExecutor {
   private readonly workerRuntime: WorkerRuntime;
   constructor(
     workerRuntime: WorkerRuntime | undefined = undefined,
-    private readonly runtimePolicy: CliRuntimePolicy = cliRuntimePolicyFromEnvironment()
+    private readonly runtimePolicy: CliRuntimePolicy = cliRuntimePolicyFromEnvironment(),
+    private readonly credentialResolver: WorkerCredentialResolver = NO_WORKER_CREDENTIALS,
   ) {
     this.workerRuntime = workerRuntime ?? (runtimePolicy.workerMode === "container"
       ? new ContainerWorkerRuntime(runtimePolicy, containerWorkerPolicyFromEnvironment())
@@ -117,6 +119,20 @@ export class CliAgentExecutor implements AgentExecutor {
     yield event("agent.started", input, { provider: backend.provider, executable: spawnExecutable, args });
 
     try {
+      let launchSecrets: WorkerLaunchSecrets | undefined;
+      if (input.credentialPrincipal) {
+        try {
+          launchSecrets = await this.credentialResolver.resolve({
+            tenantId: input.credentialPrincipal.tenantId,
+            principalId: input.credentialPrincipal.principalId,
+            runId: input.runId,
+            agentId: input.agent.id,
+            provider: backend.provider,
+          });
+        } catch {
+          throw new Error("CLI credential resolution failed.");
+        }
+      }
       const spec: WorkerSpec = {
         runId: input.runId,
         nodeId: input.nodeId,
@@ -130,7 +146,7 @@ export class CliAgentExecutor implements AgentExecutor {
         network: policy.network === true,
       };
 
-      const handle = await this.workerRuntime.start(spec, input.signal, prompt(input));
+      const handle = await this.workerRuntime.start(spec, input.signal, prompt(input), launchSecrets);
 
       try {
         const result = await this.workerRuntime.wait(handle.workerId);

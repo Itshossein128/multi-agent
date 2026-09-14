@@ -1,6 +1,6 @@
 import { Annotation, END, START, StateGraph, MemorySaver, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
 import { nowIso, validateAgent, type AgentRecord, type ApprovalNodeConfig, type NodeRetryPolicy, type ToolRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
-import { AgentRuntime, AgentExecutionFailedError } from "../../../../src/agents/runtime";
+import { AgentRuntime, AgentExecutionFailedError, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
 import { validateWorkflow } from "./validation";
@@ -54,6 +54,8 @@ export interface CompileOptions {
   signal?: AbortSignal;
   runtime?: Pick<AgentRuntime, "execute">;
   memoryAccess?: MemoryAccessContext;
+  /** Server-authenticated identity only; never populate from workflow/agent fields. */
+  credentialPrincipal?: TrustedCredentialPrincipal;
   /** A stable run identity enables checkpoints; anonymous compilation stays stateless. */
   checkpointer?: BaseCheckpointSaver | false;
   /** @deprecated Prefer AgentRuntime via the default path; kept for tests/overrides. */
@@ -194,6 +196,7 @@ export function compileWorkflow(
               onAgentEvent: options.onAgentEvent,
               runtime,
               memoryAccess: options.memoryAccess,
+              credentialPrincipal: options.credentialPrincipal,
               onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
               signal: options.signal,
             });
@@ -395,6 +398,7 @@ async function runAgentThroughRuntime(
     signal?: AbortSignal;
     runtime: Pick<AgentRuntime, "execute">;
     memoryAccess?: MemoryAccessContext;
+    credentialPrincipal?: TrustedCredentialPrincipal;
     onShortTermUpdate: (update: ShortTermHistories) => void;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
   }
@@ -408,6 +412,7 @@ async function runAgentThroughRuntime(
     workflowId: meta.workflowId,
     signal: meta.signal,
     memoryAccess: meta.memoryAccess,
+    credentialPrincipal: meta.credentialPrincipal,
     shortTermHistories: state.shortTermHistories ?? {},
     onShortTermUpdate: meta.onShortTermUpdate,
     onBackgroundEvent: meta.onAgentEvent,

@@ -27,6 +27,7 @@ type Check = {
   workspaceAccess?: WorkerSpec["workspaceAccess"];
   expectCode?: number;
   outputIncludes?: string;
+  outputExcludes?: string;
 };
 
 function docker(args: string[], options: { quiet?: boolean } = {}) {
@@ -66,6 +67,9 @@ function runCheck(check: Check) {
   if (check.outputIncludes && !output.includes(check.outputIncludes)) {
     throw new Error(`${check.name} output did not contain ${JSON.stringify(check.outputIncludes)}.\n${output}`);
   }
+  if (check.outputExcludes && output.includes(check.outputExcludes)) {
+    throw new Error(`${check.name} output unexpectedly contained ${JSON.stringify(check.outputExcludes)}.\n${output}`);
+  }
   assertRemoved(name);
   activeContainers.delete(name);
   console.log(`PASS ${check.name}`);
@@ -76,6 +80,7 @@ try {
 
   runCheck({ name: "codex-version", executable: "codex", args: ["--version"], outputIncludes: "codex-cli" });
   runCheck({ name: "codex-exec", executable: "codex", args: ["exec", "--help"], outputIncludes: "Usage" });
+  runCheck({ name: "codex-home-initialized", executable: "codex", args: ["login", "status"], expectCode: 1, outputIncludes: "Not logged in", outputExcludes: "CODEX_HOME points to" });
   runCheck({ name: "claude-version", executable: "claude", args: ["--version"], outputIncludes: "Claude Code" });
   runCheck({ name: "claude-print", executable: "claude", args: ["--help"], outputIncludes: "--print" });
   runCheck({
@@ -87,8 +92,11 @@ try {
       "test \"$XDG_CONFIG_HOME\" = /home/worker/.config",
       "test \"$XDG_CACHE_HOME\" = /home/worker/.cache",
       "test \"$CODEX_HOME\" = /home/worker/.codex",
-      "mkdir -p \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" \"$CODEX_HOME\"",
-      "touch \"$HOME/home-write\" \"$XDG_CONFIG_HOME/config-write\" \"$XDG_CACHE_HOME/cache-write\" \"$CODEX_HOME/codex-write\"",
+      "test \"$CLAUDE_CONFIG_DIR\" = /home/worker/.claude",
+      "test \"$CLAUDE_CODE_SUBPROCESS_ENV_SCRUB\" = 1",
+      "test \"$CLAUDE_CODE_SKIP_PROMPT_HISTORY\" = 1",
+      "for directory in \"$CODEX_HOME\" \"$CLAUDE_CONFIG_DIR\" \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" /home/worker/.local/share; do test -d \"$directory\"; test \"$(stat -c %u:%g \"$directory\")\" = 65534:65534; test \"$(stat -c %a \"$directory\")\" = 700; done",
+      "touch \"$HOME/home-write\" \"$XDG_CONFIG_HOME/config-write\" \"$XDG_CACHE_HOME/cache-write\" \"$CODEX_HOME/codex-write\" \"$CLAUDE_CONFIG_DIR/claude-write\"",
     ].join(" && ")],
   });
   runCheck({

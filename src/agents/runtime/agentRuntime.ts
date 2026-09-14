@@ -10,6 +10,7 @@ import type { WorkerRuntime } from "./workerRuntime";
 import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
 import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../../runtime/boundedValue";
+import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver } from "./workerCredentials";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -22,12 +23,13 @@ export class AgentRuntime {
     maxExecutionMs = configuredAgentTimeout(),
     workerRuntime?: WorkerRuntime,
     private readonly maxOutputBytes = boundedBytesFromEnvironment(process.env.AGENT_MAX_OUTPUT_BYTES, 256 * 1024),
+    credentialResolver: WorkerCredentialResolver = NO_WORKER_CREDENTIALS,
   ) {
     const cliPolicy = cliRuntimePolicyFromEnvironment();
     const defaultWorker = cliPolicy.workerMode === "container"
       ? new ContainerWorkerRuntime(cliPolicy, containerWorkerPolicyFromEnvironment())
       : new LocalProcessWorkerRuntime(cliPolicy);
-    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker, cliPolicy);
+    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker, cliPolicy, credentialResolver);
     this.maxExecutionMs = maxExecutionMs;
   }
 
