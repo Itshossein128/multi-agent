@@ -79,3 +79,30 @@ test("recovery restores waiting runs and fails interrupted active runs", () => {
   expect(store.get("run-active")?.run.status).toBe("failed");
   expect(store.get("wait-1")?.run.status).toBe("waiting_for_human");
 });
+
+test("recovery restores stepBudget from paused context", () => {
+  const store = new InMemoryRunStore();
+  const stamp = nowIso();
+  const workflow = createEmptyDefinition("Paused");
+  const agents = [createAgentRecord({ name: "A" })];
+  const stepBudget = { count: 7 };
+  store.create({ id: "wait-budget", workflowId: workflow.id, status: "waiting_for_human", startedAt: stamp, metadata: {} }, undefined, { workflow, agents });
+  store.setPausedContext?.("wait-budget", { workflow, agents, stepBudget });
+  store.addApproval("wait-budget", {
+    id: "appr-budget",
+    runId: "wait-budget",
+    nodeId: "n1",
+    status: "requested",
+    message: "Continue?",
+    requestedAt: stamp,
+    metadata: {},
+  });
+  const restored: unknown[] = [];
+  const executor = {
+    restorePausedRun: (...args: unknown[]) => { restored.push(args); },
+    rearmApprovalTimers: () => undefined,
+  };
+  const result = recoverInterruptedRuns(executor as never, store, new MemorySaver());
+  expect(result.restored).toContain("wait-budget");
+  expect((restored[0] as unknown[])[1]).toMatchObject({ stepBudget: { count: 7 } });
+});

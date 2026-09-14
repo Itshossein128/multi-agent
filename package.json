@@ -22,7 +22,8 @@
     "worker:image:smoke": "ts-node --transpile-only infrastructure/docker/smoke-worker-image.ts",
     "worker:e2e:codex-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-codex-auth-file.ts",
     "worker:e2e:claude-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-claude-auth-file.ts",
-    "worker:e2e:multi-agent-workflow": "ts-node --transpile-only infrastructure/docker/e2e-multi-agent-workflow.ts"
+    "worker:e2e:multi-agent-workflow": "ts-node --transpile-only infrastructure/docker/e2e-multi-agent-workflow.ts",
+    "worker:e2e:resilience-pg": "ts-node --transpile-only infrastructure/docker/e2e-resilience-pg.ts"
   },
   "license": "MIT",
   "dependencies": {
