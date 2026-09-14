@@ -2,5 +2,7 @@
 .env
 .env.local
 .env*.local
-dist/
 
+# Build output (also covered by root dist/)
+dist/
+*.tsbuildinfo

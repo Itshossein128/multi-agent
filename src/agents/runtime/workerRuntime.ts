@@ -393,6 +393,28 @@ export interface ContainerWorkerPolicy {
   user: string;
 }
 
+export const CONTAINER_CLI_PATHS = {
+  home: "/home/worker",
+  config: "/home/worker/.config",
+  cache: "/home/worker/.cache",
+  data: "/home/worker/.local/share",
+  codexHome: "/home/worker/.codex",
+  temp: "/tmp",
+} as const;
+
+const CONTAINER_ENVIRONMENT: Readonly<Record<string, string>> = {
+  HOME: CONTAINER_CLI_PATHS.home,
+  XDG_CONFIG_HOME: CONTAINER_CLI_PATHS.config,
+  XDG_CACHE_HOME: CONTAINER_CLI_PATHS.cache,
+  XDG_DATA_HOME: CONTAINER_CLI_PATHS.data,
+  CODEX_HOME: CONTAINER_CLI_PATHS.codexHome,
+  TMPDIR: CONTAINER_CLI_PATHS.temp,
+  TMP: CONTAINER_CLI_PATHS.temp,
+  TEMP: CONTAINER_CLI_PATHS.temp,
+};
+
+const CONTAINER_RESERVED_ENV_KEYS = new Set(Object.keys(CONTAINER_ENVIRONMENT));
+
 export function containerWorkerPolicyFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): ContainerWorkerPolicy {
   return {
     image: env.CLI_WORKER_IMAGE?.trim() ?? "",
@@ -403,6 +425,25 @@ export function containerWorkerPolicyFromEnvironment(env: Readonly<Record<string
     pidsLimit: boundedPositive(env.CLI_WORKER_PIDS_LIMIT, 128, 16, 4096),
     user: env.CLI_WORKER_USER?.trim() || "65534:65534",
   };
+}
+
+export function assertContainerWorkerConfiguration(
+  executable: string,
+  cliPolicy: CliRuntimePolicy,
+  containerPolicy: ContainerWorkerPolicy,
+): void {
+  if (!cliPolicy.enabled) {
+    throw new Error("CLI agent execution is disabled on this server. Set CLI_AGENT_ENABLED=true and configure server allowlists.");
+  }
+  if (!/@sha256:[a-f0-9]{64}$/i.test(containerPolicy.image)) {
+    throw new Error("Hardened CLI worker requires CLI_WORKER_IMAGE pinned with an @sha256 digest.");
+  }
+  if (executable.includes("\\") || /^[A-Za-z]:[\\/]/.test(executable)) {
+    throw new Error(`Container CLI executable "${executable}" must be an in-container command name or POSIX path.`);
+  }
+  if (!cliPolicy.allowedExecutables.includes(executable)) {
+    throw new Error(`Container CLI executable "${executable}" is not allowed by the server runtime.`);
+  }
 }
 
 /**
@@ -423,9 +464,7 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
   }
 
   async start(spec: WorkerSpec, signal?: AbortSignal, input?: string): Promise<WorkerHandle> {
-    if (!/@sha256:[a-f0-9]{64}$/i.test(this.containerPolicy.image)) {
-      throw new Error("Hardened CLI worker requires CLI_WORKER_IMAGE pinned with an @sha256 digest.");
-    }
+    assertContainerWorkerConfiguration(spec.executable, this.cliPolicy, this.containerPolicy);
     const containerName = `agent-worker-${randomUUID()}`;
     const allowedEnvKeys = (process.env.WORKER_ALLOWED_ENV_KEYS ?? "").split(",").map((key) => key.trim()).filter(Boolean);
     const dockerSpec: WorkerSpec = {
@@ -477,9 +516,13 @@ export function buildContainerArgs(spec: WorkerSpec, policy: ContainerWorkerPoli
     "--cpus", policy.cpus,
     "--user", policy.user,
     "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+    "--tmpfs", `${CONTAINER_CLI_PATHS.home}:rw,noexec,nosuid,nodev,size=128m,mode=1777`,
     "--workdir", "/workspace",
     "--mount", `type=bind,source=${spec.cwd},target=/workspace,readonly=${mountMode === "ro"}`,
-    ...allowedEnvKeys.filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)).flatMap((key) => ["--env", key]),
+    ...Object.entries(CONTAINER_ENVIRONMENT).flatMap(([key, value]) => ["--env", `${key}=${value}`]),
+    ...allowedEnvKeys
+      .filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !CONTAINER_RESERVED_ENV_KEYS.has(key))
+      .flatMap((key) => ["--env", key]),
     policy.image,
     spec.executable,
     ...spec.args,

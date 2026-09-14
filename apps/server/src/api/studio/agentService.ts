@@ -1,6 +1,7 @@
 import { assertNoCredentials, createAgentRecord, migrateAgentRecord, nowIso, removeAgentNodes, uid, type AgentDiagnostics, type AgentRecord } from "@multi-agent/types";
 import fs from "node:fs";
-import { resolveCliSpawnExecutable, cliRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/cliAgentExecutor";
+import { defaultCliExecutable, resolveCliSpawnExecutable, cliRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/cliAgentExecutor";
+import { assertContainerWorkerConfiguration, containerWorkerPolicyFromEnvironment } from "../../../../../src/agents/runtime/workerRuntime";
 import { localRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/localAgentExecutor";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
@@ -24,10 +25,23 @@ export class AgentService {
       return { status: configured ? "ready" : "not_authenticated", checkedAt, backend, message: configured ? `Server credential for ${envName} is configured.` : `Server credential for ${envName} is not configured.` };
     }
     if (agent.backend.type === "cli") {
-      const policy = cliRuntimePolicyFromEnvironment();
+      let policy;
+      try { policy = cliRuntimePolicyFromEnvironment(); }
+      catch (error) {
+        return { status: "misconfigured", checkedAt, backend, message: error instanceof Error ? error.message : "Invalid CLI worker configuration." };
+      }
       if (!policy.enabled) return { status: "unavailable", checkedAt, backend, message: "CLI execution is disabled by the server policy." };
-      const executable = resolveCliSpawnExecutable(agent.backend.executable || agent.backend.provider, policy.allowedExecutables);
-      const allowed = policy.allowedExecutables.some((item) => item === executable || (!item.includes("/") && item === agent.backend.provider));
+      const configuredExecutable = agent.backend.executable || defaultCliExecutable(agent.backend.provider);
+      if (policy.workerMode === "container") {
+        try {
+          assertContainerWorkerConfiguration(configuredExecutable, policy, containerWorkerPolicyFromEnvironment());
+        } catch (error) {
+          return { status: "misconfigured", checkedAt, backend, message: error instanceof Error ? error.message : "Invalid container worker configuration." };
+        }
+        return { status: "unknown", checkedAt, backend, message: "Digest-pinned worker image and container executable are configured; image availability and CLI authentication were not inspected." };
+      }
+      const executable = resolveCliSpawnExecutable(configuredExecutable, policy.allowedExecutables, process.env, policy.workerMode);
+      const allowed = policy.allowedExecutables.some((item) => item === executable || (!item.includes("/") && !item.includes("\\") && item === configuredExecutable));
       if (!allowed) return { status: "misconfigured", checkedAt, backend, message: "The configured CLI is not in the server executable allowlist." };
       try { fs.accessSync(executable, fs.constants.X_OK); }
       catch { return { status: "unavailable", checkedAt, backend, message: "The configured CLI executable is not available on the execution server." }; }

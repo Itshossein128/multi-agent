@@ -4,13 +4,22 @@ import { nowIso, type AgentBackend } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
 import type { WorkerRuntime, WorkerSpec } from "./workerRuntime";
-import { LocalProcessWorkerRuntime } from "./workerRuntime";
+import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
 
 export interface CliRuntimePolicy {
   enabled: boolean;
+  workerMode: CliWorkerMode;
   allowedExecutables: string[];
   workspaceRoots: string[];
   maxOutputBytes: number;
+}
+
+export type CliWorkerMode = "local" | "container";
+
+export function cliWorkerModeFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): CliWorkerMode {
+  const configured = env.CLI_WORKER_MODE?.trim() || "local";
+  if (configured === "local" || configured === "container") return configured;
+  throw new Error(`Invalid CLI_WORKER_MODE "${configured}". Expected "local" or "container".`);
 }
 
 export function cliRuntimePolicyFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): CliRuntimePolicy {
@@ -18,13 +27,23 @@ export function cliRuntimePolicyFromEnvironment(env: Readonly<Record<string, str
   const configuredMax = Number(env.CLI_AGENT_MAX_OUTPUT_BYTES ?? 1024 * 1024);
   return {
     enabled: env.CLI_AGENT_ENABLED === "true",
+    workerMode: cliWorkerModeFromEnvironment(env),
     allowedExecutables: list(env.CLI_AGENT_ALLOWED_EXECUTABLES),
     workspaceRoots: list(env.CLI_AGENT_WORKSPACE_ROOTS).map((root) => path.resolve(root)),
     maxOutputBytes: Number.isInteger(configuredMax) && configuredMax >= 1024 && configuredMax <= 16 * 1024 * 1024 ? configuredMax : 1024 * 1024,
   };
 }
 
-export function resolveCliSpawnExecutable(executable: string, allowedExecutables: string[], env: Readonly<Record<string, string | undefined>> = process.env): string {
+export function resolveCliSpawnExecutable(
+  executable: string,
+  allowedExecutables: string[],
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  workerMode: CliWorkerMode = "local",
+): string {
+  // Container commands are resolved by the image. Resolving them against the
+  // host would leak host-only absolute paths into a Linux worker invocation.
+  if (workerMode === "container") return executable;
+
   if (path.isAbsolute(executable) || executable.includes("/") || executable.includes("\\")) {
     return path.resolve(executable);
   }
@@ -68,21 +87,31 @@ function resolveFromPath(command: string, env: Readonly<Record<string, string | 
 }
 
 export class CliAgentExecutor implements AgentExecutor {
+  private readonly workerRuntime: WorkerRuntime;
   constructor(
-    private readonly workerRuntime: WorkerRuntime = new LocalProcessWorkerRuntime(cliRuntimePolicyFromEnvironment()),
+    workerRuntime: WorkerRuntime | undefined = undefined,
     private readonly runtimePolicy: CliRuntimePolicy = cliRuntimePolicyFromEnvironment()
-  ) { }
+  ) {
+    this.workerRuntime = workerRuntime ?? (runtimePolicy.workerMode === "container"
+      ? new ContainerWorkerRuntime(runtimePolicy, containerWorkerPolicyFromEnvironment())
+      : new LocalProcessWorkerRuntime(runtimePolicy));
+  }
 
   async *execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent> {
     if (input.agent.backend.type !== "cli") throw new AgentExecutionFailedError("CliAgentExecutor requires a CLI backend.");
     const backend = input.agent.backend;
     const policy = input.agent.executionPolicy!;
-    const executable = backend.executable || defaultExecutable(backend.provider);
+    const executable = backend.executable || defaultCliExecutable(backend.provider);
 
     // The worker runtime also asserts policy, but doing it here provides an early rejection
     if (!this.runtimePolicy.enabled) throw new Error("CLI agent execution is disabled on this server. Set CLI_AGENT_ENABLED=true and configure server allowlists.");
 
-    const spawnExecutable = resolveCliSpawnExecutable(executable, this.runtimePolicy.allowedExecutables);
+    const spawnExecutable = resolveCliSpawnExecutable(
+      executable,
+      this.runtimePolicy.allowedExecutables,
+      process.env,
+      this.runtimePolicy.workerMode,
+    );
     const args = commandArgs(backend);
 
     yield event("agent.started", input, { provider: backend.provider, executable: spawnExecutable, args });
@@ -142,7 +171,7 @@ function event(type: AgentExecutionEvent["type"], input: AgentExecutionInput, pa
   return { type, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload };
 }
 
-function defaultExecutable(provider: string): string {
+export function defaultCliExecutable(provider: string): string {
   return provider === "claude-code" ? "claude" : provider;
 }
 

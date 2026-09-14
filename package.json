@@ -17,7 +17,9 @@
     "dev:all": "pnpm --parallel --filter web --filter server run dev",
     "db:dev:up": "docker compose -f infrastructure/memory/compose.yml --profile memory up -d",
     "db:dev:down": "docker compose -f infrastructure/memory/compose.yml --profile memory down",
-    "db:migrate": "node -r dotenv/config infrastructure/memory/migrate.cjs && node -r dotenv/config infrastructure/studio/migrate.cjs"
+    "db:migrate": "node -r dotenv/config infrastructure/memory/migrate.cjs && node -r dotenv/config infrastructure/studio/migrate.cjs",
+    "worker:image:build": "docker build --pull --platform linux/amd64 --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY --file infrastructure/docker/worker.Dockerfile --tag multi-agent-cli-worker:local infrastructure/docker",
+    "worker:image:smoke": "ts-node --transpile-only infrastructure/docker/smoke-worker-image.ts"
   },
   "license": "MIT",
   "dependencies": {

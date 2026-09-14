@@ -1,4 +1,4 @@
-import { LocalProcessWorkerRuntime, type WorkerSpec, buildContainerArgs, buildWorkerEnv } from "../../../src/agents/runtime/workerRuntime";
+import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, type WorkerSpec, buildContainerArgs, buildWorkerEnv, CONTAINER_CLI_PATHS } from "../../../src/agents/runtime/workerRuntime";
 import type { CliRuntimePolicy } from "../../../src/agents/runtime/cliAgentExecutor";
 import { uid } from "@multi-agent/types";
 import path from "node:path";
@@ -15,6 +15,7 @@ describe("LocalProcessWorkerRuntime", () => {
     workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "worker-test-"));
     policy = {
       enabled: true,
+      workerMode: "local",
       allowedExecutables: ["node"],
       workspaceRoots: [workspaceRoot],
       maxOutputBytes: 1024 * 1024,
@@ -252,7 +253,7 @@ describe("LocalProcessWorkerRuntime", () => {
       cpus: "0.5",
       pidsLimit: 64,
       user: "65534:65534",
-    }, "worker-safe", ["OPENAI_API_KEY"]);
+    }, "worker-safe", ["OPENAI_API_KEY", "HOME"]);
 
     expect(args).toEqual(expect.arrayContaining([
       "--network", "none", "--read-only", "--cap-drop", "ALL",
@@ -262,6 +263,39 @@ describe("LocalProcessWorkerRuntime", () => {
     ]));
     expect(args.join(" ")).not.toContain("server-key");
     expect(args.join(" ")).toContain("readonly=true");
+    expect(args).toEqual(expect.arrayContaining([
+      "--tmpfs", `${CONTAINER_CLI_PATHS.home}:rw,noexec,nosuid,nodev,size=128m,mode=1777`,
+      "--env", `HOME=${CONTAINER_CLI_PATHS.home}`,
+      "--env", `XDG_CONFIG_HOME=${CONTAINER_CLI_PATHS.config}`,
+      "--env", `XDG_CACHE_HOME=${CONTAINER_CLI_PATHS.cache}`,
+      "--env", `CODEX_HOME=${CONTAINER_CLI_PATHS.codexHome}`,
+    ]));
+    expect(args).toContain("--read-only");
+    expect(args.filter((arg) => arg.startsWith("HOME="))).toEqual([`HOME=${CONTAINER_CLI_PATHS.home}`]);
+    expect(args.filter((arg) => arg.startsWith("type=bind,"))).toEqual([
+      expect.stringContaining("target=/workspace"),
+    ]);
+  });
+
+  test("rejects a disallowed inner executable before invoking Docker", async () => {
+    const spawnFn = jest.fn();
+    const containerPolicy = {
+      image: `registry.example/agent@sha256:${"a".repeat(64)}`,
+      dockerExecutable: "docker",
+      allowNetwork: false,
+      memory: "512m",
+      cpus: "0.5",
+      pidsLimit: 64,
+      user: "65534:65534",
+    };
+    const runtime = new ContainerWorkerRuntime(
+      { ...policy, workerMode: "container", allowedExecutables: ["codex"] },
+      containerPolicy,
+      spawnFn as any,
+    );
+
+    await expect(runtime.start(createSpec("sh", ["-c", "id"]))).rejects.toThrow(/not allowed by the server runtime/);
+    expect(spawnFn).not.toHaveBeenCalled();
   });
 
   test("[Integration] node child process runs harmlessly", async () => {

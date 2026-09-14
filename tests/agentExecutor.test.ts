@@ -10,9 +10,10 @@ import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
 import { ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
-import { CliAgentExecutor, resolveCliSpawnExecutable } from "../src/agents/runtime/cliAgentExecutor";
+import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, resolveCliSpawnExecutable } from "../src/agents/runtime/cliAgentExecutor";
 import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
+import path from "node:path";
 
 describe("Agent backend abstraction", () => {
   test("migrates legacy model/provider records into api backend", () => {
@@ -148,7 +149,7 @@ describe("CLI and local executors", () => {
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "codex", args: ["exec", "--json"] } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
     const events: AgentExecutionEvent[] = [];
-    const serverPolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 1024 };
+    const serverPolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 1024 };
 
     for await (const event of new CliAgentExecutor(workerRuntime, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
 
@@ -179,7 +180,7 @@ describe("CLI and local executors", () => {
     const agent = createAgentRecord({ backend: { type: "cli", provider: "agy", model: "gpt-5" } });
     agent.systemPrompt = "Be concise.";
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace/project", allowedCommands: ["agy"] };
-    const runtimePolicy = { enabled: true, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    const runtimePolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
 
     for await (const _event of new CliAgentExecutor(workerRuntime, runtimePolicy).execute({ agent, input: { task: "review" }, runId: "r", nodeId: "n" })) { /* drain */ }
 
@@ -198,7 +199,7 @@ describe("CLI and local executors", () => {
 
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", args: ["--json"] } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
-    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "test", runId: "r", nodeId: "n" })) { /* drain */ }
+    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "local", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "test", runId: "r", nodeId: "n" })) { /* drain */ }
 
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--json", "-"] }),
@@ -213,7 +214,7 @@ describe("CLI and local executors", () => {
 
     const agent = createAgentRecord({ backend: { type: "cli", provider: "agy" } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/tmp/escape", allowedCommands: ["agy"] };
-    const runtimePolicy = { enabled: true, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    const runtimePolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
     await expect(async () => { for await (const _event of new CliAgentExecutor(workerRuntime, runtimePolicy).execute({ agent, input: {}, runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/workspace.*not allowed/i);
   });
 
@@ -227,13 +228,42 @@ describe("CLI and local executors", () => {
 
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
-    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, allowedExecutables: ["codex", absolute], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "local", allowedExecutables: ["codex", absolute], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
 
     expect(start).toHaveBeenCalledWith(
       expect.objectContaining({ executable: require("node:path").resolve(absolute) }),
       undefined,
       expect.any(String)
     );
+  });
+
+  test("preserves container command names instead of resolving them against the host", async () => {
+    const hostExecutable = process.platform === "win32" ? "C:\\host-tools\\codex.exe" : "/host-tools/codex";
+    expect(resolveCliSpawnExecutable("codex", ["codex", hostExecutable], { PATH: path.dirname(hostExecutable) }, "container")).toBe("codex");
+    expect(resolveCliSpawnExecutable("/usr/local/bin/claude", ["/usr/local/bin/claude"], { PATH: path.dirname(hostExecutable) }, "container")).toBe("/usr/local/bin/claude");
+
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const workerRuntime = { start, wait: jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" })), cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+
+    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "container", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ executable: "codex" }), undefined, expect.any(String));
+    expect(JSON.stringify(start.mock.calls)).not.toContain(hostExecutable);
+  });
+
+  test("rejects unknown CLI worker modes instead of falling back to local execution", () => {
+    expect(() => cliRuntimePolicyFromEnvironment({ CLI_WORKER_MODE: "dockre" })).toThrow(/Invalid CLI_WORKER_MODE/);
+
+    const previous = process.env.CLI_WORKER_MODE;
+    process.env.CLI_WORKER_MODE = "dockre";
+    try {
+      expect(() => new AgentRuntime({ create: jest.fn() } as unknown as AgentExecutorFactory)).toThrow(/Invalid CLI_WORKER_MODE/);
+    } finally {
+      if (previous === undefined) delete process.env.CLI_WORKER_MODE;
+      else process.env.CLI_WORKER_MODE = previous;
+    }
   });
 
   test("calls LM Studio's OpenAI-compatible endpoint with sampling settings", async () => {

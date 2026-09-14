@@ -40,6 +40,8 @@ Node retry is configured with `WorkflowNode.retryPolicy`, but configuration is n
 
 For untrusted work use `CLI_WORKER_MODE=container` and set `CLI_WORKER_IMAGE` to a digest-pinned image (`image@sha256:...`). The container profile defaults to no network, a read-only root filesystem, dropped capabilities, no-new-privileges, non-root execution, and resource limits. Relevant settings are `CLI_WORKER_ALLOW_NETWORK`, `CLI_WORKER_DOCKER_EXECUTABLE`, `CLI_WORKER_MEMORY`, `CLI_WORKER_CPUS`, `CLI_WORKER_PIDS_LIMIT`, and `CLI_WORKER_USER`. Per-agent filesystem/network settings can further restrict execution but cannot widen server policy.
 
+Build, smoke-test, publish, and configure the dedicated Codex/Claude worker by following [Immutable CLI worker image](cli-worker-image.md). Authentication is intentionally separate from the image.
+
 ## Browser E2E
 
 With PostgreSQL migrations applied and the normal web/server environment configured:

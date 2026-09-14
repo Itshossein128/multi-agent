@@ -139,6 +139,35 @@ test("agent diagnostics are server-side and do not expose credentials", async ()
   expect(await (await app.request(`http://localhost/agents/${local.id}/diagnostics`)).json()).toEqual(expect.objectContaining({ status: "unsupported" }));
 });
 
+test("container CLI diagnostics validate image and inner command without requiring a host executable", async () => {
+  const keys = ["CLI_AGENT_ENABLED", "CLI_WORKER_MODE", "CLI_WORKER_IMAGE", "CLI_AGENT_ALLOWED_EXECUTABLES"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.CLI_AGENT_ENABLED = "true";
+    process.env.CLI_WORKER_MODE = "container";
+    process.env.CLI_WORKER_IMAGE = `registry.example/agent@sha256:${"a".repeat(64)}`;
+    process.env.CLI_AGENT_ALLOWED_EXECUTABLES = "/usr/local/bin/codex";
+
+    const store = new InMemoryStudioStore();
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "/usr/local/bin/codex" } });
+    await store.saveAgent({ ...agent, ownerId: "phase45-user", tenantId: "phase45-tenant" }, await principal());
+    const app = createStudioRouter(store, principal);
+    const response = await app.request(`http://localhost/agents/${agent.id}/diagnostics`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(expect.objectContaining({
+      status: "unknown",
+      message: expect.stringMatching(/Digest-pinned worker image and container executable are configured/),
+    }));
+  } finally {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("SSE replay honors the requested sequence after a completed run", async () => {
   const store = new RunStore();
   const executor = new RunExecutor(store, { async *execute(input) { yield { type: "agent.completed", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { content: "ok" } }; } });

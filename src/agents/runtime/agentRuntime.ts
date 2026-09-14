@@ -24,10 +24,10 @@ export class AgentRuntime {
     private readonly maxOutputBytes = boundedBytesFromEnvironment(process.env.AGENT_MAX_OUTPUT_BYTES, 256 * 1024),
   ) {
     const cliPolicy = cliRuntimePolicyFromEnvironment();
-    const defaultWorker = process.env.CLI_WORKER_MODE === "container"
+    const defaultWorker = cliPolicy.workerMode === "container"
       ? new ContainerWorkerRuntime(cliPolicy, containerWorkerPolicyFromEnvironment())
       : new LocalProcessWorkerRuntime(cliPolicy);
-    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker);
+    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker, cliPolicy);
     this.maxExecutionMs = maxExecutionMs;
   }
 
