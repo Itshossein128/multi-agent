@@ -3,6 +3,7 @@ import { redact } from "../adapters/langGraphEventAdapter";
 import type { PgPool } from "../../../../src/memory/infrastructure";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import type { RequestPrincipal } from "../auth/principal";
+import { boundJsonValue, boundedBytesFromEnvironment } from "../../../../src/runtime/boundedValue";
 
 type Listener = (event: RunEvent) => void;
 export interface MemoryOwner { principalId: string; tenantId: string }
@@ -17,7 +18,7 @@ export interface RunEntry {
   workflowSnapshot?: WorkflowDefinition;
   agentsSnapshot?: AgentRecord[];
   toolsSnapshot?: import("@multi-agent/types").ToolRecord[];
-  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[]; memoryAccess?: MemoryAccessContext };
+  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[]; memoryAccess?: MemoryAccessContext; stepBudget?: { count: number } };
 }
 
 export interface RunListFilters {
@@ -88,6 +89,15 @@ function asIso(value: unknown): string {
 /** In-process run store. Used directly in tests and as the hot cache for durable adapters. */
 export class InMemoryRunStore implements RunStoreContract {
   private entries = new Map<string, RunEntry>();
+  private readonly maxEventPayloadBytes: number;
+  private readonly maxEventsPerRun: number;
+  private readonly maxRunPayloadBytes: number;
+
+  constructor(options: { maxEventPayloadBytes?: number; maxEventsPerRun?: number; maxRunPayloadBytes?: number } = {}) {
+    this.maxEventPayloadBytes = options.maxEventPayloadBytes ?? boundedBytesFromEnvironment(process.env.RUN_EVENT_MAX_PAYLOAD_BYTES, 64 * 1024);
+    this.maxEventsPerRun = options.maxEventsPerRun ?? boundedEventCount(process.env.RUN_MAX_EVENTS, 10_000);
+    this.maxRunPayloadBytes = options.maxRunPayloadBytes ?? boundedBytesFromEnvironment(process.env.RUN_MAX_PAYLOAD_BYTES, 256 * 1024);
+  }
 
   create(
     run: Run,
@@ -104,6 +114,7 @@ export class InMemoryRunStore implements RunStoreContract {
       ? { principalId: run.ownerId, tenantId: run.tenantId }
       : undefined;
 
+    run = this.sanitizeRun(run);
     this.entries.set(run.id, {
       run,
       events: [],
@@ -112,9 +123,9 @@ export class InMemoryRunStore implements RunStoreContract {
       memoryOwner: effectiveOwner,
       approvals: [],
       approvalTimers: new Map(),
-      workflowSnapshot: snapshots?.workflow,
-      agentsSnapshot: snapshots?.agents,
-      toolsSnapshot: snapshots?.tools,
+      workflowSnapshot: snapshots?.workflow ? structuredClone(snapshots.workflow) : undefined,
+      agentsSnapshot: snapshots?.agents ? structuredClone(snapshots.agents) : undefined,
+      toolsSnapshot: snapshots?.tools ? structuredClone(snapshots.tools) : undefined,
     });
     return run;
   }
@@ -149,7 +160,23 @@ export class InMemoryRunStore implements RunStoreContract {
   append(runId: string, event: RunEvent) {
     const entry = this.entries.get(runId);
     if (!entry) return;
-    const next = { ...event, payload: redact(event.payload) as RunEvent["payload"], sequence: entry.events.length + 1 };
+    const terminal = event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled";
+    if (entry.events.length >= this.maxEventsPerRun && !terminal) {
+      if (!entry.events.some((candidate) => candidate.type === "log" && candidate.payload.eventLimitReached === true)) {
+        const limitEvent: RunEvent = {
+          id: `${event.id}-limit`, runId, type: "log", timestamp: event.timestamp, sequence: entry.events.length + 1,
+          payload: { eventLimitReached: true, maxEvents: this.maxEventsPerRun },
+        };
+        entry.events.push(limitEvent);
+        entry.listeners.forEach((listener) => listener(structuredClone(limitEvent)));
+        return limitEvent;
+      }
+      return;
+    }
+    const redacted = redact(event.payload);
+    const bounded = boundJsonValue(redacted, this.maxEventPayloadBytes);
+    const payload = bounded && typeof bounded === "object" && !Array.isArray(bounded) ? bounded as RunEvent["payload"] : { value: bounded };
+    const next = { ...event, payload, sequence: entry.events.length + 1 };
     entry.events.push(next);
     entry.listeners.forEach((listener) => listener(structuredClone(next)));
     return next;
@@ -157,8 +184,28 @@ export class InMemoryRunStore implements RunStoreContract {
 
   update(runId: string, patch: Partial<Run>) {
     const entry = this.entries.get(runId);
-    if (entry) entry.run = { ...entry.run, ...patch };
+    if (entry) {
+      const terminalStatuses: RunStatus[] = ["completed", "failed", "cancelled"];
+      if (terminalStatuses.includes(entry.run.status) && patch.status && patch.status !== entry.run.status) {
+        return entry.run;
+      }
+      entry.run = this.sanitizeRun({ ...entry.run, ...patch });
+    }
     return entry?.run;
+  }
+
+  private sanitizeRun(run: Run): Run {
+    const input = boundJsonValue(redact(run.input), this.maxRunPayloadBytes);
+    const output = boundJsonValue(redact(run.output), this.maxRunPayloadBytes);
+    const metadata = boundJsonValue(redact(run.metadata), this.maxRunPayloadBytes);
+    const asRecord = (value: unknown): Record<string, unknown> | undefined => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+    return {
+      ...run,
+      ...(run.input !== undefined ? { input: asRecord(input) ?? { value: input } } : {}),
+      ...(run.output !== undefined ? { output: asRecord(output) ?? { value: output } } : {}),
+      metadata: asRecord(metadata) ?? {},
+      ...(run.error !== undefined ? { error: String(redact(run.error)).slice(0, 12_000) } : {}),
+    };
   }
 
   events(runId: string, after = 0) {
@@ -224,16 +271,24 @@ export class InMemoryRunStore implements RunStoreContract {
   }
 
   getWorkflowSnapshot(runId: string) {
-    return this.entries.get(runId)?.workflowSnapshot;
+    const snapshot = this.entries.get(runId)?.workflowSnapshot;
+    return snapshot ? structuredClone(snapshot) : undefined;
   }
 
   getAgentSnapshot(runId: string) {
-    return this.entries.get(runId)?.agentsSnapshot;
+    const snapshot = this.entries.get(runId)?.agentsSnapshot;
+    return snapshot ? structuredClone(snapshot) : undefined;
   }
 
   getToolSnapshot(runId: string) {
-    return this.entries.get(runId)?.toolsSnapshot;
+    const snapshot = this.entries.get(runId)?.toolsSnapshot;
+    return snapshot ? structuredClone(snapshot) : undefined;
   }
+}
+
+function boundedEventCount(value: string | undefined, fallback: number): number {
+  const parsed = Number(value ?? fallback);
+  return Number.isInteger(parsed) && parsed >= 100 && parsed <= 1_000_000 ? parsed : fallback;
 }
 
 /** Back-compat alias for existing imports/tests. */

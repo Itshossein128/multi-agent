@@ -388,26 +388,26 @@ Relevant domain states exist:
 
 ## Real Runtime
 
-* [ ] Saved WorkflowDefinition is compiled dynamically.
-* [ ] WorkflowDefinition is converted to a real LangGraph `StateGraph`.
-* [ ] No fake/simulated executor is used for supported workflows.
-* [ ] Backend performs compilation.
-* [ ] Frontend never compiles LangGraph.
-* [ ] TypeScript source files are not generated/rewritten per graph edit.
-* [ ] Unsupported node types fail clearly.
+* [x] Saved WorkflowDefinition is compiled dynamically.
+* [x] WorkflowDefinition is converted to a real LangGraph `StateGraph`.
+* [x] No fake/simulated executor is used for supported workflows.
+* [x] Backend performs compilation.
+* [x] Frontend never compiles LangGraph.
+* [x] TypeScript source files are not generated/rewritten per graph edit.
+* [x] Unsupported node types fail clearly.
 
 ## Workflow Compiler
 
-* [ ] Compiler is separated from UI.
-* [ ] Compiler is separated from API route logic.
-* [ ] Compiler understands all supported node types.
-* [ ] Compiler understands normal edges.
-* [ ] Compiler understands conditional edges.
-* [ ] Compiler understands parallel branches.
-* [ ] Compiler understands loops.
-* [ ] Compiler understands Human Approval.
-* [ ] Compiler delegates agent execution through `AgentRuntime`.
-* [ ] Compiler does not directly instantiate provider-specific models.
+* [x] Compiler is separated from UI.
+* [x] Compiler is separated from API route logic.
+* [x] Compiler understands all supported node types.
+* [x] Compiler understands normal edges.
+* [x] Compiler understands conditional edges.
+* [x] Compiler understands parallel branches.
+* [x] Compiler understands loops.
+* [x] Compiler understands Human Approval.
+* [x] Compiler delegates agent execution through `AgentRuntime`.
+* [x] Compiler does not directly instantiate provider-specific models.
 
 ## Run Entity
 
@@ -427,16 +427,16 @@ Run includes:
 
 ## RunEvent
 
-* [ ] RunEvents are append-only.
-* [ ] Events are ordered.
-* [ ] Events have stable IDs.
-* [ ] Events have `runId`.
-* [ ] Events have timestamps.
+* [x] RunEvents are append-only.
+* [x] Events are ordered.
+* [x] Events have stable IDs.
+* [x] Events have `runId`.
+* [x] Events have timestamps.
 * [ ] Sequence/order is deterministic where required.
-* [ ] Events can reference node.
-* [ ] Events can reference agent.
-* [ ] Events can reference tool.
-* [ ] Events can contain safe payload.
+* [x] Events can reference node.
+* [x] Events can reference agent.
+* [x] Events can reference tool.
+* [x] Events can contain safe payload.
 * [ ] Parent event relationship exists where useful.
 
 ## Event Types
@@ -453,7 +453,7 @@ Relevant events exist:
 * [ ] `node.started`
 * [ ] `node.completed`
 * [ ] `node.failed`
-* [ ] `node.retrying`
+* [x] `node.retrying`
 * [ ] `agent.started`
 * [ ] `agent.completed`
 * [ ] `agent.failed`
@@ -470,36 +470,36 @@ Relevant events exist:
 
 ## LangGraph Event Adapter
 
-* [ ] Raw LangGraph events are normalized.
-* [ ] Frontend does not depend on LangGraph event shapes.
-* [ ] LangGraph-specific details are isolated behind an adapter.
-* [ ] Event adapter maps runtime events into stable `RunEvent`.
+* [x] Raw LangGraph events are normalized.
+* [x] Frontend does not depend on LangGraph event shapes.
+* [x] LangGraph-specific details are isolated behind an adapter.
+* [x] Event adapter maps runtime events into stable `RunEvent`.
 
 ## Live Streaming
 
-* [ ] SSE or equivalent server-to-client streaming exists.
-* [ ] Polling is not the primary live-execution mechanism.
+* [x] SSE or equivalent server-to-client streaming exists.
+* [x] Polling is not the primary live-execution mechanism.
 * [ ] Stream connection handles disconnect.
 * [ ] Stream errors are represented properly.
 * [ ] Reconnection behavior exists where appropriate.
-* [ ] Historical data can fill gaps after reconnect.
-* [ ] Streaming transport is not tightly coupled to timeline components.
+* [x] Historical data can fill gaps after reconnect.
+* [x] Streaming transport is not tightly coupled to timeline components.
 
 ## Timeline
 
-* [ ] Timeline displays events chronologically.
-* [ ] Timestamp is shown.
-* [ ] Node/agent/tool identity is shown.
-* [ ] Event type is shown.
-* [ ] Status is shown.
-* [ ] Duration is shown where available.
-* [ ] Error indicator is shown.
-* [ ] Event details can be expanded.
-* [ ] Input/output summary can be inspected safely.
-* [ ] Auto-scroll works.
-* [ ] User can manually inspect old events without forced auto-scroll.
-* [ ] Timeline works for live runs.
-* [ ] Same timeline model works for historical runs.
+* [x] Timeline displays events chronologically.
+* [x] Timestamp is shown.
+* [x] Node/agent/tool identity is shown.
+* [x] Event type is shown.
+* [x] Status is shown.
+* [x] Duration is shown where available.
+* [x] Error indicator is shown.
+* [x] Event details can be expanded.
+* [x] Input/output summary can be inspected safely.
+* [x] Auto-scroll works.
+* [x] User can manually inspect old events without forced auto-scroll.
+* [x] Timeline works for live runs.
+* [x] Same timeline model works for historical runs.
 
 ## Graph Runtime Visualization
 
@@ -507,9 +507,9 @@ Relevant events exist:
 * [ ] Completed node is shown as completed.
 * [ ] Failed node is shown as failed.
 * [ ] Waiting node is shown as waiting.
-* [ ] Multiple parallel active nodes can be shown.
-* [ ] Traversed edges can be highlighted.
-* [ ] Runtime graph state is separate from saved workflow state.
+* [x] Multiple parallel active nodes can be shown.
+* [x] Traversed edges can be highlighted.
+* [x] Runtime graph state is separate from saved workflow state.
 
 ## Run Controls
 
@@ -1603,7 +1603,7 @@ Create Agent
 → Reopen Historical Run
 ```
 
-* [ ] E2E covers this flow or equivalent.
+* [x] E2E covers this flow or equivalent.
 * [ ] Major failure scenario also tested.
 
 ## CI

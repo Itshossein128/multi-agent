@@ -160,12 +160,22 @@ export interface OutputNodeConfig {
     description: string;
 }
 export type WorkflowNodeConfig = AgentNodeConfig | ToolNodeConfig | ApprovalNodeConfig | MemoryNodeConfig | ConditionNodeConfig | InputNodeConfig | OutputNodeConfig;
+/** Optional node-scoped retry request. The server clamps every value to its own limits. */
+export interface NodeRetryPolicy {
+    /** Total executions including the initial attempt. */
+    maxAttempts: number;
+    /** Delay before the second attempt. */
+    backoffMs: number;
+    /** Multiplier applied after each failed attempt. */
+    backoffMultiplier?: number;
+}
 export interface WorkflowNode {
     id: string;
     type: WorkflowNodeType;
     /** Layout only — never part of node identity or configuration. */
     position: WorkflowPosition;
     config: WorkflowNodeConfig;
+    retryPolicy?: NodeRetryPolicy;
 }
 export interface WorkflowEdge {
     id: string;

@@ -1,4 +1,4 @@
-import { LocalProcessWorkerRuntime, type WorkerSpec, buildWorkerEnv } from "../../../src/agents/runtime/workerRuntime";
+import { LocalProcessWorkerRuntime, type WorkerSpec, buildContainerArgs, buildWorkerEnv } from "../../../src/agents/runtime/workerRuntime";
 import type { CliRuntimePolicy } from "../../../src/agents/runtime/cliAgentExecutor";
 import { uid } from "@multi-agent/types";
 import path from "node:path";
@@ -240,6 +240,28 @@ describe("LocalProcessWorkerRuntime", () => {
     const result = buildWorkerEnv(baseEnv, { OPENAI_API_KEY: "worker-key" }, ["OPENAI_API_KEY"]);
 
     expect(result.OPENAI_API_KEY).toBe("server-key");
+  });
+
+  test("builds a fail-closed hardened container command", () => {
+    const spec = { ...createSpec("codex", ["exec", "-"]), workspaceAccess: "read-only" as const, network: true };
+    const args = buildContainerArgs(spec, {
+      image: `registry.example/agent@sha256:${"a".repeat(64)}`,
+      dockerExecutable: "docker",
+      allowNetwork: false,
+      memory: "512m",
+      cpus: "0.5",
+      pidsLimit: 64,
+      user: "65534:65534",
+    }, "worker-safe", ["OPENAI_API_KEY"]);
+
+    expect(args).toEqual(expect.arrayContaining([
+      "--network", "none", "--read-only", "--cap-drop", "ALL",
+      "--security-opt", "no-new-privileges:true", "--pids-limit", "64",
+      "--memory", "512m", "--cpus", "0.5", "--user", "65534:65534",
+      "--env", "OPENAI_API_KEY", `registry.example/agent@sha256:${"a".repeat(64)}`, "codex", "exec", "-",
+    ]));
+    expect(args.join(" ")).not.toContain("server-key");
+    expect(args.join(" ")).toContain("readonly=true");
   });
 
   test("[Integration] node child process runs harmlessly", async () => {

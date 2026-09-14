@@ -7,8 +7,9 @@ import { boundHistory, boundedInteger, boundText, historyKey } from "./shortTerm
 import { ExecutionTelemetry } from "../../observability/telemetry";
 import { assertExecutionPolicy, ExecutionPolicyError } from "./executionPolicy";
 import type { WorkerRuntime } from "./workerRuntime";
-import { LocalProcessWorkerRuntime } from "./workerRuntime";
+import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
 import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
+import { boundJsonValue, boundedBytesFromEnvironment } from "../../runtime/boundedValue";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -19,9 +20,14 @@ export class AgentRuntime {
     private readonly memoryDependencies?: RuntimeMemoryDependencies,
     readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
     maxExecutionMs = configuredAgentTimeout(),
-    workerRuntime?: WorkerRuntime
+    workerRuntime?: WorkerRuntime,
+    private readonly maxOutputBytes = boundedBytesFromEnvironment(process.env.AGENT_MAX_OUTPUT_BYTES, 256 * 1024),
   ) {
-    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? new LocalProcessWorkerRuntime(cliRuntimePolicyFromEnvironment()));
+    const cliPolicy = cliRuntimePolicyFromEnvironment();
+    const defaultWorker = process.env.CLI_WORKER_MODE === "container"
+      ? new ContainerWorkerRuntime(cliPolicy, containerWorkerPolicyFromEnvironment())
+      : new LocalProcessWorkerRuntime(cliPolicy);
+    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker);
     this.maxExecutionMs = maxExecutionMs;
   }
 
@@ -69,8 +75,12 @@ export class AgentRuntime {
     for await (const event of executor.execute({ ...input, context: { ...input.context, history, memoryContext } })) {
       input.signal?.throwIfAborted();
       if (event.type === "agent.completed") {
-        output = (event.payload as { content?: unknown })?.content ?? event.payload;
-        completion = event;
+        const eventPayload = event.payload as { content?: unknown } | undefined;
+        output = boundJsonValue(eventPayload?.content ?? event.payload, this.maxOutputBytes);
+        completion = {
+          ...event,
+          payload: eventPayload && "content" in eventPayload ? { ...eventPayload, content: output } : output,
+        };
         // Hold success until required memory writes have succeeded.
         continue;
       }

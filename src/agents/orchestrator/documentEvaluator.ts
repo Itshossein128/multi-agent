@@ -21,7 +21,6 @@ export class LLMDocumentEvaluator implements DocumentEvaluator {
       };
     }
 
-    const llm = getLLM();
     const evaluationPrompt = `
 You are an expert technical architect. Evaluate the following software requirement prompt.
 Does it contain mature, sufficient details regarding:
@@ -41,6 +40,7 @@ ${prompt}
 ---`;
 
     try {
+      const llm = getLLM();
       const response = await llm.invoke([
         new SystemMessage("You are a technical document maturity analyzer."),
         new HumanMessage(evaluationPrompt),

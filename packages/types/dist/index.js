@@ -279,6 +279,7 @@ function serializeWorkflowDefinition(definition) {
             type: node.type,
             position: { x: node.position.x, y: node.position.y },
             config: node.config,
+            ...(node.retryPolicy ? { retryPolicy: node.retryPolicy } : {}),
         })),
         edges: definition.edges.map((edge) => ({
             id: edge.id,

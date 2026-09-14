@@ -21,11 +21,34 @@ Server-owned limits are configured only through environment variables:
 - `WORKFLOW_MAX_EDGES` (default `250`)
 - `WORKFLOW_MAX_BRANCHES` (default `25`)
 - `WORKFLOW_RECURSION_LIMIT` (default `100`)
+- `WORKFLOW_MAX_STEPS` (default `1000`; includes retry attempts)
+- `WORKFLOW_MAX_CONCURRENT_BRANCHES` (default `8`)
+- `NODE_RETRY_MAX_ATTEMPTS` (default `3`) and `NODE_RETRY_MAX_BACKOFF_MS` (default `30000`)
 - `RUN_MAX_DURATION_MS` (default `900000`)
+- `RUN_MAX_EVENTS` (default `10000`), `RUN_EVENT_MAX_PAYLOAD_BYTES` (default `65536`), and `RUN_MAX_PAYLOAD_BYTES` (default `262144`)
 - `AGENT_MAX_DURATION_MS` (default `120000`; bounds API-backed model calls through cancellation)
-- `TOOL_MAX_DURATION_MS` (default `30000`) and `TOOL_ALLOW_SIDE_EFFECTS` (default `false`)
+- `AGENT_MAX_OUTPUT_BYTES` (default `262144`)
+- `TOOL_MAX_DURATION_MS` (default `30000`), `TOOL_MAX_OUTPUT_BYTES` (default `262144`), and `TOOL_ALLOW_SIDE_EFFECTS` (default `false`)
 
 Run input is capped at 1 MiB. Runtime events, logs, and telemetry pass through redaction before they are persisted or sent to external observability services. Never put credentials in workflows, agent records, tool configuration, or run input.
+
+Node retry is configured with `WorkflowNode.retryPolicy`, but configuration is not permission. The server rejects retries for CLI agents, agents with assigned tools, non-read-only tools, and tools without `metadata.idempotent: true`.
+
+## CLI worker profiles
+
+`CLI_WORKER_MODE=local` (the default) launches a policy-constrained child process and is suitable only for trusted code. It is not an OS security boundary.
+
+For untrusted work use `CLI_WORKER_MODE=container` and set `CLI_WORKER_IMAGE` to a digest-pinned image (`image@sha256:...`). The container profile defaults to no network, a read-only root filesystem, dropped capabilities, no-new-privileges, non-root execution, and resource limits. Relevant settings are `CLI_WORKER_ALLOW_NETWORK`, `CLI_WORKER_DOCKER_EXECUTABLE`, `CLI_WORKER_MEMORY`, `CLI_WORKER_CPUS`, `CLI_WORKER_PIDS_LIMIT`, and `CLI_WORKER_USER`. Per-agent filesystem/network settings can further restrict execution but cannot widen server policy.
+
+## Browser E2E
+
+With PostgreSQL migrations applied and the normal web/server environment configured:
+
+```bash
+pnpm --filter web test:e2e
+```
+
+The Playwright configuration reuses running services or starts them, uses installed Chrome, creates an isolated tenant through the real registration UI, and verifies run/timeline/approval/history behavior.
 
 ## Operational correlation
 

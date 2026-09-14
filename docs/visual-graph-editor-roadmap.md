@@ -44,6 +44,8 @@ The web application is the **control plane**. LangGraph is the **execution engin
 - [x] Phase 3 — Visual Graph Editor
 - [x] Phase 4 — Execution Timeline & Live Execution
 - [x] Phase 5 — Agent Management & Configuration
+
+Phase 4/5 hardening update (2026-09-14): node retry now has server-owned eligibility and backoff ceilings; parallel execution has a live semaphore and merge-safe fan-in; cycles have an independent step budget; lifecycle payloads are bounded/redacted; registry objects are authoritative at execution; Playwright covers the live timeline/approval/history path; and an opt-in digest-pinned container worker is available. Branch-only cancellation and non-function/non-HTTP tool categories remain explicit follow-up work. See [`../implementation_plan.md`](../implementation_plan.md) and [`implementation-gaps.md`](implementation-gaps.md).
 - [x] Phase 6 — Tool Management
 - [x] Phase 7 — Human-in-the-Loop & Approval System
 - [x] Phase 8 — Memory Management & Memory Explorer

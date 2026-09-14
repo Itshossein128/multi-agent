@@ -373,7 +373,9 @@ export class TaskService {
           .map((node) => (node.config as { toolId?: string | null }).toolId)
           .filter((toolId): toolId is string => Boolean(toolId)),
       );
-      // Pass only tools referenced by this workflow to the runtime.
+      for (const agent of agentsToRun) for (const toolId of agent.tools) referencedToolIds.add(toolId);
+      // Include explicit tool nodes and agent assignments so validation and the
+      // immutable run snapshot use the same authoritative tool registry subset.
       toolsToRun.splice(0, toolsToRun.length, ...toolsToRun.filter((tool) => referencedToolIds.has(tool.id)));
     } else {
       const agentIdentifier = task.assignedAgents?.[0] ?? task.assignedAgent;
@@ -388,7 +390,8 @@ export class TaskService {
       }
       workflowToRun = createSingleAgentWorkflow(agent, task.title);
       agentsToRun = [agent];
-      toolsToRun.splice(0, toolsToRun.length);
+      const assignedToolIds = new Set(agent.tools);
+      toolsToRun.splice(0, toolsToRun.length, ...toolsToRun.filter((tool) => assignedToolIds.has(tool.id)));
     }
 
     let runId: string;

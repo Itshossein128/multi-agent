@@ -1,5 +1,20 @@
 # Multi-Agent Platform — Verification Report
 
+> **2026-09-14 Phase 4/5 hardening addendum:** The older audit narrative below is retained as historical context and is superseded for Phase 4/5 by [`implementation_plan.md`](implementation_plan.md) and [`docs/implementation-gaps.md`](docs/implementation-gaps.md). The current implementation adds bounded safe node retry, live execution concurrency and step ceilings, merge-safe fan-in, stricter authoritative validation, uniform payload caps/redaction, provider-reported usage metadata, authoritative registry execution, linked task/run retry consistency, an opt-in hardened container worker, and a passing real-browser Playwright run/approval/history test. Branch-only cancellation, unsupported tool categories, provider cost when unavailable, broader browser failure/task scenarios, and deployment Docker smoke tests remain explicit limitations.
+
+## Phase 4/5 hardening verification - 2026-09-14
+
+| Check | Result |
+|---|---|
+| `pnpm test --runInBand --silent` | **Passed:** 33 runnable suites and 260 tests passed. One suite/24 tests remain intentionally skipped behind external-infrastructure gates; there were no failures. |
+| `pnpm --filter web test:e2e` | **Passed:** Chrome completed authenticated registration, workflow launch, live timeline, manual approval, terminal completion, and historical reload. |
+| `pnpm exec tsc --noEmit` | **Passed:** root TypeScript boundary. |
+| `pnpm --filter server exec tsc --noEmit` | **Passed:** execution server TypeScript boundary. |
+| `pnpm --filter web build` | **Passed:** optimized Next.js 16 production build and its TypeScript/static-page checks. The existing middleware-to-proxy deprecation warning remains non-blocking. |
+| Hardened worker contract | **Passed:** generated Docker invocation is digest-pinned, non-root, capability-dropped, resource-bounded, read-only by default, and excludes secret values from arguments. A deployment-owned smoke test against the production Docker daemon/image remains outstanding. |
+
+The browser run also exposed and verified fixes for two history races: terminal run states can no longer regress to a non-terminal state, and the client now merges its REST history snapshot with already-received live events instead of overwriting newer state.
+
 **Audit date:** 2026-09-10  
 **Audited revision:** `4a14e31951055e00855de56625e7e4f2671778fc`  
 **Scope:** `docs/checklist.md`, phases 1–10, plus cross-cutting runtime boundaries needed to assess them.

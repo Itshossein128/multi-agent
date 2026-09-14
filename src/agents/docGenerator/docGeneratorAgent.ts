@@ -17,7 +17,6 @@ export class DocGeneratorAgent implements Agent {
     mode?: string,
     targetRepo?: string,
   ): Promise<string[]> {
-    const llm = getLLM();
     let modeContext = "The user is specifying a software component.";
     let userContext = `Software requirement to clarify:\n"${prompt}"`;
 
@@ -42,6 +41,7 @@ Respond ONLY with a JSON object in this format:
 }`;
 
     try {
+      const llm = getLLM();
       const response = await llm.invoke([
         new SystemMessage(systemPrompt),
         new HumanMessage(`${userContext}${reasons?.length ? `\nMissing details identified: ${reasons.join('; ')}` : ''}`),

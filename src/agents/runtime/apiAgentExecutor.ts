@@ -5,7 +5,11 @@ import { llmFactory } from "../core/llmFactory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
 
 type ChatModel = {
-  invoke: (messages: unknown[], options?: { signal?: AbortSignal }) => Promise<{ content: unknown }>;
+  invoke: (messages: unknown[], options?: { signal?: AbortSignal }) => Promise<{
+    content: unknown;
+    usage_metadata?: Record<string, unknown>;
+    response_metadata?: Record<string, unknown>;
+  }>;
 };
 
 type LLMFactoryLike = {
@@ -50,7 +54,15 @@ export class ApiAgentExecutor implements AgentExecutor {
       const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };
       const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
       const content = result.content;
-      yield baseEvent("llm.completed", input, { provider: agent.backend.provider, model: agent.backend.model, durationMs: Date.now() - startedAt });
+      const usage = result.usage_metadata;
+      const finishReason = result.response_metadata?.finish_reason ?? result.response_metadata?.stop_reason;
+      yield baseEvent("llm.completed", input, {
+        provider: agent.backend.provider,
+        model: agent.backend.model,
+        durationMs: Date.now() - startedAt,
+        ...(usage ? { usage } : {}),
+        ...(finishReason !== undefined ? { finishReason } : {}),
+      });
       yield baseEvent("agent.output", input, { content });
       yield baseEvent("agent.completed", input, { content });
     } catch (error) {

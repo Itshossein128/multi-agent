@@ -9,6 +9,8 @@ node_modules/
 /src/agents/runtime/*.js.map
 /src/agents/runtime/*.d.ts
 coverage/
+playwright-report/
+test-results/
 *.log
 .env
 .env.local

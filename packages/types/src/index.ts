@@ -253,12 +253,23 @@ export type WorkflowNodeConfig =
   | InputNodeConfig
   | OutputNodeConfig;
 
+/** Optional node-scoped retry request. The server clamps every value to its own limits. */
+export interface NodeRetryPolicy {
+  /** Total executions including the initial attempt. */
+  maxAttempts: number;
+  /** Delay before the second attempt. */
+  backoffMs: number;
+  /** Multiplier applied after each failed attempt. */
+  backoffMultiplier?: number;
+}
+
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
   /** Layout only — never part of node identity or configuration. */
   position: WorkflowPosition;
   config: WorkflowNodeConfig;
+  retryPolicy?: NodeRetryPolicy;
 }
 
 export interface WorkflowEdge {
@@ -487,6 +498,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
       type: node.type,
       position: { x: node.position.x, y: node.position.y },
       config: node.config,
+      ...(node.retryPolicy ? { retryPolicy: node.retryPolicy } : {}),
     })),
     edges: definition.edges.map((edge) => ({
       id: edge.id,

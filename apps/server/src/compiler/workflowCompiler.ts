@@ -1,5 +1,5 @@
 import { Annotation, END, START, StateGraph, MemorySaver, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { nowIso, validateAgent, type AgentRecord, type ApprovalNodeConfig, type ToolRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
+import { nowIso, validateAgent, type AgentRecord, type ApprovalNodeConfig, type NodeRetryPolicy, type ToolRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
 import { AgentRuntime, AgentExecutionFailedError } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
@@ -20,6 +20,7 @@ export interface RuntimeState {
   shortTermHistories?: ShortTermHistories;
   branch?: string;
   lastValue?: unknown;
+  nodeResults?: Record<string, unknown>;
 }
 
 const State = Annotation.Root({
@@ -32,6 +33,10 @@ const State = Annotation.Root({
   }),
   branch: Annotation<string | undefined>({ reducer: (_, next) => next, default: () => undefined }),
   lastValue: Annotation<unknown>({ reducer: (_, next) => next, default: () => undefined }),
+  nodeResults: Annotation<Record<string, unknown>>({
+    reducer: (current, next) => ({ ...current, ...next }),
+    default: () => ({}),
+  }),
 });
 
 export type CompiledWorkflow = ReturnType<StateGraph<typeof State["State"], typeof State["Node"]>["compile"]>;
@@ -62,6 +67,14 @@ export interface CompileOptions {
   onAgentEvent?: (event: AgentExecutionEvent) => void;
   tools?: ToolRecord[];
   toolRuntime?: Pick<ToolRuntime, "execute">;
+  /** Mutable per-run counter retained when an approval resumes with a newly compiled graph. */
+  stepBudget?: { count: number };
+  guardrails?: {
+    maxWorkflowSteps: number;
+    maxConcurrentBranches: number;
+    maxNodeRetryAttempts: number;
+    maxNodeRetryBackoffMs: number;
+  };
 }
 
 export function compileWorkflow(
@@ -80,19 +93,38 @@ export function compileWorkflow(
   const runtime = options.runtime ?? new AgentRuntime();
   const toolsById = new Map((options.tools ?? []).map(tool => [tool.id, tool]));
   const toolRuntime = options.toolRuntime ?? new ToolRuntime();
+  const guardrails = options.guardrails ?? {
+    maxWorkflowSteps: 1_000,
+    maxConcurrentBranches: 8,
+    maxNodeRetryAttempts: 3,
+    maxNodeRetryBackoffMs: 30_000,
+  };
+  const executionSlots = new AbortableSemaphore(guardrails.maxConcurrentBranches);
+  const stepBudget = options.stepBudget ?? { count: 0 };
 
   for (const node of definition.nodes) {
     graph.addNode(node.id, async (state: RuntimeState) => {
       const emit = (type: string, payload: unknown = {}) => options.onAgentEvent?.({ type, timestamp: nowIso(), runId, nodeId: node.id, payload });
-      emit("node.started", { nodeType: node.type });
-      try {
+      const retry = resolveRetryPolicy(node, agentById, toolsById, guardrails);
+      const nodeInput = valueForNode(node, state, definition);
+      const executionState = { ...state, lastValue: nodeInput };
+      for (let attempt = 1; attempt <= retry.maxAttempts; attempt += 1) {
+        const release = await executionSlots.acquire(options.signal);
+        stepBudget.count += 1;
+        const step = stepBudget.count;
+        if (step > guardrails.maxWorkflowSteps) {
+          release();
+          throw new WorkflowStepLimitError(guardrails.maxWorkflowSteps);
+        }
+        emit("node.started", { nodeType: node.type, attempt, maxAttempts: retry.maxAttempts, step });
+        try {
         let result: Partial<RuntimeState>;
         if (node.type === "tool") {
           const tool = toolsById.get((node.config as { toolId?: string | null }).toolId ?? "");
           if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
           emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
           try {
-            const value = await toolRuntime.execute(tool, asToolInput(state.lastValue ?? state.input), options.signal);
+            const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), options.signal);
             emit("tool.completed", { toolId: tool.id, output: value });
             result = { lastValue: value };
           } catch (error) {
@@ -111,7 +143,7 @@ export function compileWorkflow(
               message: config.message,
               approvalType: config.approvalType,
               timeoutSeconds: config.timeoutSeconds,
-              context: state.lastValue ?? state.input,
+              context: nodeInput ?? state.input,
             }) as { decision?: string; response?: string } | undefined;
             result = { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
           }
@@ -120,15 +152,15 @@ export function compileWorkflow(
         } else if (node.type === "output") {
           result = {
             output:
-              state.lastValue && typeof state.lastValue === "object"
-                ? (state.lastValue as Record<string, unknown>)
-                : state.lastValue === undefined ? state.input : { content: state.lastValue },
+              nodeInput && typeof nodeInput === "object"
+                ? (nodeInput as Record<string, unknown>)
+                : nodeInput === undefined ? state.input : { content: nodeInput },
           };
         } else if (node.type === "memory") {
           const config = node.config as { mode: string; key: string };
           if (config.mode === "read") result = { lastValue: state.memory[config.key] };
           else {
-            const value = state.lastValue ?? state.input;
+            const value = nodeInput ?? state.input;
             result = { memory: { [config.key]: value }, lastValue: value };
           }
           emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
@@ -154,8 +186,8 @@ export function compileWorkflow(
 
           let shortTermHistories: ShortTermHistories = {};
           const value = options.agentRunner
-            ? await options.agentRunner(agent, state, { runId, nodeId: node.id })
-            : await runAgentThroughRuntime(agent, state, {
+            ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id })
+            : await runAgentThroughRuntime(agent, executionState, {
               runId,
               nodeId: node.id,
               workflowId: options.workflowId ?? definition.id,
@@ -167,17 +199,30 @@ export function compileWorkflow(
             });
           result = { lastValue: value, shortTermHistories };
         }
-        emit("node.completed", { nodeType: node.type });
+        const nodeValue = result.output ?? result.lastValue;
+        result.nodeResults = { [node.id]: nodeValue };
+        emit("node.completed", { nodeType: node.type, attempt, maxAttempts: retry.maxAttempts, step });
         const branch = result.branch;
         for (const edge of definition.edges.filter((candidate) => candidate.source === node.id)) {
           if (edge.kind === "conditional" && edge.branchKey !== branch) continue;
           emit("edge.traversed", { edgeId: edge.id, source: edge.source, target: edge.target, branchKey: edge.branchKey });
         }
-        return result;
-      } catch (error) {
-        if (!isGraphInterrupt(error)) emit("node.failed", { nodeType: node.type, error: error instanceof Error ? error.message : String(error) });
-        throw error;
+          return result;
+        } catch (error) {
+          if (isGraphInterrupt(error)) throw error;
+          const terminal = attempt >= retry.maxAttempts || options.signal?.aborted === true;
+          const message = error instanceof Error ? error.message : String(error);
+          emit("node.failed", { nodeType: node.type, error: message, attempt, maxAttempts: retry.maxAttempts, terminal, step });
+          if (terminal) throw error;
+          const delayMs = retryDelay(retry, attempt, guardrails.maxNodeRetryBackoffMs);
+          emit("node.retrying", { nodeType: node.type, attempt, nextAttempt: attempt + 1, maxAttempts: retry.maxAttempts, delayMs, reason: message });
+          release();
+          await abortableDelay(delayMs, options.signal);
+        } finally {
+          release();
+        }
       }
+      throw new Error(`Node "${node.id}" exhausted its retry budget`);
     });
   }
 
@@ -213,6 +258,124 @@ export function compileWorkflow(
     ),
     issues,
   };
+}
+
+export class WorkflowStepLimitError extends Error {
+  constructor(public readonly limit: number) {
+    super(`Workflow exceeded the server-owned ${limit}-step execution limit`);
+    this.name = "WorkflowStepLimitError";
+  }
+}
+
+function valueForNode(node: WorkflowNode, state: RuntimeState, definition: WorkflowDefinition): unknown {
+  // Routers in a loop must observe the immediately preceding value. Join nodes,
+  // however, receive every completed predecessor keyed by stable node id.
+  if (node.type === "condition" || node.type === "input") return state.lastValue;
+  const incoming = definition.edges.filter((edge) => edge.target === node.id).map((edge) => edge.source);
+  if (incoming.length < 2) return state.lastValue;
+  const results = state.nodeResults ?? {};
+  const branches = Object.fromEntries(
+    incoming.filter((source) => Object.prototype.hasOwnProperty.call(results, source)).map((source) => [source, results[source]]),
+  );
+  return Object.keys(branches).length > 1 ? { branches } : state.lastValue;
+}
+
+function resolveRetryPolicy(
+  node: WorkflowNode,
+  agents: Map<string, AgentRecord>,
+  tools: Map<string, ToolRecord>,
+  limits: CompileOptions["guardrails"] extends infer T ? NonNullable<T> : never,
+): Required<NodeRetryPolicy> {
+  const requested = node.retryPolicy;
+  let eligible = false;
+  if (node.type === "agent") {
+    const agentId = (node.config as { agentId?: string | null }).agentId ?? "";
+    const agent = agents.get(agentId);
+    eligible = Boolean(agent && agent.backend.type !== "cli" && Array.isArray(agent.tools) && agent.tools.length === 0);
+  } else if (node.type === "tool") {
+    const toolId = (node.config as { toolId?: string | null }).toolId ?? "";
+    const tool = tools.get(toolId);
+    eligible = Boolean(tool && tool.impact === "read-only" && tool.metadata?.idempotent === true);
+  }
+  if (!requested || !eligible) return { maxAttempts: 1, backoffMs: 0, backoffMultiplier: 1 };
+  return {
+    maxAttempts: Math.max(1, Math.min(limits.maxNodeRetryAttempts, Math.floor(requested.maxAttempts))),
+    backoffMs: Math.max(0, Math.min(limits.maxNodeRetryBackoffMs, Math.floor(requested.backoffMs))),
+    backoffMultiplier: Math.max(1, Math.min(4, requested.backoffMultiplier ?? 2)),
+  };
+}
+
+function retryDelay(policy: Required<NodeRetryPolicy>, failedAttempt: number, maximum: number): number {
+  return Math.min(maximum, Math.round(policy.backoffMs * policy.backoffMultiplier ** (failedAttempt - 1)));
+}
+
+function abortableDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  if (delayMs <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, delayMs);
+    const onAbort = () => { clearTimeout(timer); reject(abortError()); };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function abortError(): Error {
+  const error = new Error("Execution cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+class AbortableSemaphore {
+  private active = 0;
+  private readonly waiters: Array<{
+    signal?: AbortSignal;
+    resolve: (release: () => void) => void;
+    reject: (error: Error) => void;
+    onAbort?: () => void;
+  }> = [];
+
+  constructor(private readonly limit: number) {}
+
+  acquire(signal?: AbortSignal): Promise<() => void> {
+    if (signal?.aborted) return Promise.reject(abortError());
+    if (this.active < this.limit) {
+      this.active += 1;
+      return Promise.resolve(this.releaseOnce());
+    }
+    return new Promise((resolve, reject) => {
+      const waiter = { signal, resolve, reject } as (typeof this.waiters)[number];
+      waiter.onAbort = () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) this.waiters.splice(index, 1);
+        reject(abortError());
+      };
+      signal?.addEventListener("abort", waiter.onAbort, { once: true });
+      this.waiters.push(waiter);
+    });
+  }
+
+  private releaseOnce(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.active -= 1;
+      this.dispatch();
+    };
+  }
+
+  private dispatch(): void {
+    while (this.active < this.limit && this.waiters.length > 0) {
+      const waiter = this.waiters.shift()!;
+      waiter.signal?.removeEventListener("abort", waiter.onAbort!);
+      if (waiter.signal?.aborted) {
+        waiter.reject(abortError());
+        continue;
+      }
+      this.active += 1;
+      waiter.resolve(this.releaseOnce());
+    }
+  }
 }
 
 function asToolInput(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : { value }; }

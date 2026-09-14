@@ -13,7 +13,7 @@ export interface CliRuntimePolicy {
   maxOutputBytes: number;
 }
 
-export function cliRuntimePolicyFromEnvironment(env: NodeJS.ProcessEnv = process.env): CliRuntimePolicy {
+export function cliRuntimePolicyFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): CliRuntimePolicy {
   const list = (value?: string) => (value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
   const configuredMax = Number(env.CLI_AGENT_MAX_OUTPUT_BYTES ?? 1024 * 1024);
   return {
@@ -24,7 +24,7 @@ export function cliRuntimePolicyFromEnvironment(env: NodeJS.ProcessEnv = process
   };
 }
 
-export function resolveCliSpawnExecutable(executable: string, allowedExecutables: string[], env: NodeJS.ProcessEnv = process.env): string {
+export function resolveCliSpawnExecutable(executable: string, allowedExecutables: string[], env: Readonly<Record<string, string | undefined>> = process.env): string {
   if (path.isAbsolute(executable) || executable.includes("/") || executable.includes("\\")) {
     return path.resolve(executable);
   }
@@ -42,7 +42,7 @@ export function resolveCliSpawnExecutable(executable: string, allowedExecutables
   return executable;
 }
 
-function resolveFromPath(command: string, env: NodeJS.ProcessEnv): string | undefined {
+function resolveFromPath(command: string, env: Readonly<Record<string, string | undefined>>): string | undefined {
   const dirs = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
   const hasExt = path.extname(command).length > 0;
   const exts = process.platform === "win32"
@@ -97,6 +97,8 @@ export class CliAgentExecutor implements AgentExecutor {
         cwd: policy.workspaceRoot!,
         timeoutMs: Number(process.env.AGENT_MAX_DURATION_MS ?? 120_000),
         maxOutputBytes: this.runtimePolicy.maxOutputBytes,
+        workspaceAccess: policy.filesystem === "read-write" ? "read-write" : "read-only",
+        network: policy.network === true,
       };
 
       const handle = await this.workerRuntime.start(spec, input.signal, prompt(input));

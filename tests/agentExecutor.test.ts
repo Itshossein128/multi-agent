@@ -237,12 +237,13 @@ describe("CLI and local executors", () => {
   });
 
   test("calls LM Studio's OpenAI-compatible endpoint with sampling settings", async () => {
-    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "LM answer" } }] }), { status: 200 }));
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "LM answer" }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }), { status: 200 }));
     const agent = createAgentRecord({ backend: { type: "local", provider: "lmstudio", model: "local-model", baseUrl: "http://lm.test", settings: { temperature: 0.2, maxTokens: 300 } } });
     const events: AgentExecutionEvent[] = [];
     for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://lm.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
     expect(fetchImpl).toHaveBeenCalledWith(new URL("http://lm.test/v1/chat/completions"), expect.objectContaining({ body: expect.stringContaining('"max_tokens":300') }));
     expect((events[4].payload as { content: string }).content).toBe("LM answer");
+    expect(events[2].payload).toEqual(expect.objectContaining({ usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }, finishReason: "stop" }));
   });
 
   test("blocks unapproved local-model origins before making a request", async () => {
@@ -255,7 +256,7 @@ describe("CLI and local executors", () => {
 
 describe("ApiAgentExecutor", () => {
   test("invokes model via factory and emits started/output/completed", async () => {
-    const invoke = jest.fn(async () => ({ content: "answer" }));
+    const invoke = jest.fn(async () => ({ content: "answer", usage_metadata: { input_tokens: 8, output_tokens: 3, total_tokens: 11 }, response_metadata: { finish_reason: "stop" } }));
     const executor = new ApiAgentExecutor(() => ({
       getModel: (provider, options) => {
         expect(provider).toBe("openai");
@@ -288,6 +289,7 @@ describe("ApiAgentExecutor", () => {
       "agent.completed",
     ]);
     expect((events[4]?.payload as { content: string }).content).toBe("answer");
+    expect(events[2]?.payload).toEqual(expect.objectContaining({ usage: { input_tokens: 8, output_tokens: 3, total_tokens: 11 }, finishReason: "stop" }));
   });
 });
 

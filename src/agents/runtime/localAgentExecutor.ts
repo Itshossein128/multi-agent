@@ -6,7 +6,7 @@ export type LocalFetch = (input: RequestInfo | URL, init?: RequestInit) => Promi
 
 export interface LocalRuntimePolicy { allowedOrigins: string[]; }
 
-export function localRuntimePolicyFromEnvironment(env: NodeJS.ProcessEnv = process.env): LocalRuntimePolicy {
+export function localRuntimePolicyFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): LocalRuntimePolicy {
   const configured = (env.LOCAL_MODEL_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean);
   return { allowedOrigins: configured.length ? configured.map(normalizeOrigin) : [
     "http://127.0.0.1:11434", "http://localhost:11434", "http://[::1]:11434",
@@ -25,10 +25,10 @@ export class LocalAgentExecutor implements AgentExecutor {
     const startedAt = Date.now();
     yield event("llm.started", input, { provider: backend.provider, model: backend.model });
     try {
-      const content = await this.invoke(backend, input);
-      yield event("llm.completed", input, { provider: backend.provider, model: backend.model, durationMs: Date.now() - startedAt });
-      yield event("agent.output", input, { content });
-      yield event("agent.completed", input, { content });
+      const result = await this.invoke(backend, input);
+      yield event("llm.completed", input, { provider: backend.provider, model: backend.model, durationMs: Date.now() - startedAt, ...(result.usage ? { usage: result.usage } : {}), ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}) });
+      yield event("agent.output", input, { content: result.content });
+      yield event("agent.completed", input, { content: result.content });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       yield event("llm.failed", input, { provider: backend.provider, model: backend.model, error: message.slice(0, 500) });
@@ -37,7 +37,7 @@ export class LocalAgentExecutor implements AgentExecutor {
     }
   }
 
-  private async invoke(backend: Extract<AgentExecutionInput["agent"]["backend"], { type: "local" }>, input: AgentExecutionInput): Promise<unknown> {
+  private async invoke(backend: Extract<AgentExecutionInput["agent"]["backend"], { type: "local" }>, input: AgentExecutionInput): Promise<{ content: string; usage?: Record<string, unknown>; finishReason?: unknown }> {
     const baseUrl = backend.baseUrl || (backend.provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234");
     const ollama = backend.provider === "ollama";
     const origin = normalizeOrigin(baseUrl);
@@ -58,7 +58,11 @@ export class LocalAgentExecutor implements AgentExecutor {
     if (!response.ok) throw new Error(`Local ${backend.provider} request failed (${response.status}): ${errorMessage.slice(0, 500)}`);
     const content = ollama ? nestedContent(record?.message) : lmStudioContent(record?.choices);
     if (typeof content !== "string") throw new Error(`Local ${backend.provider} response did not contain assistant content.`);
-    return content;
+    const usage = ollama
+      ? numericUsage(record, { inputTokens: "prompt_eval_count", outputTokens: "eval_count" })
+      : record?.usage && typeof record.usage === "object" ? record.usage as Record<string, unknown> : undefined;
+    const finishReason = ollama ? record?.done_reason : firstFinishReason(record?.choices);
+    return { content, ...(usage ? { usage } : {}), ...(finishReason !== undefined ? { finishReason } : {}) };
   }
 }
 function messages(input: AgentExecutionInput) {
@@ -87,4 +91,18 @@ function nestedContent(value: unknown): unknown {
 function lmStudioContent(value: unknown): unknown {
   if (!Array.isArray(value)) return undefined;
   return nestedContent(value[0] && typeof value[0] === "object" ? (value[0] as { message?: unknown }).message : undefined);
+}
+function firstFinishReason(value: unknown): unknown {
+  return Array.isArray(value) && value[0] && typeof value[0] === "object" ? (value[0] as { finish_reason?: unknown }).finish_reason : undefined;
+}
+function numericUsage(record: Record<string, unknown> | undefined, keys: { inputTokens: string; outputTokens: string }): Record<string, unknown> | undefined {
+  if (!record) return undefined;
+  const inputTokens = record[keys.inputTokens];
+  const outputTokens = record[keys.outputTokens];
+  if (typeof inputTokens !== "number" && typeof outputTokens !== "number") return undefined;
+  return {
+    ...(typeof inputTokens === "number" ? { inputTokens } : {}),
+    ...(typeof outputTokens === "number" ? { outputTokens } : {}),
+    ...(typeof inputTokens === "number" && typeof outputTokens === "number" ? { totalTokens: inputTokens + outputTokens } : {}),
+  };
 }

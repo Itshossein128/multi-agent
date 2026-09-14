@@ -23,6 +23,7 @@ interface PausedContext {
   agents: AgentRecord[];
   tools?: import("@multi-agent/types").ToolRecord[];
   memoryAccess?: MemoryAccessContext;
+  stepBudget?: { count: number };
 }
 
 export class RunExecutor {
@@ -174,9 +175,11 @@ export class RunExecutor {
         signal: this.store.signal(runId),
         workflowId: context.workflow.id,
         tools: context.tools,
-          onAgentEvent: (event) => { this.appendAgentEvent(runId, event); },
+        stepBudget: context.stepBudget,
+        guardrails: this.guardrails,
+        onAgentEvent: (event) => { this.appendAgentEvent(runId, event); },
       });
-      await this.runGraph(runId, compiled, new Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess, context.tools);
+      await this.runGraph(runId, compiled, new Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess, context.tools, context.stepBudget);
     } catch (error) { this.fail(runId, error); }
   }
 
@@ -194,6 +197,7 @@ export class RunExecutor {
     // retained across the initial run and any resume, unlike the ad-hoc default
     // compileWorkflow would otherwise create fresh on every call.
     const checkpointer = typeof this.checkpointer === "object" ? this.checkpointer : new MemorySaver();
+    const stepBudget = { count: 0 };
     this.checkpointers.set(runId, checkpointer);
     try {
       const compiled = compileWorkflow(request.workflow, request.agents, {
@@ -205,15 +209,17 @@ export class RunExecutor {
         signal: this.store.signal(runId),
         workflowId: request.workflow.id,
         tools: request.tools,
+        stepBudget,
+        guardrails: this.guardrails,
         onAgentEvent: (event) => {
           this.appendAgentEvent(runId, event);
         },
       });
-      await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess, request.tools);
+      await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess, request.tools, stepBudget);
     } catch (error) { this.fail(runId, error); } finally { clearTimeout(timeout); }
   }
 
-  private async runGraph(runId: string, compiled: CompiledGraph, input: unknown, workflow: WorkflowDefinition, agents: AgentRecord[], memoryAccess?: MemoryAccessContext, tools?: import("@multi-agent/types").ToolRecord[]) {
+  private async runGraph(runId: string, compiled: CompiledGraph, input: unknown, workflow: WorkflowDefinition, agents: AgentRecord[], memoryAccess?: MemoryAccessContext, tools?: import("@multi-agent/types").ToolRecord[], stepBudget?: { count: number }) {
     const adapter = new LangGraphEventAdapter();
     const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal: this.store.signal(runId), recursionLimit: this.guardrails.recursionLimit, configurable: { thread_id: runId } } as never);
     let output: Record<string, unknown> | undefined;
@@ -238,7 +244,7 @@ export class RunExecutor {
     if ((state as { next: string[] }).next.length > 0) {
       // Paused at a human approval node — leave status as waiting_for_human and
       // retain enough context to recompile and resume once it is resolved.
-      const context = { workflow, agents, tools, memoryAccess };
+      const context = { workflow, agents, tools, memoryAccess, stepBudget };
       this.pausedContext.set(runId, context);
       this.store.setPausedContext?.(runId, context);
       return;

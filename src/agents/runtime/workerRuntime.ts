@@ -22,6 +22,8 @@ export interface WorkerSpec {
   env?: Record<string, string | undefined>;
   timeoutMs: number;
   maxOutputBytes: number;
+  workspaceAccess?: "read-only" | "read-write";
+  network?: boolean;
 }
 
 export interface WorkerHandle {
@@ -86,7 +88,7 @@ function isProtectedWorkerEnvKey(key: string): boolean {
  * CLI providers may legitimately authenticate from the host environment.
  */
 export function buildWorkerEnv(
-  baseEnv: NodeJS.ProcessEnv,
+  baseEnv: Readonly<Record<string, string | undefined>>,
   workerEnv?: Record<string, string | undefined>,
   explicitlyAllowedKeys: string[] = [],
 ): Record<string, string> {
@@ -199,7 +201,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       .split(",").map((key) => key.trim()).filter(Boolean);
     const env = buildWorkerEnv(process.env, spec.env, explicitlyAllowedEnv);
 
-    const child = this.spawnFn(spec.executable, spec.args, { cwd: spec.cwd, shell: false, env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = this.spawnFn(spec.executable, spec.args, { cwd: spec.cwd, shell: false, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcess;
 
     const state: {
       child: ChildProcess;
@@ -379,4 +381,112 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       this.workers.delete(workerId);
     }
   }
+}
+
+export interface ContainerWorkerPolicy {
+  image: string;
+  dockerExecutable: string;
+  allowNetwork: boolean;
+  memory: string;
+  cpus: string;
+  pidsLimit: number;
+  user: string;
+}
+
+export function containerWorkerPolicyFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): ContainerWorkerPolicy {
+  return {
+    image: env.CLI_WORKER_IMAGE?.trim() ?? "",
+    dockerExecutable: env.CLI_WORKER_DOCKER_EXECUTABLE?.trim() || "docker",
+    allowNetwork: env.CLI_WORKER_ALLOW_NETWORK === "true",
+    memory: env.CLI_WORKER_MEMORY?.trim() || "1g",
+    cpus: env.CLI_WORKER_CPUS?.trim() || "1",
+    pidsLimit: boundedPositive(env.CLI_WORKER_PIDS_LIMIT, 128, 16, 4096),
+    user: env.CLI_WORKER_USER?.trim() || "65534:65534",
+  };
+}
+
+/**
+ * Docker-backed isolation profile for untrusted CLI work. The container image
+ * and all isolation settings are server-owned; workflow/agent records cannot
+ * weaken them. Images must be pinned by digest to prevent tag drift.
+ */
+export class ContainerWorkerRuntime implements WorkerRuntime {
+  private readonly delegate: LocalProcessWorkerRuntime;
+  private readonly containers = new Map<string, string>();
+
+  constructor(
+    private readonly cliPolicy: CliRuntimePolicy,
+    private readonly containerPolicy: ContainerWorkerPolicy = containerWorkerPolicyFromEnvironment(),
+    private readonly spawnFn: typeof spawn = spawn,
+  ) {
+    this.delegate = new LocalProcessWorkerRuntime({ ...cliPolicy, allowedExecutables: [containerPolicy.dockerExecutable] }, spawnFn);
+  }
+
+  async start(spec: WorkerSpec, signal?: AbortSignal, input?: string): Promise<WorkerHandle> {
+    if (!/@sha256:[a-f0-9]{64}$/i.test(this.containerPolicy.image)) {
+      throw new Error("Hardened CLI worker requires CLI_WORKER_IMAGE pinned with an @sha256 digest.");
+    }
+    const containerName = `agent-worker-${randomUUID()}`;
+    const allowedEnvKeys = (process.env.WORKER_ALLOWED_ENV_KEYS ?? "").split(",").map((key) => key.trim()).filter(Boolean);
+    const dockerSpec: WorkerSpec = {
+      ...spec,
+      executable: this.containerPolicy.dockerExecutable,
+      args: buildContainerArgs(spec, this.containerPolicy, containerName, allowedEnvKeys),
+    };
+    const handle = await this.delegate.start(dockerSpec, signal, input);
+    this.containers.set(handle.workerId, containerName);
+    return handle;
+  }
+
+  stream(workerId: string): AsyncIterable<WorkerEvent> { return this.delegate.stream(workerId); }
+  wait(workerId: string): Promise<WorkerResult> { return this.delegate.wait(workerId); }
+
+  async cancel(workerId: string, reason?: string): Promise<void> {
+    await this.delegate.cancel(workerId, reason);
+    await this.removeContainer(workerId);
+  }
+
+  async cleanup(workerId: string): Promise<void> {
+    try { await this.delegate.cleanup(workerId); }
+    finally { await this.removeContainer(workerId); }
+  }
+
+  private async removeContainer(workerId: string): Promise<void> {
+    const name = this.containers.get(workerId);
+    if (!name) return;
+    this.containers.delete(workerId);
+    await new Promise<void>((resolve) => {
+      const child = this.spawnFn(this.containerPolicy.dockerExecutable, ["rm", "-f", name], { shell: false, stdio: "ignore" });
+      child.once("error", () => resolve());
+      child.once("close", () => resolve());
+    });
+  }
+}
+
+export function buildContainerArgs(spec: WorkerSpec, policy: ContainerWorkerPolicy, name: string, allowedEnvKeys: string[]): string[] {
+  const network = spec.network === true && policy.allowNetwork ? "bridge" : "none";
+  const mountMode = spec.workspaceAccess === "read-write" ? "rw" : "ro";
+  return [
+    "run", "--rm", "--name", name, "--interactive",
+    "--network", network,
+    "--read-only",
+    "--cap-drop", "ALL",
+    "--security-opt", "no-new-privileges:true",
+    "--pids-limit", String(policy.pidsLimit),
+    "--memory", policy.memory,
+    "--cpus", policy.cpus,
+    "--user", policy.user,
+    "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+    "--workdir", "/workspace",
+    "--mount", `type=bind,source=${spec.cwd},target=/workspace,readonly=${mountMode === "ro"}`,
+    ...allowedEnvKeys.filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)).flatMap((key) => ["--env", key]),
+    policy.image,
+    spec.executable,
+    ...spec.args,
+  ];
+}
+
+function boundedPositive(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
+  const parsed = Number(value ?? fallback);
+  return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
 }
