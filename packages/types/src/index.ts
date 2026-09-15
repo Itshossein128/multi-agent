@@ -232,6 +232,10 @@ export interface ConditionBranch {
 
 export interface ConditionNodeConfig {
   branches: ConditionBranch[];
+  /** Optional source for machine gates; the default preserves input-based routing. */
+  valueSource?: "input" | "last_value";
+  /** Optional field to read from the selected value, e.g. `status`. */
+  valueField?: string;
 }
 
 export interface InputNodeConfig {
@@ -242,6 +246,8 @@ export interface InputNodeConfig {
 export interface OutputNodeConfig {
   outputKey: string;
   description: string;
+  /** Select the immediately preceding active path instead of joining all predecessors. */
+  inputMode?: "last_value" | "join";
 }
 
 export type WorkflowNodeConfig =
@@ -651,6 +657,8 @@ export type RunEventType =
   | "run.completed"
   | "run.failed"
   | "run.cancelled"
+  | "branch.cancelled"
+  | "branch.skipped"
   | "node.started"
   | "node.completed"
   | "node.failed"

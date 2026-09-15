@@ -37,7 +37,11 @@ function LoginForm() {
     setIsLoading(false);
 
     if (res?.error) {
-      setError("Invalid email or password");
+      setError(
+        res.error === "Configuration" || res.code === "AUTH_DATABASE_UNAVAILABLE"
+          ? "Sign-in is temporarily unavailable. Please try again in a moment."
+          : "Invalid email or password"
+      );
     } else {
       router.push(callbackUrl);
       router.refresh(); // Ensure server components re-render with new session

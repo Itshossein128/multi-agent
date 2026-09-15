@@ -62,7 +62,7 @@ export interface CompileOptions {
   agentRunner?: (
     agent: AgentRecord,
     state: RuntimeState,
-    meta: { runId: string; nodeId: string }
+    meta: { runId: string; nodeId: string; signal?: AbortSignal }
   ) => Promise<unknown>;
   runId?: string;
   workflowId?: string;
@@ -71,6 +71,8 @@ export interface CompileOptions {
   toolRuntime?: Pick<ToolRuntime, "execute">;
   /** Mutable per-run counter retained when an approval resumes with a newly compiled graph. */
   stepBudget?: { count: number };
+  /** Per-conditional-branch signals owned by the server scheduler. */
+  branchSignals?: ReadonlyMap<string, AbortSignal | AbortController>;
   guardrails?: {
     maxWorkflowSteps: number;
     maxConcurrentBranches: number;
@@ -110,8 +112,16 @@ export function compileWorkflow(
       const retry = resolveRetryPolicy(node, agentById, toolsById, guardrails);
       const nodeInput = valueForNode(node, state, definition);
       const executionState = { ...state, lastValue: nodeInput };
+      const branchKey = state.branch;
+      const branchEntry = branchKey ? options.branchSignals?.get(branchKey) : undefined;
+      const branchSignal = branchEntry instanceof AbortController ? branchEntry.signal : branchEntry;
+      if (branchSignal?.aborted) {
+        emit("branch.skipped", { branchKey, nodeType: node.type, reason: "branch_cancelled" });
+        return { lastValue: state.lastValue, nodeResults: { [node.id]: state.lastValue } };
+      }
       for (let attempt = 1; attempt <= retry.maxAttempts; attempt += 1) {
-        const release = await executionSlots.acquire(options.signal);
+        const signal = combineSignals(options.signal, branchSignal);
+        const release = await executionSlots.acquire(signal);
         stepBudget.count += 1;
         const step = stepBudget.count;
         if (step > guardrails.maxWorkflowSteps) {
@@ -126,7 +136,7 @@ export function compileWorkflow(
             if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
             emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
             try {
-              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), options.signal);
+              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), signal, { runId, credentialPrincipal: options.credentialPrincipal });
               emit("tool.completed", { toolId: tool.id, output: value });
               result = { lastValue: value };
             } catch (error) {
@@ -167,16 +177,20 @@ export function compileWorkflow(
             }
             emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
           } else if (node.type === "condition") {
-            const config = node.config as { branches: { key: string }[] };
+            const config = node.config as { branches: { key: string }[]; valueSource?: "input" | "last_value"; valueField?: string };
             // CLI agents often return JSON text; coerce so branch keys transfer through workflow state.
             const routedValue = coerceBranchCarrier(state.lastValue);
             const lastValueBranch = routedValue && typeof routedValue === "object"
-              ? (routedValue as { branch?: unknown; branchKey?: unknown }).branch ?? (routedValue as { branchKey?: unknown }).branchKey
+              ? branchValue(routedValue as Record<string, unknown>, config.valueField)
               : undefined;
-            const requested = state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? lastValueBranch;
+            const requested = config.valueSource === "last_value"
+              ? lastValueBranch
+              : state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? lastValueBranch;
             const branch =
               typeof requested === "string" && config.branches.some((item) => item.key === requested)
                 ? requested
+                : typeof requested === "string" && config.branches.some((item) => item.key === requested.toLowerCase())
+                  ? requested.toLowerCase()
                 : config.branches[0]?.key;
             result = { branch, lastValue: routedValue ?? state.lastValue };
             emit("state.updated", { branch });
@@ -190,7 +204,7 @@ export function compileWorkflow(
 
             let shortTermHistories: ShortTermHistories = {};
             const value = options.agentRunner
-              ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id })
+              ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id, signal })
               : await runAgentThroughRuntime(agent, executionState, {
                 runId,
                 nodeId: node.id,
@@ -200,9 +214,13 @@ export function compileWorkflow(
                 memoryAccess: options.memoryAccess,
                 credentialPrincipal: options.credentialPrincipal,
                 onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
-                signal: options.signal,
+                signal,
               });
             result = { lastValue: value, shortTermHistories };
+          }
+          if (branchSignal?.aborted && !options.signal?.aborted) {
+            emit("branch.skipped", { branchKey, nodeType: node.type, reason: "branch_cancelled" });
+            return { lastValue: state.lastValue, nodeResults: { [node.id]: state.lastValue } };
           }
           const nodeValue = result.output ?? result.lastValue;
           result.nodeResults = { [node.id]: nodeValue };
@@ -215,14 +233,18 @@ export function compileWorkflow(
           return result;
         } catch (error) {
           if (isGraphInterrupt(error)) throw error;
-          const terminal = attempt >= retry.maxAttempts || options.signal?.aborted === true;
+          if (branchSignal?.aborted && !options.signal?.aborted) {
+            emit("branch.skipped", { branchKey, nodeType: node.type, reason: "branch_cancelled" });
+            return { lastValue: state.lastValue, nodeResults: { [node.id]: state.lastValue } };
+          }
+          const terminal = attempt >= retry.maxAttempts || Boolean(signal?.aborted);
           const message = error instanceof Error ? error.message : String(error);
           emit("node.failed", { nodeType: node.type, error: message, attempt, maxAttempts: retry.maxAttempts, terminal, step });
           if (terminal) throw error;
           const delayMs = retryDelay(retry, attempt, guardrails.maxNodeRetryBackoffMs);
           emit("node.retrying", { nodeType: node.type, attempt, nextAttempt: attempt + 1, maxAttempts: retry.maxAttempts, delayMs, reason: message });
           release();
-          await abortableDelay(delayMs, options.signal);
+          await abortableDelay(delayMs, signal);
         } finally {
           release();
         }
@@ -276,7 +298,12 @@ function valueForNode(node: WorkflowNode, state: RuntimeState, definition: Workf
   // Routers in a loop must observe the immediately preceding value. Join nodes,
   // however, receive every completed predecessor keyed by stable node id.
   if (node.type === "condition" || node.type === "input") return state.lastValue;
-  const incoming = definition.edges.filter((edge) => edge.target === node.id).map((edge) => edge.source);
+  const incomingEdges = definition.edges.filter((edge) => edge.target === node.id);
+  // Output nodes can explicitly select the active route. This is needed for
+  // workflows where gate nodes also point to the output, while ordinary output
+  // nodes retain join semantics for parallel fan-in.
+  if (node.type === "output" && (node.config as { inputMode?: string }).inputMode === "last_value") return state.lastValue;
+  const incoming = incomingEdges.map((edge) => edge.source);
   if (incoming.length < 2) return state.lastValue;
   const results = state.nodeResults ?? {};
   const branches = Object.fromEntries(
@@ -328,6 +355,11 @@ function abortError(): Error {
   const error = new Error("Execution cancelled");
   error.name = "AbortError";
   return error;
+}
+
+function combineSignals(parent?: AbortSignal, branch?: AbortSignal): AbortSignal | undefined {
+  if (parent && branch) return AbortSignal.any([parent, branch]);
+  return parent ?? branch;
 }
 
 class AbortableSemaphore {
@@ -396,17 +428,29 @@ export function coerceBranchCarrier(value: unknown): unknown {
   try {
     const parsed = JSON.parse(trimmed.slice(start, end + 1)) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return value;
-    const record = parsed as { branch?: unknown; branchKey?: unknown; verdict?: unknown };
+    const record = parsed as { branch?: unknown; branchKey?: unknown; verdict?: unknown; status?: unknown };
     if (typeof record.branch === "string" || typeof record.branchKey === "string") return parsed;
     if (typeof record.verdict === "string") {
       const verdict = record.verdict.toLowerCase();
       if (verdict === "approve" || verdict === "approved") return { ...record, branch: "approved" };
       if (verdict === "reject" || verdict === "rejected") return { ...record, branch: "rejected" };
     }
+    if (typeof record.status === "string") return parsed;
     return value;
   } catch {
     return value;
   }
+}
+
+function branchValue(value: Record<string, unknown>, field?: string): string | undefined {
+  const raw = field ? value[field] : value.branch ?? value.branchKey ?? value.verdict ?? value.status;
+  if (typeof raw !== "string") return undefined;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "passed" || normalized === "success" || normalized === "successful") return "pass";
+  if (normalized === "failed" || normalized === "error" || normalized === "blocked") return "fail";
+  if (normalized === "approve") return "approved";
+  if (normalized === "reject") return "rejected";
+  return normalized;
 }
 
 function isGraphInterrupt(error: unknown): boolean {

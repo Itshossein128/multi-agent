@@ -58,17 +58,17 @@ apps/web Timeline + runtime graph overlay
 | `input`, `output`, `agent`, `condition`, `memory` | Compile + execute on real LangGraph path |
 | `tool`, `approval` | Allowed in definition; **enter → emit `node.failed` (and `tool.*` / `human_approval.requested` where relevant) with a clear “not supported in Phase 4” error** — no silent simulation |
 
-Agent nodes invoke LLMs using linked [`AgentRecord`](apps/web/src/lib/workflow/types.ts) (`model`, `systemPrompt`, tools list ignored until Phase 6). Condition nodes choose a branch from a simple state key / first matching `branchKey` (deterministic, documented). Memory nodes read/write an in-run state bag and emit `memory.read` / `memory.write`.
+Agent nodes invoke LLMs using linked [`AgentRecord`](../../apps/web/src/lib/workflow/types.ts) (`model`, `systemPrompt`, tools list ignored until Phase 6). Condition nodes choose a branch from a simple state key / first matching `branchKey` (deterministic, documented). Memory nodes read/write an in-run state bag and emit `memory.read` / `memory.write`.
 
 ---
 
 ## 1. Shared domain package
 
-Create [`packages/types`](packages/types) (pnpm workspace already includes `packages/*`).
+Create [`packages/types`](../../packages/types) (pnpm workspace already includes `packages/*`).
 
 **Promote / redefine:**
 
-- `WorkflowDefinition`, `WorkflowNode`, `WorkflowEdge`, `AgentRecord` (move canonical copies here; [`apps/web/src/lib/workflow/types.ts`](apps/web/src/lib/workflow/types.ts) re-exports or depends on `@multi-agent/types`).
+- `WorkflowDefinition`, `WorkflowNode`, `WorkflowEdge`, `AgentRecord` (move canonical copies here; [`apps/web/src/lib/workflow/types.ts`](../../apps/web/src/lib/workflow/types.ts) re-exports or depends on `@multi-agent/types`).
 - **`Run`**: `runId`, `workflowId`, `taskId?`, `status`, `startedAt`, `completedAt?`, `input`, `output?`, `error?`, `currentNodeId?`, `metadata`.
 - **`RunEvent`**: `id`, `runId`, `type`, `timestamp`, `nodeId?`, `agentId?`, `toolId?`, `parentEventId?`, `sequence`, `payload`.
 - **`RunEventType`** union covering at least:  
@@ -95,11 +95,11 @@ apps/server/
     nodes/         # Per-type LangGraph node handlers
 ```
 
-Reuse patterns from [`src/agents/core/graphEngine.ts`](src/agents/core/graphEngine.ts) (Annotation, `MemorySaver`, `thread_id`) but **do not** hard-code the CLI orchestrator topology. The CLI engine stays as-is for Phase 4; studio runs use the new dynamic compiler.
+Reuse patterns from [`src/agents/core/graphEngine.ts`](../../src/agents/core/graphEngine.ts) (Annotation, `MemorySaver`, `thread_id`) but **do not** hard-code the CLI orchestrator topology. The CLI engine stays as-is for Phase 4; studio runs use the new dynamic compiler.
 
 ### Compiler (`compiler/workflowCompiler.ts`)
 
-- Validate definition server-side (start from web [`validation.ts`](apps/web/src/lib/workflow/validation.ts) rules; authoritative on server).
+- Validate definition server-side (start from web [`validation.ts`](../../apps/web/src/lib/workflow/validation.ts) rules; authoritative on server).
 - Build a generic runtime state annotation: `input`, `output`, `messages`, `memory` bag, `branchChoices`, `errors`, etc.
 - Map each workflow node → named LangGraph node (`node.id` as graph key).
 - Wire edges: normal `addEdge`; conditional via `addConditionalEdges` using `branchKey`.
@@ -138,9 +138,9 @@ CORS for `apps/web` origin. Env: `PORT`, LLM keys (reuse root `.env` patterns).
 ## 3. Web: services, store, transport
 
 - Env: `NEXT_PUBLIC_EXECUTION_API_URL` (default `http://localhost:4000`).
-- [`runService.ts`](apps/web/src/services/runService.ts): `startRun`, `getRun`, `cancelRun`.
-- [`createRunEventStream(runId)`](apps/web/src/services/runEventStream.ts): EventSource wrapper — reconnect with backoff, surface `connecting` / `live` / `error` / `closed`, expose events via callback/store. **Abstract transport** so WS can replace SSE later without Timeline rewrites.
-- Zustand [`useRunStore`](apps/web/src/store/useRunStore.ts): current run, ordered events, derived `nodeRuntimeStatus: Record<nodeId, running|completed|failed|idle>`, selection, autoScroll flag.
+- [`runService.ts`](../../apps/web/src/services/runService.ts): `startRun`, `getRun`, `cancelRun`.
+- [`createRunEventStream(runId)`](../../apps/web/src/services/runEventStream.ts): EventSource wrapper — reconnect with backoff, surface `connecting` / `live` / `error` / `closed`, expose events via callback/store. **Abstract transport** so WS can replace SSE later without Timeline rewrites.
+- Zustand [`useRunStore`](../../apps/web/src/store/useRunStore.ts): current run, ordered events, derived `nodeRuntimeStatus: Record<nodeId, running|completed|failed|idle>`, selection, autoScroll flag.
 - Keep workflow save on client localStorage for Phase 4; **POST sends full definition** to the server at start (no requirement that server owns workflow persistence yet).
 
 ---
@@ -149,8 +149,8 @@ CORS for `apps/web` origin. Env: `PORT`, LLM keys (reuse root `.env` patterns).
 
 ### Routes / entry points
 
-- Add **Run** control on editor toolbar ([`EditorToolbar.tsx`](apps/web/src/components/workflow/EditorToolbar.tsx)): validate → `startRun` with current workflow + agents + prompt → navigate to `/runs/[runId]`.
-- Page [`apps/web/src/app/runs/[runId]/page.tsx`](apps/web/src/app/runs/[runId]/page.tsx): split layout — **read-only graph** (reuse React Flow mapping from [`FlowCanvas.tsx`](apps/web/src/components/workflow/FlowCanvas.tsx) without mutating editor store) + **Timeline panel**.
+- Add **Run** control on editor toolbar ([`EditorToolbar.tsx`](../../apps/web/src/components/workflow/EditorToolbar.tsx)): validate → `startRun` with current workflow + agents + prompt → navigate to `/runs/[runId]`.
+- Page [`apps/web/src/app/(authenticated)/runs/[runId]/page.tsx`](../../apps/web/src/app/%28authenticated%29/runs/%5BrunId%5D/page.tsx): split layout — **read-only graph** (reuse React Flow mapping from [`FlowCanvas.tsx`](../../apps/web/src/components/workflow/FlowCanvas.tsx) without mutating editor store) + **Timeline panel**.
 - Nav links from dashboard / org / tasks → Runs when a runId exists.
 
 ### Timeline panel requirements
@@ -164,8 +164,8 @@ CORS for `apps/web` origin. Env: `PORT`, LLM keys (reuse root `.env` patterns).
 
 ### Graph overlay
 
-- Separate **runtime view state** from design store ([`useWorkflowStore`](apps/web/src/store/useWorkflowStore.ts) unchanged for saved definition).
-- Highlight: active → running, finished → completed, errored → failed (style in [`WorkflowNodes.tsx`](apps/web/src/components/workflow/nodes/WorkflowNodes.tsx) via status prop / class).
+- Separate **runtime view state** from design store ([`useWorkflowStore`](../../apps/web/src/store/useWorkflowStore.ts) unchanged for saved definition).
+- Highlight: active → running, finished → completed, errored → failed (style in [`WorkflowNodes.tsx`](../../apps/web/src/components/workflow/nodes/WorkflowNodes.tsx) via status prop / class).
 - Do not write runtime status into persisted workflow JSON.
 
 ```mermaid
@@ -185,7 +185,7 @@ flowchart LR
 
 - **Unit:** compiler (topology, conditional edges, unsupported node failure), adapter mapping fixtures, RunEvent sequencing.
 - **Integration:** start run with a minimal `input → agent → output` definition (LLM mocked), assert SSE emits `run.started` → `node.*` → `run.completed`.
-- Update Progress checkbox in [`docs/visual-graph-editor-roadmap.md`](docs/visual-graph-editor-roadmap.md) when DoD is met; brief note in architecture that Phase 4 introduced `apps/server` + `packages/types`.
+- Update the current status in [`docs/roadmap.md`](../../docs/roadmap.md) when DoD is met; keep the architecture note that Phase 4 introduced `apps/server` + `packages/types`.
 
 ---
 

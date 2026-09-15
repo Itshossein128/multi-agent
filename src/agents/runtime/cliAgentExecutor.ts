@@ -114,7 +114,7 @@ export class CliAgentExecutor implements AgentExecutor {
       process.env,
       this.runtimePolicy.workerMode,
     );
-    const args = commandArgs(backend);
+    const args = commandArgs(backend, this.runtimePolicy.workerMode);
 
     yield event("agent.started", input, { provider: backend.provider, executable: spawnExecutable, args });
 
@@ -194,12 +194,12 @@ export function defaultCliExecutable(provider: string): string {
   return provider === "claude-code" ? "claude" : provider;
 }
 
-function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>): string[] {
+function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>, workerMode: CliWorkerMode): string[] {
   const explicit = backend.args?.filter((arg) => arg.length > 0);
   const args = backend.provider === "codex"
     ? codexArgs(explicit)
     : backend.provider === "claude-code"
-      ? claudeArgs(explicit)
+      ? claudeArgs(explicit, workerMode === "container")
       : backend.provider === "agy"
         ? ensureFlags(explicit, ["--print", "--output-format", "text", "--disable-slash-commands"])
         : [...(explicit ?? [])];
@@ -213,12 +213,14 @@ function codexArgs(explicit?: string[]): string[] {
   return ["exec", ...custom, ...(custom.includes("-") ? [] : ["-"])];
 }
 
-/** Non-interactive Claude defaults for an externally Docker-isolated worker. */
-function claudeArgs(explicit?: string[]): string[] {
+/** Non-interactive Claude defaults for a Docker-isolated worker only. */
+function claudeArgs(explicit: string[] | undefined, allowPermissionBypass: boolean): string[] {
   const args = ensureFlags(explicit, ["--print", "--output-format", "text"]);
   // Nested Claude permission prompts conflict with headless container runs.
-  // Docker remains the security sandbox; do not use --bare (it disables OAuth).
-  if (!args.includes("--dangerously-skip-permissions")
+  // Docker remains the security sandbox; local workers must retain Claude's
+  // permission model. Do not use --bare (it disables OAuth).
+  if (allowPermissionBypass
+    && !args.includes("--dangerously-skip-permissions")
     && !args.includes("--permission-mode")
     && !args.includes("--allow-dangerously-skip-permissions")) {
     args.push("--dangerously-skip-permissions");

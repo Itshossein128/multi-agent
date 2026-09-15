@@ -155,6 +155,9 @@ export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRe
       }
     }
     if (node.type === "condition") {
+      const conditionConfig = node.config as { valueSource?: unknown; valueField?: unknown };
+      if (conditionConfig.valueSource !== undefined && !["input", "last_value"].includes(String(conditionConfig.valueSource))) add("error", "INVALID_CONDITION_SOURCE", "Condition valueSource must be input or last_value.", node.id);
+      if (conditionConfig.valueField !== undefined && (typeof conditionConfig.valueField !== "string" || !conditionConfig.valueField.trim() || conditionConfig.valueField.length > 100)) add("error", "INVALID_CONDITION_FIELD", "Condition valueField must be a non-empty field name of at most 100 characters.", node.id);
       const rawBranches = (node.config as { branches?: unknown }).branches;
       const branches = Array.isArray(rawBranches) ? rawBranches.filter((branch): branch is { key: string } => Boolean(branch && typeof branch === "object")) : [];
       const keys = new Set(branches.map((branch) => branch.key));
@@ -173,9 +176,10 @@ export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRe
       if (typeof config.description !== "string" || config.description.length > 2_000) add("error", "INVALID_INPUT_DESCRIPTION", "Input description must be at most 2000 characters.", node.id);
     }
     if (node.type === "output") {
-      const config = node.config as { outputKey?: string; description?: string };
+      const config = node.config as { outputKey?: string; description?: string; inputMode?: "last_value" | "join" };
       if (typeof config.outputKey !== "string" || !config.outputKey.trim() || config.outputKey.length > 200) add("error", "INVALID_OUTPUT_KEY", "Output node requires a key of at most 200 characters.", node.id);
       if (typeof config.description !== "string" || config.description.length > 2_000) add("error", "INVALID_OUTPUT_DESCRIPTION", "Output description must be at most 2000 characters.", node.id);
+      if (config.inputMode !== undefined && config.inputMode !== "last_value" && config.inputMode !== "join") add("error", "INVALID_OUTPUT_INPUT_MODE", "Output inputMode must be last_value or join.", node.id);
     }
     if (node.retryPolicy && node.type !== "agent" && node.type !== "tool") {
       add("error", "UNSAFE_NODE_RETRY", `Node type "${node.type}" is not retryable.`, node.id);

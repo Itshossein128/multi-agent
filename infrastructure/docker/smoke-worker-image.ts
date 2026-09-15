@@ -8,6 +8,9 @@ import { buildContainerArgs, type ContainerWorkerPolicy, type WorkerSpec } from 
 const image = process.argv.slice(2).find((argument) => argument !== "--") || "multi-agent-cli-worker:local";
 const dockerExecutable = process.env.CLI_WORKER_DOCKER_EXECUTABLE?.trim() || "docker";
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "cli-worker-smoke-"));
+// The worker is intentionally uid 65534 and the read-write mount test needs
+// that uid to be able to create a file; read-only mode is enforced by Docker.
+fs.chmodSync(workspace, 0o777);
 const activeContainers = new Set<string>();
 
 const policy: ContainerWorkerPolicy = {
@@ -31,7 +34,7 @@ type Check = {
 };
 
 function docker(args: string[], options: { quiet?: boolean } = {}) {
-  const result = spawnSync(dockerExecutable, args, { encoding: "utf8", windowsHide: true });
+  const result = spawnSync(dockerExecutable, args, { encoding: "utf8", windowsHide: true, timeout: 120_000 });
   if (!options.quiet && result.stdout) process.stdout.write(result.stdout);
   if (!options.quiet && result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;
@@ -107,14 +110,14 @@ try {
   runCheck({
     name: "read-only-workspace",
     executable: "bash",
-    args: ["-c", "test -r /workspace/input.txt && if touch /workspace/forbidden 2>/dev/null; then exit 1; fi"],
+    args: ["-c", "test -r /workspace/input.txt && ! test -w /workspace && ! touch /workspace/forbidden 2>/dev/null"],
   });
   if (fs.existsSync(path.join(workspace, "forbidden"))) throw new Error("Read-only workspace was modified on the host.");
 
   runCheck({
     name: "read-write-workspace",
     executable: "bash",
-    args: ["-c", "printf writable > /workspace/written.txt"],
+    args: ["-c", "umask 000; printf writable > /workspace/written.txt"],
     workspaceAccess: "read-write",
   });
   if (fs.readFileSync(path.join(workspace, "written.txt"), "utf8") !== "writable") {

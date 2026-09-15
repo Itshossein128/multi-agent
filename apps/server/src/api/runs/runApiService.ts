@@ -112,6 +112,17 @@ export class RunApiService {
     return { runId, status: "cancelling" };
   }
 
+  cancelBranch(runId: string, branchKey: string) {
+    this.requireRun(runId);
+    if (!branchKey.trim() || branchKey.length > 128 || /[\r\n\0]/.test(branchKey)) {
+      throw new ApiError(400, "Invalid branch key.");
+    }
+    if (!this.executor.cancelBranch(runId, branchKey)) {
+      throw new ApiError(409, "Branch is not active or was already cancelled.");
+    }
+    return { runId, branchKey, status: "cancelling" };
+  }
+
   async retry(runId: string, request: Request, principal?: RequestPrincipal) {
     if (!principal) throw new ApiError(401, "Authentication required.");
     const entry = this.requireRun(runId);

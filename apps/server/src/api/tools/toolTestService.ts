@@ -4,6 +4,7 @@ import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 import { authorizeToolOrAgent } from "../../auth/principal";
 import { ApiError } from "../shared/http";
+import { randomUUID } from "node:crypto";
 
 export interface ToolTestRequest {
   tool?: ToolRecord;
@@ -11,13 +12,9 @@ export interface ToolTestRequest {
   input: Record<string, unknown>;
 }
 
-export interface ToolExecutor {
-  execute(tool: ToolRecord, input: Record<string, unknown>): Promise<unknown>;
-}
-
 export class ToolTestService {
   constructor(
-    private readonly runtime: ToolExecutor = new ToolRuntime(),
+    private readonly runtime: Pick<ToolRuntime, "execute"> = new ToolRuntime(),
     private readonly studioStore?: Pick<StudioStore, "getTool">,
   ) {}
 
@@ -42,7 +39,7 @@ export class ToolTestService {
     if (errors.length) throw new ApiError(400, errors.join(" "));
 
     try {
-      return { output: await this.runtime.execute(tool, request.input) };
+      return { output: await this.runtime.execute(tool, request.input, undefined, { runId: `tool-test-${randomUUID()}`, credentialPrincipal: { tenantId: principal.tenantId, principalId: principal.userId } }) };
     } catch (error) {
       if (error instanceof UnsupportedToolCategoryError) throw new ApiError(400, error.message);
       throw error;

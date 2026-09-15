@@ -33,6 +33,7 @@ interface PausedContext {
 export class RunExecutor {
   private checkpointers = new Map<string, BaseCheckpointSaver>();
   private pausedContext = new Map<string, PausedContext>();
+  private branchControllers = new Map<string, Map<string, AbortController>>();
 
   constructor(
     private readonly store: RunStoreContract = new InMemoryRunStore(),
@@ -109,6 +110,7 @@ export class RunExecutor {
     log.info("run.started", { runId: id, workflowId: request.workflow.id, taskId: request.taskId });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.created", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
+    this.branchControllers.set(id, new Map());
     void this.execute(id, request, memoryAccess, principal);
     return id;
   }
@@ -146,12 +148,56 @@ export class RunExecutor {
       }
       this.pausedContext.delete(runId);
       this.checkpointers.delete(runId);
+      this.branchControllers.delete(runId);
       this.store.setPausedContext?.(runId, null);
       this.store.update(runId, { status: "cancelled", completedAt: nowIso() });
       this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
       return true;
     }
     return this.store.cancel(runId);
+  }
+
+  /** Cancel one named conditional branch without aborting the whole run. */
+  cancelBranch(runId: string, branchKey: string): boolean {
+    const normalized = branchKey.trim();
+    if (!normalized || normalized.length > 128 || /[\r\n\0]/.test(normalized)) return false;
+    const entry = this.store.get(runId);
+    if (!entry || ["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
+    const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+    const configuredBranches = (workflow?.nodes ?? [])
+      .filter(node => node.type === "condition")
+      .flatMap(node => {
+        const branches = (node.config as { branches?: unknown }).branches;
+        return Array.isArray(branches) ? branches : [];
+      })
+      .map(branch => branch && typeof branch === "object" ? (branch as { key?: unknown }).key : undefined)
+      .filter((key): key is string => typeof key === "string" && Boolean(key.trim()));
+    const edgeBranches = (workflow?.edges ?? [])
+      .filter(edge => edge.kind === "conditional")
+      .map(edge => edge.branchKey)
+      .filter((key): key is string => typeof key === "string" && Boolean(key.trim()));
+    // A branch is declared either by a condition node's branch configuration
+    // or by a validated conditional edge. This also keeps cancellation useful
+    // while a branch has not yet reached its outgoing edge.
+    const knownBranches = new Set([...configuredBranches, ...edgeBranches].map(key => key.trim()));
+    if (!knownBranches.has(normalized)) return false;
+    let controllers = this.branchControllers.get(runId);
+    if (!controllers) {
+      controllers = new Map();
+      this.branchControllers.set(runId, controllers);
+    }
+    let controller = controllers.get(normalized);
+    if (!controller) {
+      controller = new AbortController();
+      controllers.set(normalized, controller);
+    }
+    if (controller.signal.aborted) return false;
+    controller.abort();
+    this.store.append(runId, {
+      id: uid("event"), runId, type: "branch.cancelled", timestamp: nowIso(), sequence: 0,
+      payload: { branchKey: normalized },
+    });
+    return true;
   }
 
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
@@ -186,6 +232,7 @@ export class RunExecutor {
         tools: context.tools,
         stepBudget: context.stepBudget,
         guardrails: this.guardrails,
+        branchSignals: this.branchControllers.get(runId),
         onAgentEvent: (event) => { this.appendAgentEvent(runId, event); },
       });
       await this.runGraph(runId, compiled, new Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess, context.tools, context.stepBudget);
@@ -208,6 +255,7 @@ export class RunExecutor {
     const checkpointer = typeof this.checkpointer === "object" ? this.checkpointer : new MemorySaver();
     const stepBudget = { count: 0 };
     this.checkpointers.set(runId, checkpointer);
+    if (!this.branchControllers.has(runId)) this.branchControllers.set(runId, new Map());
     try {
       const compiled = compileWorkflow(request.workflow, request.agents, {
         runId,
@@ -221,6 +269,7 @@ export class RunExecutor {
         tools: request.tools,
         stepBudget,
         guardrails: this.guardrails,
+        branchSignals: this.branchControllers.get(runId),
         onAgentEvent: (event) => {
           this.appendAgentEvent(runId, event);
         },
@@ -261,6 +310,7 @@ export class RunExecutor {
     }
     this.pausedContext.delete(runId);
     this.checkpointers.delete(runId);
+    this.branchControllers.delete(runId);
     this.store.setPausedContext?.(runId, null);
     this.store.update(runId, { status: "completed", completedAt: nowIso(), output });
     this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
@@ -313,6 +363,7 @@ export class RunExecutor {
     if (unsupported) this.store.append(runId, { id: uid("event"), runId, type: "node.failed", timestamp: nowIso(), nodeId: error.nodeId, sequence: 0, payload: { error: message } });
     this.pausedContext.delete(runId);
     this.checkpointers.delete(runId);
+    this.branchControllers.delete(runId);
     this.store.setPausedContext?.(runId, null);
     const cancelled = Boolean(this.store.signal(runId)?.aborted);
     this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message });

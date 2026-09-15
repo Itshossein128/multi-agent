@@ -63,6 +63,41 @@ test("condition nodes coerce JSON branch carriers from CLI agent text", async ()
   });
 });
 
+test("condition nodes can route from a selected last-value field", async () => {
+  const condition = createNode("condition", { x: 1, y: 0 });
+  condition.config = { branches: [{ key: "pass", label: "Pass" }, { key: "fail", label: "Fail" }], valueSource: "last_value", valueField: "status" };
+  const input = createNode("input", { x: 0, y: 0 });
+  const output = createNode("output", { x: 2, y: 0 });
+  const workflow = { ...createEmptyDefinition(), nodes: [input, condition, output], edges: [
+    createEdge({ source: input.id, target: condition.id }),
+    createEdge({ source: condition.id, target: output.id, kind: "conditional", branchKey: "pass" }),
+  ] };
+  const graph = compileWorkflow(workflow, [], { agentRunner: async () => ({ status: "PASSED" }) });
+  const result = await graph.graph.invoke({ input: { status: "PASSED" } } as never);
+  expect(result.output).toEqual({ status: "PASSED" });
+});
+
+test("output nodes select the active predecessor instead of aggregating historical gates", async () => {
+  const agentA = createAgentRecord({ name: "Historical predecessor" });
+  const agentB = createAgentRecord({ name: "Active predecessor" });
+  const input = createNode("input", { x: 0, y: 0 });
+  const nodeA = createNode("agent", { x: 1, y: 0 }, { agentId: agentA.id });
+  const nodeB = createNode("agent", { x: 2, y: 0 }, { agentId: agentB.id });
+  const output = createNode("output", { x: 3, y: 0 });
+  output.config = { ...output.config, inputMode: "last_value" };
+  const workflow = {
+    ...createEmptyDefinition(), nodes: [input, nodeA, nodeB, output], edges: [
+      createEdge({ source: input.id, target: nodeA.id }),
+      createEdge({ source: nodeA.id, target: nodeB.id }),
+      createEdge({ source: nodeA.id, target: output.id }),
+      createEdge({ source: nodeB.id, target: output.id }),
+    ],
+  };
+  const graph = compileWorkflow(workflow, [agentA, agentB], { agentRunner: async (agent) => ({ from: agent.name }) });
+  const result = await graph.graph.invoke({ input: {} } as never);
+  expect(result.output).toEqual({ from: "Active predecessor" });
+});
+
 test("condition nodes can drive a bounded loop from the previous node value", async () => {
   const agent = createAgentRecord({ name: "Loop body" });
   const input = createNode("input", { x: 0, y: 0 });

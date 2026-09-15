@@ -24,7 +24,7 @@ The compiler wires `addConditionalEdges` for any `condition`- or `approval`-type
 
 ## Timeout auto-approve
 
-`approvalType: "timeout"` (set on the node in the Graph Editor) auto-resolves the approval as `"approved"` after `timeoutSeconds`, unless a human resolves it first — matching the existing "Timeout — auto-approve after" UI copy. This is a `setTimeout` scheduled when the request is created and cleared on manual resolution; it does not survive a server restart (see limits below).
+`approvalType: "timeout"` (set on the node in the Graph Editor) auto-resolves the approval as `"approved"` after `timeoutSeconds`, unless a human resolves it first — matching the existing "Timeout — auto-approve after" UI copy. This is a `setTimeout` scheduled when the request is created and cleared on manual resolution. With durable approval/checkpoint data, recovery re-arms the timer using the remaining time.
 
 ## Approval states
 
@@ -36,8 +36,8 @@ The run detail page (`/runs/[runId]`) renders `ApprovalPanel` above the timeline
 
 ## Existing platform limits
 
-- Everything is in-memory (`RunStore`/`RunExecutor`, same as every other run today) — a server restart loses pending approvals and their timers, same as any other in-flight run. Durable persistence is Phase 9.
-- The Dashboard (`apps/web/src/lib/runtimeTracker.ts`) and Task Board are pre-existing mock/legacy surfaces not wired to the real execution server at all — they do not show pending approvals. Only the Run detail page (real, SSE-backed) does.
+- Approval records and paused context are durable when PostgreSQL Studio persistence is enabled. The active executor, abort controllers, SSE listeners and timeout callbacks remain process-local; a restart can restore only supported waiting approvals, while an active worker is marked failed.
+- The Dashboard and Task Board use the authenticated server boundary for their own data and actions, but they do not render pending approval cards. Pending approvals are shown on the real SSE-backed Run detail page.
 - `LangGraphEventAdapter`'s `"tasks"`-derived `node.completed` events don't carry a `nodeId` (a pre-existing gap, not introduced by this phase) — the per-node `"updates"`-derived `log` events do, and are what the Timeline's node-status view actually relies on.
 
 ## Verification

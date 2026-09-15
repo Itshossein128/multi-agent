@@ -3,7 +3,7 @@
 # The native CLI payloads below are Linux x64 only. A non-amd64 build must fail
 # instead of silently producing an image containing incompatible executables.
 FROM --platform=linux/amd64 node:22.23.2-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS runtime-base
-ARG TARGETPLATFORM
+ARG TARGETPLATFORM=linux/amd64
 RUN if [ "$TARGETPLATFORM" != "linux/amd64" ]; then \
       echo "worker.Dockerfile supports only linux/amd64; requested $TARGETPLATFORM" >&2; \
       exit 1; \
@@ -72,6 +72,14 @@ RUN npm install --global --offline --omit=optional --ignore-scripts --no-audit -
 # Keep the readable tag and immutable upstream manifest digest together.
 FROM runtime-base
 
+# Build proxy arguments are intentionally not inherited by the runtime image.
+# In particular, a host-only loopback proxy must never become a worker runtime
+# dependency or break installation of the pinned package-manager binary.
+ENV HTTP_PROXY= \
+    HTTPS_PROXY= \
+    http_proxy= \
+    https_proxy=
+
 LABEL org.opencontainers.image.title="Multi-Agent CLI Worker" \
       org.opencontainers.image.description="Immutable non-root Codex and Claude Code execution image" \
       org.opencontainers.image.base.name="docker.io/library/node:22.23.2-bookworm-slim" \
@@ -101,12 +109,14 @@ COPY --from=git-source /opt/git-root/ /
 # mode option, so the empty /home/worker mountpoint is created sticky-writable.
 RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
     && ln -s ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
+    && npm install --global --no-audit --no-fund pnpm@10.17.0 \
     && mkdir -p /tmp/cli-build-check/.codex \
     && test "$(node --version)" = "v22.23.2" \
     && test "$(git --version)" = "git version 2.39.5" \
     && ! ldd /usr/lib/git-core/git-remote-https | grep --quiet 'not found' \
     && ! command -v ssh \
     && test "$(HOME=/tmp/cli-build-check CODEX_HOME=/tmp/cli-build-check/.codex codex --version)" = "codex-cli 0.154.0" \
+    && test "$(pnpm --version)" = "10.17.0" \
     && HOME=/tmp/cli-build-check CODEX_HOME=/tmp/cli-build-check/.codex codex exec --help >/dev/null \
     && test "$(HOME=/tmp/cli-build-check claude --version)" = "2.1.270 (Claude Code)" \
     && HOME=/tmp/cli-build-check claude --help | grep --quiet -- "--print" \

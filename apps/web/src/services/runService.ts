@@ -46,6 +46,7 @@ export const runService = {
     return request<{ workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] }>(`/runs/${encodeURIComponent(runId)}/definition`);
   },
   cancelRun(runId: string) { return request<{ runId: string; status: string }>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }); },
+  cancelBranch(runId: string, branchKey: string) { return request<{ runId: string; branchKey: string; status: string }>(`/runs/${encodeURIComponent(runId)}/branches/${encodeURIComponent(branchKey)}/cancel`, { method: "POST" }); },
   retryRun(runId: string) { return request<RunCreateResponse>(`/runs/${encodeURIComponent(runId)}/retry`, { method: "POST" }); },
   eventsUrl(runId: string, afterSequence = 0) { return `${API_URL}/runs/${encodeURIComponent(runId)}/events?sequence=${afterSequence}`; },
   getApprovals(runId: string) { return request<ApprovalRequest[]>(`/runs/${encodeURIComponent(runId)}/approvals`); },

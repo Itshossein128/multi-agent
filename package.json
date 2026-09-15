@@ -1,6 +1,7 @@
 {
   "name": "multi-agent-platform",
   "version": "1.0.0",
+  "packageManager": "pnpm@10.17.0",
   "description": "A fully self-hosted multi-agent platform for developing software and applications using TypeScript, LangGraph, BookStack, GitHub, and LangFuse.",
   "main": "dist/index.js",
   "bin": {
@@ -23,7 +24,10 @@
     "worker:e2e:codex-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-codex-auth-file.ts",
     "worker:e2e:claude-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-claude-auth-file.ts",
     "worker:e2e:multi-agent-workflow": "ts-node --transpile-only infrastructure/docker/e2e-multi-agent-workflow.ts",
-    "worker:e2e:resilience-pg": "ts-node --transpile-only infrastructure/docker/e2e-resilience-pg.ts"
+    "worker:e2e:resilience-pg": "ts-node --transpile-only infrastructure/docker/e2e-resilience-pg.ts",
+    "verification:load": "ts-node --transpile-only infrastructure/docker/verification-load-smoke.ts --scenario load",
+    "verification:docker": "ts-node --transpile-only infrastructure/docker/verification-load-smoke.ts --scenario docker",
+    "verification:real-tools": "ts-node --transpile-only infrastructure/docker/verification-real-tools.ts"
   },
   "license": "MIT",
   "dependencies": {

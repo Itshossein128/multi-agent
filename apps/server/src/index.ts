@@ -91,7 +91,8 @@ async function main() {
   const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));
   const shutdown = () => {
     server.close(() => {
-      void Promise.all([memory.close(), studio.close(), observability.shutdown()]).then(
+      const persistenceFlush = "flush" in runStore ? runStore.flush() : Promise.resolve();
+      void Promise.all([memory.close(), studio.close(), persistenceFlush, observability.shutdown()]).then(
         () => process.exit(0),
         () => { console.error("Shutdown failed."); process.exit(1); },
       );

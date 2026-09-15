@@ -1,51 +1,28 @@
-# Multi-Agent Experiments
+# Multi-Agent Studio
 
-A collection of experiments exploring AI agent workflows, orchestration patterns, and autonomous software development concepts.
+> یک پلتفرم self-hosted برای تعریف، اجرای و مشاهده‌ی workflowهای چندایجنتی است.
 
-## Overview
+وب‌اپلیکیشن نقش control plane را دارد؛ سرور TypeScript اجرای workflow، policy، مالکیت، ابزارها و persistence را کنترل می‌کند و LangGraph موتور اجرای graph است.
 
-This project explores how multiple AI agents can collaborate to solve complex tasks by dividing responsibilities, using tools, and coordinating their outputs.
+## شروع سریع
 
-## Goals
+پیش‌نیازها: Node.js 20+، pnpm 10.17.0 و Docker برای PostgreSQL.
 
-- Explore multi-agent architectures
-- Understand agent coordination patterns
-- Experiment with LLM-powered workflows
-- Study automation possibilities with AI systems
-
-## Concepts
-
-- Agent roles and responsibilities
-- Task decomposition
-- Workflow orchestration
-- Tool-assisted execution
-- AI-driven automation
-
-## Architecture
-
-A typical workflow can be represented as:
-
-```
-User Request
-     |
-     v
-Planner Agent
-     |
-     +---- Research Agent
-     |
-     +---- Execution Agent
-     |
-     v
-Final Result
+```bash
+pnpm install --frozen-lockfile
+pnpm db:dev:up
+pnpm db:migrate
+pnpm dev
 ```
 
-## Future Improvements
+برای verification کامل:
 
-- Add memory management
-- Improve evaluation methods
-- Add observability and logging
-- Experiment with different agent strategies
+```bash
+pnpm test -- --runInBand
+pnpm --filter server build
+pnpm --filter web build
+```
 
-## Purpose
+## مستندات
 
-This repository documents my exploration of AI-native software development and emerging patterns in building intelligent applications.
+فهرست canonical مستندات در [`docs/README.md`](docs/README.md) قرار دارد. از فایل‌های prompt، plan و report تاریخی به‌عنوان منبع معماری استفاده نکنید؛ وضعیت جاری در [`docs/roadmap.md`](docs/roadmap.md)، محدودیت‌ها در [`docs/implementation-gaps.md`](docs/implementation-gaps.md) و شواهد آخرین verification در [`docs/verification.md`](docs/verification.md) ثبت می‌شود.

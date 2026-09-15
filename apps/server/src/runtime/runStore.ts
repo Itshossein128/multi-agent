@@ -57,6 +57,8 @@ export interface RunStoreContract {
   getWorkflowSnapshot?(runId: string): WorkflowDefinition | undefined;
   getAgentSnapshot?(runId: string): AgentRecord[] | undefined;
   getToolSnapshot?(runId: string): import("@multi-agent/types").ToolRecord[] | undefined;
+  /** Throws when a durable adapter has entered a persistence-failure state. */
+  assertHealthy?(): void;
   hydrate?(): Promise<void>;
   flush?(): Promise<void>;
 }
@@ -301,17 +303,31 @@ export class RunStore extends InMemoryRunStore {}
 export class PostgresRunStore implements RunStoreContract {
   private readonly memory = new InMemoryRunStore();
   private writeChain: Promise<void> = Promise.resolve();
+  private persistenceError?: Error;
 
   constructor(private readonly pool: PgPool) {}
 
   private enqueue(operation: () => Promise<void>): void {
-    this.writeChain = this.writeChain.then(operation, operation).catch((error) => {
-      console.error("Studio run persistence failed:", error instanceof Error ? error.message : error);
+    this.writeChain = this.writeChain.then(async () => {
+      if (this.persistenceError) return;
+      await operation();
+    }).catch((error) => {
+      if (!this.persistenceError) {
+        this.persistenceError = error instanceof Error ? error : new Error(String(error));
+      }
+      console.error("Studio run persistence failed:", this.persistenceError.message);
     });
+  }
+
+  assertHealthy(): void {
+    if (this.persistenceError) {
+      throw new Error(`Studio run persistence is unavailable: ${this.persistenceError.message}`);
+    }
   }
 
   async flush(): Promise<void> {
     await this.writeChain;
+    this.assertHealthy();
   }
 
   async hydrate(): Promise<void> {
@@ -377,6 +393,7 @@ export class PostgresRunStore implements RunStoreContract {
     snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
   ) {
+    this.assertHealthy();
     if (principal) {
       run = { ...run, ownerId: principal.userId, tenantId: principal.tenantId };
     }
@@ -428,6 +445,7 @@ export class PostgresRunStore implements RunStoreContract {
   }
 
   append(runId: string, event: RunEvent) {
+    this.assertHealthy();
     const next = this.memory.append(runId, event);
     if (next) {
       this.enqueue(async () => {
@@ -442,6 +460,7 @@ export class PostgresRunStore implements RunStoreContract {
   }
 
   update(runId: string, patch: Partial<Run>) {
+    this.assertHealthy();
     const run = this.memory.update(runId, patch);
     if (run) {
       this.enqueue(async () => {
@@ -479,6 +498,7 @@ export class PostgresRunStore implements RunStoreContract {
   }
 
   addApproval(runId: string, approval: ApprovalRequest, timeoutSeconds?: number) {
+    this.assertHealthy();
     this.memory.addApproval(runId, approval);
     this.enqueue(async () => {
       await this.pool.query(
@@ -510,6 +530,7 @@ export class PostgresRunStore implements RunStoreContract {
   }
 
   updateApproval(runId: string, approvalId: string, patch: Partial<ApprovalRequest>) {
+    this.assertHealthy();
     const approval = this.memory.updateApproval(runId, approvalId, patch);
     if (approval) {
       this.enqueue(async () => {
@@ -539,6 +560,7 @@ export class PostgresRunStore implements RunStoreContract {
   }
 
   setPausedContext(runId: string, context: RunEntry["pausedContext"] | null) {
+    this.assertHealthy();
     this.memory.setPausedContext(runId, context);
     this.enqueue(async () => {
       await this.pool.query("UPDATE studio_runs SET paused_context = $2::jsonb, updated_at = now() WHERE id = $1", [

@@ -73,6 +73,58 @@ test("cancellation interrupts retry backoff before another attempt", async () =>
   expect(attempts).toBe(1);
 });
 
+test("branch cancellation skips only the selected conditional branch", async () => {
+  const agent = createAgentRecord({ name: "branch-worker" });
+  const input = createNode("input", { x: 0, y: 0 });
+  const condition = createNode("condition", { x: 1, y: 0 });
+  condition.config = { branches: [{ key: "slow", label: "Slow" }, { key: "fast", label: "Fast" }] };
+  const worker = createNode("agent", { x: 2, y: 0 }, { agentId: agent.id });
+  const output = createNode("output", { x: 3, y: 0 });
+  const workflow = {
+    ...createEmptyDefinition(), nodes: [input, condition, worker, output], edges: [
+      createEdge({ source: input.id, target: condition.id }),
+      createEdge({ source: condition.id, target: worker.id, kind: "conditional", branchKey: "slow" }),
+      createEdge({ source: condition.id, target: worker.id, kind: "conditional", branchKey: "fast" }),
+      createEdge({ source: worker.id, target: output.id }),
+    ],
+  };
+  const controller = new AbortController();
+  const events: { type: string; payload?: unknown }[] = [];
+  let startedResolve!: () => void;
+  const started = new Promise<void>((resolve) => { startedResolve = resolve; });
+  const compiled = compileWorkflow(workflow, [agent], {
+    branchSignals: new Map([["slow", controller.signal]]),
+    agentRunner: async (_agent, _state, meta) => {
+      startedResolve();
+      return new Promise((resolve) => {
+        if (meta.signal?.aborted) resolve({ ok: true });
+        else meta.signal?.addEventListener("abort", () => resolve({ ok: true }), { once: true });
+      });
+    },
+    onAgentEvent: (event) => events.push(event),
+  });
+  const execution = compiled.graph.invoke({ input: { branch: "slow" } });
+  await started;
+  controller.abort();
+  await expect(execution).resolves.toBeDefined();
+  expect(events.some((event) => event.type === "branch.skipped" && (event.payload as { branchKey?: string })?.branchKey === "slow")).toBe(true);
+  expect(events.some((event) => event.type === "node.completed" && (event.payload as { nodeType?: string })?.nodeType === "agent")).toBe(false);
+});
+
+test("branch cancellation is exposed only for declared workflow branches", () => {
+  const condition = createNode("condition", { x: 0, y: 0 });
+  condition.config = { branches: [{ key: "slow", label: "Slow" }] };
+  const workflow = { ...createEmptyDefinition(), nodes: [condition], edges: [] };
+  const store = new InMemoryRunStore();
+  const principal = { userId: "branch-user", tenantId: "branch-tenant" };
+  store.create({ id: "branch-api-run", workflowId: workflow.id, status: "running", startedAt: nowIso(), input: {}, metadata: {}, ownerId: principal.userId, tenantId: principal.tenantId }, undefined, { workflow, agents: [] }, principal);
+  const executor = new RunExecutor(store, { async *execute() { /* no agent is invoked */ } });
+  const service = new RunApiService(executor, async () => null, undefined, async () => principal);
+  expect(service.cancelBranch("branch-api-run", "slow")).toEqual({ runId: "branch-api-run", branchKey: "slow", status: "cancelling" });
+  expect(store.events("branch-api-run").at(-1)?.type).toBe("branch.cancelled");
+  expect(() => service.cancelBranch("branch-api-run", "unknown")).toThrow(/active|cancelled/i);
+});
+
 test("parallel work obeys the live concurrency ceiling and fan-in preserves branch results", async () => {
   const agents = Array.from({ length: 4 }, (_, index) => createAgentRecord({ name: `branch-${index}` }));
   const input = createNode("input", { x: 0, y: 0 });
