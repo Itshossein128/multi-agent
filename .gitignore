@@ -24,6 +24,9 @@ test-results/
 .env.local
 .env.*.local
 
+# Isolated agent provider credentials (never the developer ~/.codex / ~/.claude homes)
+.local/
+
 # Local runtime data
 workspaces/
 .langgraph_api

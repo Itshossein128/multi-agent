@@ -10,7 +10,7 @@ import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
 import { ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
-import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, resolveCliSpawnExecutable } from "../src/agents/runtime/cliAgentExecutor";
+import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, resolveCliSpawnExecutable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
 import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
 import path from "node:path";
@@ -154,7 +154,7 @@ describe("CLI and local executors", () => {
     for await (const event of new CliAgentExecutor(workerRuntime, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
 
     expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--json", "-"], cwd: "/workspace" }),
+      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"], cwd: "/workspace" }),
       undefined,
       expect.stringContaining("USER INPUT:\nsummarize"),
       undefined,
@@ -266,11 +266,57 @@ describe("CLI and local executors", () => {
     for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "local", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "test", runId: "r", nodeId: "n" })) { /* drain */ }
 
     expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--json", "-"] }),
+      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"] }),
       undefined,
       expect.any(String),
       undefined,
     );
+  });
+
+  test("keeps local Codex runs free of sandbox bypass and session-ephemeral flags", () => {
+    expect(codexArgs(["--json"], "local")).toEqual(["exec", "--skip-git-repo-check", "--json", "-"]);
+  });
+
+  test("auto-injects container Codex defaults once without duplicating explicit flags", () => {
+    expect(codexArgs([], "container")).toEqual([
+      "exec",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--ephemeral",
+      "-",
+    ]);
+    expect(codexArgs(["--skip-git-repo-check", "--ephemeral"], "container")).toEqual([
+      "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--skip-git-repo-check",
+      "--ephemeral",
+      "-",
+    ]);
+    expect(codexArgs(["exec", "--ephemeral"], "container")).toEqual([
+      "exec",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--ephemeral",
+      "-",
+    ]);
+  });
+
+  test("runs a non-Git workspace Codex agent without the trusted-directory failure", async () => {
+    const start = jest.fn(async (..._args: any[]) => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "hi", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "local", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    const args = (start.mock.calls[0][0] as { args: string[] }).args;
+    expect(args).toContain("--skip-git-repo-check");
+    expect(args).toEqual(expect.arrayContaining(["exec", "-"]));
+    expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(args).not.toContain("--ephemeral");
   });
 
   test("keeps Claude permissions enabled for local workers", async () => {

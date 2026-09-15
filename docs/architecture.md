@@ -39,6 +39,31 @@ CLI از `WorkerRuntime` عبور می‌کند:
 
 جزئیات ساخت image و credential delivery در [cli-worker-image.md](cli-worker-image.md) و [development.md](development.md) است.
 
+### سیاست پرچم‌های امنیتی CLI
+
+پرچم‌های امنیتی providerهای CLI از `workerMode` تصمیم‌گیری می‌شوند، نه ضمنی از نوع agent:
+
+- `LocalProcessWorkerRuntime` مرز امنیتی OS نیست و برای کد trusted اجرا می‌شود؛ sandbox، approval و کنترل‌های امنیتی بومی provider باید دست‌نخورده بمانند. runtime فقط پیش‌فرض‌های headless خنثی تزریق می‌کند (مثل `--print` برای Claude یا `--skip-git-repo-check` برای Codex، چون workspace غیر Git برای agentهای همه‌منظوره معتبر است و نبود `.git` نشانه‌ی workspace ناقص نیست).
+- `ContainerWorkerRuntime` مرز امنیتی صریح است: image digest-pinned، user غیر root، rootfs فقط‌خواندنی، `--cap-drop ALL`، `no-new-privileges`، شبکه‌ی پیش‌فرض `none` و home tmpfs موقت — همه‌ی این‌ها server-owned هستند و agent/workflow نمی‌توانند آن‌ها را تضعیف کنند. فقط در این حالت runtime مجاز است پرچم‌های sandbox/approval سطح provider را که با اجرای headless خودکار تضاد دارند تزریق کند، و workerهای یک‌بارمصرف باید از حالت ephemeral provider استفاده کنند تا session state ماندگار نشود.
+- آرگومان‌های صریح agent authoritative هستند: پرچم‌های auto-managed فقط در نبودشان تزریق می‌شوند و هرگز دوبار نوشته یا بازنویسی نمی‌شوند.
+
+مصداق کنونی — Codex در حالت بدون آرگومان صریح:
+
+```text
+local:     codex exec --skip-git-repo-check -
+container: codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral -
+```
+
+در local هیچ پرچم دورزدن sandbox یا approval تزریق نمی‌شود. Claude همین الگو را با `--dangerously-skip-permissions` فقط برای container دنبال می‌کند.
+
+قواعد الزامی برای CLI integrationهای آینده:
+
+1. Agentهای CLI محلی باید sandbox، approval و کنترل‌های امنیتی بومی provider را حفظ کنند، مگر استثنای صریح و مستندشده.
+2. شل‌کردن sandbox/approval سطح provider فقط وقتی مجاز است که runtime کانتینر مرز امنیتی صریح باشد.
+3. workerهای یک‌بارمصرف container نباید session state ماندگار نگه دارند وقتی provider حالت ephemeral دارد.
+4. پرچم‌های امنیتی وابسته به runtime از worker/runtime mode تصمیم‌گیری می‌شوند، نه ضمنی از نوع agent.
+5. آرگومان‌های کاربر authoritative می‌مانند؛ پیش‌فرض‌های auto-managed نباید آن‌ها را دوبار بنویسند یا بی‌دلیل بازنویسی کنند.
+
 ## Workflow و اجرا
 
 `WorkflowDefinition` منبع حقیقت ساختار graph است؛ React Flow فقط editor/view است. سرور graph را validate و compile می‌کند. `RunExecutor` یک snapshot از workflow، agentها و toolها می‌سازد، lifecycle eventها را در `RunStore` ثبت می‌کند و SSE را از همان eventهای sanitized تغذیه می‌کند.

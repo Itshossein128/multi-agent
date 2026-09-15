@@ -63,6 +63,26 @@ CLI_WORKER_IMAGE=registry.example/worker@sha256:<digest>
 
 ساخت و smoke test image در [cli-worker-image.md](cli-worker-image.md) آمده است. credential delivery دو adapter توسعه‌ای دارد و پیش‌فرض هر دو خاموش است؛ این adapterها مرز production multi-tenant محسوب نمی‌شوند.
 
+### Separate developer vs agent Codex accounts
+
+Keep account A in `~/.codex` for local development. Login account B into an isolated home that workers read:
+
+```bash
+pnpm credentials:login-codex
+```
+
+Then set server env (typically `apps/server/.env`) to that file only:
+
+```env
+CLI_WORKER_MODE=container
+CLI_WORKER_ALLOW_NETWORK=true
+CLI_CREDENTIAL_FILE_ENABLED=true
+CLI_CODEX_AUTH_FILE=<repo>/.local/agent-credentials/codex/auth.json
+CLI_CREDENTIAL_ENVIRONMENT_ENABLED=false
+```
+
+Do not omit `CLI_CODEX_AUTH_FILE` if you want isolation; the default is `~/.codex/auth.json` and would share account A. Token refresh writeback targets only the configured path.
+
 ## ابزارها
 
 function پیش‌فرض data-only است. `repo-tests` و `repo-checks` خاموش هستند و فقط با `WorkerRuntime` اجرا می‌شوند؛ local trusted-only و container حالت پیشنهادی است. `repo-checks` فقط checkهای ثابت `test,typecheck,build,lint,diff` را می‌پذیرد و command دلخواه اجرا نمی‌کند. categoryهای پشتیبانی‌نشده باید fail-closed بمانند. جزئیات در [phase-6-tools.md](phase-6-tools.md) است.

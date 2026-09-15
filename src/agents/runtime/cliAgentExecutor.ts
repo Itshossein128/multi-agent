@@ -197,7 +197,7 @@ export function defaultCliExecutable(provider: string): string {
 function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>, workerMode: CliWorkerMode): string[] {
   const explicit = backend.args?.filter((arg) => arg.length > 0);
   const args = backend.provider === "codex"
-    ? codexArgs(explicit)
+    ? codexArgs(explicit, workerMode)
     : backend.provider === "claude-code"
       ? claudeArgs(explicit, workerMode === "container")
       : backend.provider === "agy"
@@ -207,10 +207,18 @@ function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>, workerMode
   return args;
 }
 
-function codexArgs(explicit?: string[]): string[] {
+/** Headless Codex defaults for a worker. Container runs never prompt for approvals or persist sessions. */
+export function codexArgs(explicit: string[] | undefined, workerMode: CliWorkerMode): string[] {
   const custom = [...(explicit ?? [])];
   if (custom[0] === "exec") custom.shift();
-  return ["exec", ...custom, ...(custom.includes("-") ? [] : ["-"])];
+  // Codex refuses headless exec outside a trusted Git directory, which is a
+  // malformed-workspace assumption for general-purpose agents (planning,
+  // reasoning, ordinary non-Git folders). Docker remains the security
+  // boundary; local workers keep Codex's own approval/sandbox model.
+  const defaults = ["--skip-git-repo-check"];
+  if (workerMode === "container") defaults.push("--dangerously-bypass-approvals-and-sandbox", "--ephemeral");
+  const autoFlags = defaults.filter((flag) => !custom.includes(flag));
+  return ["exec", ...autoFlags, ...custom, ...(custom.includes("-") ? [] : ["-"])];
 }
 
 /** Non-interactive Claude defaults for a Docker-isolated worker only. */

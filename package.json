@@ -27,7 +27,9 @@
     "worker:e2e:resilience-pg": "ts-node --transpile-only infrastructure/docker/e2e-resilience-pg.ts",
     "verification:load": "ts-node --transpile-only infrastructure/docker/verification-load-smoke.ts --scenario load",
     "verification:docker": "ts-node --transpile-only infrastructure/docker/verification-load-smoke.ts --scenario docker",
-    "verification:real-tools": "ts-node --transpile-only infrastructure/docker/verification-real-tools.ts"
+    "verification:real-tools": "ts-node --transpile-only infrastructure/docker/verification-real-tools.ts",
+    "credentials:login-codex": "ts-node --transpile-only scripts/login-agent-codex.ts",
+    "credentials:status-codex": "ts-node --transpile-only scripts/login-agent-codex.ts -- --status"
   },
   "license": "MIT",
   "dependencies": {
