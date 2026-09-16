@@ -1,9 +1,6 @@
-import { Command, type BaseCheckpointSaver, MemorySaver } from "@langchain/langgraph";
-import { nowIso, uid, validateAgent, type AgentRecord, type AgentTestRequest, type ApprovalDecisionRequest, type ApprovalRequest, type Run, type RunCreateRequest, type RunEvent, type WorkflowDefinition } from "@multi-agent/types";
-import { LangGraphEventAdapter } from "../adapters/langGraphEventAdapter";
+import { MemorySaver, type BaseCheckpointSaver } from "@langchain/langgraph";
+import { nowIso, uid, validateAgent, type AgentRecord, type AgentTestRequest, type ApprovalDecisionRequest, type Run, type RunCreateRequest, type RunEvent, type WorkflowDefinition } from "@multi-agent/types";
 import { compileWorkflow, UnsupportedPhase4NodeError, type AgentExecutionEvent, type CompileOptions } from "../compiler/workflowCompiler";
-
-type CompiledGraph = ReturnType<typeof compileWorkflow>;
 import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { AgentRuntime, mapAgentExecutionEvent, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
@@ -13,6 +10,8 @@ import { validateWorkflow } from "../compiler/validation";
 import { runtimeGuardrailsFromEnvironment, type RuntimeGuardrails } from "./guardrails";
 import { log } from "../logging";
 import type { RequestPrincipal } from "../auth/principal";
+import { ApprovalManager, type PausedContext } from "./approvalManager";
+import { GraphRunner } from "./graphRunner";
 
 function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
   return mapAgentExecutionEvent(event as Parameters<typeof mapAgentExecutionEvent>[0], runId);
@@ -22,18 +21,17 @@ function asCredentialPrincipal(principal?: RequestPrincipal): TrustedCredentialP
   return principal ? { tenantId: principal.tenantId, principalId: principal.userId } : undefined;
 }
 
-interface PausedContext {
-  workflow: WorkflowDefinition;
-  agents: AgentRecord[];
-  tools?: import("@multi-agent/types").ToolRecord[];
-  memoryAccess?: MemoryAccessContext;
-  stepBudget?: { count: number };
-}
-
+/**
+ * Orchestrates run lifecycle: creation, execution, cancellation, retry,
+ * and agent testing. Delegates approval handling to ApprovalManager and
+ * graph streaming to GraphRunner.
+ */
 export class RunExecutor {
   private checkpointers = new Map<string, BaseCheckpointSaver>();
   private pausedContext = new Map<string, PausedContext>();
   private branchControllers = new Map<string, Map<string, AbortController>>();
+  private approvalManager: ApprovalManager;
+  private graphRunner: GraphRunner;
 
   constructor(
     private readonly store: RunStoreContract = new InMemoryRunStore(),
@@ -42,12 +40,33 @@ export class RunExecutor {
     private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
     private readonly guardrails: RuntimeGuardrails = runtimeGuardrailsFromEnvironment(),
     private readonly toolRuntime?: Pick<ToolRuntime, "execute">,
-  ) { }
+  ) {
+    // Wire up the extracted managers with shared state.
+    this.graphRunner = new GraphRunner(this.store, this.pausedContext, this.checkpointers);
+    this.approvalManager = new ApprovalManager({
+      store: this.store,
+      checkpointers: this.checkpointers,
+      pausedContext: this.pausedContext,
+      branchControllers: this.branchControllers,
+      agentRuntime: this.agentRuntime,
+      toolRuntime: this.toolRuntime,
+      guardrails: this.guardrails,
+      credentialPrincipalForRun: (runId) => this.credentialPrincipalForRun(runId),
+      appendAgentEvent: (runId, event) => this.appendAgentEvent(runId, event),
+      runGraph: (runId, compiled, input, workflow, agents, memoryAccess, tools, stepBudget) =>
+        this.graphRunner.runGraph(runId, compiled, input, workflow, agents, this.approvalManager, memoryAccess, tools, stepBudget, this.store.signal(runId), this.branchControllers.get(runId), this.guardrails.recursionLimit),
+      signal: (runId) => this.store.signal(runId),
+      fail: (runId, error) => this.fail(runId, error),
+    });
+  }
+
   getStore() { return this.store; }
+
   private credentialPrincipalForRun(runId: string): TrustedCredentialPrincipal | undefined {
     const run = this.store.get(runId)?.run;
     return run?.tenantId && run.ownerId ? { tenantId: run.tenantId, principalId: run.ownerId } : undefined;
   }
+
   private appendAgentEvent(runId: string, event: AgentExecutionEvent) {
     for (const runEvent of mapAgentEvents(event, runId)) {
       if (runEvent.nodeId && (runEvent.type === "node.started" || runEvent.type === "agent.started" || runEvent.type === "tool.started")) {
@@ -56,11 +75,13 @@ export class RunExecutor {
       this.store.append(runId, runEvent);
     }
   }
+
   /** Restore in-memory pause maps after a durable hydrate so waiting runs can resume. */
   restorePausedRun(runId: string, context: PausedContext, checkpointer: BaseCheckpointSaver) {
     this.pausedContext.set(runId, context);
     this.checkpointers.set(runId, checkpointer);
   }
+
   startAgentTest(request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     const errors = validateAgent(request.agent);
     if (request.agent.enabled === false) errors.push("Agent is disabled. Enable it before execution.");
@@ -80,6 +101,7 @@ export class RunExecutor {
     void this.executeAgentTest(id, request, memoryAccess, principal);
     return id;
   }
+
   private async executeAgentTest(runId: string, request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     try {
       let output: Record<string, unknown> = {};
@@ -98,6 +120,7 @@ export class RunExecutor {
       this.store.append(runId, { id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message, ...(cancelled ? { cancelled: true } : {}) } });
     }
   }
+
   start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     const issues = validateWorkflow(request.workflow, request.agents, this.guardrails, request.tools);
     const errors = issues.filter(issue => issue.level === "error");
@@ -114,6 +137,7 @@ export class RunExecutor {
     void this.execute(id, request, memoryAccess, principal);
     return id;
   }
+
   retry(runId: string, memoryAccess?: MemoryAccessContext) {
     const entry = this.store.get(runId);
     if (!entry) throw new Error("Run not found");
@@ -133,13 +157,12 @@ export class RunExecutor {
       taskId: entry.run.taskId,
     }, memoryAccess, entry.run.ownerId && entry.run.tenantId ? { userId: entry.run.ownerId, tenantId: entry.run.tenantId } : undefined);
   }
+
   cancel(runId: string) {
     const entry = this.store.get(runId);
     if (!entry) return false;
     if (["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
     if (entry.run.status === "waiting_for_human") {
-      // No in-flight promise is awaiting the abort signal — the stream already
-      // returned when the graph paused. Finalize cancellation directly.
       for (const approval of this.store.listApprovals(runId)) {
         if (approval.status === "requested") {
           this.store.clearApprovalTimer(runId, approval.id);
@@ -176,9 +199,6 @@ export class RunExecutor {
       .filter(edge => edge.kind === "conditional")
       .map(edge => edge.branchKey)
       .filter((key): key is string => typeof key === "string" && Boolean(key.trim()));
-    // A branch is declared either by a condition node's branch configuration
-    // or by a validated conditional edge. This also keeps cancellation useful
-    // while a branch has not yet reached its outgoing edge.
     const knownBranches = new Set([...configuredBranches, ...edgeBranches].map(key => key.trim()));
     if (!knownBranches.has(normalized)) return false;
     let controllers = this.branchControllers.get(runId);
@@ -200,43 +220,14 @@ export class RunExecutor {
     return true;
   }
 
+  /** Delegate approval resolution to ApprovalManager. */
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
-    const approval = this.store.getApproval(runId, approvalId);
-    if (!approval) throw new Error("Approval not found");
-    if (approval.status !== "requested") throw new Error("Approval has already been resolved.");
-    this.store.clearApprovalTimer(runId, approvalId);
-    const stamp = nowIso();
-    this.store.updateApproval(runId, approvalId, { status: decision.decision, resolvedAt: stamp, response: decision.response });
-    this.store.append(runId, { id: uid("event"), runId, type: decision.decision === "approved" ? "human_approval.approved" : "human_approval.rejected", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: decision.response } });
-    this.store.append(runId, { id: uid("event"), runId, type: "human_approval.resolved", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: decision.response } });
-    this.store.append(runId, { id: uid("event"), runId, type: "run.resumed", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId } });
-    this.store.update(runId, { status: "running" });
-    void this.continueAfterApproval(runId, decision);
+    this.approvalManager.resolveApproval(runId, approvalId, decision);
   }
 
-  private async continueAfterApproval(runId: string, decision: ApprovalDecisionRequest) {
-    const context = this.pausedContext.get(runId);
-    const checkpointer = this.checkpointers.get(runId);
-    if (!context || !checkpointer) { this.fail(runId, new Error("Run is not resumable.")); return; }
-    this.pausedContext.delete(runId);
-    try {
-      const compiled = compileWorkflow(context.workflow, context.agents, {
-        runId,
-        runtime: this.agentRuntime,
-        toolRuntime: this.toolRuntime,
-        checkpointer,
-        memoryAccess: context.memoryAccess,
-        credentialPrincipal: this.credentialPrincipalForRun(runId),
-        signal: this.store.signal(runId),
-        workflowId: context.workflow.id,
-        tools: context.tools,
-        stepBudget: context.stepBudget,
-        guardrails: this.guardrails,
-        branchSignals: this.branchControllers.get(runId),
-        onAgentEvent: (event) => { this.appendAgentEvent(runId, event); },
-      });
-      await this.runGraph(runId, compiled, new Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess, context.tools, context.stepBudget);
-    } catch (error) { this.fail(runId, error); }
+  /** Delegate approval timer rearming to ApprovalManager. */
+  rearmApprovalTimers(runId: string) {
+    this.approvalManager.rearmApprovalTimers(runId);
   }
 
   private async execute(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
@@ -246,12 +237,10 @@ export class RunExecutor {
     }
     return this.telemetry.withWorkflow({ runId, workflowId: request.workflow.id, taskId: request.taskId, input: request.input }, () => this.executeWorkflow(runId, request, memoryAccess, principal));
   }
+
   private async executeWorkflow(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     this.store.update(runId, { status: "running" });
     const timeout = setTimeout(() => this.store.cancel(runId), this.guardrails.maxRunDurationMs);
-    // Approvals require checkpointing to pause/resume — a per-run MemorySaver is
-    // retained across the initial run and any resume, unlike the ad-hoc default
-    // compileWorkflow would otherwise create fresh on every call.
     const checkpointer = typeof this.checkpointer === "object" ? this.checkpointer : new MemorySaver();
     const stepBudget = { count: 0 };
     this.checkpointers.set(runId, checkpointer);
@@ -274,87 +263,8 @@ export class RunExecutor {
           this.appendAgentEvent(runId, event);
         },
       });
-      await this.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, memoryAccess, request.tools, stepBudget);
+      await this.graphRunner.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, this.approvalManager, memoryAccess, request.tools, stepBudget, this.store.signal(runId), this.branchControllers.get(runId), this.guardrails.recursionLimit);
     } catch (error) { this.fail(runId, error); } finally { clearTimeout(timeout); }
-  }
-
-  private async runGraph(runId: string, compiled: CompiledGraph, input: unknown, workflow: WorkflowDefinition, agents: AgentRecord[], memoryAccess?: MemoryAccessContext, tools?: import("@multi-agent/types").ToolRecord[], stepBudget?: { count: number }) {
-    const adapter = new LangGraphEventAdapter();
-    const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal: this.store.signal(runId), recursionLimit: this.guardrails.recursionLimit, configurable: { thread_id: runId } } as never);
-    let output: Record<string, unknown> | undefined;
-    for await (const raw of stream as AsyncIterable<unknown>) {
-      const rawRecord = raw as { method?: string; params?: { data?: unknown; node?: string } };
-      if (rawRecord.method === "updates" && rawRecord.params?.node === "__interrupt__") {
-        const values = (rawRecord.params.data as { values?: { id: string; value: unknown }[] } | undefined)?.values ?? [];
-        for (const item of values) this.handleApprovalRequested(runId, item);
-        continue;
-      }
-      if (rawRecord.method === "values" && rawRecord.params?.data && typeof rawRecord.params.data === "object") {
-        const values = rawRecord.params.data as { output?: Record<string, unknown> };
-        if (values.output) output = values.output;
-      }
-      // Agent lifecycle comes from AgentRuntime exactly once, not the graph task adapter.
-      for (const event of adapter.adapt(raw, runId, workflow, agents)) {
-        if (!event.type.startsWith("agent.")) this.store.append(runId, event);
-      }
-    }
-    this.store.signal(runId)?.throwIfAborted();
-    const state = await compiled.graph.getState({ configurable: { thread_id: runId } } as never);
-    if ((state as { next: string[] }).next.length > 0) {
-      // Paused at a human approval node — leave status as waiting_for_human and
-      // retain enough context to recompile and resume once it is resolved.
-      const context = { workflow, agents, tools, memoryAccess, stepBudget };
-      this.pausedContext.set(runId, context);
-      this.store.setPausedContext?.(runId, context);
-      return;
-    }
-    this.pausedContext.delete(runId);
-    this.checkpointers.delete(runId);
-    this.branchControllers.delete(runId);
-    this.store.setPausedContext?.(runId, null);
-    this.store.update(runId, { status: "completed", completedAt: nowIso(), output });
-    this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
-  }
-
-  private handleApprovalRequested(runId: string, item: { id: string; value: unknown }) {
-    const value = item.value as { nodeId: string; message: string; approvalType: "manual" | "timeout"; timeoutSeconds: number; context?: unknown };
-    const stamp = nowIso();
-    const request: ApprovalRequest = {
-      id: item.id,
-      runId,
-      nodeId: value.nodeId,
-      status: "requested",
-      message: value.message,
-      requestedAt: stamp,
-      context: value.context && typeof value.context === "object" ? value.context as Record<string, unknown> : undefined,
-      metadata: {},
-    };
-    this.store.addApproval(runId, request, value.timeoutSeconds);
-    this.store.update(runId, { status: "waiting_for_human", currentNodeId: value.nodeId });
-    this.store.append(runId, { id: uid("event"), runId, type: "run.paused", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id } });
-    this.store.append(runId, { id: uid("event"), runId, type: "human_approval.requested", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id, message: value.message, approvalType: value.approvalType, timeoutSeconds: value.timeoutSeconds } });
-    if (value.approvalType === "timeout" && value.timeoutSeconds > 0) {
-      const timer = setTimeout(() => {
-        try { this.resolveApproval(runId, item.id, { decision: "approved" }); } catch { /* already resolved by a human in the meantime */ }
-      }, value.timeoutSeconds * 1000);
-      this.store.setApprovalTimer(runId, item.id, timer);
-    }
-  }
-
-  /** Re-arm timeout approvals after process restart when remaining time can be computed. */
-  rearmApprovalTimers(runId: string) {
-    for (const approval of this.store.listApprovals(runId)) {
-      if (approval.status !== "requested") continue;
-      const timeoutSeconds = Number((approval.metadata as { timeoutSeconds?: number })?.timeoutSeconds
-        ?? this.store.get(runId)?.events.find((event) => event.type === "human_approval.requested" && (event.payload as { approvalId?: string }).approvalId === approval.id)?.payload?.timeoutSeconds);
-      if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) continue;
-      const elapsedMs = Date.now() - Date.parse(approval.requestedAt);
-      const remaining = Math.max(0, timeoutSeconds * 1000 - elapsedMs);
-      const timer = setTimeout(() => {
-        try { this.resolveApproval(runId, approval.id, { decision: "approved" }); } catch { /* already resolved */ }
-      }, remaining);
-      this.store.setApprovalTimer(runId, approval.id, timer);
-    }
   }
 
   private fail(runId: string, error: unknown) {

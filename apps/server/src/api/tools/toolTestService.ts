@@ -2,7 +2,7 @@ import { assertNoCredentials, migrateToolRecord, validateTool, type ToolRecord }
 import { ToolRuntime, UnsupportedToolCategoryError } from "../../../../../src/tools";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
-import { authorizeToolOrAgent } from "../../auth/principal";
+import { authorizeToolOrAgent } from "../../auth/authorization";
 import { ApiError } from "../shared/http";
 import { randomUUID } from "node:crypto";
 

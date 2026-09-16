@@ -1,7 +1,8 @@
 import { assertNoCredentials, migrateAgentRecord, nowIso, validateAgent, type AgentRecord, type AgentTestRequest, type RunCreateRequest, type RunStatus, type WorkflowDefinition } from "@multi-agent/types";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { MemoryAccessResolver } from "../../memory/access";
-import type { PrincipalResolver, RequestPrincipal } from "../../auth/principal";
+import type { RequestPrincipal } from "../../auth/principal";
+import type { PrincipalResolver } from "../../auth/authorization";
 import type { RunExecutor } from "../../runtime/runExecutor";
 import { redact } from "../../adapters/langGraphEventAdapter";
 import { ApiError } from "../shared/http";

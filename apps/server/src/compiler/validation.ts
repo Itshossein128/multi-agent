@@ -1,5 +1,6 @@
 import type { AgentRecord, ToolCategory, ToolRecord, WorkflowDefinition, WorkflowNode, WorkflowNodeType } from "@multi-agent/types";
 import { agentHasConfiguredModel, validateAgent, validateTool } from "@multi-agent/types";
+import { NODE_VALIDATORS, type ValidationContext } from "./nodeValidators";
 
 export interface WorkflowIssue {
   id: string;
@@ -103,83 +104,11 @@ export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRe
   if (inputs.length !== 1) add("error", "INVALID_INPUT_COUNT", `Workflow must have exactly one Input node (found ${inputs.length})`);
   if (outputs.length !== 1) add("error", "INVALID_OUTPUT_COUNT", `Workflow must have exactly one Output node (found ${outputs.length})`);
   for (const node of definition.nodes) {
-    if (node.type === "agent") {
-      const agentId = (node.config as { agentId?: string | null }).agentId;
-      const agent = agents.find((candidate) => candidate.id === agentId);
-      if (!agent) add("error", "MISSING_AGENT_CONFIG", "Agent node is not linked to an agent", node.id);
-      else if (!agentHasConfiguredModel(agent)) {
-        const detail =
-          agent.backend.type === "cli"
-            ? "has no CLI provider configured"
-            : "has no model configured";
-        add("error", "MISSING_AGENT_MODEL", `Agent "${agent.name}" ${detail}`, node.id);
-      }
-      if (agent?.enabled === false) add("error", "AGENT_DISABLED", `Agent "${agent.name}" is disabled`, node.id);
-      if (agent) for (const message of validateAgent(agent)) add("error", "INVALID_AGENT_CONFIG", message, node.id);
-      if (agent) for (const toolId of Array.isArray(agent.tools) ? agent.tools : []) {
-        const assigned = tools.find((tool) => tool.id === toolId);
-        if (!assigned) add("error", "UNKNOWN_AGENT_TOOL", `Agent "${agent.name}" references missing tool "${toolId}".`, node.id);
-        else if (!assigned.enabled) add("error", "DISABLED_AGENT_TOOL", `Agent "${agent.name}" references disabled tool "${toolId}".`, node.id);
-      }
-      if (node.retryPolicy && (!agent || agent.backend.type === "cli" || (Array.isArray(agent.tools) && agent.tools.length > 0))) {
-        add("error", "UNSAFE_NODE_RETRY", "Agent retries require a non-CLI agent with no assigned side-effecting tools.", node.id);
-      }
-    }
-    if (node.type === "tool") {
-      const toolId = (node.config as { toolId?: string | null }).toolId;
-      const tool = tools.find(candidate => candidate.id === toolId);
-      if (!toolId?.trim()) add("error", "MISSING_TOOL_CONFIG", "Tool node is not linked to a tool.", node.id);
-      else if (!tool) add("error", "UNKNOWN_TOOL", "Tool node references a missing tool.", node.id);
-      else if (tool.enabled === false) add("error", "DISABLED_TOOL", "Tool node references a disabled tool.", node.id);
-      if (tool) for (const message of validateTool(tool)) add("error", "INVALID_TOOL_CONFIG", message, node.id);
-      if (tool && !supportedToolCategories.has(tool.category)) add("error", "UNSUPPORTED_TOOL_CATEGORY", `Tool category "${tool.category}" is not executable by this server.`, node.id);
-      if (tool && tool.impact !== "read-only" && limits.allowToolSideEffects !== true) add("error", "TOOL_IMPACT_DENIED", `Tool impact "${tool.impact}" is disabled by server policy.`, node.id);
-      if (node.retryPolicy && (!tool || tool.impact !== "read-only" || tool.metadata?.idempotent !== true)) {
-        add("error", "UNSAFE_NODE_RETRY", "Tool retries require an explicitly idempotent, read-only tool.", node.id);
-      }
-    }
-    if (node.type === "memory") {
-      const config = node.config as { key?: string; mode?: string; memoryType?: string };
-      if (typeof config.key !== "string" || !config.key.trim()) add("error", "MISSING_MEMORY_KEY", "Memory node has no memory key", node.id);
-      if (!['read', 'write', 'read_write'].includes(config.mode ?? "")) add("error", "INVALID_MEMORY_MODE", "Memory node has an invalid mode.", node.id);
-      if (!['short_term', 'long_term', 'shared'].includes(config.memoryType ?? "")) add("error", "INVALID_MEMORY_TYPE", "Memory node has an invalid type.", node.id);
-    }
-    if (node.type === "approval") {
-      const config = node.config as { message?: string; approvalType?: string; timeoutSeconds?: number };
-      if (typeof config.message !== "string" || !config.message.trim()) add("error", "MISSING_APPROVAL_MESSAGE", "Approval node requires a message.", node.id);
-      if (!['manual', 'timeout'].includes(config.approvalType ?? "")) add("error", "INVALID_APPROVAL_TYPE", "Approval node has an invalid type.", node.id);
-      if (!Number.isFinite(config.timeoutSeconds) || config.timeoutSeconds! < 0 || config.timeoutSeconds! > 86_400) add("error", "INVALID_APPROVAL_TIMEOUT", "Approval timeout must be between 0 and 86400 seconds.", node.id);
-      const outgoing = definition.edges.filter((edge) => edge.source === node.id);
-      for (const edge of outgoing) {
-        if (edge.kind === "conditional" && edge.branchKey !== "approved" && edge.branchKey !== "rejected") add("error", "INVALID_APPROVAL_BRANCH", "Approval branches must be named approved or rejected.", node.id, edge.id);
-      }
-    }
-    if (node.type === "condition") {
-      const conditionConfig = node.config as { valueSource?: unknown; valueField?: unknown };
-      if (conditionConfig.valueSource !== undefined && !["input", "last_value"].includes(String(conditionConfig.valueSource))) add("error", "INVALID_CONDITION_SOURCE", "Condition valueSource must be input or last_value.", node.id);
-      if (conditionConfig.valueField !== undefined && (typeof conditionConfig.valueField !== "string" || !conditionConfig.valueField.trim() || conditionConfig.valueField.length > 100)) add("error", "INVALID_CONDITION_FIELD", "Condition valueField must be a non-empty field name of at most 100 characters.", node.id);
-      const rawBranches = (node.config as { branches?: unknown }).branches;
-      const branches = Array.isArray(rawBranches) ? rawBranches.filter((branch): branch is { key: string } => Boolean(branch && typeof branch === "object")) : [];
-      const keys = new Set(branches.map((branch) => branch.key));
-      if (!branches.length) add("error", "MISSING_CONDITION_BRANCHES", "Condition node requires at least one branch.", node.id);
-      if (branches.length > maxBranches) add("error", "BRANCH_LIMIT_EXCEEDED", `Condition node exceeds the ${maxBranches}-branch limit.`, node.id);
-      if (branches.some(branch => typeof branch.key !== "string" || !branch.key.trim())) add("error", "INVALID_BRANCH_KEY", "Condition node has an empty branch key.", node.id);
-      if (keys.size !== branches.length) add("error", "DUPLICATE_BRANCH_KEY", "Condition node has duplicate branch keys", node.id);
-      for (const edge of definition.edges.filter((candidate) => candidate.source === node.id && candidate.kind === "conditional")) {
-        if (!keys.has(edge.branchKey)) add("error", "INVALID_CONDITIONAL_BRANCH", `Edge branch "${edge.branchKey}" is not defined on the Condition node`, node.id, edge.id);
-      }
-      for (const branch of branches) if (!definition.edges.some(edge => edge.source === node.id && edge.kind === "conditional" && edge.branchKey === branch.key)) add("warning", "UNCONNECTED_BRANCH", `Condition branch "${branch.key}" has no outgoing edge.`, node.id);
-    }
-    if (node.type === "input") {
-      const config = node.config as { inputKey?: string; description?: string };
-      if (typeof config.inputKey !== "string" || !config.inputKey.trim() || config.inputKey.length > 200) add("error", "INVALID_INPUT_KEY", "Input node requires a key of at most 200 characters.", node.id);
-      if (typeof config.description !== "string" || config.description.length > 2_000) add("error", "INVALID_INPUT_DESCRIPTION", "Input description must be at most 2000 characters.", node.id);
-    }
-    if (node.type === "output") {
-      const config = node.config as { outputKey?: string; description?: string; inputMode?: "last_value" | "join" };
-      if (typeof config.outputKey !== "string" || !config.outputKey.trim() || config.outputKey.length > 200) add("error", "INVALID_OUTPUT_KEY", "Output node requires a key of at most 200 characters.", node.id);
-      if (typeof config.description !== "string" || config.description.length > 2_000) add("error", "INVALID_OUTPUT_DESCRIPTION", "Output description must be at most 2000 characters.", node.id);
-      if (config.inputMode !== undefined && config.inputMode !== "last_value" && config.inputMode !== "join") add("error", "INVALID_OUTPUT_INPUT_MODE", "Output inputMode must be last_value or join.", node.id);
+    // Dispatch to the node-type-specific validator from the registry.
+    const validator = NODE_VALIDATORS[node.type];
+    if (validator) {
+      const ctx: ValidationContext = { add, definition, agents, tools, limits, maxBranches, supportedToolCategories };
+      validator(node, ctx);
     }
     if (node.retryPolicy && node.type !== "agent" && node.type !== "tool") {
       add("error", "UNSAFE_NODE_RETRY", `Node type "${node.type}" is not retryable.`, node.id);

@@ -4,7 +4,9 @@ import type { AgentTestRequest, RunCreateRequest, RunStatus } from "@multi-agent
 import type { StudioStore } from "../../../../src/studio/contracts";
 import { RunExecutor } from "../runtime/runExecutor";
 import type { MemoryAccessResolver } from "../memory/access";
-import { resolveRequestPrincipal, type PrincipalResolver, type RequestPrincipal } from "../auth/principal";
+import { resolveRequestPrincipal } from "../auth/principal";
+import type { RequestPrincipal } from "../auth/principal";
+import type { PrincipalResolver } from "../auth/authorization";
 import { respondWithApiError } from "./shared/http";
 import { streamRunEvents } from "./runs/eventStream";
 import { RunApiService } from "./runs/runApiService";
