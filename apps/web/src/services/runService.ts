@@ -1,11 +1,10 @@
 import type { AgentRecord, ApprovalDecision, ApprovalRequest, Run, RunEvent, RunCreateRequest, RunCreateResponse, RunStatus, WorkflowDefinition } from "@multi-agent/types";
+import { requestJson } from "./requestJson";
 
 const API_URL = "/api/execution";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Execution request failed (${response.status})`);
-  return response.json() as Promise<T>;
+function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, init, { apiUrl: API_URL });
 }
 
 export interface RunListQuery {

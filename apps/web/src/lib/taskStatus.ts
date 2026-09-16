@@ -188,30 +188,6 @@ export function getColumnForStatus(status: TaskStatus): ColumnId {
   }
 }
 
-export function statusBadgeConfig(status: TaskStatus): { label: string; className: string } {
-  const canonical = toCanonicalStatus(status);
-  switch (canonical) {
-    case "backlog":
-      return { label: "Backlog", className: "bg-zinc-800 text-zinc-300 border border-zinc-700" };
-    case "ready":
-      return { label: "Ready", className: "bg-violet-950/70 text-violet-300 border border-violet-800" };
-    case "queued":
-      return { label: "Queued", className: "bg-indigo-950/70 text-indigo-300 border border-indigo-800 animate-pulse" };
-    case "running":
-      return { label: "Running", className: "bg-blue-950/70 text-blue-300 border border-blue-800" };
-    case "blocked":
-      return { label: "Blocked", className: "bg-amber-950/70 text-amber-300 border border-amber-800" };
-    case "waiting_for_human":
-      return { label: "Waiting Review", className: "bg-yellow-950/70 text-yellow-300 border border-yellow-800" };
-    case "completed":
-      return { label: "Completed", className: "bg-emerald-950/70 text-emerald-300 border border-emerald-800" };
-    case "failed":
-      return { label: "Failed", className: "bg-rose-950/70 text-rose-300 border border-rose-800" };
-    case "cancelled":
-      return { label: "Cancelled", className: "bg-zinc-800/80 text-zinc-400 border border-zinc-700" };
-  }
-}
-
 /** Allowed workflow transitions for UI transition hints. */
 export const STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   backlog: ["ready", "running", "cancelled"],
@@ -277,28 +253,6 @@ export function hasDependencyCycle(
   return false;
 }
 
-export function formatRelativeTime(iso?: string | null): string {
-  if (!iso) return "";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffMs = Date.now() - then;
-  const seconds = Math.floor(diffMs / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-export function priorityBadgeClasses(priority: TaskPriority): string {
-  switch (priority) {
-    case "high":
-      return "bg-red-950/70 text-red-300 border border-red-800/80";
-    case "medium":
-      return "bg-amber-950/70 text-amber-300 border border-amber-800/80";
-    case "low":
-      return "bg-zinc-800/80 text-zinc-400 border border-zinc-700";
-  }
-}
+// Presentation helpers moved to focused modules; re-exported for import stability.
+export { statusBadgeConfig, priorityBadgeClasses } from "@/lib/taskBadge";
+export { formatRelativeTime } from "@/lib/formatRelativeTime";

@@ -1,6 +1,7 @@
 /** Studio persistence client. Entities live on the execution server; activeWorkflowId stays local. */
 import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, deserializeWorkflowDefinition, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, serializeWorkflowDefinition, uid, type AgentDiagnostics, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
+import { requestJson } from "./requestJson";
 
 const API_URL = "/api/execution";
 const ACTIVE_WORKFLOW_KEY = "agent-studio.active-workflow.v1";
@@ -67,11 +68,8 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
   const storage = () => dependencies.storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
   let importPromise: Promise<void> | null = null;
 
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetchImpl(`${apiUrl}/studio${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Studio request failed (${response.status})`);
-    if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+  function request<T>(path: string, init?: RequestInit): Promise<T> {
+    return requestJson<T>(path, init, { apiUrl: `${apiUrl}/studio`, fetchImpl });
   }
 
   async function ensureImported(): Promise<void> {

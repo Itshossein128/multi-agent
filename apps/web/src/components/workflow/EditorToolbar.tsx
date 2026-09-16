@@ -57,8 +57,8 @@ export function EditorToolbar() {
   const name = useWorkflowStore((s) => s.definition.name);
   const isDirty = useWorkflowStore((s) => s.isDirty);
   const saveState = useWorkflowStore((s) => s.saveState);
-  const undoStack = useWorkflowStore((s) => s.undoStack);
-  const redoStack = useWorkflowStore((s) => s.redoStack);
+  const canUndo = useWorkflowStore((s) => s.canUndo);
+  const canRedo = useWorkflowStore((s) => s.canRedo);
   const selectedNodeIds = useWorkflowStore((s) => s.selectedNodeIds);
   const selectedEdgeIds = useWorkflowStore((s) => s.selectedEdgeIds);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
@@ -93,10 +93,10 @@ export function EditorToolbar() {
 
       <div className="mx-1 h-5 w-px bg-zinc-800" />
 
-      <ToolButton title="Undo (Ctrl+Z)" disabled={undoStack.length === 0} onClick={undo}>
+      <ToolButton title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo}>
         <Undo2 className="h-4 w-4" />
       </ToolButton>
-      <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={redoStack.length === 0} onClick={redo}>
+      <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={!canRedo} onClick={redo}>
         <Redo2 className="h-4 w-4" />
       </ToolButton>
       <ToolButton

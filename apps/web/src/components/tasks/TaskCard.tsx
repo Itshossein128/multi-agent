@@ -16,15 +16,9 @@ import {
   RotateCcw,
   XCircle,
 } from "lucide-react";
-import {
-  Task,
-  TaskStatus,
-  formatRelativeTime,
-  getDependencyBlockers,
-  priorityBadgeClasses,
-  statusBadgeConfig,
-  toCanonicalStatus,
-} from "@/lib/taskStatus";
+import { getDependencyBlockers, toCanonicalStatus, Task, TaskStatus } from "@/lib/taskStatus";
+import { priorityBadgeClasses, statusBadgeConfig } from "@/lib/taskBadge";
+import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { cn } from "@/lib/utils";
 
 interface TaskCardProps {

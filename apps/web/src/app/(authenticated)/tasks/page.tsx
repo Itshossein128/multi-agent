@@ -10,23 +10,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  ColumnId,
-  DEP_GATED_STATUSES,
   TASK_COLUMNS,
   TASK_PRIORITIES,
   Task,
   TaskPriority,
   TaskStatus,
-  canMoveStatus,
-  getColumnForStatus,
-  getDependencyBlockers,
 } from "@/lib/taskStatus";
+import {
+  filterTasks,
+  groupTasksByColumn,
+  validateMove,
+  validateStart,
+} from "@/lib/taskBoardView";
 import { useTasksQuery, CreateTaskInput, TaskRequestError } from "@/hooks/useTasksQuery";
 import { TaskBoardColumn } from "@/components/tasks/TaskBoardColumn";
 import { CreateTaskModal } from "@/components/tasks/CreateTaskModal";
 import { TaskDetailPanel } from "@/components/tasks/TaskDetailPanel";
-
-const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
 
 export default function TaskBoardPage() {
   const {
@@ -61,45 +60,19 @@ export default function TaskBoardPage() {
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
   const workflowsById = useMemo(() => new Map(workflows.map((w) => [w.id, w.name])), [workflows]);
 
-  const filteredTasks = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return tasks.filter((task) => {
-      if (
-        q &&
-        !task.title.toLowerCase().includes(q) &&
-        !task.description.toLowerCase().includes(q)
-      ) {
-        return false;
-      }
-      if (priorityFilter !== "all" && task.priority !== priorityFilter) return false;
-      if (agentFilter !== "all") {
-        const matchesAgent =
-          task.assignedAgent === agentFilter ||
-          (task.assignedAgents && task.assignedAgents.includes(agentFilter));
-        if (!matchesAgent) return false;
-      }
-      if (workflowFilter !== "all" && task.workflowId !== workflowFilter) return false;
-      return true;
-    });
-  }, [tasks, search, priorityFilter, agentFilter, workflowFilter]);
+  const filteredTasks = useMemo(
+    () =>
+      filterTasks(tasks, {
+        search,
+        priority: priorityFilter,
+        agent: agentFilter,
+        workflow: workflowFilter,
+      }),
+    [tasks, search, priorityFilter, agentFilter, workflowFilter]
+  );
 
   // Separate UI columns from domain status
-  const tasksByColumn = useMemo(() => {
-    const grouped = new Map<ColumnId, Task[]>();
-    for (const column of TASK_COLUMNS) grouped.set(column.id, []);
-    for (const task of filteredTasks) {
-      const colId = getColumnForStatus(task.status);
-      grouped.get(colId)?.push(task);
-    }
-    for (const list of grouped.values()) {
-      list.sort((a, b) => {
-        const byPriority = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
-        if (byPriority !== 0) return byPriority;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-    }
-    return grouped;
-  }, [filteredTasks]);
+  const tasksByColumn = useMemo(() => groupTasksByColumn(filteredTasks), [filteredTasks]);
 
   const detailTask = detailTaskId ? tasksById.get(detailTaskId) ?? null : null;
 
@@ -133,23 +106,11 @@ export default function TaskBoardPage() {
   const handleMove = async (taskId: string, toStatus: TaskStatus) => {
     setActionError(null);
     const task = tasksById.get(taskId);
-    if (!task || task.status === toStatus) return;
-    if (!canMoveStatus(task.status, toStatus)) {
-      setActionError(
-        `Invalid transition: ${task.status.replace("_", " ")} → ${toStatus.replace("_", " ")}`,
-      );
+    if (!task) return;
+    const validation = validateMove(task, toStatus, tasksById);
+    if (!validation.ok) {
+      setActionError(validation.reason ?? "Move not allowed.");
       return;
-    }
-    if (DEP_GATED_STATUSES.includes(toStatus)) {
-      const blockers = getDependencyBlockers(task, tasksById);
-      if (blockers.length > 0) {
-        setActionError(
-          `"${task.title}" is blocked by unfinished dependencies: ${blockers
-            .map((b) => `"${b.title}"`)
-            .join(", ")}`,
-        );
-        return;
-      }
     }
     try {
       await moveTask({ taskId, toStatus });
@@ -162,13 +123,9 @@ export default function TaskBoardPage() {
 
   const handleStart = async (task: Task) => {
     setActionError(null);
-    const blockers = getDependencyBlockers(task, tasksById);
-    if (blockers.length > 0) {
-      setActionError(
-        `Cannot start: blocked by unfinished dependencies: ${blockers
-          .map((b) => `"${b.title}"`)
-          .join(", ")}`,
-      );
+    const validation = validateStart(task, tasksById);
+    if (!validation.ok) {
+      setActionError(validation.reason ?? "Cannot start task.");
       return;
     }
     try {

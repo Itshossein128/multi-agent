@@ -4,6 +4,8 @@
  * and run orchestration occur on the server boundary.
  */
 
+import "server-only";
+
 import {
   BoardAgent,
   BoardWorkflow,

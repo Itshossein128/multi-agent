@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 // Mock next-auth to avoid ESM import issues in Jest
 jest.mock("next-auth", () => jest.fn(() => ({ handlers: {}, auth: jest.fn(), signIn: jest.fn(), signOut: jest.fn() })));
 jest.mock("next-auth/providers/credentials", () => jest.fn((config) => ({ id: "credentials", ...config })));
+// server-only is a Next.js build-time guard; jest has no bundler alias for it.
+jest.mock("server-only", () => ({}), { virtual: true });
 
 import { registerUser } from "../apps/web/src/app/register/actions";
 import { authConfig } from "../apps/web/src/auth";
