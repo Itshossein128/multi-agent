@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth.edge";
 
-// Middleware to protect routes
+// Proxy to protect routes
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const { nextUrl } = req;
   const isAuthRoute = nextUrl.pathname.startsWith("/login") || nextUrl.pathname.startsWith("/register");
   const isApiAuthRoute = nextUrl.pathname.startsWith("/api/auth");
-  
+
   // Always allow NextAuth API routes
   if (isApiAuthRoute) {
     return;
@@ -42,7 +42,7 @@ export default auth((req) => {
   return;
 });
 
-// Optionally, don't invoke Middleware on some paths
+// Optionally, don't invoke Proxy on some paths
 export const config = {
   matcher: ['/((?!.+\\.[\\w]+$|_next).*)', '/', '/(api|trpc)(.*)'],
 };
