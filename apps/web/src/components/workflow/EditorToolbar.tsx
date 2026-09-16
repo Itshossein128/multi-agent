@@ -50,6 +50,7 @@ function ToolButton({
 
 export function EditorToolbar() {
   const router = useRouter();
+  const [runInput, setRunInput] = React.useState("");
   const definition = useWorkflowStore((s) => s.definition);
   const agents = useWorkflowStore((s) => s.agents);
   const tools = useWorkflowStore((s) => s.tools);
@@ -136,14 +137,20 @@ export function EditorToolbar() {
           <CircleCheck className="h-3.5 w-3.5" />
           Validate
         </Button>
+        <input
+          aria-label="Run input"
+          type="text"
+          value={runInput}
+          onChange={(event) => setRunInput(event.target.value)}
+          placeholder="Run input"
+          className="h-8 w-40 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        />
         <Button
           size="sm"
           disabled={hasErrors}
           onClick={async () => {
-            const value = window.prompt("Input for this run", "");
-            if (value === null) return;
             try {
-              const { runId } = await runService.startRun(definition, agents, { input: value }, undefined, tools);
+              const { runId } = await runService.startRun(definition, agents, { input: runInput }, undefined, tools);
               sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
               router.push(`/runs/${runId}`);
             } catch (error) {
