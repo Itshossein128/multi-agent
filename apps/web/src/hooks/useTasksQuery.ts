@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BoardAgent, BoardWorkflow, Task, TaskBoardData, TaskPriority, TaskStatus } from "@/lib/taskStatus";
+import { TaskBoardData, TaskPriority, TaskStatus } from "@/lib/taskStatus";
 
 export interface CreateTaskInput {
   title: string;

@@ -3,7 +3,6 @@
 import React, { useMemo, useState } from "react";
 import {
   AlertOctagon,
-  GitBranch,
   RefreshCw,
   Search,
 } from "lucide-react";

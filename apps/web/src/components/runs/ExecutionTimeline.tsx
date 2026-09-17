@@ -10,10 +10,10 @@ export function ExecutionTimeline({ events, emptyMessage = "No execution events 
   const listRef = useRef<HTMLOListElement>(null);
   const followTail = useRef(true);
   const ordered = useMemo(() => [...events].sort((a, b) => a.sequence - b.sequence), [events]);
-  const selected = ordered.find((event) => event.id === selectedId);
-  useEffect(() => {
-    if (!selected && ordered.length) setSelectedId(ordered[ordered.length - 1].id);
-  }, [ordered, selected]);
+  const effectiveSelectedId = ordered.some((event) => event.id === selectedId)
+    ? selectedId
+    : ordered.at(-1)?.id ?? null;
+  const selected = ordered.find((event) => event.id === effectiveSelectedId);
   useEffect(() => {
     const list = listRef.current;
     if (list && followTail.current) list.scrollTop = list.scrollHeight;
@@ -27,7 +27,7 @@ export function ExecutionTimeline({ events, emptyMessage = "No execution events 
     {!events.length && <p className="text-sm text-zinc-400">{emptyMessage}</p>}
     <ol ref={listRef} onScroll={onScroll} className="max-h-96 space-y-2 overflow-auto" aria-label="Execution timeline">
       {ordered.map((event, index) => <li key={event.id}>
-        <button type="button" aria-pressed={event.id === selectedId} onClick={() => setSelectedId(event.id)}
+        <button type="button" aria-pressed={event.id === effectiveSelectedId} onClick={() => setSelectedId(event.id)}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-left text-xs hover:border-indigo-400 focus-visible:outline-2 focus-visible:outline-indigo-400 aria-pressed:border-indigo-400">
           <span className={event.type.endsWith("failed") || event.type === "run.cancelled" ? "text-red-300" : event.type.endsWith("completed") ? "text-emerald-300" : event.type.includes("requested") || event.type === "run.paused" ? "text-amber-300" : "text-zinc-100"}>{eventLabel(event.type)}</span>
           <span className="float-right text-zinc-400">#{event.sequence}</span>

@@ -11,7 +11,7 @@ import { ShieldCheck } from "lucide-react";
 import { formatTime } from "@/lib/formatDateTime";
 
 export default function DashboardPage() {
-  const { isLive, lastUpdated } = useStudioStore();
+  const { lastUpdated } = useStudioStore();
 
   return (
     <>

@@ -23,6 +23,7 @@ import {
 } from "../src/auth/internalPrincipal";
 import { runStudioMigrations } from "../src/studio/infrastructure/migrate";
 import type { StudioTask } from "../src/studio/contracts";
+import { createInertAgentRuntime } from "./fixtures/inertAgentRuntime";
 
 const TEST_SECRET = "ownership-test-secret";
 
@@ -282,7 +283,7 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
     beforeEach(() => {
       runStore = new InMemoryRunStore();
       studioStore = new InMemoryStudioStore();
-      executor = new RunExecutor(runStore);
+      executor = new RunExecutor(runStore, createInertAgentRuntime());
       const router = createRunsRouter(
         executor,
         async () => null,
@@ -426,15 +427,28 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
       await studioStore.saveTool(aliceTool, alice);
 
       // Alice can execute her tool
-      const aliceExec = await app.fetch(req("/test", "POST", { tool: aliceTool, input: { name: "alice" } }, alice));
+      const aliceExec = await app.fetch(req("/test", "POST", { toolId: aliceTool.id, input: { name: "alice" } }, alice));
       expect(aliceExec.status).toBe(200);
 
+      // Browser payloads cannot replace the authoritative saved configuration.
+      const overridden = await app.fetch(req("/test", "POST", {
+        toolId: aliceTool.id,
+        tool: { ...aliceTool, configuration: { greeting: "forged" } },
+        input: { name: "alice" },
+      }, alice));
+      expect(overridden.status).toBe(200);
+      expect(await json(overridden)).toEqual({ output: { greeting: "secret", name: "alice" } });
+
+      // A made-up tool id cannot be executed when the server registry is present.
+      const unsaved = { ...createToolRecord({ name: "Unsaved" }), configuration: { kind: "repo-tests", workspaceRoot: process.cwd() } };
+      expect((await app.fetch(req("/test", "POST", { tool: unsaved, input: {} }, alice))).status).toBe(404);
+
       // Bob cannot execute Alice's private tool (404)
-      const bobExec = await app.fetch(req("/test", "POST", { tool: aliceTool, input: { name: "bob" } }, bob));
+      const bobExec = await app.fetch(req("/test", "POST", { toolId: aliceTool.id, input: { name: "bob" } }, bob));
       expect(bobExec.status).toBe(404);
 
       // Eve cannot execute Alice's private tool (404)
-      const eveExec = await app.fetch(req("/test", "POST", { tool: aliceTool, input: { name: "eve" } }, eve));
+      const eveExec = await app.fetch(req("/test", "POST", { toolId: aliceTool.id, input: { name: "eve" } }, eve));
       expect(eveExec.status).toBe(404);
 
       // System tool can be executed by Alice, Bob, and Eve
@@ -445,9 +459,9 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
       };
       await studioStore.saveTool(systemTool);
 
-      expect((await app.fetch(req("/test", "POST", { tool: systemTool, input: { name: "a" } }, alice))).status).toBe(200);
-      expect((await app.fetch(req("/test", "POST", { tool: systemTool, input: { name: "b" } }, bob))).status).toBe(200);
-      expect((await app.fetch(req("/test", "POST", { tool: systemTool, input: { name: "c" } }, eve))).status).toBe(200);
+      expect((await app.fetch(req("/test", "POST", { toolId: systemTool.id, input: { name: "a" } }, alice))).status).toBe(200);
+      expect((await app.fetch(req("/test", "POST", { toolId: systemTool.id, input: { name: "b" } }, bob))).status).toBe(200);
+      expect((await app.fetch(req("/test", "POST", { toolId: systemTool.id, input: { name: "c" } }, eve))).status).toBe(200);
     });
   });
 

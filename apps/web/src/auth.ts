@@ -36,7 +36,7 @@ export const authConfig: NextAuthConfig = {
         try {
           const pool = getDbPool();
           const result = await pool.query(
-            "SELECT id, tenant_id, password_hash, status FROM studio_users WHERE email = $1",
+            "SELECT id, tenant_id, email, display_name, password_hash, status FROM studio_users WHERE email = $1",
             [email]
           );
 
@@ -47,7 +47,12 @@ export const authConfig: NextAuthConfig = {
 
             const isValid = await bcrypt.compare(password, user.password_hash);
             if (isValid) {
-              return { id: user.id, tenantId: user.tenant_id };
+              return {
+                id: user.id,
+                tenantId: user.tenant_id,
+                email: user.email,
+                name: user.display_name ?? undefined,
+              };
             }
             return null; // Invalid password
           }

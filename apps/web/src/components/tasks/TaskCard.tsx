@@ -44,7 +44,6 @@ export function TaskCard({
   isMutating,
   isDragging,
   onOpen,
-  onMove: _onMove,
   onStart,
   onPauseToggle,
   onCancel,

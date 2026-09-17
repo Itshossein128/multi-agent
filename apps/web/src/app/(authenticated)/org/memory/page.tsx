@@ -29,7 +29,15 @@ export default function MemoryExplorer() {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => { setToken(readToken()); setLoaded(true); }, []);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setToken(readToken());
+      setLoaded(true);
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => { if (loaded) window.localStorage.setItem(TOKEN_KEY, token); }, [token, loaded]);
 
   const namespace: MemoryNamespace | null = namespaceId.trim() ? { scope, id: namespaceId.trim() } : null;

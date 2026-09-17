@@ -101,6 +101,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
   const history = new WorkflowHistory();
   /** Mirror history availability into store state for reactive toolbar state. */
   const syncHistoryFlags = () => set({ canUndo: history.canUndo, canRedo: history.canRedo });
+  let loadSequence = 0;
   /** Apply a definition mutation, recompute validation, prune selection. */
   const withDefinition = (
     mutator: (draft: WorkflowDefinition) => void,
@@ -156,6 +157,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     flowHelpers: null,
 
     loadWorkflow: async (workflowId) => {
+      const sequence = ++loadSequence;
       set({ loadState: "loading", loadError: null });
       try {
         const [storedDefinition, agents, tools] = await Promise.all([
@@ -163,6 +165,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
           workflowService.listAgents(),
           workflowService.listTools(),
         ]);
+        if (sequence !== loadSequence) return;
         if (workflowId && !storedDefinition) throw new Error("Workflow not found.");
         const definition = storedDefinition ?? createEmptyDefinition();
         history.clear();
@@ -181,6 +184,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
           selectedEdgeIds: [],
         });
       } catch (err) {
+        if (sequence !== loadSequence) return;
         set({
           loadState: "error",
           loadError: err instanceof Error ? err.message : "Failed to load workflow",
