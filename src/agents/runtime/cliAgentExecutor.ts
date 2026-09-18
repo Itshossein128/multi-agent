@@ -57,9 +57,26 @@ export function resolveCliSpawnExecutable(
   });
   if (fromAllowlist) return path.resolve(fromAllowlist);
 
+  if (allowedExecutables.includes(executable)) return executable;
+
   const resolved = resolveFromPath(executable, env);
   if (resolved) return resolved;
   return executable;
+}
+
+export function cliExecutableAvailable(
+  executable: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  if (path.isAbsolute(executable) || executable.includes("/") || executable.includes("\\")) {
+    try {
+      fs.accessSync(executable, fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return Boolean(resolveFromPath(executable, env));
 }
 
 function resolveFromPath(command: string, env: Readonly<Record<string, string | undefined>>): string | undefined {
@@ -76,7 +93,7 @@ function resolveFromPath(command: string, env: Readonly<Record<string, string | 
     for (const ext of ordered) {
       const candidate = path.join(dir, hasExt ? command : `${command}${ext}`);
       try {
-        fs.accessSync(candidate, fs.constants.F_OK);
+        fs.accessSync(candidate, fs.constants.X_OK);
         if (process.platform === "win32" && /\.(cmd|bat)$/i.test(candidate)) continue;
         return candidate;
       } catch {
@@ -146,7 +163,9 @@ export class CliAgentExecutor implements AgentExecutor {
         network: policy.network === true,
       };
 
-      const handle = await this.workerRuntime.start(spec, input.signal, prompt(input), launchSecrets);
+      const composedPrompt = prompt(input);
+      const workerInput = backend.provider === "agy" ? agyStreamInput(composedPrompt) : composedPrompt;
+      const handle = await this.workerRuntime.start(spec, input.signal, workerInput, launchSecrets);
 
       try {
         const result = await this.workerRuntime.wait(handle.workerId);
@@ -162,8 +181,9 @@ export class CliAgentExecutor implements AgentExecutor {
           const clipped = detail.length > 2_000 ? `${detail.slice(0, 2_000)}…` : detail;
           throw new Error(`CLI command "${executable}" exited with code ${result.code}: ${clipped || "no output"}`);
         }
-        yield event("agent.output", input, { content: result.stdout });
-        yield event("agent.completed", input, { content: result.stdout });
+        const outputContent = backend.provider === "agy" ? parseAgyStreamOutput(result.stdout) : result.stdout;
+        yield event("agent.output", input, { content: outputContent });
+        yield event("agent.completed", input, { content: outputContent });
       } finally {
         await this.workerRuntime.cleanup(handle.workerId);
       }
@@ -201,10 +221,99 @@ function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>, workerMode
     : backend.provider === "claude-code"
       ? claudeArgs(explicit, workerMode === "container")
       : backend.provider === "agy"
-        ? ensureFlags(explicit, ["--print", "--output-format", "text", "--disable-slash-commands"])
-        : [...(explicit ?? [])];
+      ? agyArgs(explicit)
+      : [...(explicit ?? [])];
   if (backend.model && !args.some((arg) => arg === "--model" || arg === "-m")) args.push("--model", backend.model);
   return args;
+}
+
+const AGY_BLOCKED_FLAGS = new Set([
+  "--prompt-interactive",
+  "--continue",
+  "-c",
+  "-i",
+  "--remote-control",
+]);
+
+export function agyArgs(explicit: string[] | undefined): string[] {
+  const custom = [...(explicit ?? [])];
+  const filtered: string[] = [];
+
+  for (let i = 0; i < custom.length; i++) {
+    const arg = custom[i];
+
+    if (AGY_BLOCKED_FLAGS.has(arg)) {
+      continue;
+    }
+
+    if (arg === "--print") {
+      if (i + 1 < custom.length && !custom[i + 1].startsWith("-")) {
+        i++;
+      }
+      continue;
+    }
+
+    if (arg === "--disable-slash-commands") {
+      continue;
+    }
+
+    if (arg === "--output-format") {
+      if (i + 1 < custom.length && !custom[i + 1].startsWith("-")) {
+        i++;
+      }
+      continue;
+    }
+
+    if (arg.startsWith("--output-format=")) {
+      continue;
+    }
+
+    if (arg === "--input-format") {
+      if (i + 1 < custom.length && !custom[i + 1].startsWith("-")) {
+        i++;
+      }
+      continue;
+    }
+
+    if (arg.startsWith("--input-format=")) {
+      continue;
+    }
+
+    filtered.push(arg);
+  }
+
+  return ["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", ...filtered];
+}
+
+export function agyStreamInput(content: string): string {
+  return `${JSON.stringify({ event: "user", message: { role: "user", content } })}\n`;
+}
+
+export function parseAgyStreamOutput(stdout: string): string {
+  const lines = stdout.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  let finalResult: { status?: unknown; response?: unknown } | undefined;
+
+  for (const line of lines) {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      throw new Error("Failed to parse agy stream output: invalid JSON");
+    }
+    if (parsed && typeof parsed === "object" && parsed.event === "result") {
+      finalResult = parsed.result;
+    }
+  }
+
+  if (!finalResult || typeof finalResult !== "object") {
+    throw new Error("Agy stream output missing final result event");
+  }
+
+  if (finalResult.status !== "SUCCESS" || typeof finalResult.response !== "string") {
+    throw new Error("Agy execution failed or returned invalid response");
+  }
+
+  return finalResult.response;
 }
 
 /** Headless Codex defaults for a worker. Container runs never prompt for approvals or persist sessions. */

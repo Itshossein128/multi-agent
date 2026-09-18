@@ -1,6 +1,5 @@
 import { assertNoCredentials, createAgentRecord, migrateAgentRecord, nowIso, removeAgentNodes, uid, type AgentDiagnostics, type AgentRecord } from "@multi-agent/types";
-import fs from "node:fs";
-import { defaultCliExecutable, resolveCliSpawnExecutable, cliRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/cliAgentExecutor";
+import { cliExecutableAvailable, defaultCliExecutable, resolveCliSpawnExecutable, cliRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/cliAgentExecutor";
 import { assertContainerWorkerConfiguration, containerWorkerPolicyFromEnvironment } from "../../../../../src/agents/runtime/workerRuntime";
 import { localRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/localAgentExecutor";
 import type { StudioStore } from "../../../../../src/studio/contracts";
@@ -43,8 +42,7 @@ export class AgentService {
       const executable = resolveCliSpawnExecutable(configuredExecutable, policy.allowedExecutables, process.env, policy.workerMode);
       const allowed = policy.allowedExecutables.some((item) => item === executable || (!item.includes("/") && !item.includes("\\") && item === configuredExecutable));
       if (!allowed) return { status: "misconfigured", checkedAt, backend, message: "The configured CLI is not in the server executable allowlist." };
-      try { fs.accessSync(executable, fs.constants.X_OK); }
-      catch { return { status: "unavailable", checkedAt, backend, message: "The configured CLI executable is not available on the execution server." }; }
+      if (!cliExecutableAvailable(executable, process.env)) return { status: "unavailable", checkedAt, backend, message: "The configured CLI executable is not available on the execution server." };
       return { status: "unknown", checkedAt, backend, message: "CLI executable and server policy are ready, but authentication is owned by the CLI and was not inspected." };
     }
     if (agent.backend.provider !== "ollama" && agent.backend.provider !== "lmstudio") {
