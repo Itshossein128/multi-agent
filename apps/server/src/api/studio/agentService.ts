@@ -31,7 +31,7 @@ export class AgentService {
     if (referencing.length && !removeReferences) throw new ApiError(409, "Remove this agent’s nodes in the Graph Editor and save the workflows before deleting the agent.");
     if (!removeReferences) return this.store.deleteAgent(id, principal);
     await this.store.transaction(async (transaction) => {
-      for (const workflow of referencing) await transaction.saveWorkflow({ ...removeAgentNodes(workflow, id), updatedAt: nowIso() }, principal);
+      await Promise.all(referencing.map((workflow) => transaction.saveWorkflow({ ...removeAgentNodes(workflow, id), updatedAt: nowIso() }, principal)));
       await transaction.deleteAgent(id, principal);
     });
   }
