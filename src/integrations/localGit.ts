@@ -1,11 +1,11 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { VersionControlClient } from '../agents/developer/types';
 import { GitHubClient } from './github';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface LocalGitConfig {
   workspaceRoot?: string;
@@ -72,17 +72,17 @@ export class LocalGitClient implements VersionControlClient {
         fs.rmSync(repoDir, { recursive: true, force: true });
       }
       console.log(`[LocalGit] Cloning ${this.owner}/${repo} into ${repoDir}...`);
-      await execAsync(`git clone "${authCloneUrl}" "${repoDir}"`);
+      await execFileAsync('git', ['clone', authCloneUrl, repoDir]);
 
       // Configure local git committer for this repo
-      await execAsync(`git -C "${repoDir}" config user.name "${this.gitUserName}"`);
-      await execAsync(`git -C "${repoDir}" config user.email "${this.gitUserEmail}"`);
+      await execFileAsync('git', ['-C', repoDir, 'config', 'user.name', this.gitUserName]);
+      await execFileAsync('git', ['-C', repoDir, 'config', 'user.email', this.gitUserEmail]);
     } else {
       console.log(`[LocalGit] Updating existing clone at ${repoDir}...`);
       try {
-        await execAsync(`git -C "${repoDir}" fetch origin`);
-        await execAsync(`git -C "${repoDir}" checkout main`);
-        await execAsync(`git -C "${repoDir}" pull origin main`);
+        await execFileAsync('git', ['-C', repoDir, 'fetch', 'origin']);
+        await execFileAsync('git', ['-C', repoDir, 'checkout', 'main']);
+        await execFileAsync('git', ['-C', repoDir, 'pull', 'origin', 'main']);
       } catch (err: any) {
         console.warn(`[LocalGit] git pull warning: ${err.message}`);
       }
@@ -101,7 +101,7 @@ export class LocalGitClient implements VersionControlClient {
 
     const repoDir = await this.cloneOrPull(repo);
     try {
-      await execAsync(`git -C "${repoDir}" checkout -B "${branchName}"`);
+      await execFileAsync('git', ['-C', repoDir, 'checkout', '-B', branchName]);
       return { branchName, success: true };
     } catch (err: any) {
       console.warn(`[LocalGit] Error creating branch ${branchName}: ${err.message}`);
@@ -128,16 +128,15 @@ export class LocalGitClient implements VersionControlClient {
       fs.writeFileSync(targetFilePath, options.content, 'utf-8');
 
       // Stage and commit locally
-      await execAsync(`git -C "${repoDir}" add "${options.path}"`);
-      const safeMsg = options.message.replace(/"/g, '\\"');
-      await execAsync(`git -C "${repoDir}" commit -m "${safeMsg}"`);
+      await execFileAsync('git', ['-C', repoDir, 'add', options.path]);
+      await execFileAsync('git', ['-C', repoDir, 'commit', '-m', options.message]);
 
       // Push to remote branch
       const authRemote = `https://x-access-token:${this.token}@github.com/${this.owner}/${options.repo}.git`;
-      await execAsync(`git -C "${repoDir}" push -u "${authRemote}" "${options.branch}"`);
+      await execFileAsync('git', ['-C', repoDir, 'push', '-u', authRemote, options.branch]);
 
-      const { stdout } = await execAsync(`git -C "${repoDir}" rev-parse HEAD`);
-      return { success: true, sha: stdout.trim() };
+      const { stdout } = await execFileAsync('git', ['-C', repoDir, 'rev-parse', 'HEAD']);
+      return { success: true, sha: stdout.toString().trim() };
     } catch (err: any) {
       console.warn(`[LocalGit] Local commit failed, falling back to GitHub API commit: ${err.message}`);
       return this.githubClient.commitFile(options);
