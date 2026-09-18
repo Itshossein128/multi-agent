@@ -31,10 +31,15 @@ export class StudioToolService {
     const referencingAgents = agents.filter((agent) => agent.tools.includes(id));
     if ((referencingWorkflows.length || referencingAgents.length) && !removeReferences) throw new ApiError(409, "Remove this tool’s nodes in the Graph Editor and agent assignments before deleting the tool.");
     if (!removeReferences) return this.store.deleteTool(id, principal);
-    await this.store.transaction(async (transaction) => {
-      for (const workflow of referencingWorkflows) await transaction.saveWorkflow({ ...removeToolNodes(workflow, id), updatedAt: nowIso() }, principal);
-      for (const agent of referencingAgents) await transaction.saveAgent({ ...agent, tools: agent.tools.filter((toolId) => toolId !== id), updatedAt: nowIso() }, principal);
-      await transaction.deleteTool(id, principal);
-    });
+    try {
+      await this.store.transaction(async (transaction) => {
+        for (const workflow of referencingWorkflows) await transaction.saveWorkflow({ ...removeToolNodes(workflow, id), updatedAt: nowIso() }, principal);
+        for (const agent of referencingAgents) await transaction.saveAgent({ ...agent, tools: agent.tools.filter((toolId) => toolId !== id), updatedAt: nowIso() }, principal);
+        await transaction.deleteTool(id, principal);
+      });
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(500, error instanceof Error ? error.message : String(error));
+    }
   }
 }
