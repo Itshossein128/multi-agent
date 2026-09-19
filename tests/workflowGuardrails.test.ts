@@ -34,7 +34,7 @@ describe("workflow guardrails", () => {
   });
 
   test("clamps malformed environment values to safe defaults", () => {
-    expect(runtimeGuardrailsFromEnvironment({ RUN_MAX_DURATION_MS: "bad", WORKFLOW_MAX_NODES: "-1" } as NodeJS.ProcessEnv))
+    expect(runtimeGuardrailsFromEnvironment({ RUN_MAX_DURATION_MS: "bad", WORKFLOW_MAX_NODES: "-1" } as unknown as NodeJS.ProcessEnv))
       .toMatchObject({ maxRunDurationMs: 900000, maxNodes: 100, recursionLimit: 100 });
   });
 });
