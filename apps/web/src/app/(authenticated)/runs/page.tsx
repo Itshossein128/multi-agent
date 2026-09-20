@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import type { RunStatus } from "@multi-agent/types";
@@ -14,7 +14,7 @@ function initialStatus(value: string | null): RunStatus | "" {
   return STATUSES.includes(value as RunStatus) ? (value as RunStatus) : "";
 }
 
-export default function RunsHistoryPage() {
+function RunsHistoryContent() {
   const searchParams = useSearchParams();
   const [workflowId, setWorkflowId] = useState("");
   const [taskId, setTaskId] = useState("");
@@ -78,5 +78,13 @@ export default function RunsHistoryPage() {
         </ul>
       </section>
     </main>
+  );
+}
+
+export default function RunsHistoryPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 p-4 text-sm text-zinc-500">Loading runs…</div>}>
+      <RunsHistoryContent />
+    </Suspense>
   );
 }
