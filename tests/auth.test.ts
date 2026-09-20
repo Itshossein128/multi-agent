@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 
 // Mock next-auth to avoid ESM import issues in Jest
-jest.mock("next-auth", () => jest.fn(() => ({ handlers: {}, auth: jest.fn(), signIn: jest.fn(), signOut: jest.fn() })));
-jest.mock("next-auth/providers/credentials", () => jest.fn((config) => ({ id: "credentials", ...config })));
+jest.mock("next-auth", () => jest.fn(() => ({ handlers: {}, auth: jest.fn(), signIn: jest.fn(), signOut: jest.fn() })), { virtual: true });
+jest.mock("next-auth/providers/credentials", () => jest.fn((config) => ({ id: "credentials", ...config })), { virtual: true });
 
 import { registerUser } from "../apps/web/src/app/register/actions";
 import { authConfig } from "../apps/web/src/auth";
