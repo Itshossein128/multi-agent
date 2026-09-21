@@ -148,6 +148,34 @@ describe("LocalProcessWorkerRuntime", () => {
     await runtime.cleanup(handle.workerId);
   });
 
+  test("does not spawn when the signal is already aborted", async () => {
+    const spawnFn = jest.fn(mockSpawnFn("", "", 0));
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(runtime.start(createSpec("node", []), controller.signal)).rejects.toThrow("Worker cancelled before starting");
+    expect(spawnFn).not.toHaveBeenCalled();
+  });
+
+  test("cancels a child when the signal aborts during spawn", async () => {
+    const controller = new AbortController();
+    const spawnFn = jest.fn((command: string, args: string[], options: any) => {
+      const child = mockSpawnFn("", "", 0, 10000)(command, args, options);
+      jest.spyOn(child, "kill");
+      controller.abort();
+      return child;
+    });
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+
+    const handle = await runtime.start(createSpec("node", []), controller.signal);
+    const result = await runtime.wait(handle.workerId);
+
+    expect(result.reason).toBe("cancelled");
+    expect(spawnFn.mock.results[0].value.kill).toHaveBeenCalledWith("SIGTERM");
+    await runtime.cleanup(handle.workerId);
+  });
+
   test("enforces maxOutputBytes limit and sets reason to output_limit", async () => {
     const spawnFn = mockSpawnFn("this is way too long", "", 0, 10);
     const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);

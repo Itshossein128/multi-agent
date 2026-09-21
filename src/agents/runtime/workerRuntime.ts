@@ -330,7 +330,11 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       child.on("close", (exitCode) => { code = exitCode ?? null; childClosed = true; finish(); });
     });
 
-    if (input) {
+    // The signal can be aborted synchronously by spawnFn, before the listener
+    // above is installed. Recheck it after close handlers are ready.
+    if (signal?.aborted) abort();
+
+    if (input && !signal?.aborted) {
       child.stdin?.write(input);
       child.stdin?.end();
     }
