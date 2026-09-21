@@ -13,6 +13,7 @@ import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../../runtime/boundedValue";
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver } from "./workerCredentials";
 import { DefaultContextAssembler, type ContextAssembler } from "./contextAssembler";
+import { splitWorkingMemoryUpdates, visibleWorkingMemoryEntries, type WorkingMemoryEntries } from "./workingMemory";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -52,6 +53,16 @@ export class AgentRuntime {
     const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(this.maxExecutionMs)]) : AbortSignal.timeout(this.maxExecutionMs);
     signal.throwIfAborted();
     input = { ...input, signal };
+    // Agent-private working memory never crosses the runtime boundary: the
+    // executing agent receives workflow-scoped entries plus its own private
+    // entries only, so another agent's private knowledge cannot leak into a
+    // prompt, an executor payload or the assembled context.
+    input = {
+      ...input,
+      workingMemory: Object.fromEntries(
+        visibleWorkingMemoryEntries(input.workingMemory, { agentId: input.agent.id, runId: input.runId }).map((entry) => [entry.id, entry]),
+      ) as WorkingMemoryEntries,
+    };
     const memory = input.agent.memory;
     const shortEnabled = memory?.enabled && memory.shortTerm?.enabled !== false;
     const key = historyKey(input);
@@ -88,6 +99,7 @@ export class AgentRuntime {
       longTermMemoryContext: memoryContext,
       longTermMemoryEvents: memoryEvents,
       handoffs: input.handoffs,
+      workingMemory: input.workingMemory,
       previousOutput: input.context?.previousOutput,
       branchState: typeof input.context?.branch === "string" ? input.context.branch : undefined,
       runtimeState: input.context?.memory && typeof input.context.memory === "object"
@@ -106,7 +118,13 @@ export class AgentRuntime {
       input.signal?.throwIfAborted();
       if (event.type === "agent.completed") {
         const eventPayload = event.payload as { content?: unknown } | undefined;
-        output = boundJsonValue(eventPayload?.content ?? event.payload, this.maxOutputBytes);
+        // Working memory is a runtime-consumed channel. It is removed exactly once,
+        // at the executor boundary, so it can never reach conversation history,
+        // long-term extraction, handoff or node values. The untrusted candidates
+        // are delivered separately to the owner that validates them.
+        const { remainder, updates } = splitWorkingMemoryUpdates(eventPayload?.content ?? event.payload);
+        if (updates.length) input.onWorkingMemoryUpdate?.(updates);
+        output = boundJsonValue(remainder, this.maxOutputBytes);
         completion = {
           ...event,
           payload: eventPayload && "content" in eventPayload ? { ...eventPayload, content: output } : output,

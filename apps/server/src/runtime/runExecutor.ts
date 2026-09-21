@@ -263,7 +263,9 @@ export class RunExecutor {
           this.appendAgentEvent(runId, event);
         },
       });
-      await this.graphRunner.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {} }, request.workflow, request.agents, this.approvalManager, memoryAccess, request.tools, stepBudget, this.store.signal(runId), this.branchControllers.get(runId), this.guardrails.recursionLimit);
+      // `memory` is workflow/shared execution state; `workingMemory` is the
+      // separate run-scoped knowledge channel. Both start empty for a new run.
+      await this.graphRunner.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {}, workingMemory: {} }, request.workflow, request.agents, this.approvalManager, memoryAccess, request.tools, stepBudget, this.store.signal(runId), this.branchControllers.get(runId), this.guardrails.recursionLimit);
     } catch (error) { this.fail(runId, error); } finally { clearTimeout(timeout); }
   }
 

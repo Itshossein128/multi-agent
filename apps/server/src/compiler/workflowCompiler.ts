@@ -4,6 +4,13 @@ import { AgentRuntime, AgentExecutionFailedError, type TrustedCredentialPrincipa
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
 import { buildHandoff, type AgentHandoff } from "../../../../src/agents/runtime/handoff";
+import {
+  ALLOW_WORKFLOW_SCOPE,
+  applyWorkingMemoryUpdates,
+  mergeWorkingMemory,
+  type WorkingMemoryEntries,
+  type WorkingMemoryScopePolicy,
+} from "../../../../src/agents/runtime/workingMemory";
 import { validateWorkflow } from "./validation";
 import { ToolRuntime } from "../../../../src/tools";
 import { AbortableSemaphore } from "../runtime/semaphore";
@@ -22,6 +29,8 @@ export interface RuntimeState {
   memory: Record<string, unknown>;
   shortTermHistories?: ShortTermHistories;
   handoffs?: Record<string, AgentHandoff>;
+  /** Run-scoped structured knowledge; distinct from `memory` (workflow state). */
+  workingMemory?: WorkingMemoryEntries;
   branch?: string;
   lastValue?: unknown;
   nodeResults?: Record<string, unknown>;
@@ -43,6 +52,12 @@ const State = Annotation.Root({
   }),
   handoffs: Annotation<Record<string, AgentHandoff>>({
     reducer: (current, next) => ({ ...current, ...next }),
+    default: () => ({}),
+  }),
+  // Append/update keyed by stable entry id, so parallel branches merge instead of
+  // overwriting each other.
+  workingMemory: Annotation<WorkingMemoryEntries>({
+    reducer: mergeWorkingMemory,
     default: () => ({}),
   }),
 });
@@ -87,6 +102,11 @@ export interface CompileOptions {
     maxNodeRetryAttempts: number;
     maxNodeRetryBackoffMs: number;
   };
+  /**
+   * Server-owned authorization for workflow-shared working memory. Model output
+   * can never widen its own scope; the runtime decides here.
+   */
+  workingMemoryScopePolicy?: WorkingMemoryScopePolicy;
 }
 
 export function compileWorkflow(
@@ -211,6 +231,7 @@ export function compileWorkflow(
             if (agentErrors.length) throw new Error(agentErrors.join(" "));
 
             let shortTermHistories: ShortTermHistories = {};
+            let workingMemoryCandidates: unknown[] = [];
             let agentFailed = false;
             let agentError: string | undefined;
             const value = options.agentRunner
@@ -224,22 +245,47 @@ export function compileWorkflow(
                 memoryAccess: options.memoryAccess,
                 credentialPrincipal: options.credentialPrincipal,
                 onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
+                onWorkingMemoryUpdate: updates => { workingMemoryCandidates = updates; },
                 signal,
                 onError: (err) => { agentFailed = true; agentError = err; },
               });
 
+            const workflowId = options.workflowId ?? definition.id;
             // Build structured handoff from agent output
             const handoff = buildHandoff({
               runId,
-              workflowId: options.workflowId ?? definition.id,
+              workflowId,
               sourceNodeId: node.id,
               sourceAgentId: agent.id,
               rawOutput: value,
               succeeded: !agentFailed,
               error: agentError,
             });
+            // Working memory is deliberately a separate channel from handoff and from
+            // `state.memory` (workflow state). Model output is untrusted: updates are
+            // validated against server-owned scope policy and only accepted entries
+            // reach graph state. Malformed optional updates never fail this node.
+            // Candidates are untrusted; the runtime already stripped the channel from
+            // `value`, so nothing here can leak it into handoff, history or node values.
+            const workingMemoryWrite = applyWorkingMemoryUpdates(state.workingMemory ?? {}, workingMemoryCandidates, {
+              runId,
+              workflowId,
+              nodeId: node.id,
+              agentId: agent.id,
+              handoffId: handoff.id,
+              scopePolicy: options.workingMemoryScopePolicy ?? ALLOW_WORKFLOW_SCOPE,
+            });
+            if (workingMemoryWrite.diagnostics.received > 0) {
+              // Counts and rejection reasons only; entry contents are never logged.
+              emit("log", { kind: "working_memory.updated", agentId: agent.id, ...workingMemoryWrite.diagnostics });
+            }
             const handoffs = { [node.id]: handoff };
-            result = { lastValue: value, shortTermHistories, handoffs };
+            result = {
+              lastValue: value,
+              shortTermHistories,
+              handoffs,
+              workingMemory: workingMemoryWrite.entries,
+            };
           }
           if (branchSignal?.aborted && !options.signal?.aborted) {
             emit("branch.skipped", { branchKey, nodeType: node.type, reason: "branch_cancelled" });
@@ -374,6 +420,7 @@ async function runAgentThroughRuntime(
     memoryAccess?: MemoryAccessContext;
     credentialPrincipal?: TrustedCredentialPrincipal;
     onShortTermUpdate: (update: ShortTermHistories) => void;
+    onWorkingMemoryUpdate?: (updates: unknown[]) => void;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
     onError?: (error: string) => void;
   }
@@ -390,9 +437,11 @@ async function runAgentThroughRuntime(
     credentialPrincipal: meta.credentialPrincipal,
     shortTermHistories: state.shortTermHistories ?? {},
     onShortTermUpdate: meta.onShortTermUpdate,
+    onWorkingMemoryUpdate: meta.onWorkingMemoryUpdate,
     onBackgroundEvent: meta.onAgentEvent,
     context: { memory: state.memory, branch: state.branch, previousOutput: state.lastValue },
     handoffs: state.handoffs,
+    workingMemory: state.workingMemory ?? {},
   })) {
     meta.onAgentEvent?.(event);
     if (event.type === "agent.completed" || event.type === "agent.output") {

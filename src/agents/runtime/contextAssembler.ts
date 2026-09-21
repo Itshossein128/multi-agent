@@ -4,6 +4,17 @@ import type { MemoryAccessContext } from "../../memory/contracts";
 import { DefaultMemoryContextFormatter } from "../../memory/application/memoryContextFormatter";
 import { type ShortTermHistories, type HistoryEntry, boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
 import type { RuntimeMemoryDependencies } from "../../memory/contracts";
+import {
+  DEFAULT_WORKING_MEMORY_CONTEXT_BUDGET_TOKENS,
+  WORKING_MEMORY_CONTEXT_HEADER,
+  WORKING_MEMORY_CONTEXT_FOOTER,
+  selectWorkingMemoryForContext,
+  serializeWorkingMemoryForContext,
+  workingMemoryDiagnostics,
+  type WorkingMemoryDiagnostics,
+  type WorkingMemoryEntries,
+  type WorkingMemorySelection,
+} from "./workingMemory";
 
 // ─── Context Source Types ────────────────────────────────────────────────────
 
@@ -13,6 +24,7 @@ export type ContextSource =
   | "history"
   | "long_term_memory"
   | "handoff"
+  | "working_memory"
   | "runtime_state"
   | "previous_output"
   | "metadata";
@@ -49,6 +61,10 @@ export interface ContextAssemblyRequest {
   longTermMemoryContext?: string;
   longTermMemoryEvents?: unknown[];
   handoffs?: Record<string, AgentHandoff>;
+  /** Run-scoped structured working memory entries from checkpointed state. */
+  workingMemory?: WorkingMemoryEntries;
+  /** Sub-budget for working memory; defaults to DEFAULT_WORKING_MEMORY_CONTEXT_BUDGET_TOKENS. */
+  workingMemoryBudgetTokens?: number;
   previousOutput?: unknown;
   branchState?: string;
   runtimeState?: Record<string, unknown>;
@@ -81,6 +97,8 @@ export interface AssembledContext {
     itemCount: number;
     droppedItemCount: number;
     sources: Record<ContextSource, { count: number; tokens: number }>;
+    /** Counts only â€” entry contents are never reported here. */
+    workingMemory: WorkingMemoryDiagnostics;
   };
 }
 
@@ -118,6 +136,7 @@ export const PRIORITY = {
   SYSTEM: 100,
   TASK: 90,
   HANDOFF: 70,
+  WORKING_MEMORY: 65,
   RUNTIME_STATE: 60,
   LONG_TERM_MEMORY: 50,
   HISTORY: 40,
@@ -208,6 +227,34 @@ export class DefaultContextAssembler implements ContextAssembler {
     }
 
     // Runtime state (memory, branch) — if present, as separate items
+    // Run-scoped structured working memory. Only entries this viewer may see are
+    // candidates: workflow-scoped entries plus the viewer's own agent-private
+    // entries. Another agent's private entries are never selected.
+    const workingMemorySelection: WorkingMemorySelection = selectWorkingMemoryForContext(request.workingMemory, {
+      agentId: request.agentId,
+      runId: request.runId,
+      budgetTokens: request.workingMemoryBudgetTokens ?? DEFAULT_WORKING_MEMORY_CONTEXT_BUDGET_TOKENS,
+      estimate: (value) => this.estimator.estimate(value),
+    });
+    if (workingMemorySelection.selected.length > 0) {
+      const workingMemoryText = serializeWorkingMemoryForContext(workingMemorySelection.selected);
+      items.push({
+        id: `working-memory:${request.runId}:${request.agentId}`,
+        source: "working_memory",
+        priority: PRIORITY.WORKING_MEMORY,
+        content: {
+          type: "working_memory",
+          entries: workingMemorySelection.selected,
+          text: workingMemoryText,
+        },
+        estimatedTokens: this.estimator.estimate(workingMemoryText),
+        metadata: {
+          activeCount: workingMemorySelection.selected.length,
+          droppedByBudget: workingMemorySelection.dropped.length,
+        },
+      });
+    }
+
     if (request.runtimeState) {
       const stateText = JSON.stringify(request.runtimeState);
       if (stateText !== "{}") {
@@ -327,6 +374,7 @@ export class DefaultContextAssembler implements ContextAssembler {
       history: sourceStats["history"] ?? { count: 0, tokens: 0 },
       long_term_memory: sourceStats["long_term_memory"] ?? { count: 0, tokens: 0 },
       handoff: sourceStats["handoff"] ?? { count: 0, tokens: 0 },
+      working_memory: sourceStats["working_memory"] ?? { count: 0, tokens: 0 },
       runtime_state: sourceStats["runtime_state"] ?? { count: 0, tokens: 0 },
       previous_output: sourceStats["previous_output"] ?? { count: 0, tokens: 0 },
       metadata: sourceStats["metadata"] ?? { count: 0, tokens: 0 },
@@ -346,6 +394,11 @@ export class DefaultContextAssembler implements ContextAssembler {
         itemCount: selected.length,
         droppedItemCount: dropped.length,
         sources: sources as Record<ContextSource, { count: number; tokens: number }>,
+        workingMemory: workingMemoryDiagnostics(
+          request.workingMemory,
+          { agentId: request.agentId, runId: request.runId },
+          workingMemorySelection,
+        ),
       },
     };
   }

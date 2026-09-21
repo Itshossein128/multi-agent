@@ -28,9 +28,47 @@ export function redact(value: unknown, depth = 0): unknown {
   if (!value || typeof value !== "object") return value;
   const output: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    output[key] = isSensitiveKey(key) ? "[redacted]" : redact(item, depth + 1);
+    output[key] = isSensitiveKey(key)
+      ? "[redacted]"
+      : isWorkingMemoryKey(key)
+        ? redactWorkingMemory(item, depth + 1)
+        : redact(item, depth + 1);
   }
   return output;
+}
+
+const WORKING_MEMORY_EVENT_LIMIT = 50;
+
+/**
+ * Run-scoped working memory is durable run knowledge, not observability data:
+ * event frames keep entry identity and lifecycle metadata and never their
+ * contents. Agent-private entries stay private even to run event readers.
+ */
+function isWorkingMemoryKey(key: string): boolean {
+  return /^working[_-]?memory$/i.test(key);
+}
+
+function redactWorkingMemory(value: unknown, depth: number): unknown {
+  if (Array.isArray(value)) return value.slice(0, WORKING_MEMORY_EVENT_LIMIT).map((item) => redactWorkingMemory(item, depth));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([id, entry]) => [id, summarizeWorkingMemoryEntry(id, entry, depth)]),
+  );
+}
+
+function summarizeWorkingMemoryEntry(id: string, entry: unknown, depth: number): unknown {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return { id, value: redact(entry, depth) };
+  const record = entry as Record<string, unknown>;
+  return {
+    id: typeof record.id === "string" ? record.id : id,
+    runId: record.runId,
+    kind: record.kind,
+    scope: record.scope,
+    status: record.status,
+    agentId: record.agentId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
 }
 
 function isSensitiveKey(key: string): boolean {
