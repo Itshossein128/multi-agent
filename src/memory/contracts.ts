@@ -40,13 +40,64 @@ export interface MemoryService {
   list(query: MemoryListQuery, access: MemoryAccessContext): Promise<Memory[]>;
 }
 export interface MemoryRetriever { retrieve(query: MemoryRetrievalQuery, access: MemoryAccessContext): Promise<MemoryRetrievalResult> }
-export interface MemoryCandidate extends RememberMemoryInput { explicit?: boolean }
+export interface MemoryCandidate extends RememberMemoryInput { explicit?: boolean; id?: string }
 export interface MemoryExtractionInput { input: unknown; output: unknown; agentId: string; runId: string; nodeId: string; workflowId?: string; namespace: MemoryNamespace }
 export interface MemoryExtractor { extract(input: MemoryExtractionInput): Promise<MemoryCandidate[]> }
 export interface MemoryWriteDecision { remember: boolean; importance?: number; reason: string }
 export interface MemoryWritePolicy { shouldRemember(candidate: MemoryCandidate): Promise<MemoryWriteDecision> }
 export interface MemoryContextFormatter { format(result: MemoryRetrievalResult, maxTokens: number): string }
-export interface MemoryConsolidator { consolidate(access: MemoryAccessContext, namespace: MemoryNamespace): Promise<{ merged: number }> }
+export type ConsolidationDecisionType = "keep_both" | "ignore_new" | "merge" | "supersede";
+export interface ConsolidationDecision {
+  type: ConsolidationDecisionType;
+  canonicalMemoryId?: string;
+  relatedMemoryIds: string[];
+  reason: string;
+  confidence?: number;
+  mergedMemory?: MemoryCandidate;
+}
+export interface ConsolidationConfig {
+  exactDuplicateThreshold?: number;
+  semanticCandidateThreshold?: number;
+  autoMergeThreshold?: number;
+  reviewThreshold?: number;
+  candidateSearchLimit?: number;
+  embeddingSearchLimit?: number;
+}
+export interface MemoryConsolidationJudge {
+  decide(incoming: MemoryCandidate, existing: Memory[]): Promise<ConsolidationDecision>;
+}
+export interface ConsolidationDiagnostics {
+  candidatesEvaluated: number;
+  exactDuplicates: number;
+  semanticCandidates: number;
+  merged: number;
+  superseded: number;
+  ignored: number;
+  keptSeparate: number;
+  judgeFailures: number;
+  latencyMs: number;
+}
+export interface ConsolidationResult {
+  merged: number;
+  diagnostics: ConsolidationDiagnostics;
+}
+export interface MemoryConsolidator {
+  consolidate(access: MemoryAccessContext, namespace: MemoryNamespace): Promise<ConsolidationResult>;
+}
+export interface ConsolidationBackfillOptions {
+  dryRun?: boolean;
+  batchSize?: number;
+  limit?: number;
+}
+export interface ConsolidationBackfillResult {
+  processed: number;
+  merged: number;
+  superseded: number;
+  ignored: number;
+  keptBoth: number;
+  errors: number;
+  diagnostics: ConsolidationDiagnostics;
+}
 export interface MemoryBackgroundJobs { enqueue(task: () => Promise<void>): boolean; drain(): Promise<void> }
 export interface RuntimeMemoryDependencies {
   service: MemoryService; extractor: MemoryExtractor; writePolicy: MemoryWritePolicy;
@@ -56,3 +107,4 @@ export interface RuntimeMemoryDependencies {
 export class MemoryAccessDeniedError extends Error { constructor(message = "Memory access denied.") { super(message); this.name = "MemoryAccessDeniedError"; } }
 export class MemoryValidationError extends Error { constructor(message: string) { super(message); this.name = "MemoryValidationError"; } }
 export class MemoryConflictError extends Error { constructor(message = "Memory changed; reload and retry.") { super(message); this.name = "MemoryConflictError"; } }
+export class MemoryConsolidationError extends Error { constructor(message: string) { super(message); this.name = "MemoryConsolidationError"; } }

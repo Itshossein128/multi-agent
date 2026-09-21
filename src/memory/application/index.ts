@@ -5,3 +5,8 @@ export * from "./memoryExtractor";
 export * from "./memoryWritePolicy";
 export * from "./memoryBackgroundJobs";
 export * from "./memoryConsolidator";
+export * from "./realMemoryConsolidator";
+export * from "./memoryConsolidationEngine";
+export * from "./memoryConsolidationJudge";
+export * from "./memoryConsolidationConfig";
+export * from "./memoryConsolidationBackfill";
