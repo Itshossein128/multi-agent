@@ -182,15 +182,35 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveTask(task: StudioTask, principal?: StudioPrincipal) {
+    const assignedAgents = Array.isArray(task.assignedAgents)
+      ? task.assignedAgents
+      : task.assignedAgent
+        ? [task.assignedAgent]
+        : [];
+    const assignedAgent = task.assignedAgent ?? (assignedAgents[0] ?? null);
+    const updatedAt = task.updatedAt ?? task.createdAt ?? new Date().toISOString();
+    let record: StudioTask = {
+      ...task,
+      assignedAgent,
+      assignedAgents,
+      workflowId: task.workflowId ?? null,
+      startedAt: task.startedAt ?? null,
+      completedAt: task.completedAt ?? null,
+      parentTaskId: task.parentTaskId ?? null,
+      runId: task.runId ?? null,
+      lastError: task.lastError ?? null,
+      metadata: task.metadata ?? {},
+      updatedAt,
+    };
     if (principal) {
       const existing = this.tasks.get(task.id);
       if (existing && (!existing.tenantId || existing.tenantId !== principal.tenantId)) {
         throw new Error("Access denied to task");
       }
-      task = { ...task, tenantId: principal.tenantId, ownerId: task.ownerId ?? principal.userId };
+      record = { ...record, tenantId: principal.tenantId, ownerId: task.ownerId ?? principal.userId };
     }
-    this.tasks.set(task.id, structuredClone(task));
-    return structuredClone(task);
+    this.tasks.set(task.id, structuredClone(record));
+    return structuredClone(record);
   }
 
   async deleteTask(id: string, principal?: StudioPrincipal) {

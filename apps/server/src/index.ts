@@ -9,7 +9,7 @@ import { createDashboardRouter } from "./api/dashboard";
 import { createMemoryComposition } from "./memory/composition";
 import { memoryAccessResolverFromEnvironment } from "./memory/access";
 import { createStudioComposition } from "./studio/composition";
-import { AgentRuntime } from "../../../src/agents/runtime";
+import { AgentRuntime, workerCredentialResolverFromEnvironment } from "../../../src/agents/runtime";
 import { RunExecutor } from "./runtime/runExecutor";
 import { InMemoryRunStore, PostgresRunStore } from "./runtime/runStore";
 import { recoverInterruptedRuns } from "./runtime/recovery";
@@ -32,7 +32,7 @@ async function createDurableCheckpointer(connectionString: string): Promise<(Bas
 async function main() {
   const observability = createObservabilityRuntime();
   const app = new Hono();
-  const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3000" : "http://localhost:3000,http://localhost:3001")).split(",").map((origin) => origin.trim());
+  const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3060" : "http://localhost:3060,http://localhost:3061")).split(",").map((origin) => origin.trim());
   app.use("/*", async (c, next) => {
     const origin = c.req.header("Origin");
     if (origin && webOrigins.includes(origin)) c.header("Access-Control-Allow-Origin", origin);
@@ -64,7 +64,15 @@ async function main() {
 
   const executor = new RunExecutor(
     runStore,
-    new AgentRuntime(undefined, memory.runtime, observability.telemetry),
+    new AgentRuntime(
+      undefined,
+      memory.runtime,
+      observability.telemetry,
+      undefined,
+      undefined,
+      undefined,
+      workerCredentialResolverFromEnvironment(),
+    ),
     checkpointer,
     observability.telemetry,
   );
@@ -73,7 +81,7 @@ async function main() {
     console.log(`Run recovery: restored=${recovery.restored.length} failed=${recovery.failed.length}`);
   }
 
-  if (studio.store) app.route("/studio", createStudioRouter(studio.store));
+  if (studio.store) app.route("/studio", createStudioRouter(studio.store, undefined, executor));
   app.route("/dashboard", createDashboardRouter(runStore, studio.store, executor));
   app.route("/memories", createMemoriesRouter(memory.service, resolveMemoryAccess));
   app.route("/runs", createRunsRouter(executor, resolveMemoryAccess, studio.store).app);
@@ -83,7 +91,8 @@ async function main() {
   const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));
   const shutdown = () => {
     server.close(() => {
-      void Promise.all([memory.close(), studio.close(), observability.shutdown()]).then(
+      const persistenceFlush = "flush" in runStore ? runStore.flush() : Promise.resolve();
+      void Promise.all([memory.close(), studio.close(), persistenceFlush, observability.shutdown()]).then(
         () => process.exit(0),
         () => { console.error("Shutdown failed."); process.exit(1); },
       );
@@ -98,4 +107,4 @@ main().catch((error) => {
   process.exit(1);
 });
 
-export {};
+export { };

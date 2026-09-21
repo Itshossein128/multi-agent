@@ -1,6 +1,7 @@
 {
   "name": "multi-agent-platform",
   "version": "1.0.0",
+  "packageManager": "pnpm@10.17.0",
   "description": "A fully self-hosted multi-agent platform for developing software and applications using TypeScript, LangGraph, BookStack, GitHub, and LangFuse.",
   "main": "dist/index.js",
   "bin": {
@@ -14,7 +15,22 @@
     "dev:cli": "ts-node src/cli/index.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit",
     "dev:server": "pnpm --filter server dev",
-    "dev:all": "pnpm --parallel --filter web --filter server run dev"
+    "dev:all": "pnpm --parallel --filter web --filter server run dev",
+    "db:dev:up": "docker compose -f infrastructure/memory/compose.yml --profile memory up -d",
+    "db:dev:down": "docker compose -f infrastructure/memory/compose.yml --profile memory down",
+    "db:migrate": "node -r dotenv/config infrastructure/memory/migrate.cjs && node -r dotenv/config infrastructure/studio/migrate.cjs",
+    "worker:image:build": "docker build --pull --platform linux/amd64 --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY --file infrastructure/docker/worker.Dockerfile --tag multi-agent-cli-worker:local infrastructure/docker",
+    "worker:image:smoke": "ts-node --transpile-only infrastructure/docker/smoke-worker-image.ts",
+    "worker:e2e:codex-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-codex-auth-file.ts",
+    "worker:e2e:claude-auth-file": "ts-node --transpile-only infrastructure/docker/e2e-claude-auth-file.ts",
+    "worker:e2e:multi-agent-workflow": "ts-node --transpile-only infrastructure/docker/e2e-multi-agent-workflow.ts",
+    "worker:e2e:resilience-pg": "ts-node --transpile-only infrastructure/docker/e2e-resilience-pg.ts",
+    "verification:load": "ts-node --transpile-only infrastructure/docker/verification-load-smoke.ts --scenario load",
+    "verification:docker": "ts-node --transpile-only infrastructure/docker/verification-load-smoke.ts --scenario docker",
+    "verification:real-tools": "ts-node --transpile-only infrastructure/docker/verification-real-tools.ts",
+    "credentials:login-codex": "ts-node --transpile-only scripts/login-agent-codex.ts",
+    "credentials:status-codex": "ts-node --transpile-only scripts/login-agent-codex.ts -- --status",
+    "memory:backfill-embeddings": "node scripts/memory/backfill-embeddings.mjs"
   },
   "license": "MIT",
   "dependencies": {

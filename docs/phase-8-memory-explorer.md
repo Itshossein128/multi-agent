@@ -1,10 +1,10 @@
 # Memory Explorer
 
-The backend memory system (storage, retrieval, authorization, runtime integration) is documented in [Phase 6 Memory](phase-6-memory.md); its implementation plan explicitly deferred "a full Memory Explorer" and "browser identity integration." This closes that gap with a minimal, honest MVP rather than inventing a browser auth system.
+The backend memory system (storage, retrieval, authorization, runtime integration) is documented in [Memory backend](phase-6-memory.md). The Explorer is a deliberately small UI over those APIs; it does not create a second authorization or storage model.
 
 ## Access model
 
-`/org/memory` is a thin client over the existing authenticated `apps/server/src/api/memories.ts` routes (`apps/web/src/services/memoryService.ts`). There is still no browser identity system, so the page asks for a **server-provisioned bearer token** (one of the `MEMORY_PRINCIPALS` entries — see `apps/server/src/memory/access.ts`) and stores it in `localStorage` (`agent-studio.memory-token.v1`) purely as a per-browser convenience. The server remains the sole source of authorization: the token's `readableNamespaces`/`writableNamespaces` grants determine what the Explorer can see or delete, same as any other authenticated caller. A token typo or missing grant surfaces the server's own 401/403 error text — the UI does not attempt to interpret or widen access.
+`/org/memory` is a thin client over the existing authenticated `apps/server/src/api/memories.ts` routes (`apps/web/src/services/memoryService.ts`). The main Studio now has Auth.js and a server-side BFF, but the memory API still uses its explicit server-provisioned bearer-token contract. The page stores that token in `localStorage` (`agent-studio.memory-token.v1`) purely as a per-browser convenience. The server remains the sole source of authorization: the token's `readableNamespaces`/`writableNamespaces` grants determine what the Explorer can see or delete. A token typo or missing grant surfaces the server's own 401/403 error text.
 
 ## What it does
 
@@ -16,9 +16,9 @@ The backend memory system (storage, retrieval, authorization, runtime integratio
 ## What is still out of scope
 
 - **Editing** (`PATCH /memories/:id`) is not exposed — the roadmap's Phase 8 functional requirements list inspect/search/delete, not in-place editing, so this was left out rather than added speculatively.
-- **Automatic backend cleanup on browser-local entity deletion** (e.g., deleting an Agent in the Studio registry also purging its memory) remains deferred — it needs the same browser identity integration this token workaround intentionally does not attempt to solve, and forcing it through would mean prompting for a token on every entity deletion, which is worse UX than documenting the gap.
+- **Automatic backend cleanup on entity deletion** (e.g., deleting an Agent in the Studio registry also purging its memory) remains deferred — the memory API still uses a separate bearer-grant contract, so forcing cleanup through the browser registry would either bypass that boundary or prompt for a token on every entity deletion.
 - The Graph Editor's `Memory` workflow node type (`packages/types` `MemoryNodeConfig`) is a separate, pre-existing concept: an in-run LangGraph state channel scoped to one execution (`apps/server/src/compiler/workflowCompiler.ts`), not the long-term backend `MemoryService`. Long-term memory is agent-scoped and automatic via `AgentRecord.memory.longTerm` (`AgentMemoryPanel.tsx`) — wiring the graph node itself to long-term storage was not part of this pass and is a larger, separate design question (namespace resolution per node, access context per node) rather than an Explorer gap.
 
 ## Verification
 
-The underlying API is already covered by `tests/memoryApi.test.ts` and friends (102+ passing per `phase-6-memory-implementation-plan.md`). `memoryService.ts` is an untested thin fetch wrapper, consistent with `runService.ts`/`toolService.ts` in this codebase, which are exercised indirectly through the server tests they call.
+The underlying API is covered by `tests/memoryApi.test.ts` and the memory storage/retrieval/runtime suites. `memoryService.ts` is a thin fetch wrapper; authorization and persistence behavior are verified at the server boundary.

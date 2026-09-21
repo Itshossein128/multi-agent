@@ -14,8 +14,6 @@ type WorkspacePackage = {
   tools?: ToolRecord[];
 };
 
-const PISA_PACKAGE_URL = "/workspaces/pisa-organization-workflow.json";
-
 export function WorkflowSwitcher() {
   const router = useRouter();
   const queryClient = useQueryClient();

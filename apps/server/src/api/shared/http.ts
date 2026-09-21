@@ -1,6 +1,8 @@
 import type { Context, MiddlewareHandler } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { resolveRequestPrincipal, type PrincipalResolver, type RequestPrincipal } from "../../auth/principal";
+import { resolveRequestPrincipal } from "../../auth/principal";
+import type { RequestPrincipal } from "../../auth/principal";
+import type { PrincipalResolver } from "../../auth/authorization";
 
 export interface PrincipalVariables {
   principal: RequestPrincipal;

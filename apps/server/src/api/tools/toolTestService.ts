@@ -2,8 +2,9 @@ import { assertNoCredentials, migrateToolRecord, validateTool, type ToolRecord }
 import { ToolRuntime, UnsupportedToolCategoryError } from "../../../../../src/tools";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
-import { authorizeToolOrAgent } from "../../auth/principal";
+import { authorizeToolOrAgent } from "../../auth/authorization";
 import { ApiError } from "../shared/http";
+import { randomUUID } from "node:crypto";
 
 export interface ToolTestRequest {
   tool?: ToolRecord;
@@ -11,13 +12,9 @@ export interface ToolTestRequest {
   input: Record<string, unknown>;
 }
 
-export interface ToolExecutor {
-  execute(tool: ToolRecord, input: Record<string, unknown>): Promise<unknown>;
-}
-
 export class ToolTestService {
   constructor(
-    private readonly runtime: ToolExecutor = new ToolRuntime(),
+    private readonly runtime: Pick<ToolRuntime, "execute"> = new ToolRuntime(),
     private readonly studioStore?: Pick<StudioStore, "getTool">,
   ) {}
 
@@ -26,14 +23,16 @@ export class ToolTestService {
     let tool: ToolRecord | null = null;
     const targetId = request.toolId ?? request.tool?.id;
 
-    if (targetId && this.studioStore) {
-      const stored = await this.studioStore.getTool(targetId);
-      if (stored) {
-        if (!authorizeToolOrAgent(principal, stored, "execute")) throw new ApiError(404, "Access denied to tool.");
-        tool = stored;
+    if (this.studioStore) {
+      if (!targetId) throw new ApiError(404, "Tool not found");
+      const stored = await this.studioStore.getTool(targetId, principal);
+      if (!stored || !authorizeToolOrAgent(principal, stored, "execute")) {
+        throw new ApiError(404, "Access denied to tool.");
       }
-    }
-    if (request.tool) {
+      // The registry is authoritative. Never execute browser-supplied changes
+      // to category, configuration, impact, or enabled state for a saved id.
+      tool = stored;
+    } else if (request.tool) {
       assertNoCredentials(request.tool);
       tool = migrateToolRecord(request.tool);
     }
@@ -42,7 +41,7 @@ export class ToolTestService {
     if (errors.length) throw new ApiError(400, errors.join(" "));
 
     try {
-      return { output: await this.runtime.execute(tool, request.input) };
+      return { output: await this.runtime.execute(tool, request.input, undefined, { runId: `tool-test-${randomUUID()}`, credentialPrincipal: { tenantId: principal.tenantId, principalId: principal.userId } }) };
     } catch (error) {
       if (error instanceof UnsupportedToolCategoryError) throw new ApiError(400, error.message);
       throw error;

@@ -4,6 +4,8 @@ export interface ToolExecutionInput {
   tool: ToolRecord;
   input: Record<string, unknown>;
   signal?: AbortSignal;
+  runId?: string;
+  credentialPrincipal?: { tenantId: string; principalId: string };
 }
 
 /** Backend-agnostic tool execution contract. Category-specific engines implement this. */

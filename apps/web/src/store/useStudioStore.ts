@@ -7,7 +7,7 @@ import {
   TokenMetrics,
   StudioDashboardData,
   TimeFilter,
-} from "@/lib/runtimeTracker";
+} from "@/lib/dashboard/types";
 
 export type { TimeFilter, AgentInstance, QueuedTask, CompletedTask, FailedTask, TokenMetrics };
 

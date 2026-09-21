@@ -17,6 +17,7 @@ import {
 } from "../src/auth/internalPrincipal";
 import { runStudioMigrations } from "../src/studio/infrastructure/migrate";
 import type { StudioTask } from "../src/studio/contracts";
+import { createInertAgentRuntime } from "./fixtures/inertAgentRuntime";
 
 const TEST_SECRET = "dashboard-test-secret";
 
@@ -59,7 +60,7 @@ describe("Authoritative Dashboard Source of Truth", () => {
   beforeEach(() => {
     runStore = new InMemoryRunStore();
     studioStore = new InMemoryStudioStore();
-    executor = new RunExecutor(runStore);
+    executor = new RunExecutor(runStore, createInertAgentRuntime());
     app = createDashboardRouter(runStore, studioStore, executor, resolvePrincipal);
   });
 

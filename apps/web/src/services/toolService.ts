@@ -1,15 +1,8 @@
 import type { ToolRecord } from "@multi-agent/types";
-
-const API_URL = "/api/execution";
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Execution request failed (${response.status})`);
-  return response.json() as Promise<T>;
-}
+import { requestJson } from "./requestJson";
 
 export const toolService = {
   testTool(tool: ToolRecord, input: Record<string, unknown>) {
-    return request<{ output: Record<string, unknown> }>("/tools/test", { method: "POST", body: JSON.stringify({ tool, input }) });
+    return requestJson<{ output: Record<string, unknown> }>("/tools/test", { method: "POST", body: JSON.stringify({ toolId: tool.id, input }) });
   },
 };

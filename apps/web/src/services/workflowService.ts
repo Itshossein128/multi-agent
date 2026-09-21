@@ -1,6 +1,7 @@
 /** Studio persistence client. Entities live on the execution server; activeWorkflowId stays local. */
-import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, uid, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
+import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, deserializeWorkflowDefinition, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, serializeWorkflowDefinition, uid, type AgentDiagnostics, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
+import { requestJson } from "./requestJson";
 
 const API_URL = "/api/execution";
 const ACTIVE_WORKFLOW_KEY = "agent-studio.active-workflow.v1";
@@ -67,11 +68,8 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
   const storage = () => dependencies.storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
   let importPromise: Promise<void> | null = null;
 
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetchImpl(`${apiUrl}/studio${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Studio request failed (${response.status})`);
-    if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+  function request<T>(path: string, init?: RequestInit): Promise<T> {
+    return requestJson<T>(path, init, { apiUrl: `${apiUrl}/studio`, fetchImpl });
   }
 
   async function ensureImported(): Promise<void> {
@@ -115,9 +113,14 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       await ensureImported();
       return (await request<AgentRecord[]>("/agents")).map(publicAgent);
     },
+    async getAgentDiagnostics(agentId: string): Promise<AgentDiagnostics> {
+      await ensureImported();
+      return request<AgentDiagnostics>(`/agents/${encodeURIComponent(agentId)}/diagnostics`);
+    },
     async listWorkflows(): Promise<WorkflowDefinition[]> {
       await ensureImported();
-      return request("/workflows");
+      const workflows = await request<unknown[]>("/workflows");
+      return workflows.map(deserializeWorkflowDefinition);
     },
     async getWorkflow(workflowId?: string): Promise<WorkflowDefinition | null> {
       await ensureImported();
@@ -127,7 +130,7 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
         return workflows[0] ?? null;
       }
       try {
-        return await request(`/workflows/${encodeURIComponent(id)}`);
+        return deserializeWorkflowDefinition(await request(`/workflows/${encodeURIComponent(id)}`));
       } catch {
         return null;
       }
@@ -136,7 +139,7 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       await ensureImported();
       assertNoCredentials(definition);
       const stamped = { ...definition, updatedAt: nowIso() };
-      const saved = await request<WorkflowDefinition>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(stamped) });
+      const saved = deserializeWorkflowDefinition(await request<unknown>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(serializeWorkflowDefinition(stamped)) }));
       setActiveWorkflowId(saved.id);
       return saved;
     },
@@ -199,7 +202,7 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       await request("/workspace/import", {
         method: "POST",
         body: JSON.stringify({
-          workflows: workspace.workflows ?? [],
+          workflows: (workspace.workflows ?? []).map(serializeWorkflowDefinition),
           agents: workspace.agents ?? [],
           tools: workspace.tools ?? [],
         }),

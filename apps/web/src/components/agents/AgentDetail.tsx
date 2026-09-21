@@ -23,11 +23,11 @@ export function AgentDetail({ agentId }: { agentId: string }) {
   const latestRun = detail.runs.data?.[0];
   const latestEvents = useAgentRunEvents(agentId, latestRun?.id ?? null);
   const lastActivity = latestEvents.data?.filter((event) => event.type.startsWith("agent.") || event.type.startsWith("human_approval.")).at(-1);
-  const runtimeStatus = lastActivity?.type === "agent.failed" ? "failed"
-    : lastActivity?.type === "agent.completed" ? "idle"
-      : lastActivity?.type === "human_approval.requested" && latestRun?.status === "waiting_for_human" ? "waiting"
-        : lastActivity?.type === "agent.started" && latestRun?.status === "running" ? "running"
-          : "unknown";
+  const runtimeStatus = latestRun?.status === "failed" ? "failed"
+    : latestRun?.status === "waiting_for_human" ? "waiting"
+      : latestRun?.status === "running" || latestRun?.status === "queued" ? "running"
+        : lastActivity?.type === "agent.failed" ? "failed"
+          : "idle";
   const [draft, setDraft] = useState<AgentRecord | null>(null);
   const [editing, setEditing] = useState(false);
   const [section, setSection] = useState<typeof sections[number]>("Overview");
@@ -110,7 +110,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
             }).map(([label, value]) => <div key={label}><dt className="text-zinc-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
           </dl></Section>
           <Section title="System prompt"><pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words text-sm text-zinc-300">{agent.systemPrompt || "No system prompt configured."}</pre></Section>
-          <Section title="Backend health"><p className="text-sm">Unknown</p><p className="text-sm text-zinc-400">Runtime diagnostics and authentication status are not exposed by the current server. Availability has not been checked.</p></Section>
+          <Section title="Backend health">{detail.diagnostics.isPending && <p role="status" className="text-sm">Checking execution server…</p>}{detail.diagnostics.isError && <p role="alert" className="text-sm text-red-300">Diagnostics unavailable: {detail.diagnostics.error.message}</p>}{detail.diagnostics.data && <><p className="text-sm font-medium">{detail.diagnostics.data.status}</p><p className="text-sm text-zinc-400">{detail.diagnostics.data.message}</p><p className="mt-1 text-xs text-zinc-500">Checked {formatDateTime(detail.diagnostics.data.checkedAt)} by the execution server. Credentials and credential files are never returned.</p></>}</Section>
         </div>}
         {section === "Configuration" && <Section title="General configuration">
           {!editing && <p className="text-sm text-zinc-400">Choose Edit agent to change configuration.</p>}

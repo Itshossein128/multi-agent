@@ -4,10 +4,12 @@ import {
   TaskActionError,
   cancelTask,
   createTask,
+  deleteTask,
   getBoardData,
   moveTask,
   retryTask,
   setTaskPaused,
+  startTask,
   updateTask,
   UpdateTaskPatch,
 } from "@/lib/taskBoard";
@@ -27,18 +29,21 @@ export async function GET() {
 interface TaskActionBody {
   action?: string;
   taskId?: string;
-  // create
+  // create / update fields
   title?: string;
   description?: string;
   priority?: TaskPriority;
   assignedAgent?: string | null;
+  assignedAgents?: string[];
+  workflowId?: string | null;
+  parentTaskId?: string | null;
   dependencies?: string[];
   status?: TaskStatus;
   // move
   toStatus?: TaskStatus;
   // pause / resume
   paused?: boolean;
-  // update
+  // update patch
   patch?: UpdateTaskPatch;
 }
 
@@ -65,6 +70,9 @@ export async function POST(request: Request) {
           description: body.description,
           priority: body.priority,
           assignedAgent: body.assignedAgent ?? null,
+          assignedAgents: body.assignedAgents,
+          workflowId: body.workflowId ?? null,
+          parentTaskId: body.parentTaskId ?? null,
           dependencies: body.dependencies ?? [],
           status: body.status,
         }, principal);
@@ -83,16 +91,35 @@ export async function POST(request: Request) {
         if (!taskId) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
-        const task = await updateTask(taskId, body.patch ?? {}, principal);
+        const patch: UpdateTaskPatch = body.patch ?? {
+          title: body.title,
+          description: body.description,
+          priority: body.priority,
+          status: body.status,
+          assignedAgent: body.assignedAgent,
+          assignedAgents: body.assignedAgents,
+          workflowId: body.workflowId,
+          parentTaskId: body.parentTaskId,
+          dependencies: body.dependencies,
+        };
+        const task = await updateTask(taskId, patch, principal);
         return NextResponse.json({ success: true, task });
+      }
+
+      case "start": {
+        if (!taskId) {
+          return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+        }
+        const result = await startTask(taskId, principal);
+        return NextResponse.json(result);
       }
 
       case "retry": {
         if (!taskId) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
-        const task = await retryTask(taskId, principal);
-        return NextResponse.json({ success: true, task });
+        const result = await retryTask(taskId, principal);
+        return NextResponse.json(result);
       }
 
       case "pause":
@@ -100,8 +127,8 @@ export async function POST(request: Request) {
         if (!taskId) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
-        const task = await setTaskPaused(taskId, action === "pause", principal);
-        return NextResponse.json({ success: true, task });
+        const result = await setTaskPaused(taskId, action === "pause", principal);
+        return NextResponse.json(result);
       }
 
       case "cancel": {
@@ -109,7 +136,15 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "taskId is required" }, { status: 400 });
         }
         const result = await cancelTask(taskId, principal);
-        return NextResponse.json({ success: true, ...result });
+        return NextResponse.json(result);
+      }
+
+      case "delete": {
+        if (!taskId) {
+          return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+        }
+        const result = await deleteTask(taskId, principal);
+        return NextResponse.json(result);
       }
 
       default:
@@ -119,7 +154,7 @@ export async function POST(request: Request) {
     if (err instanceof TaskActionError) {
       return NextResponse.json(
         { error: err.message, blockedBy: err.blockedBy },
-        { status: err.statusCode }
+        { status: err.statusCode },
       );
     }
     const message = err instanceof Error ? err.message : "Unexpected server error";

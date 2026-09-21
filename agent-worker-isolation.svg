@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Worker Isolation Architecture</title>
+  <desc id="desc">Architecture diagram showing control plane, isolated worker plane, and evidence plane.</desc>
+  <rect width="1600" height="1000" fill="#0f172a"/>
+  <text x="80" y="75" fill="#f8fafc" font-family="Arial, sans-serif" font-size="34" font-weight="700">Agent Worker Isolation</text>
+  <text x="80" y="112" fill="#94a3b8" font-family="Arial, sans-serif" font-size="18">Recommended architecture for multi-agent execution with MCP, Graphify, Git and tests</text>
+
+  <rect x="70" y="155" width="1460" height="220" rx="18" fill="#172554" stroke="#3b82f6" stroke-width="2"/>
+  <text x="105" y="202" fill="#bfdbfe" font-family="Arial, sans-serif" font-size="22" font-weight="700">CONTROL PLANE</text>
+  <text x="105" y="232" fill="#93c5fd" font-family="Arial, sans-serif" font-size="16">Schedules work, owns policy, approvals and durable state</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="105" y="265" width="245" height="75" rx="10" fill="#1e3a8a"/>
+    <text x="128" y="297" fill="#eff6ff" font-size="17" font-weight="700">Web UI / API</text>
+    <text x="128" y="322" fill="#bfdbfe" font-size="14">runs, tasks, approvals</text>
+    <rect x="380" y="265" width="245" height="75" rx="10" fill="#1e3a8a"/>
+    <text x="403" y="297" fill="#eff6ff" font-size="17" font-weight="700">Workflow Engine</text>
+    <text x="403" y="322" fill="#bfdbfe" font-size="14">graph, state, retries</text>
+    <rect x="655" y="265" width="245" height="75" rx="10" fill="#1e3a8a"/>
+    <text x="678" y="297" fill="#eff6ff" font-size="17" font-weight="700">Policy &amp; Approval</text>
+    <text x="678" y="322" fill="#bfdbfe" font-size="14">capabilities, gates</text>
+    <rect x="930" y="265" width="245" height="75" rx="10" fill="#1e3a8a"/>
+    <text x="953" y="297" fill="#eff6ff" font-size="17" font-weight="700">PostgreSQL</text>
+    <text x="953" y="322" fill="#bfdbfe" font-size="14">runs, checkpoints, audit</text>
+    <rect x="1205" y="265" width="245" height="75" rx="10" fill="#1e3a8a"/>
+    <text x="1228" y="297" fill="#eff6ff" font-size="17" font-weight="700">Worker Manager</text>
+    <text x="1228" y="322" fill="#bfdbfe" font-size="14">start, heartbeat, cleanup</text>
+  </g>
+
+  <line x1="800" y1="375" x2="800" y2="445" stroke="#60a5fa" stroke-width="4"/>
+  <polygon points="800,465 788,441 812,441" fill="#60a5fa"/>
+  <text x="830" y="420" fill="#93c5fd" font-family="Arial, sans-serif" font-size="16">dispatch isolated task</text>
+
+  <rect x="70" y="465" width="1460" height="285" rx="18" fill="#3f1d0b" stroke="#f59e0b" stroke-width="2"/>
+  <text x="105" y="512" fill="#fde68a" font-family="Arial, sans-serif" font-size="22" font-weight="700">ISOLATED WORKER PLANE</text>
+  <text x="105" y="542" fill="#fcd34d" font-family="Arial, sans-serif" font-size="16">Ephemeral boundary: destroy after each run or task</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="105" y="585" width="245" height="110" rx="10" fill="#78350f"/>
+    <text x="128" y="622" fill="#fffbeb" font-size="17" font-weight="700">Sandbox</text>
+    <text x="128" y="648" fill="#fde68a" font-size="14">gVisor / Firecracker</text>
+    <text x="128" y="672" fill="#fde68a" font-size="14">rootless, seccomp, quotas</text>
+    <rect x="380" y="585" width="245" height="110" rx="10" fill="#78350f"/>
+    <text x="403" y="622" fill="#fffbeb" font-size="17" font-weight="700">Agent Runtime</text>
+    <text x="403" y="648" fill="#fde68a" font-size="14">CLI / API model executor</text>
+    <text x="403" y="672" fill="#fde68a" font-size="14">prompt + scoped capabilities</text>
+    <rect x="655" y="585" width="245" height="110" rx="10" fill="#78350f"/>
+    <text x="678" y="622" fill="#fffbeb" font-size="17" font-weight="700">Workspace</text>
+    <text x="678" y="648" fill="#fde68a" font-size="14">clean worktree from SHA</text>
+    <text x="678" y="672" fill="#fde68a" font-size="14">only task path mounted</text>
+    <rect x="930" y="585" width="245" height="110" rx="10" fill="#78350f"/>
+    <text x="953" y="622" fill="#fffbeb" font-size="17" font-weight="700">Tool Gateway</text>
+    <text x="953" y="648" fill="#fde68a" font-size="14">MCP allowlist + audit</text>
+    <text x="953" y="672" fill="#fde68a" font-size="14">Graphify query / health</text>
+    <rect x="1205" y="585" width="245" height="110" rx="10" fill="#78350f"/>
+    <text x="1228" y="622" fill="#fffbeb" font-size="17" font-weight="700">Tests &amp; Git</text>
+    <text x="1228" y="648" fill="#fde68a" font-size="14">build, test, diff, patch</text>
+    <text x="1228" y="672" fill="#fde68a" font-size="14">no host secrets or socket</text>
+  </g>
+
+  <line x1="800" y1="750" x2="800" y2="820" stroke="#fbbf24" stroke-width="4"/>
+  <polygon points="800,840 788,816 812,816" fill="#fbbf24"/>
+  <text x="830" y="795" fill="#fcd34d" font-family="Arial, sans-serif" font-size="16">collect verified outputs</text>
+
+  <rect x="70" y="840" width="1460" height="100" rx="18" fill="#052e2b" stroke="#14b8a6" stroke-width="2"/>
+  <text x="105" y="883" fill="#99f6e4" font-family="Arial, sans-serif" font-size="22" font-weight="700">EVIDENCE PLANE</text>
+  <text x="420" y="883" fill="#ccfbf1" font-family="Arial, sans-serif" font-size="17">immutable logs · artifacts · traces · exit codes · changed paths · hashes · completion evidence</text>
+  <text x="105" y="915" fill="#5eead4" font-family="Arial, sans-serif" font-size="14">Every event is correlated by runId, taskId, workerId, nodeId and agentId.</text>
+</svg>

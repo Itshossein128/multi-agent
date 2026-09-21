@@ -17,6 +17,8 @@ import {
 import { validateWorkflow, WorkflowIssue } from "@/lib/workflow/validation";
 import { workflowService } from "@/services/workflowService";
 import { assertNoCredentials, removeAgentNodes, removeToolNodes } from "@multi-agent/types";
+import { WorkflowHistory } from "./workflowHistory";
+import { cloneDefinition, resolveNodePosition } from "./workflowDefinition";
 
 /** Imperative helpers registered by the canvas (React Flow instance). */
 export interface FlowHelpers {
@@ -27,13 +29,6 @@ export interface FlowHelpers {
 
 type LoadState = "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
-
-const HISTORY_LIMIT = 50;
-const CONFIG_EDIT_COALESCE_MS = 900;
-
-function clone(definition: WorkflowDefinition): WorkflowDefinition {
-  return JSON.parse(JSON.stringify(definition)) as WorkflowDefinition;
-}
 
 interface WorkflowStoreState {
   definition: WorkflowDefinition;
@@ -48,9 +43,8 @@ interface WorkflowStoreState {
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
   issues: WorkflowIssue[];
-  undoStack: WorkflowDefinition[];
-  redoStack: WorkflowDefinition[];
-  lastEditKey: { key: string; at: number } | null;
+  canUndo: boolean;
+  canRedo: boolean;
   flowHelpers: FlowHelpers | null;
 
   // lifecycle
@@ -72,9 +66,13 @@ interface WorkflowStoreState {
   moveNodes: (positions: Map<string, WorkflowPosition>) => void;
   removeNodes: (nodeIds: string[]) => void;
   removeEdges: (edgeIds: string[]) => void;
+  removeSelection: (nodeIds: string[], edgeIds: string[]) => void;
   addEdge: (connection: { source: string; target: string; sourceHandle?: string | null }) => void;
   updateNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void;
-  updateEdge: (edgeId: string, patch: Partial<Omit<WorkflowEdge, "id">>) => void;
+  updateEdge: (
+    edgeId: string,
+    patch: Partial<Pick<WorkflowEdge, "kind" | "branchKey" | "label" | "metadata">>
+  ) => void;
   updateAgentRecord: (
     agentId: string,
     patch: Partial<Omit<AgentRecord, "id" | "createdAt">>
@@ -100,13 +98,17 @@ interface WorkflowStoreState {
 }
 
 export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
+  const history = new WorkflowHistory();
+  /** Mirror history availability into store state for reactive toolbar state. */
+  const syncHistoryFlags = () => set({ canUndo: history.canUndo, canRedo: history.canRedo });
+  let loadSequence = 0;
   /** Apply a definition mutation, recompute validation, prune selection. */
   const withDefinition = (
     mutator: (draft: WorkflowDefinition) => void,
     options?: { keepSelection?: boolean }
   ) => {
     set((state) => {
-      const draft = clone(state.definition);
+      const draft = cloneDefinition(state.definition);
       mutator(draft);
       try { assertNoCredentials(draft); } catch (error) {
         return { saveError: error instanceof Error ? error.message : "Credentials are not allowed in workflow data." };
@@ -126,29 +128,15 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
           : [],
       };
     });
-  };
-
-  const pushHistory = () => {
-    set((state) => ({
-      undoStack: [...state.undoStack.slice(-(HISTORY_LIMIT - 1)), clone(state.definition)],
-      redoStack: [],
-      lastEditKey: null,
-    }));
+  };  const pushHistory = () => {
+    history.push(get().definition);
+    syncHistoryFlags();
   };
 
   /** Push a history snapshot unless it belongs to the same rapid edit burst. */
   const pushHistoryCoalesced = (key: string) => {
-    const { lastEditKey } = get();
-    const now = Date.now();
-    if (lastEditKey && lastEditKey.key === key && now - lastEditKey.at < CONFIG_EDIT_COALESCE_MS) {
-      set({ lastEditKey: { key, at: now } });
-      return;
-    }
-    set({
-      lastEditKey: { key, at: now },
-      undoStack: [...get().undoStack.slice(-(HISTORY_LIMIT - 1)), clone(get().definition)],
-      redoStack: [],
-    });
+    history.pushCoalesced(get().definition, key);
+    syncHistoryFlags();
   };
 
   return {
@@ -164,12 +152,12 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     selectedNodeIds: [],
     selectedEdgeIds: [],
     issues: [],
-    undoStack: [],
-    redoStack: [],
-    lastEditKey: null,
+    canUndo: false,
+    canRedo: false,
     flowHelpers: null,
 
     loadWorkflow: async (workflowId) => {
+      const sequence = ++loadSequence;
       set({ loadState: "loading", loadError: null });
       try {
         const [storedDefinition, agents, tools] = await Promise.all([
@@ -177,23 +165,26 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
           workflowService.listAgents(),
           workflowService.listTools(),
         ]);
+        if (sequence !== loadSequence) return;
         if (workflowId && !storedDefinition) throw new Error("Workflow not found.");
         const definition = storedDefinition ?? createEmptyDefinition();
+        history.clear();
         set({
           definition,
           agents,
           tools,
           loadState: "ready",
+          canUndo: false,
+          canRedo: false,
           isDirty: false,
           saveState: "idle",
           saveError: null,
           issues: validateWorkflow(definition, agents, tools),
           selectedNodeIds: [],
           selectedEdgeIds: [],
-          undoStack: [],
-          redoStack: [],
         });
       } catch (err) {
+        if (sequence !== loadSequence) return;
         set({
           loadState: "error",
           loadError: err instanceof Error ? err.message : "Failed to load workflow",
@@ -225,10 +216,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
 
     addNode: (type, position, options) => {
       pushHistory();
-      const pos =
-        position ??
-        get().flowHelpers?.getCanvasCenter() ??
-        { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
+      const pos = resolveNodePosition(position, get().flowHelpers);
       const node = createNode(type, pos, options);
       withDefinition((draft) => {
         draft.nodes.push(node);
@@ -246,10 +234,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         set({ saveError: error instanceof Error ? error.message : "Failed to create agent" });
         return;
       }
-      const pos =
-        position ??
-        get().flowHelpers?.getCanvasCenter() ??
-        { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
+      const pos = resolveNodePosition(position, get().flowHelpers);
       const node = createNode("agent", pos, { agentId: agent.id });
       set((state) => ({ agents: [...state.agents, agent] }));
       withDefinition((draft) => {
@@ -260,10 +245,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
 
     addNodeForAgent: (agentId, position) => {
       pushHistory();
-      const pos =
-        position ??
-        get().flowHelpers?.getCanvasCenter() ??
-        { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
+      const pos = resolveNodePosition(position, get().flowHelpers);
       const node = createNode("agent", pos, { agentId });
       withDefinition((draft) => {
         draft.nodes.push(node);
@@ -281,10 +263,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         set({ saveError: error instanceof Error ? error.message : "Failed to create tool" });
         return;
       }
-      const pos =
-        position ??
-        get().flowHelpers?.getCanvasCenter() ??
-        { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
+      const pos = resolveNodePosition(position, get().flowHelpers);
       const node = createNode("tool", pos, { toolId: tool.id });
       set((state) => ({ tools: [...state.tools, tool] }));
       withDefinition((draft) => {
@@ -295,10 +274,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
 
     addNodeForTool: (toolId, position) => {
       pushHistory();
-      const pos =
-        position ??
-        get().flowHelpers?.getCanvasCenter() ??
-        { x: 160 + Math.random() * 120, y: 140 + Math.random() * 80 };
+      const pos = resolveNodePosition(position, get().flowHelpers);
       const node = createNode("tool", pos, { toolId });
       withDefinition((draft) => {
         draft.nodes.push(node);
@@ -343,18 +319,46 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
       });
     },
 
+    removeSelection: (nodeIds, edgeIds) => {
+      const nodeIdSet = new Set(nodeIds);
+      const edgeIdSet = new Set(edgeIds);
+      if (nodeIdSet.size === 0 && edgeIdSet.size === 0) return;
+      pushHistory();
+      withDefinition((draft) => {
+        draft.nodes = draft.nodes.filter((node) => !nodeIdSet.has(node.id));
+        draft.edges = draft.edges.filter(
+          (edge) =>
+            !edgeIdSet.has(edge.id) &&
+            !nodeIdSet.has(edge.source) &&
+            !nodeIdSet.has(edge.target)
+        );
+      });
+    },
+
     addEdge: (connection) => {
       const { definition } = get();
       if (!connection.source || !connection.target) return;
+      if (connection.source === connection.target) return;
       const sourceNode = definition.nodes.find((n) => n.id === connection.source);
+      const targetNode = definition.nodes.find((n) => n.id === connection.target);
+      if (!sourceNode || !targetNode) return;
       const isCondition = sourceNode?.type === "condition";
       const branchKey = isCondition ? connection.sourceHandle ?? "" : "";
+      const kind = isCondition ? "conditional" : "normal";
+      const duplicate = definition.edges.some(
+        (edge) =>
+          edge.source === connection.source &&
+          edge.target === connection.target &&
+          edge.kind === kind &&
+          edge.branchKey === branchKey
+      );
+      if (duplicate) return;
       pushHistory();
       withDefinition((draft) => {
         const input: CreateEdgeInput = {
           source: connection.source,
           target: connection.target,
-          kind: isCondition ? "conditional" : "normal",
+          kind,
           branchKey,
         };
         draft.edges.push(createEdge(input));
@@ -375,12 +379,26 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     },
 
     updateEdge: (edgeId, patch) => {
+      const current = get().definition.edges.find((edge) => edge.id === edgeId);
+      if (!current) return;
+      const nextKind = patch.kind ?? current.kind;
+      if (nextKind !== "normal" && nextKind !== "conditional") return;
+      if (patch.branchKey !== undefined && typeof patch.branchKey !== "string") return;
+      if (patch.label !== undefined && typeof patch.label !== "string") return;
+      const next = {
+        ...current,
+        kind: nextKind,
+        branchKey: nextKind === "normal" ? "" : patch.branchKey ?? current.branchKey,
+        label: patch.label ?? current.label,
+        ...(patch.metadata !== undefined ? { metadata: patch.metadata } : {}),
+      };
+      if (JSON.stringify(current) === JSON.stringify(next)) return;
       pushHistoryCoalesced(`edge:${edgeId}`);
       withDefinition(
         (draft) => {
           const edge = draft.edges.find((e) => e.id === edgeId);
           if (edge) {
-            Object.assign(edge, patch);
+            Object.assign(edge, next);
           }
         },
         { keepSelection: true }
@@ -421,7 +439,8 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
       });
       set((state) => {
         const agents = state.agents.filter((a) => a.id !== agentId);
-        return { agents, issues: validateWorkflow(state.definition, agents, state.tools), undoStack: [], redoStack: [], lastEditKey: null };
+        history.clear();
+        return { agents, issues: validateWorkflow(state.definition, agents, state.tools), canUndo: false, canRedo: false };
       });
     },
 
@@ -459,7 +478,8 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
       });
       set((state) => {
         const tools = state.tools.filter((t) => t.id !== toolId);
-        return { tools, issues: validateWorkflow(state.definition, state.agents, tools), undoStack: [], redoStack: [], lastEditKey: null };
+        history.clear();
+        return { tools, issues: validateWorkflow(state.definition, state.agents, tools), canUndo: false, canRedo: false };
       });
     },
 
@@ -468,34 +488,28 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     },
 
     undo: () => {
-      const { undoStack, definition, redoStack } = get();
-      if (undoStack.length === 0) return;
-      const previous = undoStack[undoStack.length - 1];
+      const previous = history.undo(get().definition);
+      if (!previous) return;
+      syncHistoryFlags();
       set((state) => ({
         definition: previous,
-        undoStack: undoStack.slice(0, -1),
-        redoStack: [...redoStack.slice(-(HISTORY_LIMIT - 1)), definition],
         isDirty: true,
         issues: validateWorkflow(previous, state.agents, state.tools),
         selectedNodeIds: [],
         selectedEdgeIds: [],
-        lastEditKey: null,
       }));
     },
 
     redo: () => {
-      const { redoStack, definition, undoStack } = get();
-      if (redoStack.length === 0) return;
-      const next = redoStack[redoStack.length - 1];
+      const next = history.redo(get().definition);
+      if (!next) return;
+      syncHistoryFlags();
       set((state) => ({
         definition: next,
-        redoStack: redoStack.slice(0, -1),
-        undoStack: [...undoStack.slice(-(HISTORY_LIMIT - 1)), definition],
         isDirty: true,
         issues: validateWorkflow(next, state.agents, state.tools),
         selectedNodeIds: [],
         selectedEdgeIds: [],
-        lastEditKey: null,
       }));
     },
 

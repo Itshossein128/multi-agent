@@ -1,6 +1,6 @@
-# Phase 9 — Persistence, Runs, History & Recovery
+# Persistence, Runs, History & Recovery
 
-Studio entities, runs, approvals, and tasks are durable in the isolated Studio PostgreSQL database (same instance as long-term memory). Redis is not used; SSE listeners, abort controllers, and approval timers remain in-process.
+Studio entities, runs, approvals, and tasks are durable when the isolated Studio PostgreSQL store is configured (the same instance can host long-term memory). Redis is not used; SSE listeners, abort controllers, and active approval timers remain in-process.
 
 ## Operator setup
 

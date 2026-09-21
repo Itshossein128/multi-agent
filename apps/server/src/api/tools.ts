@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { ToolRuntime } from "../../../../src/tools";
 import type { StudioStore } from "../../../../src/studio/contracts";
-import { resolveRequestPrincipal, type PrincipalResolver } from "../auth/principal";
+import { resolveRequestPrincipal } from "../auth/principal";
+import type { PrincipalResolver } from "../auth/authorization";
 import { requirePrincipal, respondWithApiError, type PrincipalVariables } from "./shared/http";
 import { ToolTestService, type ToolTestRequest } from "./tools/toolTestService";
 

@@ -18,7 +18,6 @@ export class LLMCodeGenerator implements CodeGenerator {
     const options: GenerateCodeOptions =
       typeof specOrOptions === "string" ? { spec: specOrOptions } : specOrOptions;
 
-    const llm = getLLM();
     let systemPrompt =
       "You are an expert software developer agent. Write the main code or an implementation plan for the requested feature based on the spec. Provide your response clearly formatted.";
     let userPrompt = `Please implement this feature based on the following spec:\n\n${options.spec}`;
@@ -42,6 +41,7 @@ export class LLMCodeGenerator implements CodeGenerator {
     }
 
     try {
+      const llm = getLLM();
       const response = await llm.invoke([
         new SystemMessage(systemPrompt),
         new HumanMessage(userPrompt),

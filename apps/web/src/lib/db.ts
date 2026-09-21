@@ -1,3 +1,4 @@
+import "server-only";
 import { Pool, PoolConfig } from "pg";
 
 let pool: Pool | undefined;
