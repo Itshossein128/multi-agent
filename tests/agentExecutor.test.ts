@@ -244,6 +244,52 @@ describe("CLI and local executors", () => {
     await expect(async () => { for await (const _event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://127.0.0.1:11434"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/not allowed/i);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  test("fails fast without spawning when AbortSignal is pre-aborted", async () => {
+    const spawn = jest.fn();
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    const runtimePolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(async () => {
+      for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({
+        agent, input: "hi", runId: "r", nodeId: "n", signal: controller.signal,
+      })) { /* drain */ }
+    }).rejects.toThrow();
+
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  test("kills spawned child process when AbortSignal is aborted during execution", async () => {
+    const controller = new AbortController();
+    const processHandle = {
+      stdin: { write: jest.fn(), end: jest.fn() },
+      stdout: (async function* () {
+        controller.abort();
+        yield "partial";
+      })(),
+      stderr: (async function* () { })(),
+      once: (event: string, listener: (value: Error | number | null) => void) => {
+        if (event === "close") queueMicrotask(() => listener(null));
+      },
+      kill: jest.fn(),
+    };
+    const spawn = jest.fn(() => processHandle);
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    const runtimePolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+
+    await expect(async () => {
+      for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({
+        agent, input: "hi", runId: "r", nodeId: "n", signal: controller.signal,
+      })) { /* drain */ }
+    }).rejects.toThrow();
+
+    expect(spawn).toHaveBeenCalled();
+    expect(processHandle.kill).toHaveBeenCalledWith("SIGTERM");
+  });
 });
 
 describe("ApiAgentExecutor", () => {

@@ -109,8 +109,13 @@ export class CliAgentExecutor implements AgentExecutor {
   }
 
   private async run(executable: string, args: string[], cwd: string, input: string, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted();
     const child = this.spawn(executable, args, { cwd, shell: false, stdio: ["pipe", "pipe", "pipe"] });
     const abort = () => child.kill("SIGTERM");
+    if (signal?.aborted) {
+      abort();
+      signal.throwIfAborted();
+    }
     signal?.addEventListener("abort", abort, { once: true });
     try {
       child.stdin.write(input);
