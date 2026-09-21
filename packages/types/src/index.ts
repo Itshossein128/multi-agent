@@ -96,6 +96,16 @@ export interface AgentRecord {
   isSystem?: boolean;
 }
 
+export type AgentDiagnosticStatus = "ready" | "unavailable" | "not_authenticated" | "misconfigured" | "unsupported" | "unknown";
+
+/** Safe server-side capability status; never contains credentials or credential paths. */
+export interface AgentDiagnostics {
+  status: AgentDiagnosticStatus;
+  checkedAt: string;
+  backend: { type: AgentBackendType; provider: string; model?: string };
+  message: string;
+}
+
 /** Legacy persisted agent shape (pre-backend abstraction). */
 export interface LegacyAgentRecord {
   id: string;
@@ -222,6 +232,10 @@ export interface ConditionBranch {
 
 export interface ConditionNodeConfig {
   branches: ConditionBranch[];
+  /** Optional source for machine gates; the default preserves input-based routing. */
+  valueSource?: "input" | "last_value";
+  /** Optional field to read from the selected value, e.g. `status`. */
+  valueField?: string;
 }
 
 export interface InputNodeConfig {
@@ -232,6 +246,8 @@ export interface InputNodeConfig {
 export interface OutputNodeConfig {
   outputKey: string;
   description: string;
+  /** Select the immediately preceding active path instead of joining all predecessors. */
+  inputMode?: "last_value" | "join";
 }
 
 export type WorkflowNodeConfig =
@@ -243,12 +259,23 @@ export type WorkflowNodeConfig =
   | InputNodeConfig
   | OutputNodeConfig;
 
+/** Optional node-scoped retry request. The server clamps every value to its own limits. */
+export interface NodeRetryPolicy {
+  /** Total executions including the initial attempt. */
+  maxAttempts: number;
+  /** Delay before the second attempt. */
+  backoffMs: number;
+  /** Multiplier applied after each failed attempt. */
+  backoffMultiplier?: number;
+}
+
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
   /** Layout only — never part of node identity or configuration. */
   position: WorkflowPosition;
   config: WorkflowNodeConfig;
+  retryPolicy?: NodeRetryPolicy;
 }
 
 export interface WorkflowEdge {
@@ -259,6 +286,8 @@ export interface WorkflowEdge {
   label: string;
   /** Branch key for conditional edges leaving a condition/router node. */
   branchKey: string;
+  /** Structured, non-secret edge data used by routers and future compiler passes. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface WorkflowDefinition {
@@ -442,6 +471,7 @@ export interface CreateEdgeInput {
   kind?: WorkflowEdgeKind;
   label?: string;
   branchKey?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export function createEdge(input: CreateEdgeInput): WorkflowEdge {
@@ -452,7 +482,88 @@ export function createEdge(input: CreateEdgeInput): WorkflowEdge {
     kind: input.kind ?? "normal",
     label: input.label ?? "",
     branchKey: input.branchKey ?? "",
+    ...(input.metadata ? { metadata: structuredCloneSafe(input.metadata) } : {}),
   };
+}
+
+/**
+ * Return the workflow domain payload without React Flow-only fields.
+ * Positions remain as layout metadata on domain nodes; execution is defined
+ * exclusively by node types/configuration and edge endpoints.
+ */
+export function serializeWorkflowDefinition(definition: WorkflowDefinition): WorkflowDefinition {
+  if (!definition || typeof definition !== "object") throw new Error("Workflow definition must be an object.");
+  if (!Array.isArray(definition.nodes) || !Array.isArray(definition.edges)) {
+    throw new Error("Workflow definition must contain nodes and edges arrays.");
+  }
+  return structuredCloneSafe({
+    id: definition.id,
+    name: definition.name,
+    nodes: definition.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      position: { x: node.position.x, y: node.position.y },
+      config: node.config,
+      ...(node.retryPolicy ? { retryPolicy: node.retryPolicy } : {}),
+    })),
+    edges: definition.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      kind: edge.kind,
+      label: edge.label,
+      branchKey: edge.branchKey,
+      ...(edge.metadata ? { metadata: edge.metadata } : {}),
+    })),
+    updatedAt: definition.updatedAt,
+    ...(definition.ownerId ? { ownerId: definition.ownerId } : {}),
+    ...(definition.tenantId ? { tenantId: definition.tenantId } : {}),
+  });
+}
+
+/**
+ * Normalize a persisted workflow back into the domain model. The legacy edge
+ * `type` field is accepted during migration, but never emitted by serialization.
+ */
+export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Workflow definition must be an object.");
+  }
+  const value = raw as Record<string, unknown>;
+  if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) {
+    throw new Error("Workflow definition must contain nodes and edges arrays.");
+  }
+  const definition = {
+    ...value,
+    nodes: value.nodes.map((rawNode) => {
+      const node = (rawNode ?? {}) as Record<string, unknown>;
+      const position = (node.position ?? {}) as Record<string, unknown>;
+      return {
+        ...node,
+        id: typeof node.id === "string" ? node.id : "",
+        type: node.type,
+        position: {
+          x: typeof position.x === "number" && Number.isFinite(position.x) ? position.x : 0,
+          y: typeof position.y === "number" && Number.isFinite(position.y) ? position.y : 0,
+        },
+        config: node.config && typeof node.config === "object" && !Array.isArray(node.config) ? node.config : {},
+      };
+    }),
+    edges: value.edges.map((rawEdge) => {
+      const edge = (rawEdge ?? {}) as Record<string, unknown>;
+      return {
+        ...edge,
+        kind: edge.kind ?? edge.type ?? "normal",
+        label: typeof edge.label === "string" ? edge.label : "",
+        branchKey: typeof edge.branchKey === "string" ? edge.branchKey : "",
+      };
+    }),
+  } as WorkflowDefinition;
+  return serializeWorkflowDefinition(definition);
+}
+
+function structuredCloneSafe<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export function createEmptyDefinition(name?: string): WorkflowDefinition {
@@ -461,6 +572,21 @@ export function createEmptyDefinition(name?: string): WorkflowDefinition {
     name: name ?? "Untitled Workflow",
     nodes: [],
     edges: [],
+    updatedAt: nowIso(),
+  };
+}
+
+export function createSingleAgentWorkflow(agent: AgentRecord, name = "Single Agent Task Workflow"): WorkflowDefinition {
+  const inputNode = createNode("input", { x: 100, y: 100 });
+  const agentNode = createNode("agent", { x: 300, y: 100 }, { agentId: agent.id });
+  const outputNode = createNode("output", { x: 500, y: 100 });
+  const edge1 = createEdge({ source: inputNode.id, target: agentNode.id });
+  const edge2 = createEdge({ source: agentNode.id, target: outputNode.id });
+  return {
+    id: uid("wf-task"),
+    name,
+    nodes: [inputNode, agentNode, outputNode],
+    edges: [edge1, edge2],
     updatedAt: nowIso(),
   };
 }
@@ -524,21 +650,34 @@ export type RunStatus =
   | "waiting_for_human";
 
 export type RunEventType =
+  | "run.created"
   | "run.started"
+  | "run.paused"
+  | "run.resumed"
   | "run.completed"
   | "run.failed"
+  | "run.cancelled"
+  | "branch.cancelled"
+  | "branch.skipped"
   | "node.started"
   | "node.completed"
   | "node.failed"
+  | "node.retrying"
   | "edge.traversed"
   | "agent.started"
   | "agent.completed"
   | "agent.failed"
+  | "llm.started"
+  | "llm.completed"
+  | "llm.failed"
   | "tool.started"
   | "tool.completed"
   | "tool.failed"
   | "human_approval.requested"
+  | "human_approval.approved"
+  | "human_approval.rejected"
   | "human_approval.resolved"
+  | "state.updated"
   | "memory.read"
   | "memory.write"
   | "log";
@@ -587,4 +726,103 @@ export interface RunEvent {
   parentEventId?: string;
   sequence: number;
   payload: Record<string, unknown>;
+}
+
+export type Phase2TaskStatus =
+  | "backlog"
+  | "ready"
+  | "queued"
+  | "running"
+  | "blocked"
+  | "waiting_for_human"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type LegacyTaskStatus =
+  | "todo"
+  | "planning"
+  | "in_progress"
+  | "waiting_tool"
+  | "review"
+  | "done";
+
+export type TaskStatus = Phase2TaskStatus | LegacyTaskStatus;
+
+export type TaskPriority = "high" | "medium" | "low";
+
+export interface TaskRecord {
+  id: string;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  status: TaskStatus;
+  assignedAgent: string | null;
+  assignedAgents: string[];
+  workflowId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  parentTaskId?: string | null;
+  dependencies: string[];
+  runId?: string | null;
+  output: string | null;
+  lastError?: string | null;
+  retryCount: number;
+  paused: boolean;
+  metadata: Record<string, unknown>;
+  ownerId?: string;
+  tenantId?: string;
+}
+
+export const LEGACY_TO_CANONICAL_STATUS: Record<LegacyTaskStatus, Phase2TaskStatus> = {
+  todo: "backlog",
+  planning: "ready",
+  in_progress: "running",
+  waiting_tool: "blocked",
+  review: "waiting_for_human",
+  done: "completed",
+};
+
+export function toCanonicalStatus(status: TaskStatus): Phase2TaskStatus {
+  if (status in LEGACY_TO_CANONICAL_STATUS) {
+    return LEGACY_TO_CANONICAL_STATUS[status as LegacyTaskStatus];
+  }
+  return status as Phase2TaskStatus;
+}
+
+export const CANONICAL_STATUS_TRANSITIONS: Record<Phase2TaskStatus, Phase2TaskStatus[]> = {
+  backlog: ["ready", "queued", "running", "cancelled"],
+  ready: ["backlog", "queued", "running", "cancelled"],
+  queued: ["running", "ready", "cancelled"],
+  running: ["blocked", "waiting_for_human", "completed", "failed", "cancelled", "ready"],
+  blocked: ["running", "ready", "failed", "cancelled"],
+  waiting_for_human: ["running", "completed", "failed", "cancelled"],
+  completed: ["ready", "backlog"],
+  failed: ["ready", "queued", "running", "backlog"],
+  cancelled: ["ready", "backlog"],
+};
+
+export const DEP_GATED_CANONICAL_STATUSES: Phase2TaskStatus[] = [
+  "queued",
+  "running",
+  "waiting_for_human",
+  "completed",
+];
+
+export function canTransitionStatus(from: TaskStatus, to: TaskStatus): boolean {
+  if (from === to) return false;
+  const canonicalFrom = toCanonicalStatus(from);
+  const canonicalTo = toCanonicalStatus(to);
+  if (canonicalFrom === canonicalTo) return true;
+  return (CANONICAL_STATUS_TRANSITIONS[canonicalFrom] ?? []).includes(canonicalTo);
+}
+
+export function isStatusDependencyGated(status: TaskStatus): boolean {
+  return DEP_GATED_CANONICAL_STATUSES.includes(toCanonicalStatus(status));
+}
+
+export function isCompletedStatus(status: TaskStatus): boolean {
+  return toCanonicalStatus(status) === "completed";
 }

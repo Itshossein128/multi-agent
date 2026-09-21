@@ -713,7 +713,7 @@ describe("Operational End-to-End Acceptance Test Suite", () => {
         // Timeline verification
         const events = runStore.events(runId);
         const lastEvent = events[events.length - 1];
-        expect(lastEvent.type).toBe("run.failed");
+        expect(lastEvent.type).toBe("run.cancelled");
         expect(
           String((lastEvent.payload as any)?.error || (lastEvent.payload as any)?.cancelled)
         ).toMatch(/aborted|cancelled|true/i);
@@ -899,6 +899,10 @@ describe("Operational End-to-End Acceptance Test Suite", () => {
         expect(bobDashData.queue).toHaveLength(0);
         expect(bobDashData.completedTasks).toHaveLength(0);
         expect(bobDashData.failedTasks).toHaveLength(0);
+
+        // RunExecutor executes in the background. Keep the Jest environment
+        // alive until the graph has emitted its terminal lifecycle event.
+        await waitFor(() => runStore.get(runId)?.run.status === "completed");
       },
       15000
     );

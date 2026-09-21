@@ -1,6 +1,6 @@
 import { InMemoryStudioStore } from "../src/studio/infrastructure/in-memory-studio-store";
 import { createEmptyDefinition, createAgentRecord, createToolRecord, nowIso } from "@multi-agent/types";
-import { InMemoryRunStore } from "../apps/server/src/runtime/runStore";
+import { InMemoryRunStore, PostgresRunStore } from "../apps/server/src/runtime/runStore";
 import { recoverInterruptedRuns } from "../apps/server/src/runtime/recovery";
 import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { MemorySaver } from "@langchain/langgraph";
@@ -78,4 +78,44 @@ test("recovery restores waiting runs and fails interrupted active runs", () => {
   expect(result.failed).toContain("run-active");
   expect(store.get("run-active")?.run.status).toBe("failed");
   expect(store.get("wait-1")?.run.status).toBe("waiting_for_human");
+});
+
+test("recovery restores stepBudget from paused context", () => {
+  const store = new InMemoryRunStore();
+  const stamp = nowIso();
+  const workflow = createEmptyDefinition("Paused");
+  const agents = [createAgentRecord({ name: "A" })];
+  const stepBudget = { count: 7 };
+  store.create({ id: "wait-budget", workflowId: workflow.id, status: "waiting_for_human", startedAt: stamp, metadata: {} }, undefined, { workflow, agents });
+  store.setPausedContext?.("wait-budget", { workflow, agents, stepBudget });
+  store.addApproval("wait-budget", {
+    id: "appr-budget",
+    runId: "wait-budget",
+    nodeId: "n1",
+    status: "requested",
+    message: "Continue?",
+    requestedAt: stamp,
+    metadata: {},
+  });
+  const restored: unknown[] = [];
+  const executor = {
+    restorePausedRun: (...args: unknown[]) => { restored.push(args); },
+    rearmApprovalTimers: () => undefined,
+  };
+  const result = recoverInterruptedRuns(executor as never, store, new MemorySaver());
+  expect(result.restored).toContain("wait-budget");
+  expect((restored[0] as unknown[])[1]).toMatchObject({ stepBudget: { count: 7 } });
+});
+
+test("durable run store exposes persistence failures instead of silently acknowledging them", async () => {
+  const pool = { query: jest.fn().mockRejectedValue(new Error("database unavailable")) };
+  const store = new PostgresRunStore(pool as never);
+  store.create({ id: "durability-1", workflowId: "wf-1", status: "queued", startedAt: nowIso(), metadata: {} });
+
+  await expect(store.flush()).rejects.toThrow(/database unavailable/);
+  expect(() => store.assertHealthy()).toThrow(/persistence is unavailable/i);
+  expect(() => store.append("durability-1", {
+    id: "event-1", runId: "durability-1", type: "run.started", timestamp: nowIso(), sequence: 0, payload: {},
+  })).toThrow(/persistence is unavailable/i);
+  expect(pool.query).toHaveBeenCalledTimes(1);
 });

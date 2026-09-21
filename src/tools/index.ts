@@ -3,4 +3,8 @@ export { ToolExecutorFactory, toolExecutorFactory } from "./toolExecutorFactory"
 export { ToolRuntime, ToolPolicyError } from "./toolRuntime";
 export { HttpToolExecutor } from "./httpToolExecutor";
 export { FunctionToolExecutor } from "./functionToolExecutor";
+export { DatabaseToolExecutor } from "./databaseToolExecutor";
+export { SearchToolExecutor } from "./searchToolExecutor";
+export { McpToolExecutor } from "./mcpToolExecutor";
 export { NotImplementedToolExecutor, UnsupportedToolCategoryError } from "./notImplementedToolExecutor";
+export { EnvironmentCredentialGateway, HttpCredentialGateway, credentialGatewayFromEnvironment, type CredentialGateway } from "../security/credentialGateway";

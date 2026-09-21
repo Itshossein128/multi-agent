@@ -6,7 +6,8 @@ export function streamRunEvents(context: Context, store: RunStoreContract, runId
   return streamSSE(context, async (stream) => {
     let sequence = after;
     let resolve: (() => void) | undefined;
-    const wake = () => resolve?.();
+    let wakeVersion = 0;
+    const wake = () => { wakeVersion += 1; resolve?.(); };
     const unsubscribe = store.subscribe(runId, wake);
     stream.onAbort(wake);
     try {
@@ -18,8 +19,15 @@ export function streamRunEvents(context: Context, store: RunStoreContract, runId
         }
         if (store.events(runId, sequence).length) continue;
         const status = store.get(runId)?.run.status;
-        if (status === "completed" || status === "failed" || status === "cancelled" || stream.aborted) break;
-        await new Promise<void>((done) => { resolve = done; });
+        if (!status || status === "completed" || status === "failed" || status === "cancelled" || stream.aborted) break;
+        // Subscribe before the first read, but also guard the check-to-wait
+        // window: an event can arrive after the empty read and before the
+        // promise installs its resolver.
+        const observedVersion = wakeVersion;
+        await new Promise<void>((done) => {
+          resolve = done;
+          if (wakeVersion !== observedVersion) done();
+        });
         resolve = undefined;
       }
     } finally {

@@ -5,6 +5,17 @@ import { getDbPool } from "@/lib/db";
 
 import type { NextAuthConfig } from "next-auth";
 
+// Keep this error independent from the optional runtime export so auth tests and
+// NextAuth's mocked module can still represent a typed credentials failure.
+class DatabaseUnavailableError extends Error {
+  code = "AUTH_DATABASE_UNAVAILABLE";
+
+  constructor() {
+    super("Authentication database is temporarily unavailable.");
+    this.name = "CredentialsSignin";
+  }
+}
+
 export const authConfig: NextAuthConfig = {
   trustHost: true,
   providers: [
@@ -21,10 +32,11 @@ export const authConfig: NextAuthConfig = {
         const password = credentials.password as string;
 
         // Try DB first
+        let databaseUnavailable = false;
         try {
           const pool = getDbPool();
           const result = await pool.query(
-            "SELECT id, tenant_id, password_hash, status FROM studio_users WHERE email = $1",
+            "SELECT id, tenant_id, email, display_name, password_hash, status FROM studio_users WHERE email = $1",
             [email]
           );
 
@@ -35,11 +47,17 @@ export const authConfig: NextAuthConfig = {
 
             const isValid = await bcrypt.compare(password, user.password_hash);
             if (isValid) {
-              return { id: user.id, tenantId: user.tenant_id };
+              return {
+                id: user.id,
+                tenantId: user.tenant_id,
+                email: user.email,
+                name: user.display_name ?? undefined,
+              };
             }
             return null; // Invalid password
           }
         } catch (error) {
+          databaseUnavailable = true;
           console.error("Database auth error:", error);
         }
 
@@ -52,6 +70,11 @@ export const authConfig: NextAuthConfig = {
           const userId = process.env.AUTH_DEV_USER_ID;
           const tenantId = process.env.AUTH_DEV_TENANT_ID;
           return userId && tenantId ? { id: userId, tenantId } : null;
+        }
+
+        // Avoid presenting DB outages as invalid credentials.
+        if (databaseUnavailable) {
+          throw new DatabaseUnavailableError();
         }
 
         return null;

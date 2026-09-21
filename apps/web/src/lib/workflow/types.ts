@@ -44,6 +44,8 @@
   createNode,
   createEdge,
   createEmptyDefinition,
+  serializeWorkflowDefinition,
+  deserializeWorkflowDefinition,
   nodeConfig,
   isWorkflowNodeType,
   createToolRecord,

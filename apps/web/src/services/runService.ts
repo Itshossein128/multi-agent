@@ -1,11 +1,10 @@
 import type { AgentRecord, ApprovalDecision, ApprovalRequest, Run, RunEvent, RunCreateRequest, RunCreateResponse, RunStatus, WorkflowDefinition } from "@multi-agent/types";
+import { requestJson } from "./requestJson";
 
 const API_URL = "/api/execution";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Execution request failed (${response.status})`);
-  return response.json() as Promise<T>;
+function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestJson<T>(path, init, { apiUrl: API_URL });
 }
 
 export interface RunListQuery {
@@ -37,15 +36,17 @@ export const runService = {
   getRunEvents(runId: string, agentId?: string) {
     return request<RunEvent[]>(`/runs/${encodeURIComponent(runId)}/history${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ""}`);
   },
-  startRun(workflow: WorkflowDefinition, agents: AgentRecord[], input: Record<string, unknown>, taskId?: string) {
-    const body: RunCreateRequest = { workflow, agents, input, taskId };
+  startRun(workflow: WorkflowDefinition, agents: AgentRecord[], input: Record<string, unknown>, taskId?: string, tools?: import("@multi-agent/types").ToolRecord[]) {
+    const body: RunCreateRequest = { workflow, agents, input, taskId, tools };
     return request<RunCreateResponse>("/runs", { method: "POST", body: JSON.stringify(body) });
   },
   getRun(runId: string) { return request<Run>(`/runs/${encodeURIComponent(runId)}`); },
   getRunDefinition(runId: string) {
-    return request<{ workflow: WorkflowDefinition; agents: AgentRecord[] }>(`/runs/${encodeURIComponent(runId)}/definition`);
+    return request<{ workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] }>(`/runs/${encodeURIComponent(runId)}/definition`);
   },
   cancelRun(runId: string) { return request<{ runId: string; status: string }>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }); },
+  cancelBranch(runId: string, branchKey: string) { return request<{ runId: string; branchKey: string; status: string }>(`/runs/${encodeURIComponent(runId)}/branches/${encodeURIComponent(branchKey)}/cancel`, { method: "POST" }); },
+  retryRun(runId: string) { return request<RunCreateResponse>(`/runs/${encodeURIComponent(runId)}/retry`, { method: "POST" }); },
   eventsUrl(runId: string, afterSequence = 0) { return `${API_URL}/runs/${encodeURIComponent(runId)}/events?sequence=${afterSequence}`; },
   getApprovals(runId: string) { return request<ApprovalRequest[]>(`/runs/${encodeURIComponent(runId)}/approvals`); },
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecision, response?: string) {

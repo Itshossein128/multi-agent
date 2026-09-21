@@ -11,6 +11,7 @@ const options = { refetchInterval: false as const, refetchOnWindowFocus: false, 
 export function useAgentDetail(agentId: string) {
   const cache = useQueryClient();
   const agent = useQuery({ ...options, queryKey: ["agent", agentId], queryFn: () => workflowService.getAgent(agentId) });
+  const diagnostics = useQuery({ ...options, queryKey: ["agent-diagnostics", agentId], queryFn: () => workflowService.getAgentDiagnostics(agentId), enabled: Boolean(agent.data) });
   const workflows = useQuery({ ...options, queryKey: ["agent-workflows", agentId], queryFn: () => workflowService.listWorkflows() });
   const tools = useQuery({ ...options, queryKey: ["agent-tools", agentId], queryFn: () => workflowService.listTools() });
   const runs = useQuery({ ...options, queryKey: ["agent-runs", agentId], queryFn: () => runService.getAgentRuns(agentId), enabled: Boolean(agent.data) });
@@ -33,7 +34,7 @@ export function useAgentDetail(agentId: string) {
     await workflowService.deleteAgent(agentId);
     cache.removeQueries({ queryKey: ["agent", agentId] });
   } });
-  return { agent, workflows, tools, runs, save, remove };
+  return { agent, diagnostics, workflows, tools, runs, save, remove };
 }
 
 export function useAgentRunEvents(agentId: string, runId: string | null) {

@@ -1,4 +1,4 @@
-import type { TimeFilter } from "@/lib/runtimeTracker";
+import type { TimeFilter } from "@/lib/dashboard/types";
 
 /** Keep StatCards and list sections on the same Today/Week/Month window. */
 export function matchesTimeFilter(

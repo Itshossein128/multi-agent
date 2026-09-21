@@ -4,7 +4,9 @@ import type { AgentTestRequest, RunCreateRequest, RunStatus } from "@multi-agent
 import type { StudioStore } from "../../../../src/studio/contracts";
 import { RunExecutor } from "../runtime/runExecutor";
 import type { MemoryAccessResolver } from "../memory/access";
-import { resolveRequestPrincipal, type PrincipalResolver, type RequestPrincipal } from "../auth/principal";
+import { resolveRequestPrincipal } from "../auth/principal";
+import type { RequestPrincipal } from "../auth/principal";
+import type { PrincipalResolver } from "../auth/authorization";
 import { respondWithApiError } from "./shared/http";
 import { streamRunEvents } from "./runs/eventStream";
 import { RunApiService } from "./runs/runApiService";
@@ -42,6 +44,8 @@ export function createRunsRouter(
   app.get("/:runId/history", (c) => c.json(service.history(c.req.param("runId"), c.req.query("agentId"))));
   app.get("/:runId", (c) => c.json(service.get(c.req.param("runId"))));
   app.post("/:runId/cancel", (c) => c.json(service.cancel(c.req.param("runId")), 202));
+  app.post("/:runId/branches/:branchKey/cancel", (c) => c.json(service.cancelBranch(c.req.param("runId"), c.req.param("branchKey")), 202));
+  app.post("/:runId/retry", async (c) => c.json(await service.retry(c.req.param("runId"), c.req.raw, c.get("principal")), 202));
   app.get("/:runId/events", (c) => streamRunEvents(c, service.store, c.req.param("runId"), Number(c.req.query("sequence") ?? c.req.header("Last-Event-ID") ?? 0) || 0));
   return { app, executor };
 }

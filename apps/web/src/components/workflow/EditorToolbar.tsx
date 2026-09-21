@@ -50,22 +50,23 @@ function ToolButton({
 
 export function EditorToolbar() {
   const router = useRouter();
+  const [runInput, setRunInput] = React.useState("");
   const definition = useWorkflowStore((s) => s.definition);
   const agents = useWorkflowStore((s) => s.agents);
+  const tools = useWorkflowStore((s) => s.tools);
   const issues = useWorkflowStore((s) => s.issues);
   const name = useWorkflowStore((s) => s.definition.name);
   const isDirty = useWorkflowStore((s) => s.isDirty);
   const saveState = useWorkflowStore((s) => s.saveState);
-  const undoStack = useWorkflowStore((s) => s.undoStack);
-  const redoStack = useWorkflowStore((s) => s.redoStack);
+  const canUndo = useWorkflowStore((s) => s.canUndo);
+  const canRedo = useWorkflowStore((s) => s.canRedo);
   const selectedNodeIds = useWorkflowStore((s) => s.selectedNodeIds);
   const selectedEdgeIds = useWorkflowStore((s) => s.selectedEdgeIds);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
-  const removeNodes = useWorkflowStore((s) => s.removeNodes);
-  const removeEdges = useWorkflowStore((s) => s.removeEdges);
+  const removeSelection = useWorkflowStore((s) => s.removeSelection);
 
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
@@ -93,19 +94,16 @@ export function EditorToolbar() {
 
       <div className="mx-1 h-5 w-px bg-zinc-800" />
 
-      <ToolButton title="Undo (Ctrl+Z)" disabled={undoStack.length === 0} onClick={undo}>
+      <ToolButton title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo}>
         <Undo2 className="h-4 w-4" />
       </ToolButton>
-      <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={redoStack.length === 0} onClick={redo}>
+      <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={!canRedo} onClick={redo}>
         <Redo2 className="h-4 w-4" />
       </ToolButton>
       <ToolButton
         title="Delete selected nodes/edges (Del)"
         disabled={!hasSelection}
-        onClick={() => {
-          removeNodes(selectedNodeIds);
-          removeEdges(selectedEdgeIds);
-        }}
+        onClick={() => removeSelection(selectedNodeIds, selectedEdgeIds)}
       >
         <Trash2 className="h-4 w-4" />
       </ToolButton>
@@ -139,14 +137,20 @@ export function EditorToolbar() {
           <CircleCheck className="h-3.5 w-3.5" />
           Validate
         </Button>
+        <input
+          aria-label="Run input"
+          type="text"
+          value={runInput}
+          onChange={(event) => setRunInput(event.target.value)}
+          placeholder="Run input"
+          className="h-8 w-40 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        />
         <Button
           size="sm"
           disabled={hasErrors}
           onClick={async () => {
-            const value = window.prompt("Input for this run", "");
-            if (value === null) return;
             try {
-              const { runId } = await runService.startRun(definition, agents, { input: value });
+              const { runId } = await runService.startRun(definition, agents, { input: runInput }, undefined, tools);
               sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
               router.push(`/runs/${runId}`);
             } catch (error) {

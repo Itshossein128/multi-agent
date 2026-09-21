@@ -83,7 +83,7 @@ test("single-agent endpoint records a real run and normalized output without a w
   const { runId } = await response.json() as { runId: string };
   await new Promise<void>((resolve) => setImmediate(resolve));
   expect(store.get(runId)?.run).toMatchObject({ status: "completed", output: { content: "answer" } });
-  expect(store.events(runId).map((event) => event.type)).toEqual(["run.started", "agent.completed", "run.completed"]);
+  expect(store.events(runId).map((event) => event.type)).toEqual(["run.created", "run.started", "agent.completed", "run.completed"]);
   for (const invalid of [{ ...agent, enabled: false }, { ...agent, metadata: { apiKey: "private-value" } }]) {
     const rejected = await app.request("http://localhost/agent-test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: invalid, input: {} }) });
     expect(rejected.status).toBe(400);

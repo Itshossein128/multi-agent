@@ -1,24 +1,35 @@
+# Dependencies
 node_modules/
-/dist/
+
+# Build outputs (any package; was incorrectly only /dist/ at repo root)
+dist/
 *.tsbuildinfo
-# Compiler output belongs in dist, never beside runtime source.
-/apps/server/src/**/*.js
-/apps/server/src/**/*.js.map
-/apps/server/src/**/*.d.ts
-/src/agents/runtime/*.js
-/src/agents/runtime/*.js.map
-/src/agents/runtime/*.d.ts
+
+# Accidental tsc emit beside TypeScript sources
+apps/server/src/**/*.js
+apps/server/src/**/*.js.map
+apps/server/src/**/*.d.ts
+src/agents/runtime/*.js
+src/agents/runtime/*.js.map
+src/agents/runtime/*.d.ts
+
+# Test / coverage
 coverage/
+playwright-report/
+test-results/
+
+# Logs & env
 *.log
 .env
 .env.local
 .env.*.local
+
+# Isolated agent provider credentials (never the developer ~/.codex / ~/.claude homes)
+.local/
+
+# Local runtime data
 workspaces/
-
-# LangGraph API
 .langgraph_api
-
-# Task board persistence
 .taskboard.json
 
 # graphify: keep graph.json / GRAPH_REPORT.md / wiki; ignore regenerable & machine-local

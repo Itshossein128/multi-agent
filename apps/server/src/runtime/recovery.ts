@@ -36,7 +36,13 @@ export function recoverInterruptedRuns(
       failed.push(run.id);
       continue;
     }
-    executor.restorePausedRun(run.id, { workflow, agents, memoryAccess: paused?.memoryAccess }, checkpointer);
+    executor.restorePausedRun(run.id, {
+      workflow,
+      agents,
+      tools: paused?.tools ?? store.getToolSnapshot?.(run.id),
+      memoryAccess: paused?.memoryAccess,
+      stepBudget: paused?.stepBudget,
+    }, checkpointer);
     executor.rearmApprovalTimers(run.id);
     restored.push(run.id);
   }

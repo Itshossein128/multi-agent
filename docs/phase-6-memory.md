@@ -1,6 +1,6 @@
-# Phase 6 — Memory
+# Memory backend
 
-Scope is `.cursor/plans/6.md`, whose numbering differs from the original visual-editor roadmap. This extends Phase 5 and keeps CLI/local executors and a full Memory Explorer outside the implementation.
+این سند backend حافظه را توضیح می‌دهد. شماره‌گذاری تاریخی phaseها عمداً از این فایل حذف شده تا با roadmap محصول اشتباه نشود. Memory Explorer در [مستند مستقل خودش](phase-8-memory-explorer.md) توضیح داده شده است.
 
 ## Architecture
 
@@ -42,9 +42,9 @@ Provision secrets and grants on the server. Authenticated callers send `Authoriz
 
 Agent settings request access; they do not grant it. Runtime intersects requests with server grants and narrows actor-private access. Every row and query is tenant-scoped. Shared workflow memory requires the matching workflow execution and an explicit grant. Project/organization namespace types support future domain integration without inventing those entities.
 
-Long-term-enabled run creation requires authentication. Its list entry, output, history, cancellation and event stream are restricted to the same principal and tenant. Ownership belongs to RunStore and survives router reconstruction. Runs with memory disabled retain their previous local-development behavior. Runs, ownership and default checkpoints remain process-local.
+Long-term-enabled run creation requires authentication. Its list entry, output, history, cancellation and event stream are restricted to the same principal and tenant. Ownership belongs to RunStore and survives router reconstruction. Runs with memory disabled retain their previous local-development behavior. Durable run ownership/history use PostgreSQL when configured; active execution and default in-memory checkpoints remain process-local.
 
-The browser UI edits configuration only. Until browser identity integration supplies credentials, use an authenticated API caller for long-term-enabled execution. Turning on a setting never bypasses server authorization.
+The browser UI edits configuration only. The web control plane authenticates through Auth.js/BFF; the Memory Explorer still uses its explicit bearer-grant contract until the memory API is integrated with that BFF. Turning on a setting never bypasses server authorization.
 
 ## API and lifecycle
 
@@ -73,4 +73,4 @@ Expired/superseded records are excluded from active retrieval. Both stores expos
 
 Focused suites: memoryStorage, memoryRetrieval, memoryService, memoryRuntime, memoryApi, memoryEmbedding and memoryEndToEnd. They cover relevance fixtures, isolation, budgets, retries, transactions, expiration/superseding, authenticated APIs, checkpoints, failures and RunEvents.
 
-Set MEMORY_TEST_DATABASE_URL to an isolated test database for live PostgreSQL/pgvector and cross-run persistence tests. Tests use random schemas and drop only those schemas. They require no paid embedding/model calls. See [implementation progress](phase-6-memory-implementation-plan.md) and [independent review](phase-6-memory-review.md) for verification results and remaining limits.
+Set `MEMORY_TEST_DATABASE_URL` to an isolated test database for live PostgreSQL/pgvector and cross-run persistence tests. Tests use random schemas and drop only those schemas. They require no paid embedding/model calls. Current limitations and follow-up work are tracked in [implementation-gaps.md](implementation-gaps.md).

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { StudioDashboardData, TimeFilter } from "@/lib/runtimeTracker";
+import { StudioDashboardData, TimeFilter } from "@/lib/dashboard/types";
 import { useStudioStore } from "@/store/useStudioStore";
 import { useEffect } from "react";
 

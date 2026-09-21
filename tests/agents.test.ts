@@ -8,6 +8,8 @@ describe('Multi-Agent Graph Engine & LLM Factory', () => {
 
   beforeEach(() => {
     process.env.AUTO_ANSWER = 'Sample user response for spec clarification';
+    // Exercise the production fallback paths without depending on public API latency.
+    process.env.LLM_PROVIDER = 'offline-test';
   });
 
   afterEach(() => {

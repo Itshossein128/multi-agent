@@ -93,8 +93,8 @@ describe("Phase 7 human-in-the-loop approvals", () => {
     executor.resolveApproval(runId, approval.id, { decision: "rejected" });
     await waitFor(() => store.get(runId)?.run.status === "completed");
 
-    // "tasks"-derived node.completed events don't carry a nodeId (pre-existing
-    // LangGraphEventAdapter gap); the per-node "updates" log events do.
+    // Compiler lifecycle events carry the stable node identity; raw LangGraph
+    // task frames remain diagnostic logs.
     const nodeIds = store.events(runId).map((event) => event.nodeId).filter((id): id is string => Boolean(id));
     expect(nodeIds).toContain(rejectedNode.id);
     expect(nodeIds).not.toContain(approvedNode.id);

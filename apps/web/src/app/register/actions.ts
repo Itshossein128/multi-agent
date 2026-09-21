@@ -51,6 +51,10 @@ export async function registerUser(formData: FormData) {
     return { success: true };
   } catch (error) {
     console.error("Registration error:", error);
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "ENOTFOUND") {
+      return { error: "Registration is temporarily unavailable. Please try again in a moment." };
+    }
     return { error: "An unexpected error occurred during registration" };
   }
 }

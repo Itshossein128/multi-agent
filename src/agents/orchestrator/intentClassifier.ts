@@ -15,7 +15,6 @@ export interface IntentClassifier {
 
 export class LLMIntentClassifier implements IntentClassifier {
   async classify(prompt: string, availableRepos: string[]): Promise<ClassifiedIntent> {
-    const llm = getLLM();
     const systemPrompt = `You are an expert AI software architect and triage lead.
 Analyze the user's request and determine the lifecycle mode:
 - "NEW_PROJECT": Creating a brand new application, module, or repository from scratch.
@@ -40,6 +39,7 @@ Respond ONLY with a JSON object:
 }`;
 
     try {
+      const llm = getLLM();
       const response = await llm.invoke([
         new SystemMessage(systemPrompt),
         new HumanMessage(`User prompt to triage:\n"${prompt}"`),

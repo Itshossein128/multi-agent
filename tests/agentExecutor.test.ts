@@ -10,9 +10,12 @@ import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
 import { ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
-import { CliAgentExecutor, resolveCliSpawnExecutable } from "../src/agents/runtime/cliAgentExecutor";
+import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, agyArgs, agyStreamInput, parseAgyStreamOutput, resolveCliSpawnExecutable, cliExecutableAvailable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
 import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
+import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 
 describe("Agent backend abstraction", () => {
   test("migrates legacy model/provider records into api backend", () => {
@@ -141,24 +144,87 @@ describe("AgentRuntime", () => {
 
 describe("CLI and local executors", () => {
   test("runs a permitted CLI command directly with stdin and an approved workspace", async () => {
-    const calls: unknown[] = [];
-    const process = {
-      stdin: { write: (value: string) => calls.push(["stdin", value]), end: () => calls.push(["end"]) },
-      stdout: (async function* () { yield "CLI answer"; })(),
-      stderr: (async function* () { })(),
-      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); },
-      kill: jest.fn(),
-    };
-    const spawn = jest.fn(() => process);
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "CLI answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", executable: "codex", args: ["exec", "--json"] } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
     const events: AgentExecutionEvent[] = [];
-    const serverPolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 1024 };
-    for await (const event of new CliAgentExecutor(spawn as never, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
-    expect(spawn).toHaveBeenCalledWith("codex", ["exec", "--json", "-"], { cwd: "/workspace", shell: false, stdio: ["pipe", "pipe", "pipe"] });
-    expect(calls).toContainEqual(["stdin", expect.stringContaining("USER INPUT:\nsummarize")]);
+    const serverPolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 1024 };
+
+    for await (const event of new CliAgentExecutor(workerRuntime, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"], cwd: "/workspace" }),
+      undefined,
+      expect.stringContaining("USER INPUT:\nsummarize"),
+      undefined,
+    );
     expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
     expect((events[2].payload as { content: string }).content).toBe("CLI answer");
+  });
+
+  test("resolves trusted launch secrets from the exact server credential context", async () => {
+    const secret = "dummy-credential-value";
+    const start = jest.fn(async (..._arguments: any[]) => ({ workerId: "w1", runId: "run-credential" }));
+    const workerRuntime = { start, wait: jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" })), cleanup: jest.fn() } as any;
+    const resolve = jest.fn(async () => ({ environment: { OPENAI_API_KEY: secret } }));
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.id = "agent-credential";
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    const events: AgentExecutionEvent[] = [];
+
+    for await (const event of new CliAgentExecutor(workerRuntime, {
+      enabled: true,
+      workerMode: "container",
+      allowedExecutables: ["codex"],
+      workspaceRoots: ["/workspace"],
+      maxOutputBytes: 4096,
+    }, { resolve }).execute({
+      agent,
+      input: "hi",
+      runId: "run-credential",
+      nodeId: "node-credential",
+      credentialPrincipal: { tenantId: "tenant-a", principalId: "user-a" },
+    })) events.push(event);
+
+    expect(resolve).toHaveBeenCalledWith({
+      tenantId: "tenant-a",
+      principalId: "user-a",
+      runId: "run-credential",
+      agentId: "agent-credential",
+      provider: "codex",
+    });
+    expect(start.mock.calls[0][3]).toEqual({ environment: { OPENAI_API_KEY: secret } });
+    expect(JSON.stringify(start.mock.calls[0][0])).not.toContain(secret);
+    expect(JSON.stringify(events)).not.toContain(secret);
+  });
+
+  test("does not resolve credentials without trusted principal context and sanitizes resolver failures", async () => {
+    const secret = "dummy-resolver-error-secret";
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const workerRuntime = { start, wait: jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" })), cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    const runtimePolicy = { enabled: true, workerMode: "container" as const, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    const resolve = jest.fn(async () => { throw new Error(secret); });
+
+    for await (const _event of new CliAgentExecutor(workerRuntime, runtimePolicy, { resolve }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+    expect(resolve).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledWith(expect.anything(), undefined, expect.any(String), undefined);
+
+    const events: AgentExecutionEvent[] = [];
+    await expect(async () => {
+      for await (const event of new CliAgentExecutor(workerRuntime, runtimePolicy, { resolve }).execute({
+        agent,
+        input: "hi",
+        runId: "r2",
+        nodeId: "n2",
+        credentialPrincipal: { tenantId: "tenant", principalId: "user" },
+      })) events.push(event);
+    }).rejects.toThrow("CLI credential resolution failed");
+    expect(JSON.stringify(events)).not.toContain(secret);
   });
 
   test("calls the Ollama local API with its configured model and normalized events", async () => {
@@ -167,75 +233,442 @@ describe("CLI and local executors", () => {
     const events: AgentExecutionEvent[] = [];
     for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://ollama.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
     expect(fetchImpl).toHaveBeenCalledWith(new URL("http://ollama.test/api/chat"), expect.objectContaining({ method: "POST" }));
-    expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
-    expect((events[2].payload as { content: string }).content).toBe("local answer");
+    expect(events.map(event => event.type)).toEqual(["agent.started", "llm.started", "llm.completed", "agent.output", "agent.completed"]);
+    expect((events[4].payload as { content: string }).content).toBe("local answer");
   });
 
   test("uses safe non-interactive defaults for agy and includes model and prompt context", async () => {
-    const calls: unknown[] = [];
-    const process = {
-      stdin: { write: (value: string) => calls.push(["stdin", value]), end: jest.fn() },
-      stdout: (async function* () { yield "Agy answer"; })(), stderr: (async function* () { })(),
-      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); }, kill: jest.fn(),
-    };
-    const spawn = jest.fn(() => process);
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const streamStdout = [
+      JSON.stringify({ event: "init", session_id: "sess-1" }),
+      JSON.stringify({ event: "step", step: 1 }),
+      JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "Agy answer" } }),
+    ].join("\n");
+    const wait = jest.fn(async () => ({ code: 0, stdout: streamStdout, stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+
     const agent = createAgentRecord({ backend: { type: "cli", provider: "agy", model: "gpt-5" } });
     agent.systemPrompt = "Be concise.";
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace/project", allowedCommands: ["agy"] };
-    const runtimePolicy = { enabled: true, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
-    for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({ agent, input: { task: "review" }, runId: "r", nodeId: "n" })) { /* drain */ }
-    expect(spawn).toHaveBeenCalledWith("agy", ["--print", "--output-format", "text", "--disable-slash-commands", "--model", "gpt-5"], expect.objectContaining({ cwd: "/workspace/project", shell: false }));
-    expect(JSON.stringify(calls)).toContain("SYSTEM INSTRUCTIONS");
-    expect(JSON.stringify(calls)).toContain("review");
+    const runtimePolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+
+    const events: AgentExecutionEvent[] = [];
+    for await (const event of new CliAgentExecutor(workerRuntime, runtimePolicy).execute({ agent, input: { task: "review" }, runId: "r", nodeId: "n" })) {
+      events.push(event);
+    }
+
+    const expectedArgs = ["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", "--model", "gpt-5"];
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executable: expect.stringContaining("agy"),
+        args: expectedArgs,
+        cwd: "/workspace/project",
+      }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
+
+    const callArgs = ((start.mock.calls as any[][])[0][0] as { args: string[] }).args;
+    expect(JSON.stringify(callArgs)).not.toContain("review");
+    expect(JSON.stringify(callArgs)).not.toContain("concise");
+
+    const decodedStdin = JSON.parse((start.mock.calls as any[][])[0][2]);
+    expect(decodedStdin).toEqual({
+      event: "user",
+      message: {
+        role: "user",
+        content: expect.stringContaining("SYSTEM INSTRUCTIONS:\nBe concise."),
+      },
+    });
+    expect(decodedStdin.message.content).toContain("review");
+
+    expect(events.map((e) => e.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
+    expect((events[1].payload as { content: string }).content).toBe("Agy answer");
+    expect((events[2].payload as { content: string }).content).toBe("Agy answer");
+  });
+
+  describe("agyArgs helper", () => {
+    test("provides deterministic noninteractive defaults for empty or undefined args", () => {
+      expect(agyArgs(undefined)).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs([])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+    });
+
+    test("removes --print and does not include it", () => {
+      expect(agyArgs(["--print"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--print", "text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--print", "--print", "--print"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--verbose", "--print"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", "--verbose"]);
+    });
+
+    test("forces --output-format stream-json even if a different format was passed", () => {
+      expect(agyArgs(["--output-format", "json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--output-format=json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--output-format", "text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+    });
+
+    test("ensures --disable-slash-commands is present and deduplicated", () => {
+      expect(agyArgs(["--disable-slash-commands"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--disable-slash-commands", "--verbose"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", "--verbose"]);
+    });
+
+    test("preserves ordinary explicit flags", () => {
+      expect(agyArgs(["--verbose", "--thinking", "medium"])).toEqual([
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--disable-slash-commands",
+        "--verbose",
+        "--thinking",
+        "medium",
+      ]);
+    });
+
+    test("strips all --input-format forms and separate values", () => {
+      expect(agyArgs(["--input-format", "text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format=text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format", "json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format=json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format", "stream-json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format=stream-json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+    });
+
+    test("rejects or removes conflicting interactive and session flags without adding bypass permissions", () => {
+      const explicit = [
+        "--prompt-interactive",
+        "--continue",
+        "-c",
+        "-i",
+        "--remote-control",
+        "--input-format",
+        "stream-json",
+        "--input-format=stream-json",
+        "--input-format",
+        "text",
+        "--input-format=json",
+        "--custom-flag",
+        "value",
+      ];
+      const result = agyArgs(explicit);
+      expect(result).toEqual([
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--disable-slash-commands",
+        "--custom-flag",
+        "value",
+      ]);
+      expect(result).not.toContain("--prompt-interactive");
+      expect(result).not.toContain("--continue");
+      expect(result).not.toContain("-c");
+      expect(result).not.toContain("-i");
+      expect(result).not.toContain("--remote-control");
+      expect(result).not.toContain("--dangerously-skip-permissions");
+      expect(result).not.toContain("--print");
+    });
+  });
+
+  describe("parseAgyStreamOutput and agyStreamInput helpers", () => {
+    test("encodes agyStreamInput with event=user and role=user ending with newline", () => {
+      const encoded = agyStreamInput("test prompt");
+      expect(encoded.endsWith("\n")).toBe(true);
+      expect(JSON.parse(encoded)).toEqual({
+        event: "user",
+        message: {
+          role: "user",
+          content: "test prompt",
+        },
+      });
+    });
+
+    test("parses successful final result from nested NDJSON stream", () => {
+      const stdout = [
+        JSON.stringify({ event: "init", id: "1" }),
+        JSON.stringify({ event: "step", step: 1 }),
+        JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "all done!" } }),
+      ].join("\n");
+      expect(parseAgyStreamOutput(stdout)).toBe("all done!");
+    });
+
+    test("throws generic non-secret error for malformed line", () => {
+      const secret = "SUPER_SECRET_TOKEN";
+      const stdout = `{"event":"init"}\n{invalid_json:${secret}\n`;
+      expect(() => parseAgyStreamOutput(stdout)).toThrow(/Failed to parse agy stream output: invalid JSON/);
+      try {
+        parseAgyStreamOutput(stdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
+
+    test("throws generic non-secret error when no result event is present", () => {
+      const secret = "SENSITIVE_DATA_123";
+      const stdout = [
+        JSON.stringify({ event: "init", session: secret }),
+        JSON.stringify({ event: "step", step: 1, secret }),
+      ].join("\n");
+      expect(() => parseAgyStreamOutput(stdout)).toThrow(/missing final result event/);
+      try {
+        parseAgyStreamOutput(stdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
+
+    test("throws generic non-secret error on nested ERROR status", () => {
+      const secret = "API_KEY_LEAK";
+      const failedStdout = JSON.stringify({ event: "result", result: { status: "ERROR", error: secret } });
+      expect(() => parseAgyStreamOutput(failedStdout)).toThrow(/Agy execution failed or returned invalid response/);
+      try {
+        parseAgyStreamOutput(failedStdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
+
+    test("throws generic non-secret error on nested SUCCESS with non-string response", () => {
+      const secret = "SECRET_OBJ_DATA";
+      const invalidRespStdout = JSON.stringify({ event: "result", result: { status: "SUCCESS", response: { secret } } });
+      expect(() => parseAgyStreamOutput(invalidRespStdout)).toThrow(/Agy execution failed or returned invalid response/);
+      try {
+        parseAgyStreamOutput(invalidRespStdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
   });
 
   test("forces saved Codex options through exec mode instead of starting the TUI", async () => {
-    const process = {
-      stdin: { write: jest.fn(), end: jest.fn() },
-      stdout: (async function* () { yield "Codex answer"; })(), stderr: (async function* () { })(),
-      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); }, kill: jest.fn(),
-    };
-    const spawn = jest.fn(() => process);
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "Codex answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex", args: ["--json"] } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
-    for await (const _event of new CliAgentExecutor(spawn as never, { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "test", runId: "r", nodeId: "n" })) { /* drain */ }
-    expect(spawn).toHaveBeenCalledWith("codex", ["exec", "--json", "-"], expect.objectContaining({ shell: false }));
+    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "local", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "test", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"] }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
+  });
+
+  test("keeps local Codex runs free of sandbox bypass and session-ephemeral flags", () => {
+    expect(codexArgs(["--json"], "local")).toEqual(["exec", "--skip-git-repo-check", "--json", "-"]);
+  });
+
+  test("auto-injects container Codex defaults once without duplicating explicit flags", () => {
+    expect(codexArgs([], "container")).toEqual([
+      "exec",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--ephemeral",
+      "-",
+    ]);
+    expect(codexArgs(["--skip-git-repo-check", "--ephemeral"], "container")).toEqual([
+      "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--skip-git-repo-check",
+      "--ephemeral",
+      "-",
+    ]);
+    expect(codexArgs(["exec", "--ephemeral"], "container")).toEqual([
+      "exec",
+      "--skip-git-repo-check",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--ephemeral",
+      "-",
+    ]);
+  });
+
+  test("runs a non-Git workspace Codex agent without the trusted-directory failure", async () => {
+    const start = jest.fn(async (..._args: any[]) => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "hi", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "local", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    const args = (start.mock.calls[0][0] as { args: string[] }).args;
+    expect(args).toContain("--skip-git-repo-check");
+    expect(args).toEqual(expect.arrayContaining(["exec", "-"]));
+    expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(args).not.toContain("--ephemeral");
+  });
+
+  test("keeps Claude permissions enabled for local workers", async () => {
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "Claude answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "claude-code", model: "claude-sonnet-4-5" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["claude"] };
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "local", allowedExecutables: ["claude"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "edit", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executable: expect.stringContaining("claude"),
+        args: ["--print", "--output-format", "text", "--model", "claude-sonnet-4-5"],
+      }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
+  });
+
+  test("uses Claude permission bypass only for container workers", async () => {
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "Claude answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "claude-code" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["claude"] };
+
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "container", allowedExecutables: ["claude"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "edit", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ args: ["--print", "--output-format", "text", "--dangerously-skip-permissions"] }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
   });
 
   test("blocks CLI executables and workspaces outside server-owned allowlists", async () => {
-    const spawn = jest.fn();
+    const start = jest.fn().mockRejectedValue(new Error("workspace is not allowed"));
+    const workerRuntime = { start } as any;
+
     const agent = createAgentRecord({ backend: { type: "cli", provider: "agy" } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/tmp/escape", allowedCommands: ["agy"] };
-    const runtimePolicy = { enabled: true, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
-    await expect(async () => { for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({ agent, input: {}, runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/workspace.*not allowed/i);
-    expect(spawn).not.toHaveBeenCalled();
+    const runtimePolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
+    await expect(async () => { for await (const _event of new CliAgentExecutor(workerRuntime, runtimePolicy).execute({ agent, input: {}, runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/workspace.*not allowed/i);
   });
 
   test("resolves bare CLI names to an allowlisted absolute executable for shell-less spawn", async () => {
     const absolute = process.platform === "win32" ? "C:\\tools\\codex.exe" : "/usr/local/bin/codex";
     expect(resolveCliSpawnExecutable("codex", ["codex", absolute])).toBe(require("node:path").resolve(absolute));
 
-    const processHandle = {
-      stdin: { write: jest.fn(), end: jest.fn() },
-      stdout: (async function* () { yield "ok"; })(),
-      stderr: (async function* () { })(),
-      once: (event: string, listener: (value: Error | number | null) => void) => { if (event === "close") queueMicrotask(() => listener(0)); },
-      kill: jest.fn(),
-    };
-    const spawn = jest.fn(() => processHandle);
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+
     const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
-    for await (const _event of new CliAgentExecutor(spawn as never, { enabled: true, allowedExecutables: ["codex", absolute], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
-    expect(spawn).toHaveBeenCalledWith(require("node:path").resolve(absolute), expect.any(Array), expect.objectContaining({ shell: false }));
+    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "local", allowedExecutables: ["codex", absolute], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ executable: require("node:path").resolve(absolute) }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
+  });
+
+  test("preserves container command names instead of resolving them against the host", async () => {
+    const hostExecutable = process.platform === "win32" ? "C:\\host-tools\\codex.exe" : "/host-tools/codex";
+    expect(resolveCliSpawnExecutable("codex", ["codex", hostExecutable], { PATH: path.dirname(hostExecutable) }, "container")).toBe("codex");
+    expect(resolveCliSpawnExecutable("/usr/local/bin/claude", ["/usr/local/bin/claude"], { PATH: path.dirname(hostExecutable) }, "container")).toBe("/usr/local/bin/claude");
+
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const workerRuntime = { start, wait: jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" })), cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+
+    for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "container", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ executable: "codex" }), undefined, expect.any(String), undefined);
+    expect(JSON.stringify(start.mock.calls)).not.toContain(hostExecutable);
+  });
+
+  describe("portable executable resolution and availability", () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-test-"));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    test("an exactly allowlisted bare agy stays bare and cliExecutableAvailable finds it via PATH", () => {
+      const execName = process.platform === "win32" ? "agy.exe" : "agy";
+      const filePath = path.join(tempDir, execName);
+      fs.writeFileSync(filePath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+      const fakeEnv = { PATH: tempDir };
+      expect(cliExecutableAvailable("agy", fakeEnv)).toBe(true);
+      expect(resolveCliSpawnExecutable("agy", ["agy"], fakeEnv)).toBe("agy");
+    });
+
+    test("an explicitly allowlisted absolute path resolves absolute", () => {
+      const execName = process.platform === "win32" ? "tool.exe" : "tool";
+      const filePath = path.join(tempDir, execName);
+      fs.writeFileSync(filePath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+      const resolved = resolveCliSpawnExecutable(filePath, [filePath], { PATH: "" });
+      expect(resolved).toBe(path.resolve(filePath));
+      expect(cliExecutableAvailable(filePath)).toBe(true);
+    });
+
+    test("a non-executable file is unavailable", () => {
+      const nonExecName = process.platform === "win32" ? "nonexec.exe" : "nonexec";
+      const filePath = path.join(tempDir, nonExecName);
+      fs.writeFileSync(filePath, "data", { mode: 0o644 });
+      if (process.platform !== "win32") {
+        fs.chmodSync(filePath, 0o644);
+      }
+
+      const fakeEnv = { PATH: tempDir };
+      if (process.platform !== "win32") {
+        expect(cliExecutableAvailable(filePath)).toBe(false);
+        expect(cliExecutableAvailable(nonExecName, fakeEnv)).toBe(false);
+      } else {
+        // On platforms where execute bits are checked via X_OK
+        expect(typeof cliExecutableAvailable(filePath)).toBe("boolean");
+      }
+    });
+
+    test("an explicit absolute path is never rewritten merely because bare agy is allowlisted", () => {
+      const customExec = path.join(tempDir, process.platform === "win32" ? "custom-bin.exe" : "custom-bin");
+      fs.writeFileSync(customExec, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+      const resolved = resolveCliSpawnExecutable(customExec, ["agy"], { PATH: tempDir });
+      expect(resolved).toBe(path.resolve(customExec));
+      expect(resolved).not.toBe("agy");
+    });
+  });
+
+  test("rejects unknown CLI worker modes instead of falling back to local execution", () => {
+    expect(() => cliRuntimePolicyFromEnvironment({ CLI_WORKER_MODE: "dockre" })).toThrow(/Invalid CLI_WORKER_MODE/);
+
+    const previous = process.env.CLI_WORKER_MODE;
+    process.env.CLI_WORKER_MODE = "dockre";
+    try {
+      expect(() => new AgentRuntime({ create: jest.fn() } as unknown as AgentExecutorFactory)).toThrow(/Invalid CLI_WORKER_MODE/);
+    } finally {
+      if (previous === undefined) delete process.env.CLI_WORKER_MODE;
+      else process.env.CLI_WORKER_MODE = previous;
+    }
   });
 
   test("calls LM Studio's OpenAI-compatible endpoint with sampling settings", async () => {
-    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "LM answer" } }] }), { status: 200 }));
+    const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "LM answer" }, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }), { status: 200 }));
     const agent = createAgentRecord({ backend: { type: "local", provider: "lmstudio", model: "local-model", baseUrl: "http://lm.test", settings: { temperature: 0.2, maxTokens: 300 } } });
     const events: AgentExecutionEvent[] = [];
     for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://lm.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
     expect(fetchImpl).toHaveBeenCalledWith(new URL("http://lm.test/v1/chat/completions"), expect.objectContaining({ body: expect.stringContaining('"max_tokens":300') }));
-    expect((events[2].payload as { content: string }).content).toBe("LM answer");
+    expect((events[4].payload as { content: string }).content).toBe("LM answer");
+    expect(events[2].payload).toEqual(expect.objectContaining({ usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 }, finishReason: "stop" }));
   });
 
   test("blocks unapproved local-model origins before making a request", async () => {
@@ -244,57 +677,11 @@ describe("CLI and local executors", () => {
     await expect(async () => { for await (const _event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://127.0.0.1:11434"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) { /* drain */ } }).rejects.toThrow(/not allowed/i);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
-
-  test("fails fast without spawning when AbortSignal is pre-aborted", async () => {
-    const spawn = jest.fn();
-    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
-    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
-    const runtimePolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
-    const controller = new AbortController();
-    controller.abort();
-
-    await expect(async () => {
-      for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({
-        agent, input: "hi", runId: "r", nodeId: "n", signal: controller.signal,
-      })) { /* drain */ }
-    }).rejects.toThrow();
-
-    expect(spawn).not.toHaveBeenCalled();
-  });
-
-  test("kills spawned child process when AbortSignal is aborted during execution", async () => {
-    const controller = new AbortController();
-    const processHandle = {
-      stdin: { write: jest.fn(), end: jest.fn() },
-      stdout: (async function* () {
-        controller.abort();
-        yield "partial";
-      })(),
-      stderr: (async function* () { })(),
-      once: (event: string, listener: (value: Error | number | null) => void) => {
-        if (event === "close") queueMicrotask(() => listener(null));
-      },
-      kill: jest.fn(),
-    };
-    const spawn = jest.fn(() => processHandle);
-    const agent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
-    agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
-    const runtimePolicy = { enabled: true, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
-
-    await expect(async () => {
-      for await (const _event of new CliAgentExecutor(spawn as never, runtimePolicy).execute({
-        agent, input: "hi", runId: "r", nodeId: "n", signal: controller.signal,
-      })) { /* drain */ }
-    }).rejects.toThrow();
-
-    expect(spawn).toHaveBeenCalled();
-    expect(processHandle.kill).toHaveBeenCalledWith("SIGTERM");
-  });
 });
 
 describe("ApiAgentExecutor", () => {
   test("invokes model via factory and emits started/output/completed", async () => {
-    const invoke = jest.fn(async () => ({ content: "answer" }));
+    const invoke = jest.fn(async () => ({ content: "answer", usage_metadata: { input_tokens: 8, output_tokens: 3, total_tokens: 11 }, response_metadata: { finish_reason: "stop" } }));
     const executor = new ApiAgentExecutor(() => ({
       getModel: (provider, options) => {
         expect(provider).toBe("openai");
@@ -321,10 +708,13 @@ describe("ApiAgentExecutor", () => {
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(events.map((e) => e.type)).toEqual([
       "agent.started",
+      "llm.started",
+      "llm.completed",
       "agent.output",
       "agent.completed",
     ]);
-    expect((events[2]?.payload as { content: string }).content).toBe("answer");
+    expect((events[4]?.payload as { content: string }).content).toBe("answer");
+    expect(events[2]?.payload).toEqual(expect.objectContaining({ usage: { input_tokens: 8, output_tokens: 3, total_tokens: 11 }, finishReason: "stop" }));
   });
 });
 
