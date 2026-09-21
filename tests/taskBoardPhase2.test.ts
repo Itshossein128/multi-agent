@@ -17,6 +17,7 @@ import {
   type AuthenticatedPrincipal,
 } from "../src/auth/internalPrincipal";
 import type { StudioTask } from "../src/studio/contracts";
+import type { AgentExecutionInput } from "../src/agents/runtime";
 
 const TEST_SECRET = "phase2-taskboard-test-secret";
 
@@ -49,6 +50,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
   let runStore: InMemoryRunStore;
   let executor: RunExecutor;
   let app: ReturnType<typeof createStudioRouter>;
+  let releaseAgentExecutions: Set<() => void>;
+  let activeAgentExecutions: number;
 
   const sampleAgent: AgentRecord = {
     ...createAgentRecord({ name: "Alpha Dev Agent" }),
@@ -64,7 +67,38 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
   beforeEach(async () => {
     studioStore = new InMemoryStudioStore();
     runStore = new InMemoryRunStore();
-    executor = new RunExecutor(runStore);
+    releaseAgentExecutions = new Set();
+    activeAgentExecutions = 0;
+    executor = new RunExecutor(runStore, {
+      async *execute(input: AgentExecutionInput) {
+        activeAgentExecutions += 1;
+        try {
+          await new Promise<void>((resolve) => {
+            let resolved = false;
+            const finish = () => {
+              if (resolved) return;
+              resolved = true;
+              releaseAgentExecutions.delete(finish);
+              input.signal?.removeEventListener("abort", finish);
+              resolve();
+            };
+            releaseAgentExecutions.add(finish);
+            input.signal?.addEventListener("abort", finish, { once: true });
+          });
+          input.signal?.throwIfAborted();
+          yield {
+            type: "agent.completed" as const,
+            timestamp: new Date().toISOString(),
+            runId: input.runId,
+            nodeId: input.nodeId,
+            agentId: input.agent.id,
+            payload: { content: "task-board-test-output" },
+          };
+        } finally {
+          activeAgentExecutions -= 1;
+        }
+      },
+    });
 
     // Seed agent and workflow for alice
     await studioStore.saveAgent(sampleAgent, alice);
@@ -83,6 +117,15 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       },
       executor
     );
+  });
+
+  afterEach(async () => {
+    for (const release of [...releaseAgentExecutions]) release();
+    const deadline = Date.now() + 2_000;
+    while (activeAgentExecutions > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(activeAgentExecutions).toBe(0);
   });
 
   describe("1. Domain Completeness & Persistence", () => {

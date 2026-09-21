@@ -63,6 +63,18 @@ CLI_WORKER_IMAGE=registry.example/worker@sha256:<digest>
 
 ساخت و smoke test image در [cli-worker-image.md](cli-worker-image.md) آمده است. credential delivery دو adapter توسعه‌ای دارد و پیش‌فرض هر دو خاموش است؛ این adapterها مرز production multi-tenant محسوب نمی‌شوند.
 
+### agy local setup
+
+Local execution mode (`CLI_WORKER_MODE=local`) is trusted-code only. Prompts use NDJSON stdin, and permissions are not auto-bypassed. Container agy requires a custom digest-pinned image without mounting host home. agy currently requires the proxy in this environment and returns HTTP 403 without it. The corresponding proxy variables must already exist in the server environment and must not contain URL credentials.
+
+```env
+CLI_AGENT_ENABLED=true
+CLI_WORKER_MODE=local
+CLI_AGENT_ALLOWED_EXECUTABLES=agy # or explicit absolute path, e.g. /usr/local/bin/agy
+CLI_AGENT_WORKSPACE_ROOTS=/absolute/path/to/allowed/workspaces
+WORKER_ALLOWED_ENV_KEYS=HTTP_PROXY,HTTPS_PROXY,ALL_PROXY,NO_PROXY,http_proxy,https_proxy,all_proxy,no_proxy
+```
+
 ### Separate developer vs agent Codex accounts
 
 Keep account A in `~/.codex` for local development. Login account B into an isolated home that workers read:

@@ -5,6 +5,7 @@ import { InMemoryRunStore } from "../apps/server/src/runtime/runStore";
 import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { RunApiService } from "../apps/server/src/api/runs/runApiService";
 import { InMemoryStudioStore } from "../src/studio/infrastructure/in-memory-studio-store";
+import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 
 function linearAgentWorkflow() {
   const agent = createAgentRecord({ name: "Retryable" });
@@ -123,6 +124,24 @@ test("branch cancellation is exposed only for declared workflow branches", () =>
   expect(service.cancelBranch("branch-api-run", "slow")).toEqual({ runId: "branch-api-run", branchKey: "slow", status: "cancelling" });
   expect(store.events("branch-api-run").at(-1)?.type).toBe("branch.cancelled");
   expect(() => service.cancelBranch("branch-api-run", "unknown")).toThrow(/active|cancelled/i);
+});
+
+test("branch lifecycle events retain their public event types", () => {
+  const skipped = mapAgentExecutionEvent({
+    type: "branch.skipped",
+    timestamp: nowIso(),
+    runId: "branch-event-run",
+    nodeId: "branch-worker",
+    payload: { branchKey: "slow", reason: "branch_cancelled" },
+  }, "branch-event-run");
+
+  expect(skipped).toHaveLength(1);
+  expect(skipped[0]).toMatchObject({
+    runId: "branch-event-run",
+    nodeId: "branch-worker",
+    type: "branch.skipped",
+    payload: { branchKey: "slow", reason: "branch_cancelled" },
+  });
 });
 
 test("parallel work obeys the live concurrency ceiling and fan-in preserves branch results", async () => {

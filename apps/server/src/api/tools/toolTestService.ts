@@ -23,14 +23,16 @@ export class ToolTestService {
     let tool: ToolRecord | null = null;
     const targetId = request.toolId ?? request.tool?.id;
 
-    if (targetId && this.studioStore) {
-      const stored = await this.studioStore.getTool(targetId);
-      if (stored) {
-        if (!authorizeToolOrAgent(principal, stored, "execute")) throw new ApiError(404, "Access denied to tool.");
-        tool = stored;
+    if (this.studioStore) {
+      if (!targetId) throw new ApiError(404, "Tool not found");
+      const stored = await this.studioStore.getTool(targetId, principal);
+      if (!stored || !authorizeToolOrAgent(principal, stored, "execute")) {
+        throw new ApiError(404, "Access denied to tool.");
       }
-    }
-    if (request.tool) {
+      // The registry is authoritative. Never execute browser-supplied changes
+      // to category, configuration, impact, or enabled state for a saved id.
+      tool = stored;
+    } else if (request.tool) {
       assertNoCredentials(request.tool);
       tool = migrateToolRecord(request.tool);
     }

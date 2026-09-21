@@ -1,9 +1,6 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
-import { Columns3, Layers, ShieldCheck } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { WorkflowEditor } from "@/components/workflow/WorkflowEditor";
 
 export default function OrgPage() {

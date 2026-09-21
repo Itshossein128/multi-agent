@@ -33,6 +33,14 @@ function usableClaudeCredentials(overrides: Record<string, unknown> = {}) {
   }));
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 3_000): Promise<void> {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) throw new Error("Timed out waiting for run completion");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("worker credential foundation", () => {
   test("development environment resolver is explicit, provider constrained, and fail closed", async () => {
     const disabled = environmentWorkerCredentialResolverFromEnvironment({
@@ -214,13 +222,15 @@ describe("worker credential foundation", () => {
     agent.tenantId = "tenant-from-agent-record";
     agent.ownerId = "user-from-agent-record";
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
-    const executor = new RunExecutor(new InMemoryRunStore(), runtime);
+    const store = new InMemoryRunStore();
+    const executor = new RunExecutor(store, runtime);
     const runId = executor.startAgentTest({ agent, input: { value: "test" } }, undefined, { tenantId: "tenant-server", userId: "user-server" });
 
     const input = await captured;
     expect(input.runId).toBe(runId);
     expect(input.credentialPrincipal).toEqual({ tenantId: "tenant-server", principalId: "user-server" });
     expect(input.credentialPrincipal).not.toEqual({ tenantId: agent.tenantId, principalId: agent.ownerId });
+    await waitFor(() => store.get(runId)?.run.status === "completed");
   });
 
   test("normal workflow execution propagates trusted principal through the compiler path", async () => {
@@ -241,11 +251,13 @@ describe("worker credential foundation", () => {
       nodes: [inputNode, agentNode, outputNode],
       edges: [createEdge({ source: inputNode.id, target: agentNode.id }), createEdge({ source: agentNode.id, target: outputNode.id })],
     };
-    const executor = new RunExecutor(new InMemoryRunStore(), runtime);
+    const store = new InMemoryRunStore();
+    const executor = new RunExecutor(store, runtime);
     const runId = executor.start({ workflow, agents: [agent], input: { value: "test" } }, undefined, { tenantId: "tenant-workflow", userId: "user-workflow" });
 
     const execution = await captured;
     expect(execution.runId).toBe(runId);
     expect(execution.credentialPrincipal).toEqual({ tenantId: "tenant-workflow", principalId: "user-workflow" });
+    await waitFor(() => store.get(runId)?.run.status === "completed");
   });
 });

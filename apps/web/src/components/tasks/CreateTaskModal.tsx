@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { GitBranch, Link2, Sparkles, X } from "lucide-react";
+import { Link2, Sparkles, X } from "lucide-react";
 import {
   BoardAgent,
   BoardWorkflow,

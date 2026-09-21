@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import type { AgentRecord, ToolRecord, WorkflowDefinition } from "@multi-agent/types";
 import { Button } from "@/components/ui/button";
 import { Section } from "./AgentFields";
@@ -10,7 +11,7 @@ export function AgentToolsPanel({ agent, tools, editing, onChange }: { agent: Ag
   const catalog = new Map(tools.map((tool) => [tool.id, tool]));
   const available = tools.filter((tool) => !agent.tools.includes(tool.id));
   return <Section title="Assigned tools">
-    <p className="text-sm text-zinc-400">Assignments reference the Tool registry (<a className="text-indigo-300 underline" href="/org/tools">/org/tools</a>). Remove an assignment to disable that tool for this agent.</p>
+    <p className="text-sm text-zinc-400">Assignments reference the Tool registry (<Link className="text-indigo-300 underline" href="/org/tools">/org/tools</Link>). Remove an assignment to disable that tool for this agent.</p>
     {!agent.tools.length && <p className="text-sm text-zinc-400">No tools assigned.</p>}
     <ul className="space-y-2">{agent.tools.map((id) => {
       const tool = catalog.get(id);

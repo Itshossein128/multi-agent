@@ -121,6 +121,7 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
       expect(user).not.toBeNull();
       expect(user?.id).toBeTruthy();
       expect(user?.tenantId).toBeTruthy();
+      expect(user?.email).toBe(email);
     });
 
     test("rejects authorization for invalid password", async () => {

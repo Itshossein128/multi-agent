@@ -21,7 +21,7 @@ export function createStudioComposition(): StudioComposition {
 
   let pool: ManagedPool | undefined;
   if (mode === "postgres") {
-    pool = createPostgresPool(connectionString, { statementTimeoutMs: 10000 });
+    pool = createPostgresPool(connectionString!, { statementTimeoutMs: 10000 });
   }
   const store = pool ? new PostgresStudioStore(pool) : new InMemoryStudioStore();
   return { store, pool, mode, close: async () => { await pool?.end(); } };

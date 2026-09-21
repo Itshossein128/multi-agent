@@ -10,10 +10,12 @@ import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
 import { ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
-import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, resolveCliSpawnExecutable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
+import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, agyArgs, agyStreamInput, parseAgyStreamOutput, resolveCliSpawnExecutable, cliExecutableAvailable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
 import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 
 describe("Agent backend abstraction", () => {
   test("migrates legacy model/provider records into api backend", () => {
@@ -237,7 +239,12 @@ describe("CLI and local executors", () => {
 
   test("uses safe non-interactive defaults for agy and includes model and prompt context", async () => {
     const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
-    const wait = jest.fn(async () => ({ code: 0, stdout: "Agy answer", stderr: "", reason: "completed" }));
+    const streamStdout = [
+      JSON.stringify({ event: "init", session_id: "sess-1" }),
+      JSON.stringify({ event: "step", step: 1 }),
+      JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "Agy answer" } }),
+    ].join("\n");
+    const wait = jest.fn(async () => ({ code: 0, stdout: streamStdout, stderr: "", reason: "completed" }));
     const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
 
     const agent = createAgentRecord({ backend: { type: "cli", provider: "agy", model: "gpt-5" } });
@@ -245,15 +252,192 @@ describe("CLI and local executors", () => {
     agent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace/project", allowedCommands: ["agy"] };
     const runtimePolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["agy"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 };
 
-    for await (const _event of new CliAgentExecutor(workerRuntime, runtimePolicy).execute({ agent, input: { task: "review" }, runId: "r", nodeId: "n" })) { /* drain */ }
+    const events: AgentExecutionEvent[] = [];
+    for await (const event of new CliAgentExecutor(workerRuntime, runtimePolicy).execute({ agent, input: { task: "review" }, runId: "r", nodeId: "n" })) {
+      events.push(event);
+    }
 
+    const expectedArgs = ["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", "--model", "gpt-5"];
     expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ executable: expect.stringContaining("agy"), args: ["--print", "--output-format", "text", "--disable-slash-commands", "--model", "gpt-5"], cwd: "/workspace/project" }),
+      expect.objectContaining({
+        executable: expect.stringContaining("agy"),
+        args: expectedArgs,
+        cwd: "/workspace/project",
+      }),
       undefined,
-      expect.stringContaining("SYSTEM INSTRUCTIONS"),
+      expect.any(String),
       undefined,
     );
-    expect((start.mock.calls[0] as any[])[2]).toContain("review");
+
+    const callArgs = ((start.mock.calls as any[][])[0][0] as { args: string[] }).args;
+    expect(JSON.stringify(callArgs)).not.toContain("review");
+    expect(JSON.stringify(callArgs)).not.toContain("concise");
+
+    const decodedStdin = JSON.parse((start.mock.calls as any[][])[0][2]);
+    expect(decodedStdin).toEqual({
+      event: "user",
+      message: {
+        role: "user",
+        content: expect.stringContaining("SYSTEM INSTRUCTIONS:\nBe concise."),
+      },
+    });
+    expect(decodedStdin.message.content).toContain("review");
+
+    expect(events.map((e) => e.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
+    expect((events[1].payload as { content: string }).content).toBe("Agy answer");
+    expect((events[2].payload as { content: string }).content).toBe("Agy answer");
+  });
+
+  describe("agyArgs helper", () => {
+    test("provides deterministic noninteractive defaults for empty or undefined args", () => {
+      expect(agyArgs(undefined)).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs([])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+    });
+
+    test("removes --print and does not include it", () => {
+      expect(agyArgs(["--print"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--print", "text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--print", "--print", "--print"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--verbose", "--print"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", "--verbose"]);
+    });
+
+    test("forces --output-format stream-json even if a different format was passed", () => {
+      expect(agyArgs(["--output-format", "json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--output-format=json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--output-format", "text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+    });
+
+    test("ensures --disable-slash-commands is present and deduplicated", () => {
+      expect(agyArgs(["--disable-slash-commands"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--disable-slash-commands", "--verbose"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands", "--verbose"]);
+    });
+
+    test("preserves ordinary explicit flags", () => {
+      expect(agyArgs(["--verbose", "--thinking", "medium"])).toEqual([
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--disable-slash-commands",
+        "--verbose",
+        "--thinking",
+        "medium",
+      ]);
+    });
+
+    test("strips all --input-format forms and separate values", () => {
+      expect(agyArgs(["--input-format", "text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format=text"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format", "json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format=json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format", "stream-json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+      expect(agyArgs(["--input-format=stream-json"])).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--disable-slash-commands"]);
+    });
+
+    test("rejects or removes conflicting interactive and session flags without adding bypass permissions", () => {
+      const explicit = [
+        "--prompt-interactive",
+        "--continue",
+        "-c",
+        "-i",
+        "--remote-control",
+        "--input-format",
+        "stream-json",
+        "--input-format=stream-json",
+        "--input-format",
+        "text",
+        "--input-format=json",
+        "--custom-flag",
+        "value",
+      ];
+      const result = agyArgs(explicit);
+      expect(result).toEqual([
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--disable-slash-commands",
+        "--custom-flag",
+        "value",
+      ]);
+      expect(result).not.toContain("--prompt-interactive");
+      expect(result).not.toContain("--continue");
+      expect(result).not.toContain("-c");
+      expect(result).not.toContain("-i");
+      expect(result).not.toContain("--remote-control");
+      expect(result).not.toContain("--dangerously-skip-permissions");
+      expect(result).not.toContain("--print");
+    });
+  });
+
+  describe("parseAgyStreamOutput and agyStreamInput helpers", () => {
+    test("encodes agyStreamInput with event=user and role=user ending with newline", () => {
+      const encoded = agyStreamInput("test prompt");
+      expect(encoded.endsWith("\n")).toBe(true);
+      expect(JSON.parse(encoded)).toEqual({
+        event: "user",
+        message: {
+          role: "user",
+          content: "test prompt",
+        },
+      });
+    });
+
+    test("parses successful final result from nested NDJSON stream", () => {
+      const stdout = [
+        JSON.stringify({ event: "init", id: "1" }),
+        JSON.stringify({ event: "step", step: 1 }),
+        JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "all done!" } }),
+      ].join("\n");
+      expect(parseAgyStreamOutput(stdout)).toBe("all done!");
+    });
+
+    test("throws generic non-secret error for malformed line", () => {
+      const secret = "SUPER_SECRET_TOKEN";
+      const stdout = `{"event":"init"}\n{invalid_json:${secret}\n`;
+      expect(() => parseAgyStreamOutput(stdout)).toThrow(/Failed to parse agy stream output: invalid JSON/);
+      try {
+        parseAgyStreamOutput(stdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
+
+    test("throws generic non-secret error when no result event is present", () => {
+      const secret = "SENSITIVE_DATA_123";
+      const stdout = [
+        JSON.stringify({ event: "init", session: secret }),
+        JSON.stringify({ event: "step", step: 1, secret }),
+      ].join("\n");
+      expect(() => parseAgyStreamOutput(stdout)).toThrow(/missing final result event/);
+      try {
+        parseAgyStreamOutput(stdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
+
+    test("throws generic non-secret error on nested ERROR status", () => {
+      const secret = "API_KEY_LEAK";
+      const failedStdout = JSON.stringify({ event: "result", result: { status: "ERROR", error: secret } });
+      expect(() => parseAgyStreamOutput(failedStdout)).toThrow(/Agy execution failed or returned invalid response/);
+      try {
+        parseAgyStreamOutput(failedStdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
+
+    test("throws generic non-secret error on nested SUCCESS with non-string response", () => {
+      const secret = "SECRET_OBJ_DATA";
+      const invalidRespStdout = JSON.stringify({ event: "result", result: { status: "SUCCESS", response: { secret } } });
+      expect(() => parseAgyStreamOutput(invalidRespStdout)).toThrow(/Agy execution failed or returned invalid response/);
+      try {
+        parseAgyStreamOutput(invalidRespStdout);
+      } catch (err: any) {
+        expect(err.message).not.toContain(secret);
+      }
+    });
   });
 
   test("forces saved Codex options through exec mode instead of starting the TUI", async () => {
@@ -403,6 +587,65 @@ describe("CLI and local executors", () => {
 
     expect(start).toHaveBeenCalledWith(expect.objectContaining({ executable: "codex" }), undefined, expect.any(String), undefined);
     expect(JSON.stringify(start.mock.calls)).not.toContain(hostExecutable);
+  });
+
+  describe("portable executable resolution and availability", () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agy-test-"));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    test("an exactly allowlisted bare agy stays bare and cliExecutableAvailable finds it via PATH", () => {
+      const execName = process.platform === "win32" ? "agy.exe" : "agy";
+      const filePath = path.join(tempDir, execName);
+      fs.writeFileSync(filePath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+      const fakeEnv = { PATH: tempDir };
+      expect(cliExecutableAvailable("agy", fakeEnv)).toBe(true);
+      expect(resolveCliSpawnExecutable("agy", ["agy"], fakeEnv)).toBe("agy");
+    });
+
+    test("an explicitly allowlisted absolute path resolves absolute", () => {
+      const execName = process.platform === "win32" ? "tool.exe" : "tool";
+      const filePath = path.join(tempDir, execName);
+      fs.writeFileSync(filePath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+      const resolved = resolveCliSpawnExecutable(filePath, [filePath], { PATH: "" });
+      expect(resolved).toBe(path.resolve(filePath));
+      expect(cliExecutableAvailable(filePath)).toBe(true);
+    });
+
+    test("a non-executable file is unavailable", () => {
+      const nonExecName = process.platform === "win32" ? "nonexec.exe" : "nonexec";
+      const filePath = path.join(tempDir, nonExecName);
+      fs.writeFileSync(filePath, "data", { mode: 0o644 });
+      if (process.platform !== "win32") {
+        fs.chmodSync(filePath, 0o644);
+      }
+
+      const fakeEnv = { PATH: tempDir };
+      if (process.platform !== "win32") {
+        expect(cliExecutableAvailable(filePath)).toBe(false);
+        expect(cliExecutableAvailable(nonExecName, fakeEnv)).toBe(false);
+      } else {
+        // On platforms where execute bits are checked via X_OK
+        expect(typeof cliExecutableAvailable(filePath)).toBe("boolean");
+      }
+    });
+
+    test("an explicit absolute path is never rewritten merely because bare agy is allowlisted", () => {
+      const customExec = path.join(tempDir, process.platform === "win32" ? "custom-bin.exe" : "custom-bin");
+      fs.writeFileSync(customExec, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
+      const resolved = resolveCliSpawnExecutable(customExec, ["agy"], { PATH: tempDir });
+      expect(resolved).toBe(path.resolve(customExec));
+      expect(resolved).not.toBe("agy");
+    });
   });
 
   test("rejects unknown CLI worker modes instead of falling back to local execution", () => {

@@ -19,7 +19,7 @@ export function createMemoryComposition(): MemoryComposition {
   if (mode === "in-memory" && process.env.NODE_ENV === "production") throw new Error("Volatile memory storage is not supported in production.");
   let pool: ManagedPool | undefined;
   if (mode === "postgres") {
-    pool = createPostgresPool(connectionString, { statementTimeoutMs: 5000 });
+    pool = createPostgresPool(connectionString!, { statementTimeoutMs: 5000 });
   }
   const vectorEnabled = process.env.MEMORY_VECTOR_ENABLED === "true";
   const store = pool ? new PostgresMemoryStore(pool, { vectorEnabled }) : new InMemoryMemoryStore();
