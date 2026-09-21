@@ -1,4 +1,6 @@
 -- Optional: requires pgvector installed on the server and extension creation privileges.
+-- If this migration fails, the pgvector extension is not available in this PostgreSQL instance.
+-- Memory will still work with lexical-only retrieval; set MEMORY_VECTOR_ENABLED=false.
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 -- Unconstrained dimensions allow embedding model migrations to coexist.
 -- Generated projection cannot diverge from the canonical array on update/delete.

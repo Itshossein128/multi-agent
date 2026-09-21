@@ -46,4 +46,4 @@ The editor's workflow selector opens saved workflows by ID and creates new ones.
 
 Server builds emit into `apps/server/dist/apps/server/src`, including their shared runtime dependencies. Run `pnpm --filter server build` then `pnpm --filter server start`; generated JavaScript no longer sits beside runtime TypeScript sources.
 
-Development CORS allows Studio on localhost ports 3000 and 3001. Set `WEB_ORIGIN` to a comma-separated list of exact origins to override it; production defaults to localhost:3000.
+Development CORS allows Studio on localhost ports 3060 and 3061. Set `WEB_ORIGIN` to a comma-separated list of exact origins to override it; production defaults to localhost:3060.

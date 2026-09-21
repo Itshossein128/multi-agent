@@ -32,7 +32,7 @@ async function createDurableCheckpointer(connectionString: string): Promise<(Bas
 async function main() {
   const observability = createObservabilityRuntime();
   const app = new Hono();
-  const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3000" : "http://localhost:3000,http://localhost:3001")).split(",").map((origin) => origin.trim());
+  const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3060" : "http://localhost:3060,http://localhost:3061")).split(",").map((origin) => origin.trim());
   app.use("/*", async (c, next) => {
     const origin = c.req.header("Origin");
     if (origin && webOrigins.includes(origin)) c.header("Access-Control-Allow-Origin", origin);

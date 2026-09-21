@@ -8,7 +8,7 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000",
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3060",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -23,7 +23,7 @@ export default defineConfig({
     },
     {
       command: "pnpm dev",
-      url: process.env.E2E_BASE_URL ?? "http://localhost:3000/login",
+      url: process.env.E2E_BASE_URL ?? "http://localhost:3060/login",
       reuseExistingServer: true,
       timeout: 120_000,
     },
