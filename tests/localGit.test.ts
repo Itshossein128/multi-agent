@@ -49,8 +49,8 @@ describe('LocalGitClient Security & Functionality', () => {
     // Save and clear test flags so isTestEnv() returns false
     const oldEnv = process.env.NODE_ENV;
     const oldJestWorkerId = process.env.JEST_WORKER_ID;
-    delete process.env.NODE_ENV;
-    delete process.env.JEST_WORKER_ID;
+    delete (process.env as any).NODE_ENV;
+    delete (process.env as any).JEST_WORKER_ID;
 
     try {
       const repoDir = await client.cloneOrPull('my-repo');
@@ -74,8 +74,8 @@ describe('LocalGitClient Security & Functionality', () => {
         expect.any(Function)
       );
     } finally {
-      process.env.NODE_ENV = oldEnv;
-      process.env.JEST_WORKER_ID = oldJestWorkerId;
+      (process.env as any).NODE_ENV = oldEnv;
+      (process.env as any).JEST_WORKER_ID = oldJestWorkerId;
     }
   });
 
@@ -90,8 +90,8 @@ describe('LocalGitClient Security & Functionality', () => {
 
     const oldEnv = process.env.NODE_ENV;
     const oldJestWorkerId = process.env.JEST_WORKER_ID;
-    delete process.env.NODE_ENV;
-    delete process.env.JEST_WORKER_ID;
+    delete (process.env as any).NODE_ENV;
+    delete (process.env as any).JEST_WORKER_ID;
 
     try {
       const maliciousRepo = 'repo; touch /tmp/pwned; $(whoami)';
@@ -110,8 +110,8 @@ describe('LocalGitClient Security & Functionality', () => {
         expect.any(Function)
       );
     } finally {
-      process.env.NODE_ENV = oldEnv;
-      process.env.JEST_WORKER_ID = oldJestWorkerId;
+      (process.env as any).NODE_ENV = oldEnv;
+      (process.env as any).JEST_WORKER_ID = oldJestWorkerId;
     }
   });
 
@@ -124,8 +124,8 @@ describe('LocalGitClient Security & Functionality', () => {
 
     const oldEnv = process.env.NODE_ENV;
     const oldJestWorkerId = process.env.JEST_WORKER_ID;
-    delete process.env.NODE_ENV;
-    delete process.env.JEST_WORKER_ID;
+    delete (process.env as any).NODE_ENV;
+    delete (process.env as any).JEST_WORKER_ID;
 
     try {
       const repo = 'test-repo';
@@ -154,8 +154,8 @@ describe('LocalGitClient Security & Functionality', () => {
         expect.any(Function)
       );
     } finally {
-      process.env.NODE_ENV = oldEnv;
-      process.env.JEST_WORKER_ID = oldJestWorkerId;
+      (process.env as any).NODE_ENV = oldEnv;
+      (process.env as any).JEST_WORKER_ID = oldJestWorkerId;
     }
   });
 });
