@@ -83,7 +83,7 @@ function RunsHistoryContent() {
 
 export default function RunsHistoryPage() {
   return (
-    <Suspense fallback={<p className="min-h-screen bg-zinc-950 p-4 text-sm text-zinc-500">Loading runs…</p>}>
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 p-4 text-sm text-zinc-500">Loading runs…</div>}>
       <RunsHistoryContent />
     </Suspense>
   );
