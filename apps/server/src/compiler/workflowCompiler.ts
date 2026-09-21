@@ -3,6 +3,7 @@ import { nowIso, validateAgent, type AgentRecord, type ApprovalNodeConfig, type 
 import { AgentRuntime, AgentExecutionFailedError, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
+import { buildHandoff, type AgentHandoff } from "../../../../src/agents/runtime/handoff";
 import { validateWorkflow } from "./validation";
 import { ToolRuntime } from "../../../../src/tools";
 import { AbortableSemaphore } from "../runtime/semaphore";
@@ -20,6 +21,7 @@ export interface RuntimeState {
   output: Record<string, unknown>;
   memory: Record<string, unknown>;
   shortTermHistories?: ShortTermHistories;
+  handoffs?: Record<string, AgentHandoff>;
   branch?: string;
   lastValue?: unknown;
   nodeResults?: Record<string, unknown>;
@@ -36,6 +38,10 @@ const State = Annotation.Root({
   branch: Annotation<string | undefined>({ reducer: (_, next) => next, default: () => undefined }),
   lastValue: Annotation<unknown>({ reducer: (_, next) => next, default: () => undefined }),
   nodeResults: Annotation<Record<string, unknown>>({
+    reducer: (current, next) => ({ ...current, ...next }),
+    default: () => ({}),
+  }),
+  handoffs: Annotation<Record<string, AgentHandoff>>({
     reducer: (current, next) => ({ ...current, ...next }),
     default: () => ({}),
   }),
@@ -205,6 +211,8 @@ export function compileWorkflow(
             if (agentErrors.length) throw new Error(agentErrors.join(" "));
 
             let shortTermHistories: ShortTermHistories = {};
+            let agentFailed = false;
+            let agentError: string | undefined;
             const value = options.agentRunner
               ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id, signal })
               : await runAgentThroughRuntime(agent, executionState, {
@@ -217,8 +225,21 @@ export function compileWorkflow(
                 credentialPrincipal: options.credentialPrincipal,
                 onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
                 signal,
+                onError: (err) => { agentFailed = true; agentError = err; },
               });
-            result = { lastValue: value, shortTermHistories };
+
+            // Build structured handoff from agent output
+            const handoff = buildHandoff({
+              runId,
+              workflowId: options.workflowId ?? definition.id,
+              sourceNodeId: node.id,
+              sourceAgentId: agent.id,
+              rawOutput: value,
+              succeeded: !agentFailed,
+              error: agentError,
+            });
+            const handoffs = { [node.id]: handoff };
+            result = { lastValue: value, shortTermHistories, handoffs };
           }
           if (branchSignal?.aborted && !options.signal?.aborted) {
             emit("branch.skipped", { branchKey, nodeType: node.type, reason: "branch_cancelled" });
@@ -354,6 +375,7 @@ async function runAgentThroughRuntime(
     credentialPrincipal?: TrustedCredentialPrincipal;
     onShortTermUpdate: (update: ShortTermHistories) => void;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
+    onError?: (error: string) => void;
   }
 ): Promise<unknown> {
   let lastContent: unknown;
@@ -369,7 +391,8 @@ async function runAgentThroughRuntime(
     shortTermHistories: state.shortTermHistories ?? {},
     onShortTermUpdate: meta.onShortTermUpdate,
     onBackgroundEvent: meta.onAgentEvent,
-    context: { memory: state.memory, branch: state.branch },
+    context: { memory: state.memory, branch: state.branch, previousOutput: state.lastValue },
+    handoffs: state.handoffs,
   })) {
     meta.onAgentEvent?.(event);
     if (event.type === "agent.completed" || event.type === "agent.output") {
@@ -377,7 +400,9 @@ async function runAgentThroughRuntime(
       lastContent = payload && "content" in payload ? payload.content : event.payload;
     }
     if (event.type === "agent.failed") {
-      throw new AgentExecutionFailedError((event.payload as { error?: string })?.error ?? "Agent execution failed");
+      const errorMsg = (event.payload as { error?: string })?.error ?? "Agent execution failed";
+      meta.onError?.(errorMsg);
+      throw new AgentExecutionFailedError(errorMsg);
     }
   }
   return lastContent;

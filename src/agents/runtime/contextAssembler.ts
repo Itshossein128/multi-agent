@@ -1,4 +1,5 @@
 import type { AgentRecord } from "@multi-agent/types";
+import { serializeHandoffForContext, type AgentHandoff } from "./handoff";
 import type { MemoryAccessContext } from "../../memory/contracts";
 import { DefaultMemoryContextFormatter } from "../../memory/application/memoryContextFormatter";
 import { type ShortTermHistories, type HistoryEntry, boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
@@ -11,6 +12,7 @@ export type ContextSource =
   | "task"
   | "history"
   | "long_term_memory"
+  | "handoff"
   | "runtime_state"
   | "previous_output"
   | "metadata";
@@ -34,8 +36,7 @@ export interface ContextItem {
   metadata?: Record<string, unknown>;
 }
 
-// ─── Assembly Request ────────────────────────────────────────────────────────
-
+// Handoff context request fields
 export interface ContextAssemblyRequest {
   runId: string;
   workflowId: string;
@@ -47,6 +48,7 @@ export interface ContextAssemblyRequest {
   history?: HistoryEntry[];
   longTermMemoryContext?: string;
   longTermMemoryEvents?: unknown[];
+  handoffs?: Record<string, AgentHandoff>;
   previousOutput?: unknown;
   branchState?: string;
   runtimeState?: Record<string, unknown>;
@@ -115,6 +117,7 @@ function resolveInputBudget(model?: { contextWindowTokens?: number }, reservedOu
 export const PRIORITY = {
   SYSTEM: 100,
   TASK: 90,
+  HANDOFF: 70,
   RUNTIME_STATE: 60,
   LONG_TERM_MEMORY: 50,
   HISTORY: 40,
@@ -179,6 +182,31 @@ export class DefaultContextAssembler implements ContextAssembler {
       required: true,
     });
 
+    // Structured handoffs from predecessor agents
+    if (request.handoffs) {
+      const handoffEntries = Object.entries(request.handoffs)
+        .sort(([a], [b]) => a.localeCompare(b)); // deterministic ordering
+      for (const [sourceNodeId, handoff] of handoffEntries) {
+        const handoffText = serializeHandoffForContext(handoff);
+        items.push({
+          id: `handoff:${sourceNodeId}:${handoff.id}`,
+          source: "handoff",
+          priority: PRIORITY.HANDOFF,
+          content: { type: "handoff", handoff, text: handoffText },
+          estimatedTokens: this.estimator.estimate(handoffText),
+          required: false,
+          metadata: {
+            handoffId: handoff.id,
+            sourceNodeId,
+            sourceAgentId: handoff.sourceAgentId,
+            status: handoff.status,
+            findingCount: handoff.findings.length,
+            decisionCount: handoff.decisions.length,
+          },
+        });
+      }
+    }
+
     // Runtime state (memory, branch) — if present, as separate items
     if (request.runtimeState) {
       const stateText = JSON.stringify(request.runtimeState);
@@ -232,8 +260,10 @@ export class DefaultContextAssembler implements ContextAssembler {
       });
     }
 
-    // Previous output — if present
-    if (request.previousOutput !== undefined) {
+    // Previous output — only if no handoffs exist (raw fallback)
+    // When structured handoffs are available, raw output is not included as context
+    // to prevent context bloat. Raw output remains in run events for observability.
+    if (request.previousOutput !== undefined && !request.handoffs) {
       const prevText = typeof request.previousOutput === "string"
         ? request.previousOutput
         : JSON.stringify(request.previousOutput);
@@ -296,6 +326,7 @@ export class DefaultContextAssembler implements ContextAssembler {
       task: sourceStats["task"] ?? { count: 0, tokens: 0 },
       history: sourceStats["history"] ?? { count: 0, tokens: 0 },
       long_term_memory: sourceStats["long_term_memory"] ?? { count: 0, tokens: 0 },
+      handoff: sourceStats["handoff"] ?? { count: 0, tokens: 0 },
       runtime_state: sourceStats["runtime_state"] ?? { count: 0, tokens: 0 },
       previous_output: sourceStats["previous_output"] ?? { count: 0, tokens: 0 },
       metadata: sourceStats["metadata"] ?? { count: 0, tokens: 0 },

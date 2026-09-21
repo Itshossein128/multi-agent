@@ -18,6 +18,24 @@ export {
   Utf8ByteEstimator,
   PRIORITY,
 } from "./contextAssembler";
+export type {
+  AgentHandoff,
+  HandoffStatus,
+  HandoffFinding,
+  HandoffDecision,
+  HandoffAssumption,
+  HandoffWorkItem,
+  HandoffWarning,
+  HandoffArtifactRef,
+  HandoffBuildInput,
+} from "./handoff";
+export {
+  buildHandoff,
+  validateHandoff,
+  serializeHandoffForContext,
+  HANDOFF_LIMITS,
+  HandoffValidationError,
+} from "./handoff";
 export { AgentRuntime } from "./agentRuntime";
 export { CliAgentExecutor } from "./cliAgentExecutor";
 export { LocalAgentExecutor } from "./localAgentExecutor";

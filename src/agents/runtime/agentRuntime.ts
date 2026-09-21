@@ -87,6 +87,7 @@ export class AgentRuntime {
       history: history as HistoryEntry[],
       longTermMemoryContext: memoryContext,
       longTermMemoryEvents: memoryEvents,
+      handoffs: input.handoffs,
       previousOutput: input.context?.previousOutput,
       branchState: typeof input.context?.branch === "string" ? input.context.branch : undefined,
       runtimeState: input.context?.memory && typeof input.context.memory === "object"
