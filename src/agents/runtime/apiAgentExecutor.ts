@@ -43,14 +43,7 @@ export class ApiAgentExecutor implements AgentExecutor {
         model: agent.backend.model,
         settings: agent.backend.settings,
       });
-      const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
-      const messages = [
-        { role: "system", content: systemPromptFor(agent) },
-        ...history.flatMap((entry) => [{ role: "user", content: serializeInput(entry.input) }, { role: "assistant", content: serializeInput(entry.output) }]),
-        ...(typeof input.context?.memoryContext === "string" && input.context.memoryContext
-          ? [{ role: "user", content: input.context.memoryContext }] : []),
-        { role: "user", content: serializeInput(input.input) },
-      ];
+      const messages = buildMessages(input);
       const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };
       const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
       const content = result.content;
@@ -72,6 +65,68 @@ export class ApiAgentExecutor implements AgentExecutor {
       throw new AgentExecutionFailedError(message);
     }
   }
+}
+
+/**
+ * Build messages from AssembledContext when available, otherwise fall back to
+ * legacy context assembly for backward compatibility.
+ */
+function buildMessages(input: AgentExecutionInput): unknown[] {
+  if (input.assembledContext) {
+    return assembledContextToMessages(input.assembledContext, input.agent);
+  }
+  // Legacy path: context assembled by executor
+  const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
+  return [
+    { role: "system", content: systemPromptFor(input.agent) },
+    ...history.flatMap((entry) => [
+      { role: "user", content: serializeInput(entry.input) },
+      { role: "assistant", content: serializeInput(entry.output) },
+    ]),
+    ...(typeof input.context?.memoryContext === "string" && input.context.memoryContext
+      ? [{ role: "user", content: input.context.memoryContext }]
+      : []),
+    { role: "user", content: serializeInput(input.input) },
+  ];
+}
+
+/** Serialize AssembledContext items into API chat messages. */
+function assembledContextToMessages(ctx: import("./contextAssembler").AssembledContext, agent: AgentRecord): unknown[] {
+  const messages: unknown[] = [];
+  for (const item of ctx.items) {
+    const content = item.content as Record<string, unknown>;
+    switch (item.source) {
+      case "system":
+        messages.push({ role: "system", content: content.text ?? systemPromptFor(agent) });
+        break;
+      case "task":
+        messages.push({ role: "user", content: content.text ?? "" });
+        break;
+      case "history": {
+        const entries = (content.entries ?? []) as { input: unknown; output: unknown }[];
+        for (const entry of entries) {
+          messages.push({ role: "user", content: serializeInput(entry.input) });
+          messages.push({ role: "assistant", content: serializeInput(entry.output) });
+        }
+        break;
+      }
+      case "long_term_memory":
+        if (typeof content.text === "string" && content.text.trim()) {
+          messages.push({ role: "user", content: content.text });
+        }
+        break;
+      case "previous_output":
+        if (typeof content.text === "string" && content.text.trim()) {
+          messages.push({ role: "user", content: content.text });
+        }
+        break;
+      case "runtime_state":
+      case "metadata":
+        // These are not serialized to model messages — they exist for diagnostics/extensibility
+        break;
+    }
+  }
+  return messages;
 }
 
 function systemPromptFor(agent: AgentRecord): string {

@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import { nowIso, type AgentBackend } from "@multi-agent/types";
+import { nowIso, type AgentBackend, type AgentRecord } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
 import type { WorkerRuntime, WorkerSpec } from "./workerRuntime";
@@ -196,6 +196,10 @@ export class CliAgentExecutor implements AgentExecutor {
 }
 
 function prompt(input: AgentExecutionInput): string {
+  if (input.assembledContext) {
+    return assembledContextToPrompt(input.assembledContext, input.agent);
+  }
+  // Legacy path
   const serialize = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value ?? {});
   const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
   return [
@@ -204,6 +208,45 @@ function prompt(input: AgentExecutionInput): string {
     typeof input.context?.memoryContext === "string" && input.context.memoryContext ? `MEMORY CONTEXT:\n${input.context.memoryContext}` : "",
     `USER INPUT:\n${serialize(input.input)}`,
   ].filter(Boolean).join("\n\n");
+}
+
+/** Serialize AssembledContext items into a CLI prompt string. */
+function assembledContextToPrompt(ctx: import("./contextAssembler").AssembledContext, agent: AgentRecord): string {
+  const serialize = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value ?? {});
+  const sections: string[] = [];
+  for (const item of ctx.items) {
+    const content = item.content as Record<string, unknown>;
+    switch (item.source) {
+      case "system":
+        if (content.text) sections.push(`SYSTEM INSTRUCTIONS:\n${content.text}`);
+        break;
+      case "task":
+        sections.push(`USER INPUT:\n${content.text ?? ""}`);
+        break;
+      case "history": {
+        const entries = (content.entries ?? []) as { input: unknown; output: unknown }[];
+        for (const entry of entries) {
+          sections.push(`PREVIOUS USER INPUT:\n${serialize(entry.input)}\nPREVIOUS ASSISTANT OUTPUT:\n${serialize(entry.output)}`);
+        }
+        break;
+      }
+      case "long_term_memory":
+        if (typeof content.text === "string" && content.text.trim()) {
+          sections.push(`MEMORY CONTEXT:\n${content.text}`);
+        }
+        break;
+      case "previous_output":
+        if (typeof content.text === "string" && content.text.trim()) {
+          sections.push(`PREVIOUS OUTPUT:\n${content.text}`);
+        }
+        break;
+      case "runtime_state":
+      case "metadata":
+        // Not serialized to CLI prompt
+        break;
+    }
+  }
+  return sections.filter(Boolean).join("\n\n");
 }
 
 function event(type: AgentExecutionEvent["type"], input: AgentExecutionInput, payload: unknown): AgentExecutionEvent {

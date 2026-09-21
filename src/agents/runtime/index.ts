@@ -4,6 +4,20 @@ export type {
   AgentExecutionInput,
   AgentExecutor,
 } from "./types";
+export type {
+  ContextSource,
+  ContextItem,
+  ContextAssemblyRequest,
+  AssembledContext,
+  ContextAssembler,
+  TokenEstimator,
+  DefaultContextAssemblerOptions,
+} from "./contextAssembler";
+export {
+  DefaultContextAssembler,
+  Utf8ByteEstimator,
+  PRIORITY,
+} from "./contextAssembler";
 export { AgentRuntime } from "./agentRuntime";
 export { CliAgentExecutor } from "./cliAgentExecutor";
 export { LocalAgentExecutor } from "./localAgentExecutor";

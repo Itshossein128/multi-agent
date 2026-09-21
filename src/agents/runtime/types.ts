@@ -2,6 +2,7 @@ import type { AgentRecord } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../memory/contracts";
 import type { ShortTermHistories } from "./shortTermMemory";
 import type { TrustedCredentialPrincipal } from "./workerCredentials";
+import type { AssembledContext } from "./contextAssembler";
 
 export type AgentExecutionEventType =
   | "agent.started"
@@ -45,6 +46,8 @@ export interface AgentExecutionInput {
    * including after the execution iterable and run have completed. Never replay them. */
   onBackgroundEvent?: (event: AgentExecutionEvent) => void | Promise<void>;
   memoryStore?: Map<string, { input: unknown; output: unknown }[]>;
+  /** Pre-assembled context from ContextAssembler. If provided, executors consume this directly. */
+  assembledContext?: AssembledContext;
 }
 
 /**

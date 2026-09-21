@@ -1,6 +1,7 @@
 import { AgentExecutorFactory } from "./agentExecutorFactory";
 import type { AgentExecutionEvent, AgentExecutionInput } from "./types";
 import type { RuntimeMemoryDependencies } from "../../memory/contracts";
+import type { HistoryEntry } from "./shortTermMemory";
 import { validateAgent, nowIso } from "@multi-agent/types";
 import { RuntimeMemory } from "./runtimeMemory";
 import { boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
@@ -11,6 +12,7 @@ import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolic
 import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../../runtime/boundedValue";
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver } from "./workerCredentials";
+import { DefaultContextAssembler, type ContextAssembler } from "./contextAssembler";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -61,20 +63,45 @@ export class AgentRuntime {
     const history = shortEnabled && memory?.mode !== "write"
       ? boundHistory({ entries: prior, maxEntries, maxTokens }).entries.map(({ input, output }) => ({ input, output })) : [];
     if (shortEnabled && memory?.mode !== "write") yield { type: "memory.read", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: history.length, scope: memory?.scope, tier: "short_term" } };
-    const longTerm = new RuntimeMemory(input, this.memoryDependencies, this.telemetry);
-    // Caller context cannot smuggle memory into the executor when long-term access is disabled/denied.
+    const longTerm = new RuntimeMemory(input, this.memoryDependencies, this.telemetry);    // Caller context cannot smuggle memory into the executor when long-term access is disabled/denied.
     let memoryContext: string | undefined;
+    let memoryEvents: unknown[] | undefined;
     if (longTerm.enabled) {
       const read = await longTerm.read();
       for (const event of read.events) yield event;
       longTerm.assertResult(read.events);
       memoryContext = read.context;
+      memoryEvents = read.events;
     }
+
+    // Assemble context through the central ContextAssembler
+    const assembler = new DefaultContextAssembler({ memoryDependencies: this.memoryDependencies, now: () => Date.now() });
+    const assembled = await assembler.assemble({
+      runId: input.runId,
+      workflowId: input.workflowId ?? "",
+      nodeId: input.nodeId,
+      agentId: input.agent.id,
+      agent: input.agent,
+      task: input.input,
+      systemPrompt: input.agent.systemPrompt,
+      history: history as HistoryEntry[],
+      longTermMemoryContext: memoryContext,
+      longTermMemoryEvents: memoryEvents,
+      previousOutput: input.context?.previousOutput,
+      branchState: typeof input.context?.branch === "string" ? input.context.branch : undefined,
+      runtimeState: input.context?.memory && typeof input.context.memory === "object"
+        ? input.context.memory as Record<string, unknown> : undefined,
+      memoryAccess: input.memoryAccess,
+      model: input.agent.backend.type === "api"
+        ? { provider: input.agent.backend.provider, model: input.agent.backend.model }
+        : undefined,
+    });
+
     const executor = this.executorFactory.create(input.agent.backend);
     let output: unknown;
     let completion: AgentExecutionEvent | undefined;
     let failed = false;
-    for await (const event of executor.execute({ ...input, context: { ...input.context, history, memoryContext } })) {
+    for await (const event of executor.execute({ ...input, context: { ...input.context, history, memoryContext }, assembledContext: assembled })) {
       input.signal?.throwIfAborted();
       if (event.type === "agent.completed") {
         const eventPayload = event.payload as { content?: unknown } | undefined;
