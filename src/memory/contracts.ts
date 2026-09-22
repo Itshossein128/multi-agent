@@ -1,6 +1,21 @@
 import type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult } from "@multi-agent/types";
 export type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult } from "@multi-agent/types";
 
+/** Phase 8 evaluation/telemetry types (observational; never memory content). */
+export type {
+  MemoryRetrievalTrace, MemorySelectionDiagnostic, MemoryInvocationEvaluation, MemoryTokenAccounting,
+  MemoryContextBudgetMetrics, MemoryUsefulnessLabel, MemoryFeedbackInput, MemoryFeedbackRecord,
+  MemoryFeedbackSummary, MemoryEffectivenessView, MemorySelectionStage, MemoryDropReason,
+  MemoryPopulationMetrics, MemoryMetricName, MemoryInvocationOutcomeSignal,
+  DeterministicRelevanceRule, MemoryInjectionRecord, MemoryDecisionExplanation,
+  MemoryEvaluationSink, MemoryEvaluationRecorderContext,
+} from "./application/memoryEvaluation";
+export {
+  InMemoryMemoryEvaluationSink, MemoryEvaluationRecorder, MemoryFeedbackLedger,
+  evaluateMemoryRelevance, explainMemoryDecision, computePopulationMetrics,
+  emptyPopulationMetrics, aggregateByKind, aggregateByAgent, MEMORY_METRIC_DEFINITIONS,
+} from "./application/memoryEvaluation";
+
 /** Constructed by trusted server authentication/policy, never deserialized from request data. */
 export interface MemoryAccessContext {
   principalId: string; tenantId: string;
@@ -102,6 +117,19 @@ export interface MemoryBackgroundJobs { enqueue(task: () => Promise<void>): bool
 export interface RuntimeMemoryDependencies {
   service: MemoryService; extractor: MemoryExtractor; writePolicy: MemoryWritePolicy;
   formatter: MemoryContextFormatter; jobs: MemoryBackgroundJobs;
+  /** Optional Phase 8 observational evaluation. Absent → zero runtime impact. */
+  evaluation?: MemoryEvaluationRuntime;
+}
+
+/**
+ * Evaluation hooks attached to runtime memory dependencies. Everything is
+ * optional and observational: when unset, no telemetry is recorded and runtime
+ * behavior is identical (Step 37/38).
+ */
+export interface MemoryEvaluationRuntime {
+  recorder: import("./application/memoryEvaluation").MemoryEvaluationRecorder;
+  /** Deterministic relevance rules for usefulness labels in eval scenarios. */
+  relevanceRules?: import("./application/memoryEvaluation").DeterministicRelevanceRule;
 }
 
 export class MemoryAccessDeniedError extends Error { constructor(message = "Memory access denied.") { super(message); this.name = "MemoryAccessDeniedError"; } }

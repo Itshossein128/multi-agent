@@ -45,11 +45,19 @@ export interface MemoryRetrievalQuery {
 export interface MemorySearchResult {
   memory: Memory; score: number; tokenCount: number;
   scores: { semantic: number; lexical: number; recency: number; importance: number; context: number };
+  /** Reliability multiplier applied during ranking (Phase 7/8 diagnostics only). */
+  reliabilityFactor?: number;
 }
+export type MemoryRetrievalMode = "hybrid" | "vector" | "lexical" | "fallback";
 export interface MemoryRetrievalDiagnostics {
   latencyMs: number; embeddingLatencyMs: number; candidateCount: number; selectedCount: number;
   deduplicatedCount: number; warnings: string[];
-  candidates: { memoryId: string; score: number; reason: string; scores: MemorySearchResult["scores"] }[];
+  retrievalMode?: MemoryRetrievalMode;
+  /** Candidate counts per memory kind. */
+  kinds?: Partial<Record<MemoryKind, number>>;
+  candidates: { memoryId: string; score: number; reason: string; kind?: MemoryKind;
+    /** Reliability multiplier in [0,1] applied by the retriever (Phase 7), when known. */
+    reliabilityFactor?: number; scores: MemorySearchResult["scores"] }[];
 }
 export interface MemoryRetrievalResult { results: MemorySearchResult[]; diagnostics: MemoryRetrievalDiagnostics }
 

@@ -39,3 +39,7 @@ graphify-out/.graphify_*
 graphify-out/.vocab.txt
 graphify-out/.needs_update
 graphify-out/cost.json
+
+# Phase 8 generated memory evaluation reports
+MEMORY_EVALUATION_REPORT.json
+MEMORY_EVALUATION_REPORT.md

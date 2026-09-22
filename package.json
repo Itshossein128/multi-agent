@@ -30,7 +30,8 @@
     "verification:real-tools": "ts-node --transpile-only infrastructure/docker/verification-real-tools.ts",
     "credentials:login-codex": "ts-node --transpile-only scripts/login-agent-codex.ts",
     "credentials:status-codex": "ts-node --transpile-only scripts/login-agent-codex.ts -- --status",
-    "memory:backfill-embeddings": "node scripts/memory/backfill-embeddings.mjs"
+    "memory:backfill-embeddings": "node scripts/memory/backfill-embeddings.mjs",
+    "memory:eval": "ts-node --transpile-only scripts/memory/memoryEval.ts"
   },
   "license": "MIT",
   "dependencies": {

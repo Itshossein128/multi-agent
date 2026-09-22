@@ -60,6 +60,8 @@ export interface ContextAssemblyRequest {
   history?: HistoryEntry[];
   longTermMemoryContext?: string;
   longTermMemoryEvents?: unknown[];
+  /** Phase 8: which retrieved memories were injected, with token accounting by kind. */
+  longTermMemoryMeta?: { memoryIds: string[]; tokens: number; tokensByKind: { semantic: number; episodic: number; procedural: number } };
   handoffs?: Record<string, AgentHandoff>;
   /** Run-scoped structured working memory entries from checkpointed state. */
   workingMemory?: WorkingMemoryEntries;
@@ -288,7 +290,16 @@ export class DefaultContextAssembler implements ContextAssembler {
         priority: PRIORITY.LONG_TERM_MEMORY,
         content: { type: "long_term_memory", text: request.longTermMemoryContext },
         estimatedTokens: this.estimator.estimate(request.longTermMemoryContext),
-        metadata: { events: request.longTermMemoryEvents },
+        // Phase 8: memoryIds/tokens record which retrieved memories the assembler
+        // actually accepted (retrieved ≠ injected). IDs and counts only, never content.
+        metadata: {
+          events: request.longTermMemoryEvents,
+          ...(request.longTermMemoryMeta ? {
+            memoryIds: request.longTermMemoryMeta.memoryIds,
+            memoryTokens: request.longTermMemoryMeta.tokens,
+            tokensByKind: request.longTermMemoryMeta.tokensByKind,
+          } : {}),
+        },
       });
     }
 

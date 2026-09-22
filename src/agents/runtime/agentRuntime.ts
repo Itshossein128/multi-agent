@@ -14,6 +14,8 @@ import { boundJsonValue, boundedBytesFromEnvironment } from "../../runtime/bound
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver } from "./workerCredentials";
 import { DefaultContextAssembler, type ContextAssembler } from "./contextAssembler";
 import { splitWorkingMemoryUpdates, visibleWorkingMemoryEntries, type WorkingMemoryEntries } from "./workingMemory";
+import { emptyTokens } from "./runtimeMemory";
+import type { MemoryTokenAccounting } from "../../memory/application/memoryEvaluation";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -77,12 +79,29 @@ export class AgentRuntime {
     const longTerm = new RuntimeMemory(input, this.memoryDependencies, this.telemetry);    // Caller context cannot smuggle memory into the executor when long-term access is disabled/denied.
     let memoryContext: string | undefined;
     let memoryEvents: unknown[] | undefined;
+    let retrievedMemoryCount = 0;
+    let selectedMemoryCount = 0;
+    let injectedMemoryCount = 0;
+    let injectedTokens = 0;
+    let tokensByKind: MemoryTokenAccounting = emptyTokens();
+    let injectedMemoryIds: string[] = [];
     if (longTerm.enabled) {
       const read = await longTerm.read();
       for (const event of read.events) yield event;
       longTerm.assertResult(read.events);
       memoryContext = read.context;
       memoryEvents = read.events;
+      // Phase 8: invocation-level memory counts from the completed memory.read event.
+      for (const event of read.events) {
+        if (event.type !== "memory.read") continue;
+        const payload = event.payload as { retrievedCount?: number; selectedCount?: number; memoryIds?: string[] } | undefined;
+        retrievedMemoryCount += payload?.retrievedCount ?? 0;
+        selectedMemoryCount += payload?.selectedCount ?? 0;
+        injectedMemoryIds = payload?.memoryIds ?? [];
+        injectedMemoryCount = injectedMemoryIds.length;
+      }
+      injectedTokens = read.injectedTokens ?? 0;
+      tokensByKind = read.tokensByKind ?? emptyTokens();
     }
 
     // Assemble context through the central ContextAssembler
@@ -98,6 +117,7 @@ export class AgentRuntime {
       history: history as HistoryEntry[],
       longTermMemoryContext: memoryContext,
       longTermMemoryEvents: memoryEvents,
+      longTermMemoryMeta: injectedMemoryIds.length ? { memoryIds: injectedMemoryIds, tokens: injectedTokens, tokensByKind } : undefined,
       handoffs: input.handoffs,
       workingMemory: input.workingMemory,
       previousOutput: input.context?.previousOutput,
@@ -141,6 +161,23 @@ export class AgentRuntime {
       const events = await longTerm.afterSuccess(output);
       for (const event of events) yield event;
       longTerm.assertResult(events);
+    }
+    // Phase 8: record the invocation-level memory evaluation summary. Observational only.
+    const evaluationRuntime = this.memoryDependencies?.evaluation;
+    if (longTerm.enabled && evaluationRuntime) {
+      evaluationRuntime.recorder.recordInvocation(
+        { runId: input.runId, invocationId: `${input.runId}:${input.nodeId}`, agentId: input.agent.id, nodeId: input.nodeId },
+        {
+          retrievedMemoryCount,
+          selectedMemoryCount,
+          injectedMemoryCount,
+          memoryTokens: injectedTokens,
+          tokensByKind,
+          contextTokensBySource: assembled.diagnostics.sources,
+          contextDroppedTokens: assembled.budget.droppedTokens,
+          outcome: "success",
+        },
+      );
     }
     yield completion;
     input.signal?.throwIfAborted();
