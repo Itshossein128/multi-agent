@@ -120,9 +120,9 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
   });
 
   afterEach(async () => {
-    for (const release of [...releaseAgentExecutions]) release();
     const deadline = Date.now() + 2_000;
     while (activeAgentExecutions > 0 && Date.now() < deadline) {
+      for (const release of [...releaseAgentExecutions]) release();
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     expect(activeAgentExecutions).toBe(0);
