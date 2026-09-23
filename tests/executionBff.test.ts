@@ -22,9 +22,11 @@ test("BFF rejects a missing session before calling the execution server", async 
 });
 
 test("BFF reconstructs the destination and forwards only allow-listed headers with a fresh server principal", async () => {
-  const request = new Request("http://web/api/execution/runs/x?after=2&filter=a%20b", { method: "PATCH", headers: {
-    "Accept": "application/json", "Content-Type": "application/json", "X-Request-Id": "request-1", "X-User-Id": "evil", "X-Tenant-Id": "evil", "X-Multi-Agent-Principal": "forged", "Authorization": "Bearer browser-token", "Cookie": "session=browser", "X-Other": "nope",
-  }, body: JSON.stringify({ value: 1 }) });
+  const request = new Request("http://web/api/execution/runs/x?after=2&filter=a%20b", {
+    method: "PATCH", headers: {
+      "Accept": "application/json", "Content-Type": "application/json", "X-Request-Id": "request-1", "X-User-Id": "evil", "X-Tenant-Id": "evil", "X-Multi-Agent-Principal": "forged", "Authorization": "Bearer browser-token", "Cookie": "session=browser", "X-Other": "nope",
+    }, body: JSON.stringify({ value: 1 })
+  });
   const fetchSpy = jest.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response("ok", { status: 202, headers: { "X-Upstream": "yes", "Cache-Control": "no-store", "Content-Type": "application/json" } }));
   const response = await proxyExecutionWith(request, "/runs/x", bffDeps({ fetchImpl: asFetch(fetchSpy), base: "http://execution.internal/base/" }));
   expect(response.status).toBe(202); expect(response.headers.get("X-Upstream")).toBe("yes"); expect(response.headers.get("Cache-Control")).toBe("no-store"); expect(response.headers.get("Content-Type")).toContain("application/json");
@@ -48,6 +50,23 @@ test("BFF exposes SSE chunks before the upstream stream completes and propagates
   expect(passedRequestSignal).toBe(true); expect(response.headers.get("Content-Type")).toContain("text/event-stream"); const reader = response.body!.getReader(); expect(new TextDecoder().decode((await reader.read()).value)).toContain("one");
   abort.abort(); expect(upstreamAborted).toBe(true);
   upstreamController.enqueue(new TextEncoder().encode("data: two\n\n")); upstreamController.close(); expect(new TextDecoder().decode((await reader.read()).value)).toContain("two");
+});
+
+test("BFF returns 503 when the execution server is unreachable", async () => {
+  const fetchSpy = jest.fn(async () => {
+    const error = new TypeError("fetch failed");
+    (error as { cause?: { code?: string } }).cause = { code: "ECONNREFUSED" };
+    throw error;
+  });
+  const response = await proxyExecutionWith(
+    new Request("http://web/api/dashboard"),
+    "/dashboard",
+    bffDeps({ fetchImpl: asFetch(fetchSpy), base: "http://localhost:4000" }),
+  );
+  expect(response.status).toBe(503);
+  await expect(response.json()).resolves.toEqual({
+    error: "Execution server is unreachable at http://localhost:4000. Start it with pnpm run dev:server (or pnpm run dev).",
+  });
 });
 
 test("workflow, run, and tool browser clients target only the BFF", async () => {

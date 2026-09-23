@@ -38,6 +38,21 @@ export async function proxyExecutionWith(request: Request, path: string, deps: {
   };
   // Node's fetch requires duplex when forwarding a ReadableStream request body.
   if (hasBody) init.duplex = "half";
-  const upstream = await deps.fetchImpl(url, init);
-  return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+  try {
+    const upstream = await deps.fetchImpl(url, init);
+    return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+  } catch (error) {
+    const code = (error as { cause?: { code?: string }; code?: string } | null)?.cause?.code
+      ?? (error as { code?: string } | null)?.code;
+    const unreachable = code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "ENOTFOUND"
+      || (error instanceof TypeError && /fetch failed/i.test(error.message));
+    if (unreachable) {
+      console.error(`[execution proxy] Upstream unreachable at ${base}:`, error);
+      return Response.json(
+        { error: `Execution server is unreachable at ${base}. Start it with pnpm run dev:server (or pnpm run dev).` },
+        { status: 503 },
+      );
+    }
+    throw error;
+  }
 }
