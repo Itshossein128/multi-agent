@@ -64,7 +64,7 @@ export function ToolDetail({ toolId }: { toolId: string }) {
       <Button variant="ghost" onClick={() => navigate("/org")}>← Back to Graph Editor</Button>
       {detail.tool.isPending && <p role="status">Loading tool…</p>}
       {detail.tool.isError && <Section title="Could not load tool"><p role="alert" className="text-red-300">{detail.tool.error.message}</p><Button onClick={() => void detail.tool.refetch()}>Retry</Button></Section>}
-      {!detail.tool.isPending && !detail.tool.isError && !tool && <Section title="Tool not found"><p className="text-zinc-400">No tool with ID {toolId} exists in this browser’s Studio storage.</p></Section>}
+      {!detail.tool.isPending && !detail.tool.isError && !tool && <Section title="Tool not found"><p className="text-zinc-400">No tool with ID {toolId} exists in Studio storage for this account.</p></Section>}
       {tool && <>
         <header className="space-y-4 border-b border-zinc-800 pb-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -77,7 +77,7 @@ export function ToolDetail({ toolId }: { toolId: string }) {
               <Button variant="outline" onClick={() => setSection("Test")}>Test tool</Button>
               {!editing ? <Button onClick={beginEdit} disabled={busy}>Edit tool</Button> : <><Button disabled={busy || !dirty} onClick={() => void save()}>{detail.save.isPending ? "Saving…" : "Save"}</Button><Button variant="outline" disabled={busy} onClick={() => { if (!dirty || window.confirm("Discard unsaved tool changes?")) { setDraft(null); setEditing(false); setErrors([]); } }}>Cancel editing</Button></>}
               <Button variant="destructive" disabled={busy || detail.workflows.isPending || detail.workflows.isError} onClick={async () => {
-                if (!window.confirm(`Delete tool “${tool.name}”?${dirty ? " Unsaved changes will be discarded." : ""}`)) return;
+                if (!window.confirm(`Delete tool “${tool.name}”?${dirty ? " Your unsaved edits in this form will be discarded." : ""}`)) return;
                 try { await detail.remove.mutateAsync(); router.push("/org/tools"); } catch (error) { setErrors([error instanceof Error ? error.message : "Unable to delete tool."]); }
               }}>Delete</Button>
             </div>

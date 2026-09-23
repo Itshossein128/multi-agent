@@ -76,7 +76,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
       <Button variant="ghost" onClick={() => navigate("/org")}>← Back to Graph Editor</Button>
       {detail.agent.isPending && <p role="status">Loading agent…</p>}
       {detail.agent.isError && <Section title="Could not load agent"><p role="alert" className="text-red-300">{detail.agent.error.message}</p><Button onClick={() => void detail.agent.refetch()}>Retry</Button></Section>}
-      {!detail.agent.isPending && !detail.agent.isError && !agent && <Section title="Agent not found"><p className="text-zinc-400">No agent with ID {agentId} exists in this browser’s Studio storage.</p></Section>}
+      {!detail.agent.isPending && !detail.agent.isError && !agent && <Section title="Agent not found"><p className="text-zinc-400">No agent with ID {agentId} exists in Studio storage for this account.</p></Section>}
       {agent && <>
         <header className="space-y-4 border-b border-zinc-800 pb-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -90,7 +90,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
               {!editing ? <Button onClick={beginEdit} disabled={busy}>Edit agent</Button> : <><Button disabled={busy || !dirty} onClick={() => void save()}>{detail.save.isPending ? "Saving…" : "Save"}</Button><Button variant="outline" disabled={busy} onClick={() => { if (!dirty || window.confirm("Discard unsaved agent changes?")) { setDraft(null); setEditing(false); setErrors([]); } }}>Cancel editing</Button></>}
               <Button variant="outline" disabled={busy} onClick={() => setSection("Workflows")}>Open in Graph</Button>
               <Button variant="destructive" disabled={busy || detail.workflows.isPending || detail.workflows.isError} onClick={async () => {
-                if (!window.confirm(`Delete agent “${agent.name}”?${dirty ? " Unsaved changes will be discarded." : ""}`)) return;
+                if (!window.confirm(`Delete agent “${agent.name}”?${dirty ? " Your unsaved edits in this form will be discarded." : ""}`)) return;
                 try { await detail.remove.mutateAsync(); router.push("/org"); } catch (error) { setErrors([error instanceof Error ? error.message : "Unable to delete agent."]); }
               }}>Delete</Button>
             </div>
