@@ -37,7 +37,7 @@ export type AgentBackend =
   }
   | {
     type: "cli";
-    provider: "codex" | "claude-code" | "agy" | (string & {});
+    provider: "codex" | "claude-code" | "agy" | "cursor" | (string & {});
     model?: string;
     executable?: string;
     args?: string[];

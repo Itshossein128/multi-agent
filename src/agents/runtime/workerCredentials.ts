@@ -55,6 +55,7 @@ export const NO_WORKER_CREDENTIALS: WorkerCredentialResolver = {
 export const PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES: Readonly<Record<string, ReadonlySet<string>>> = {
   codex: new Set(["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"]),
   "claude-code": new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"]),
+  cursor: new Set(["CURSOR_API_KEY"]),
 };
 
 export interface EnvironmentCredentialResolverPolicy {
@@ -91,6 +92,9 @@ export function environmentWorkerCredentialResolverFromEnvironment(
     providerEnvironmentNames: {
       codex: env.CLI_CODEX_CREDENTIAL_ENV_VAR,
       "claude-code": env.CLI_CLAUDE_CREDENTIAL_ENV_VAR,
+      // Cursor only accepts CURSOR_API_KEY; default the mapping when env delivery is on.
+      cursor: env.CLI_CURSOR_CREDENTIAL_ENV_VAR?.trim()
+        || (env.CLI_CREDENTIAL_ENVIRONMENT_ENABLED === "true" ? "CURSOR_API_KEY" : undefined),
     },
   }, env);
 }

@@ -64,6 +64,15 @@ describe("worker credential foundation", () => {
     }, { DATABASE_URL: "dummy-database-secret" });
     await expect(invalid.resolve({ tenantId: "t", principalId: "u", runId: "r", agentId: "a", provider: "codex" }))
       .rejects.toThrow(/unsupported server credential environment selection/i);
+
+    const cursor = environmentWorkerCredentialResolverFromEnvironment({
+      CLI_CREDENTIAL_ENVIRONMENT_ENABLED: "true",
+      CURSOR_API_KEY: "cursor_dummy-secret",
+    });
+    await expect(cursor.resolve({ tenantId: "t", principalId: "u", runId: "r", agentId: "a", provider: "cursor" }))
+      .resolves.toEqual({ environment: { CURSOR_API_KEY: "cursor_dummy-secret" } });
+    await expect(cursor.resolve({ tenantId: "t", principalId: "u", runId: "r", agentId: "a", provider: "codex" }))
+      .resolves.toBeUndefined();
   });
 
   test("Codex auth file resolver delivers only auth.json bytes and writebacks under CAS", async () => {

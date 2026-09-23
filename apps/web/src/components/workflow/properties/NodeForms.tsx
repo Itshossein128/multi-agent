@@ -142,7 +142,7 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
             />
           </Field>
           {agent.backend.type === "cli" && <>
-            <Field label="Executable (optional)"><input className={inputClass} value={agent.backend.executable ?? ""} placeholder="codex, claude, or agy" onChange={(event) => patchAgent({ backend: { ...agent.backend, executable: event.target.value || undefined } as AgentBackend })} /></Field>
+            <Field label="Executable (optional)"><input className={inputClass} value={agent.backend.executable ?? ""} placeholder="codex, claude, agent, or agy" onChange={(event) => patchAgent({ backend: { ...agent.backend, executable: event.target.value || undefined } as AgentBackend })} /></Field>
             <Field label="Arguments (one per line)"><textarea className={inputClass} rows={3} value={(agent.backend.args ?? []).join("\n")} onChange={(event) => patchAgent({ backend: { ...agent.backend, args: event.target.value ? event.target.value.split("\n") : undefined } as AgentBackend })} /></Field>
             <Field label="Workspace root"><input className={inputClass} value={agent.executionPolicy?.workspaceRoot ?? ""} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, workspaceRoot: event.target.value || undefined } })} /></Field>
             <Field label="Shell access"><select className={inputClass} value={agent.executionPolicy?.shell ?? "disabled"} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, shell: event.target.value as AgentExecutionPolicy["shell"] } })}><option value="disabled">Disabled</option><option value="restricted">Restricted</option><option value="full">Full</option></select></Field>
