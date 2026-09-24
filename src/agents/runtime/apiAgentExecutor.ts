@@ -3,6 +3,7 @@ import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./
 import { AgentExecutionFailedError } from "./errors";
 import { llmFactory } from "../core/llmFactory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
+import { NO_API_CREDENTIALS, type ApiProviderCredentialResolver } from "../../security/providerCredentials";
 
 type ChatModel = {
   invoke: (messages: unknown[], options?: { signal?: AbortSignal }) => Promise<{
@@ -13,15 +14,23 @@ type ChatModel = {
 };
 
 type LLMFactoryLike = {
-  getModel: (provider: string, options?: { model?: string; settings?: AgentModelSettings }) => ChatModel;
+  getModel: (provider: string, options?: { model?: string; settings?: AgentModelSettings; apiKey?: string }) => ChatModel;
 };
 
 /**
  * Wraps the existing API/LLM provider stack behind AgentExecutor.
  * Credentials remain an env/runtime concern — never taken from the agent record.
+ *
+ * When a broker-backed resolver is configured, each invocation leases a
+ * short-lived provider key bound to tenant/principal/run/agent and passes it
+ * straight into the model; the key is never persisted or logged.
  */
 export class ApiAgentExecutor implements AgentExecutor {
-  constructor(private readonly getFactory: () => LLMFactoryLike = loadLlmFactory, private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled()) { }
+  constructor(
+    private readonly getFactory: () => LLMFactoryLike = loadLlmFactory,
+    private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
+    private readonly credentialResolver: ApiProviderCredentialResolver = NO_API_CREDENTIALS,
+  ) { }
 
   async *execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent> {
     const { agent, runId, nodeId } = input;
@@ -39,9 +48,22 @@ export class ApiAgentExecutor implements AgentExecutor {
     try {
       const startedAt = Date.now();
       yield baseEvent("llm.started", input, { provider: agent.backend.provider, model: agent.backend.model });
+      let apiKey: string | undefined;
+      if (input.credentialPrincipal) {
+        // Fail-closed: a resolver failure aborts the invocation instead of
+        // silently falling back to long-lived process environment secrets.
+        apiKey = await this.credentialResolver.resolve({
+          provider: agent.backend.provider,
+          tenantId: input.credentialPrincipal.tenantId,
+          principalId: input.credentialPrincipal.principalId,
+          runId: input.runId,
+          agentId: agent.id,
+        });
+      }
       const model = this.getFactory().getModel(agent.backend.provider, {
         model: agent.backend.model,
         settings: agent.backend.settings,
+        ...(apiKey ? { apiKey } : {}),
       });
       const messages = buildMessages(input);
       const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };

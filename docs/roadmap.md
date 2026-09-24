@@ -33,7 +33,7 @@ LangGraph + AgentRuntime + ToolRuntime + Memory
 
 ## کارهای بعدی با اولویت
 
-1. جایگزینی adapter process-local با credential broker خارجی و اجرای rotation/revoke/audit در deployment.
+1. استقرار credential broker خارجی (کد در `src/broker/` موجود) و اجرای rotation/revoke/audit و failure-injection در deployment.
 2. تکمیل Playwright و E2E providerهای واقعی.
 3. تکمیل CI برای اجرای package-manager build در checkout disposable.
 5. افزودن evaluation/dataset و tracing عمیق‌تر فقط بعد از تثبیت قراردادهای فعلی.

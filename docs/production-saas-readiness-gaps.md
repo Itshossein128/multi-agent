@@ -25,7 +25,7 @@
 - [ ] failure-injection برای قطع broker، انقضای token و revoke
 - [ ] جلوگیری از نشت secret در log، trace، event، Docker metadata و crash dump
 
-در وضعیت فعلی، gateway عمدتاً process-local و مناسب development/trusted deployment است، نه SaaS چندمستاجری.
+وضعیت: کد broker (lease تک‌مصرف کوتاه‌عمر، revoke، audit زنجیره‌ای، rate limit، Vault adapter و client آماده‌ی mTLS) در `src/broker/` و `src/security/credentialGateway.ts` پیاده و با تست پوشش داده شده است، اما همه‌ی موارد بالا تا استقرار broker واقعی، Vault، گواهی mTLS و failure-injection در محیط deployment اثبات‌نشده محسوب می‌شوند. در development همچنان مسیر process-local (پیش‌فرض خاموش) باقی است و rotation خودکار هنوز پیاده نشده است.
 
 ### اجرای واقعی providerها
 
@@ -536,7 +536,7 @@ OTel و Langfuse فعلاً optional هستند و evaluation و بخشی از �
 
 برای production اولیه، این موارد را در اولویت قرار دهید:
 
-1. Credential Broker خارجی
+1. استقرار Credential Broker خارجی (Vault، mTLS، وصل کردن directory)
 2. Provider canary واقعی
 3. queue و worker lifecycle قابل‌بازیابی
 4. backup/restore و disaster recovery

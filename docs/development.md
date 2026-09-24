@@ -29,13 +29,45 @@ pnpm dev:server
 ## Verification
 
 ```bash
-pnpm test -- --runInBand
+pnpm test --runInBand
 pnpm --filter server build
 pnpm --filter web build
 pnpm --filter web test:e2e
 ```
 
 E2E به سرویس‌های web/server و PostgreSQL نیاز دارد؛ نتیجه‌ی آن را جدا از unit/integration tests گزارش کنید.
+
+## Credential Broker
+
+کد broker در `src/broker/` است و هر دو سمت را دارد: سرویس مستقل (سرور) و client سرور اجرایی (`HttpCredentialGateway` در `src/security/credentialGateway.ts`).
+
+اجرای محلی سرور broker در development (بدون mTLS؛ بدون `CREDENTIAL_BROKER_DATABASE_URL` از lease/audit in-memory استفاده می‌شود):
+
+```bash
+CREDENTIAL_BROKER_SERVICE_TOKENS=dev:local-dev-token \
+CREDENTIAL_BROKER_PORT=8484 \
+npx ts-node src/broker/server.ts
+```
+
+DDL جدول‌های lease و audit (نیازمند `CREDENTIAL_BROKER_DATABASE_URL`):
+
+```bash
+CREDENTIAL_BROKER_DATABASE_URL=postgresql://... node infrastructure/broker/migrate.cjs
+```
+
+نکات:
+
+- در production سرور اجرایی بدون `CREDENTIAL_BROKER_URL`، `CREDENTIAL_BROKER_SERVICE_TOKEN`، mTLS و `CREDENTIAL_BROKER_FAIL_CLOSED=true` بالا نمی‌آید؛ هیچ fallback خاموشی به gateway process-local وجود ندارد.
+- secretهای provider از Vault خوانده می‌شوند (`CREDENTIAL_BROKER_VAULT_URL` و `CREDENTIAL_BROKER_VAULT_TOKEN`)؛ مسیر هر secret `secret/<tenant>/<provider>/<alias>` است و ورودی مشترک فقط با policy صریح مجاز است.
+- سرویس standalone بدون directory پیش‌فرض deny-all است؛ deployment باید `AuthorizationSource` و `QuotaUsageSource` خود را از طریق `startBroker(..., overrides)` وصل کند.
+- فهرست کامل متغیرها در بلوک `CREDENTIAL_BROKER_*` فایل `.env.example` آمده است (اولویت `CREDENTIAL_BROKER_*` بر `TOOL_CREDENTIAL_GATEWAY_*`).
+- تست‌های broker:
+
+```bash
+pnpm test --runInBand tests/brokerContract.test.ts tests/brokerService.test.ts tests/brokerHttp.test.ts tests/brokerSecurity.test.ts tests/brokerPersistence.test.ts
+```
+
+suiteهای PostgreSQL این تست‌ها فقط با `MEMORY_TEST_DATABASE_URL` فعال می‌شوند و هر اجرا schema ایزوله می‌سازد و در پایان حذف می‌کند؛ Vault در تست‌ها fake است و هیچ secret واقعی خوانده نمی‌شود.
 
 ## Guardrailهای سرور
 
@@ -61,7 +93,7 @@ CLI_WORKER_MODE=container
 CLI_WORKER_IMAGE=registry.example/worker@sha256:<digest>
 ```
 
-ساخت و smoke test image در [cli-worker-image.md](cli-worker-image.md) آمده است. credential delivery دو adapter توسعه‌ای دارد و پیش‌فرض هر دو خاموش است؛ این adapterها مرز production multi-tenant محسوب نمی‌شوند.
+ساخت و smoke test image در [cli-worker-image.md](cli-worker-image.md) آمده است. credential delivery سه مسیر دارد: دو adapter توسعه‌ای file و environment (پیش‌فرض هر دو خاموش) و مسیر credential broker. مسیرهای file/environment مرز production multi-tenant محسوب نمی‌شوند؛ در production از broker استفاده کنید: `CLI_CREDENTIAL_BROKER_ENABLED=true` با تحویل server-mediated که خودش در production فقط با `CREDENTIAL_BROKER_TRUSTED_SERVER_DELIVERY=true` مجاز است.
 
 ### agy local setup
 

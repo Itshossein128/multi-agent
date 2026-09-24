@@ -10,6 +10,7 @@ import { ExecutionTelemetry } from "../../observability/telemetry";
 import type { WorkerRuntime } from "./workerRuntime";
 import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver } from "./workerCredentials";
+import { NO_API_CREDENTIALS, type ApiProviderCredentialResolver } from "../../security/providerCredentials";
 
 export class AgentExecutorFactory {
   constructor(
@@ -17,10 +18,11 @@ export class AgentExecutorFactory {
     private readonly workerRuntime: WorkerRuntime | undefined = undefined,
     private readonly cliRuntimePolicy = cliRuntimePolicyFromEnvironment(),
     private readonly credentialResolver: WorkerCredentialResolver = NO_WORKER_CREDENTIALS,
+    private readonly apiCredentialResolver: ApiProviderCredentialResolver = NO_API_CREDENTIALS,
   ) {}
   create(backend: AgentBackend): AgentExecutor {
     if (backend.type === "api") {
-      return new ApiAgentExecutor(undefined, this.telemetry);
+      return new ApiAgentExecutor(undefined, this.telemetry, this.apiCredentialResolver);
     }
 
     if (backend.type === "cli") {

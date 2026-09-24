@@ -1,11 +1,23 @@
 import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import {
+  brokerClientConfigFromEnvironment,
+  type BrokerClientConfig,
+} from "../broker/config";
+import { BrokerError, CREDENTIAL_BROKER_CONTRACT_VERSION, type BrokerErrorCode } from "../broker/contract";
 
 export interface CredentialGatewayRequest {
-  provider: "database" | "search" | "mcp";
+  provider: "database" | "search" | "mcp" | "codex" | "claude-code" | "cursor" | "agy" | "openai" | "anthropic" | "gemini";
   alias: string;
   tenantId: string;
   principalId: string;
   runId: string;
+  toolId?: string;
+  agentId?: string;
+  /** Broker purpose; the broker derives it from provider when omitted. */
+  purpose?: string;
+  requestedTtlMs?: number;
+  correlationId?: string;
 }
 
 export interface CredentialLease {
@@ -20,41 +32,212 @@ export interface CredentialGateway {
 
 export type CredentialGatewayFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-/** Production adapter for a separately deployed credential broker. */
+/** Error raised by the HTTP gateway; `code` is machine-readable, message is generic. */
+export class CredentialGatewayError extends Error {
+  readonly code: BrokerErrorCode | "network_error" | "timeout" | "gateway_unavailable";
+  constructor(message: string, code: CredentialGatewayError["code"]) {
+    super(message);
+    this.name = "CredentialGatewayError";
+    this.code = code;
+  }
+}
+
+export interface HttpCredentialGatewayOptions {
+  requestTimeoutMs?: number;
+  maxTtlMs?: number;
+  /** Retries for lease issuance (idempotent via Idempotency-Key) on network failure. */
+  issueRetries?: number;
+  /** mTLS material for production brokering. */
+  tls?: { caFile: string; certFile: string; keyFile: string };
+}
+
+/**
+ * Production adapter for a separately deployed credential broker.
+ *
+ * - Service-to-service auth via bearer token; mTLS material is attached when
+ *   configured (production requires it; see brokerClientConfigFromEnvironment).
+ * - Lease issuance carries a stable Idempotency-Key per logical request, so a
+ *   network retry cannot create a second lease.
+ * - Consumption is never retried: it is single-use, and a blind retry after a
+ *   lost response would surface as a replay.
+ * - Credentials are never accepted in URLs; the base URL is validated.
+ * - Failures throw CredentialGatewayError with a machine-readable code and a
+ *   generic message; response bodies are not echoed.
+ */
 export class HttpCredentialGateway implements CredentialGateway {
   private readonly baseUrl: URL;
+  private readonly options: Required<Pick<HttpCredentialGatewayOptions, "requestTimeoutMs" | "issueRetries">> & HttpCredentialGatewayOptions;
+  private readonly dispatcher: unknown;
+
   constructor(
     rawBaseUrl: string,
     private readonly serviceToken: string,
     private readonly fetchImpl: CredentialGatewayFetch = fetch,
+    options: HttpCredentialGatewayOptions = {},
   ) {
     try { this.baseUrl = new URL(rawBaseUrl); } catch { throw new Error("Credential gateway URL is invalid."); }
-    if (!['http:', 'https:'].includes(this.baseUrl.protocol) || this.baseUrl.username || this.baseUrl.password || this.baseUrl.search || this.baseUrl.hash) throw new Error("Credential gateway URL must be HTTP(S) without embedded credentials or query parameters.");
+    if (!["http:", "https:"].includes(this.baseUrl.protocol) || this.baseUrl.username || this.baseUrl.password || this.baseUrl.search || this.baseUrl.hash) {
+      throw new Error("Credential gateway URL must be HTTP(S) without embedded credentials or query parameters.");
+    }
     if (!serviceToken) throw new Error("Credential gateway service authentication is required.");
+    this.options = {
+      requestTimeoutMs: clampInt(options.requestTimeoutMs, 3_000, 100, 60_000),
+      issueRetries: clampInt(options.issueRetries, 1, 0, 3),
+      ...options,
+    };
+    this.dispatcher = options.tls ? buildTlsDispatcher(options.tls) : undefined;
   }
 
   async issue(request: CredentialGatewayRequest): Promise<CredentialLease> {
     assertRequest(request);
-    const response = await this.fetchImpl(new URL("v1/leases", this.baseUrl), { method: "POST", headers: this.headers(), body: JSON.stringify(request) });
-    const body = await response.json().catch(() => ({})) as { leaseId?: unknown; expiresAt?: unknown };
-    if (!response.ok || typeof body.leaseId !== "string" || typeof body.expiresAt !== "number") throw new Error("Credential gateway lease issuance failed.");
-    return { leaseId: body.leaseId, expiresAt: body.expiresAt };
+    // Hex keeps the first character alphanumeric so server-side key
+    // validation can never silently drop it.
+    const idempotencyKey = randomBytes(16).toString("hex");
+    const body = JSON.stringify(request);
+    let lastError: CredentialGatewayError | undefined;
+    for (let attempt = 0; attempt <= this.options.issueRetries; attempt += 1) {
+      try {
+        const response = await this.request("v1/leases", { method: "POST", body, idempotencyKey });
+        const payload = await this.readJson(response);
+        if (!response.ok) throw errorFromResponse(payload);
+        const lease = normalizeLease(payload);
+        assertLeaseBinding(lease, request);
+        return lease;
+      } catch (error) {
+        if (error instanceof CredentialGatewayError && (error.code === "network_error" || error.code === "timeout")) {
+          lastError = error;
+          continue; // idempotent retry with the same Idempotency-Key
+        }
+        throw error;
+      }
+    }
+    throw lastError ?? new CredentialGatewayError("Credential gateway lease issuance failed.", "network_error");
   }
 
   async consume(lease: CredentialLease, request: CredentialGatewayRequest): Promise<string | undefined> {
     assertRequest(request);
-    const response = await this.fetchImpl(new URL(`v1/leases/${encodeURIComponent(lease.leaseId)}/consume`, this.baseUrl), { method: "POST", headers: this.headers(), body: JSON.stringify({ ...request, expiresAt: lease.expiresAt }) });
-    const body = await response.json().catch(() => ({})) as { secret?: unknown };
-    if (!response.ok) throw new Error("Credential gateway lease consumption failed.");
-    return typeof body.secret === "string" ? body.secret : undefined;
+    const body = JSON.stringify({
+      ...request,
+      leaseId: lease.leaseId,
+      contractVersion: CREDENTIAL_BROKER_CONTRACT_VERSION,
+    });
+    const response = await this.request(`v1/leases/${encodeURIComponent(lease.leaseId)}/consume`, { method: "POST", body });
+    const payload = await this.readJson(response);
+    if (!response.ok) throw errorFromResponse(payload);
+    const secret = (payload as { secret?: unknown }).secret;
+    return typeof secret === "string" ? secret : undefined;
   }
 
-  private headers() { return { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${this.serviceToken}` }; }
+  /** Revoke a lease (best effort, idempotent on the broker). */
+  async revoke(lease: CredentialLease, request: CredentialGatewayRequest): Promise<void> {
+    assertRequest(request);
+    const body = JSON.stringify({
+      leaseId: lease.leaseId,
+      tenantId: request.tenantId,
+      principalId: request.principalId,
+      runId: request.runId,
+      contractVersion: CREDENTIAL_BROKER_CONTRACT_VERSION,
+    });
+    try {
+      await this.request(`v1/leases/${encodeURIComponent(lease.leaseId)}/revoke`, { method: "POST", body });
+    } catch {
+      // Revocation is best effort at the client; TTL still bounds the lease.
+    }
+  }
+
+  private async request(path: string, init: { method: string; body: string; idempotencyKey?: string }): Promise<Response> {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.serviceToken}`,
+      "X-Credential-Broker-Version": CREDENTIAL_BROKER_CONTRACT_VERSION,
+      ...(init.idempotencyKey ? { "Idempotency-Key": init.idempotencyKey } : {}),
+    };
+    try {
+      const requestInit: RequestInit & { dispatcher?: unknown } = {
+        method: init.method,
+        headers,
+        body: init.body,
+        signal: AbortSignal.timeout(this.options.requestTimeoutMs),
+      };
+      if (this.dispatcher) requestInit.dispatcher = this.dispatcher;
+      return await this.fetchImpl(new URL(path, this.baseUrl), requestInit);
+    } catch (error) {
+      const name = (error as { name?: string })?.name;
+      if (name === "TimeoutError" || name === "AbortError") {
+        throw new CredentialGatewayError("Credential gateway request timed out.", "timeout");
+      }
+      throw new CredentialGatewayError("Credential gateway is unreachable.", "network_error");
+    }
+  }
+
+  private async readJson(response: Response): Promise<unknown> {
+    try {
+      return await response.json();
+    } catch {
+      return {};
+    }
+  }
+}
+
+function errorFromResponse(payload: unknown): CredentialGatewayError {
+  const code = (payload as { error?: { code?: unknown } })?.error?.code;
+  if (typeof code === "string" && /^[a-z_]{3,48}$/.test(code)) {
+    return new CredentialGatewayError("Credential gateway request was denied.", code as BrokerErrorCode);
+  }
+  return new CredentialGatewayError("Credential gateway request failed.", "gateway_unavailable");
+}
+
+function normalizeLease(payload: unknown): CredentialLease {
+  const source = (payload as { lease?: unknown }).lease ?? payload;
+  const record = source as { leaseId?: unknown; expiresAt?: unknown };
+  if (typeof record.leaseId !== "string" || !record.leaseId || typeof record.expiresAt !== "number") {
+    throw new CredentialGatewayError("Credential gateway lease response is invalid.", "gateway_unavailable");
+  }
+  return { leaseId: record.leaseId, expiresAt: record.expiresAt };
+}
+
+/** Defense in depth: a broker response must echo the requested binding when present. */
+function assertLeaseBinding(lease: CredentialLease, request: CredentialGatewayRequest): void {
+  const source = lease as CredentialLease & { tenantId?: string; principalId?: string; runId?: string; provider?: string; alias?: string };
+  if (source.tenantId && source.tenantId !== request.tenantId) {
+    throw new CredentialGatewayError("Credential gateway lease is bound to another tenant.", "gateway_unavailable");
+  }
+  if (source.principalId && source.principalId !== request.principalId) {
+    throw new CredentialGatewayError("Credential gateway lease is bound to another principal.", "gateway_unavailable");
+  }
+  if (source.runId && source.runId !== request.runId) {
+    throw new CredentialGatewayError("Credential gateway lease is bound to another run.", "gateway_unavailable");
+  }
+  if (source.provider && source.provider !== request.provider) {
+    throw new CredentialGatewayError("Credential gateway lease provider mismatch.", "gateway_unavailable");
+  }
+  if (source.alias && source.alias !== request.alias) {
+    throw new CredentialGatewayError("Credential gateway lease alias mismatch.", "gateway_unavailable");
+  }
+}
+
+function buildTlsDispatcher(tls: { caFile: string; certFile: string; keyFile: string }): unknown {
+  try {
+    // undici powers the global fetch; a connected Agent presents client certs.
+    const { Agent } = require("undici") as { Agent: new (options: Record<string, unknown>) => unknown };
+    return new Agent({
+      connect: {
+        ca: fs.readFileSync(tls.caFile),
+        cert: fs.readFileSync(tls.certFile),
+        key: fs.readFileSync(tls.keyFile),
+        rejectUnauthorized: true,
+        minVersion: "TLSv1.2",
+      },
+    });
+  } catch {
+    throw new Error("Credential broker mTLS material is unavailable.");
+  }
 }
 
 /**
  * A process-local gateway for development and single-server deployments.
- * Production deployments should replace it with an external secret broker
+ * Production deployments must replace it with an external secret broker
  * behind the same interface. Secrets are never put in tool configuration,
  * events, argv, or returned after a lease has been consumed.
  */
@@ -89,9 +272,40 @@ export class EnvironmentCredentialGateway implements CredentialGateway {
   }
 }
 
+/**
+ * Resolve the gateway for this process.
+ *
+ * Precedence:
+ * 1. CREDENTIAL_BROKER_URL (external broker; preferred in production)
+ * 2. TOOL_CREDENTIAL_GATEWAY_URL (legacy broker URL, still honored)
+ * 3. EnvironmentCredentialGateway — development/single-server only.
+ *
+ * Production never falls back to the process-local gateway: a missing or
+ * invalid broker configuration throws at startup (fail closed).
+ */
 export function credentialGatewayFromEnvironment(env: Readonly<Record<string, string | undefined>> = process.env): CredentialGateway {
-  if (env.TOOL_CREDENTIAL_GATEWAY_URL?.trim()) return new HttpCredentialGateway(env.TOOL_CREDENTIAL_GATEWAY_URL, env.TOOL_CREDENTIAL_GATEWAY_SERVICE_TOKEN ?? "");
+  const config = brokerClientConfigFromEnvironment(env);
+  if (config.enabled && config.url) {
+    return httpGatewayFromConfig(config, env);
+  }
+  if (env.NODE_ENV === "production") {
+    throw new Error("Production requires an external credential broker; the process-local gateway is not permitted.");
+  }
   return new EnvironmentCredentialGateway(env.TOOL_CREDENTIAL_GATEWAY_ENABLED === "true", env, boundedTtl(env.TOOL_CREDENTIAL_GATEWAY_TTL_MS));
+}
+
+function httpGatewayFromConfig(config: BrokerClientConfig, env: Readonly<Record<string, string | undefined>>): HttpCredentialGateway {
+  const retries = Number(env.CREDENTIAL_BROKER_ISSUE_RETRIES ?? 1);
+  return new HttpCredentialGateway(
+    config.url,
+    config.serviceToken,
+    fetch,
+    {
+      requestTimeoutMs: config.requestTimeoutMs,
+      issueRetries: Number.isInteger(retries) && retries >= 0 && retries <= 3 ? retries : 1,
+      ...(config.tls ? { tls: config.tls } : {}),
+    },
+  );
 }
 
 export function credentialEnvironmentName(request: Pick<CredentialGatewayRequest, "provider" | "alias">): string {
@@ -113,4 +327,8 @@ function sameRequest(a: CredentialGatewayRequest, b: CredentialGatewayRequest) {
 function boundedTtl(value: string | undefined) {
   const parsed = Number(value ?? 30_000);
   return Number.isInteger(parsed) && parsed >= 1_000 && parsed <= 5 * 60_000 ? parsed : 30_000;
+}
+
+function clampInt(value: number | undefined, fallback: number, min: number, max: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max ? value : fallback;
 }

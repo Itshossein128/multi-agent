@@ -9,7 +9,8 @@ import { createDashboardRouter } from "./api/dashboard";
 import { createMemoryComposition } from "./memory/composition";
 import { memoryAccessResolverFromEnvironment } from "./memory/access";
 import { createStudioComposition } from "./studio/composition";
-import { AgentRuntime, workerCredentialResolverFromEnvironment } from "../../../src/agents/runtime";
+import { AgentRuntime } from "../../../src/agents/runtime";
+import { createCredentialComposition } from "./composition";
 import { RunExecutor } from "./runtime/runExecutor";
 import { InMemoryRunStore, PostgresRunStore } from "./runtime/runStore";
 import { recoverInterruptedRuns } from "./runtime/recovery";
@@ -30,6 +31,9 @@ async function createDurableCheckpointer(connectionString: string): Promise<(Bas
 }
 
 async function main() {
+  // Fail-closed credential composition: production startup aborts here unless
+  // a valid external broker (with mTLS material when required) is configured.
+  const credentials = createCredentialComposition();
   const observability = createObservabilityRuntime();
   const app = new Hono();
   const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3060" : "http://localhost:3060,http://localhost:3061")).split(",").map((origin) => origin.trim());
@@ -71,7 +75,8 @@ async function main() {
       undefined,
       undefined,
       undefined,
-      workerCredentialResolverFromEnvironment(),
+      credentials.workerCredentials,
+      credentials.apiCredentials,
     ),
     checkpointer,
     observability.telemetry,
@@ -91,6 +96,7 @@ async function main() {
   const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));
   const shutdown = () => {
     server.close(() => {
+      credentials.close();
       const persistenceFlush = "flush" in runStore ? runStore.flush() : Promise.resolve();
       void Promise.all([memory.close(), studio.close(), persistenceFlush, observability.shutdown()]).then(
         () => process.exit(0),

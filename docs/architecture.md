@@ -11,6 +11,7 @@ Next server-side BFF (/api/execution)
         ▼
 Hono Execution Server
         │ authenticate → authorize → validate → compile
+        │ issue/consume lease ─────▶ Credential Broker خارجی (fail-closed در production)
         ▼
 LangGraph StateGraph
         │
@@ -27,6 +28,7 @@ LangGraph StateGraph
 - Execution Server assertion را verify می‌کند و ownership/tenant را در Store و APIها اعمال می‌کند. نبودن یا نامعتبر بودن assertion باید fail-closed باشد.
 - Workflow validation و انتخاب agent/tool در سرور انجام می‌شود. داده‌ی client فقط پیشنهاد یا درخواست است.
 - credentialهای provider در AgentRecord، WorkflowDefinition، ToolRecord، run input، event و `WorkerSpec.env` ذخیره نمی‌شوند.
+- در production هیچ long-lived secretی از process environment برای providerها و ابزارها استفاده نمی‌شود؛ execution server فقط lease تک‌مصرف و کوتاه‌عمر از credential broker خارجی می‌گیرد و نبود آن fail-closed است.
 
 ## اجرای agent
 
@@ -82,9 +84,13 @@ Whole-run و conditional branch-level cancellation وجود دارد؛ branch ca
 
 ## Tools و approval
 
-Tool entity در registry مستقل است و workflow node یا agent فقط به `toolId` ارجاع می‌دهد. function و configured HTTP قابل اجرا هستند؛ database، search و MCP نیز فقط با aliasهای server-owned و credential gateway کوتاه‌عمر اجرا می‌شوند. file، CLI و custom همچنان fail-closed هستند.
+Tool entity در registry مستقل است و workflow node یا agent فقط به `toolId` ارجاع می‌دهد. function و configured HTTP قابل اجرا هستند؛ database، search و MCP نیز فقط با aliasهای server-owned و lease کوتاه‌عمر credential broker اجرا می‌شوند. file، CLI و custom همچنان fail-closed هستند.
 
 Human approval با LangGraph `interrupt`/resume انجام می‌شود و branchهای آن فقط `approved` و `rejected` هستند. در حالت PostgreSQL، رکورد approval و paused context durable است؛ execution فعال و timer پس از restart نیازمند recovery است.
+
+## Credential Broker
+
+مرز credential در `src/security/credentialGateway.ts` است: در production فقط `HttpCredentialGateway` فعال می‌شود و lease تک‌مصرف، کوتاه‌عمر و محدود به tenant/principal/run را از سرویس مستقل broker (`src/broker/`) می‌گیرد. سرویس broker policy پیش‌فرض deny (عضویت run، agent→provider، alias ابزار، quota/budget)، rate limit، consume اتمیک از PostgreSQL، revoke idempotent و audit به‌صورت hash chain با trigger append-only دارد و secret را فقط از Vault KV v2 (یا in-memory در development) می‌خواند. ابزارهای database/search/MCP، کلیدهای agentهای API و credential مربوط به worker از همین مسیر عبور می‌کنند و secret وارد AgentRecord، ToolRecord، event، log یا image نمی‌شود. سرویس standalone بدون directory پیش‌فرض deny-all است و deployment فهرست هویت خود را وصل می‌کند. جزئیات و شرط‌های deployment در [deferred-credential-gateway.md](deferred-credential-gateway.md) است.
 
 ## Observability
 
@@ -98,6 +104,8 @@ apps/server/              Hono API، composition، compiler، RunExecutor و sto
 packages/types/            قراردادهای مشترک domain و event
 src/agents/runtime/        AgentRuntime، executors و WorkerRuntime
 src/tools/                ToolRuntime و executorهای ابزار
+src/security/             credential gateway client و resolver کلید provider
+src/broker/               Credential Broker مستقل (contract، policy، storeها، audit، HTTP)
 src/memory/                قراردادها، application و PostgreSQL/in-memory adapters
 src/observability/         telemetry و redaction
 infrastructure/            PostgreSQL migrations و Docker worker image

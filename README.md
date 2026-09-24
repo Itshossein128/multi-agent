@@ -18,7 +18,7 @@ pnpm dev
 برای verification کامل:
 
 ```bash
-pnpm test -- --runInBand
+pnpm test --runInBand
 pnpm --filter server build
 pnpm --filter web build
 ```
