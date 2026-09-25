@@ -48,8 +48,8 @@ describe("LocalProcessWorkerRuntime", () => {
       };
       let killed = false;
       let timer: NodeJS.Timeout | undefined;
-      const stdoutListeners: Record<string, any[]> = { data: [], close: [] };
-      const stderrListeners: Record<string, any[]> = { data: [], close: [] };
+      const stdoutListeners: Record<string, any[]> = { data: [], close: [], error: [] };
+      const stderrListeners: Record<string, any[]> = { data: [], close: [], error: [] };
 
       const emit = (map: Record<string, any[]>, event: string, ...args: any[]) => {
         if (!killed) map[event]?.forEach(fn => fn(...args));
@@ -365,14 +365,14 @@ describe("LocalProcessWorkerRuntime", () => {
     const spawnFn = ((command: string, args: string[], options: any) => {
       spawned.push({ command, args, env: options.env });
       const listeners: Record<string, Array<(...values: any[]) => void>> = { close: [], error: [] };
-      const streamListeners: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
+      const streamListeners: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [], error: [] };
       setTimeout(() => {
         streamListeners.close.forEach((fn) => fn());
         listeners.close.forEach((fn) => fn(0));
       }, 0);
       return {
-        stdout: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event].push(fn) },
-        stderr: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event].push(fn) },
+        stdout: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
+        stderr: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
         stdin: { write: jest.fn(), end: jest.fn() },
         on: (event: string, fn: (...values: any[]) => void) => listeners[event].push(fn),
         once: (event: string, fn: (...values: any[]) => void) => listeners[event].push(fn),
@@ -429,8 +429,8 @@ describe("LocalProcessWorkerRuntime", () => {
     const spawnFn = ((command: string, args: string[], options: any) => {
       spawnedEnvironment = options.env;
       const listeners: Record<string, Array<(...values: any[]) => void>> = { close: [], error: [] };
-      const stdout: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
-      const stderr: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
+      const stdout: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [], error: [] };
+      const stderr: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [], error: [] };
       setTimeout(() => {
         stdout.data.forEach((fn) => fn(Buffer.from("before dummy-split-")));
         stdout.data.forEach((fn) => fn(Buffer.from("secret after")));
@@ -439,8 +439,8 @@ describe("LocalProcessWorkerRuntime", () => {
         listeners.close.forEach((fn) => fn(0));
       }, 0);
       return {
-        stdout: { on: (event: string, fn: (...values: any[]) => void) => stdout[event].push(fn) },
-        stderr: { on: (event: string, fn: (...values: any[]) => void) => stderr[event].push(fn) },
+        stdout: { on: (event: string, fn: (...values: any[]) => void) => stdout[event]?.push(fn) },
+        stderr: { on: (event: string, fn: (...values: any[]) => void) => stderr[event]?.push(fn) },
         stdin: { write: jest.fn(), end: jest.fn() },
         on: (event: string, fn: (...values: any[]) => void) => listeners[event].push(fn),
         kill: jest.fn(),
@@ -502,6 +502,137 @@ describe("LocalProcessWorkerRuntime", () => {
 
     await expect(runtime.start(createSpec("sh", ["-c", "id"]))).rejects.toThrow(/not allowed by the server runtime/);
     expect(spawnFn).not.toHaveBeenCalled();
+  });
+
+  test("registers error listeners on stdin/stdout/stderr to handle stream errors safely", async () => {
+    let stdinErrorListenerRegistered = false;
+    const spawnFn = ((command: string, args: string[], options: any) => {
+      const listeners: Record<string, any[]> = { close: [], error: [] };
+      const streamListeners: Record<string, any[]> = { data: [], close: [], error: [] };
+      const stdinListeners: Record<string, any[]> = { error: [] };
+
+      setTimeout(() => {
+        // Emit stdin error to verify it does not crash process
+        stdinListeners.error.forEach((fn) => fn(new Error("EPIPE: broken pipe")));
+        streamListeners.close.forEach((fn) => fn());
+        listeners.close.forEach((fn) => fn(0));
+      }, 0);
+
+      return {
+        stdout: { on: (e: string, fn: any) => streamListeners[e]?.push(fn) },
+        stderr: { on: (e: string, fn: any) => streamListeners[e]?.push(fn) },
+        stdin: {
+          on: (e: string, fn: any) => {
+            if (e === "error") stdinErrorListenerRegistered = true;
+            stdinListeners[e]?.push(fn);
+          },
+          write: jest.fn(),
+          end: jest.fn(),
+        },
+        on: (e: string, fn: any) => listeners[e]?.push(fn),
+        kill: jest.fn(),
+        pid: 12345,
+      } as any;
+    }) as any;
+
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn);
+    const spec = createSpec("node", []);
+    const handle = await runtime.start(spec, undefined, "some input");
+    const result = await runtime.wait(handle.workerId);
+
+    expect(stdinErrorListenerRegistered).toBe(true);
+    expect(result.reason).toBe("completed");
+    await runtime.cleanup(handle.workerId);
+  });
+
+  test("ContainerWorkerRuntime.cancel() always executes finalizeSession even if delegate.cancel rejects", async () => {
+    const spawned: string[] = [];
+    const spawnFn = ((command: string, args: string[], options: any) => {
+      const isRm = args.includes("rm");
+      if (isRm) spawned.push("docker-rm");
+      const listeners: Record<string, any[]> = { close: [], error: [] };
+      const streamListeners: Record<string, any[]> = { data: [], close: [] };
+
+      setTimeout(() => {
+        streamListeners.close.forEach((fn) => fn());
+        listeners.close.forEach((fn) => fn(0));
+      }, 0);
+
+      return {
+        stdout: { on: (e: string, fn: any) => streamListeners[e]?.push(fn) },
+        stderr: { on: (e: string, fn: any) => streamListeners[e]?.push(fn) },
+        stdin: { on: jest.fn(), write: jest.fn(), end: jest.fn() },
+        on: (e: string, fn: any) => listeners[e]?.push(fn),
+        once: (e: string, fn: any) => listeners[e]?.push(fn),
+        kill: jest.fn(),
+        pid: 123,
+      } as any;
+    }) as any;
+
+    const runtime = new ContainerWorkerRuntime(
+      { ...policy, workerMode: "container", allowedExecutables: ["codex"] },
+      {
+        image: `registry.example/agent@sha256:${"a".repeat(64)}`,
+        dockerExecutable: process.execPath,
+        allowNetwork: false,
+        memory: "512m",
+        cpus: "0.5",
+        pidsLimit: 64,
+        user: "65534:65534",
+      },
+      spawnFn,
+    );
+
+    const spec = createSpec("codex", ["--version"]);
+    const handle = await runtime.start(spec);
+
+    // Mock delegate cancel to throw/reject
+    jest.spyOn((runtime as any).delegate, "cancel").mockRejectedValueOnce(new Error("Delegate cancel failed"));
+
+    await expect(runtime.cancel(handle.workerId, "test cancel")).rejects.toThrow("Delegate cancel failed");
+    expect(spawned).toContain("docker-rm");
+  });
+
+  test("does not append or emit flushed redactor output after output_limit termination", async () => {
+    let stdoutCloseFn: () => void = () => {};
+    const spawnFn = ((command: string, args: string[], options: any) => {
+      const listeners: Record<string, any[]> = { close: [], error: [] };
+      const stdoutListeners: Record<string, any[]> = { data: [], close: [] };
+      const stderrListeners: Record<string, any[]> = { data: [], close: [] };
+
+      setTimeout(() => {
+        // Emit data that exceeds output limit
+        stdoutListeners.data.forEach((fn) => fn(Buffer.from("12345678901234567890")));
+        stdoutCloseFn = () => {
+          stdoutListeners.close.forEach((fn) => fn());
+          stderrListeners.close.forEach((fn) => fn());
+          listeners.close.forEach((fn) => fn(0));
+        };
+        stdoutCloseFn();
+      }, 0);
+
+      return {
+        stdout: { on: (e: string, fn: any) => stdoutListeners[e]?.push(fn) },
+        stderr: { on: (e: string, fn: any) => stderrListeners[e]?.push(fn) },
+        stdin: { on: jest.fn(), write: jest.fn(), end: jest.fn() },
+        on: (e: string, fn: any) => listeners[e]?.push(fn),
+        kill: jest.fn(),
+        pid: 12345,
+      } as any;
+    }) as any;
+
+    policy.maxOutputBytes = 10;
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn);
+    const spec = createSpec("node", []);
+    const handle = await runtime.start(spec, undefined, undefined, {
+      environment: { OPENAI_API_KEY: "secret-key" },
+    });
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("output_limit");
+    // After output limit is exceeded, stdout must be empty (not flushed with remaining text)
+    expect(result.stdout).toBe("");
+    await runtime.cleanup(handle.workerId);
   });
 
   test("[Integration] node child process runs harmlessly", async () => {

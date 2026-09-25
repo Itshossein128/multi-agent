@@ -252,7 +252,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     const stdoutRedactor = new LaunchSecretStreamRedactor(redactionEnvironment);
     const stderrRedactor = new LaunchSecretStreamRedactor(redactionEnvironment);
     const appendSafeText = (safeText: string, isErr: boolean) => {
-      if (!safeText) return;
+      if (!safeText || state.terminationRequested || (state.reason !== "completed" && state.reason !== "failed")) return;
       if (isErr) state.stderr += safeText;
       else state.stdout += safeText;
       emit({ type: isErr ? "stderr" : "stdout", data: safeText });
@@ -272,6 +272,9 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       appendSafeText((isErr ? stderrRedactor : stdoutRedactor).push(rawText), isErr);
     };
 
+    if (typeof child.stdin?.on === "function") child.stdin.on("error", () => {});
+    if (typeof child.stdout?.on === "function") child.stdout.on("error", () => {});
+    if (typeof child.stderr?.on === "function") child.stderr.on("error", () => {});
     child.stdout?.on("data", (chunk) => handleChunk(chunk, false));
     child.stderr?.on("data", (chunk) => handleChunk(chunk, true));
 
@@ -691,8 +694,11 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
   wait(workerId: string): Promise<WorkerResult> { return this.delegate.wait(workerId); }
 
   async cancel(workerId: string, reason?: string): Promise<void> {
-    await this.delegate.cancel(workerId, reason);
-    await this.finalizeSession(workerId);
+    try {
+      await this.delegate.cancel(workerId, reason);
+    } finally {
+      await this.finalizeSession(workerId);
+    }
   }
 
   async cleanup(workerId: string): Promise<void> {
@@ -791,6 +797,9 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
   private dockerCommandWithStdin(args: string[], input: Buffer): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["pipe", "pipe", "pipe"] });
+      if (typeof child.stdin?.on === "function") child.stdin.on("error", () => {});
+      if (typeof child.stdout?.on === "function") child.stdout.on("error", () => {});
+      if (typeof child.stderr?.on === "function") child.stderr.on("error", () => {});
       let stderr = "";
       child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
       child.once("error", reject);
