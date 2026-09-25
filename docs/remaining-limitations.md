@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-09-25
 
-This document records limitations that are still open after implementing typed contracts, runtime validation, fail-closed routing, and resumable human approval. The items below are not claims that the workflow engine is incomplete; they identify deployment work or verification that cannot be honestly completed from the current workspace alone.
+This document records limitations that are still open after implementing typed contracts, runtime validation, deterministic routing, side-effect/idempotency policy, bounded scheduling, replay, notifications, plugin registration, and versioned evaluation/migration. The items below are not claims that the workflow engine is incomplete; they identify deployment work or verification that cannot be honestly completed from the current workspace alone.
 
 ## Deployment-dependent work
 
@@ -32,6 +32,8 @@ No real provider call, remote mutation, clean-IP replacement, or external system
 - Decide whether remaining legacy Langfuse/evaluation paths should be completed or removed.
 - Review lifecycle cleanup and multi-device conflict handling for memory/registry data.
 
+The platform now contains reusable primitives for generic notification delivery, plugin capability registration, event replay, evaluation suites, and workflow schema migration. Production-specific adapters, persistence backends, and UI flows for new plugins remain deployment/product integration work.
+
 ## Already resolved and therefore not open
 
 - Typed node contracts and runtime boundary validation.
@@ -39,4 +41,10 @@ No real provider call, remote mutation, clean-IP replacement, or external system
 - Schema `pattern`, supported formats, logical composition, and local `$ref` validation.
 - Resumable agent-produced `needs_human` results without replaying the provider call.
 - Durable paused-context metadata needed for approval recovery.
-
+- Explicit routing error paths and unknown paths.
+- Side-effect policy metadata and idempotent tool execution boundaries.
+- Bounded queued-run scheduling and queued-run recovery from durable snapshots.
+- Persisted-event replay snapshots.
+- Generic idempotent notification outbox/dispatcher contract.
+- Capability-scoped plugin registry.
+- Versioned evaluation runner and workflow schema migration.

@@ -12,10 +12,10 @@ import { validateWorkflow } from "../apps/server/src/compiler/validation";
  * declares an unknown/error route.
  */
 
-function routingWorkflow(branches: { key: string; label: string }[], unknownRoute?: string) {
+function routingWorkflow(branches: { key: string; label: string }[], unknownRoute?: string, errorRoute?: string) {
   const input = createNode("input", { x: 0, y: 0 });
   const condition = createNode("condition", { x: 1, y: 0 });
-  condition.config = { branches, ...(unknownRoute ? { unknownRoute } : {}) };
+  condition.config = { branches, ...(unknownRoute ? { unknownRoute } : {}), ...(errorRoute ? { errorRoute } : {}) };
   const targets = branches.map((branch, index) => {
     const memory = createNode("memory", { x: 2 + index, y: index });
     memory.config = { memoryType: "short_term", mode: "write", key: `route_${branch.key}` };
@@ -37,8 +37,8 @@ function routingWorkflow(branches: { key: string; label: string }[], unknownRout
   return { definition, edgeByBranch: new Map(targets.map(({ branch, node }) => [branch, definition.edges.find((edge) => edge.source === condition.id && edge.branchKey === branch)!.id])) , nodeByBranch: new Map(targets.map(({branch, node}) => [branch, node.id])) };
 }
 
-async function runRouting(input: Record<string, unknown>, branches = [{ key: "first", label: "First" }, { key: "second", label: "Second" }], unknownRoute?: string) {
-  const { definition, edgeByBranch } = routingWorkflow(branches, unknownRoute);
+async function runRouting(input: Record<string, unknown>, branches = [{ key: "first", label: "First" }, { key: "second", label: "Second" }], unknownRoute?: string, errorRoute?: string) {
+  const { definition, edgeByBranch } = routingWorkflow(branches, unknownRoute, errorRoute);
   const traversed: string[] = [];
   const graph = compileWorkflow(definition, [], {
     onAgentEvent: (event) => {
@@ -84,6 +84,15 @@ describe("fail-closed condition routing", () => {
     expect(traversed).not.toContain(edgeByBranch.get("first"));
   });
 
+  test("an explicit error route handles mistyped values without conflating unknown values", async () => {
+    const { traversed, edgeByBranch } = await runRouting({ branch: 42 }, [
+      { key: "first", label: "First" },
+      { key: "error", label: "Error" },
+    ], undefined, "error");
+    expect(traversed).toContain(edgeByBranch.get("error"));
+    expect(traversed).not.toContain(edgeByBranch.get("first"));
+  });
+
   test("ambiguous case-insensitive branch declarations are rejected by server validation", () => {
     const { definition } = routingWorkflow([
       { key: "Yes", label: "Yes" },
@@ -97,5 +106,11 @@ describe("fail-closed condition routing", () => {
     const { definition } = routingWorkflow([{ key: "first", label: "First" }], "not-a-branch");
     const issues = validateWorkflow(definition, []);
     expect(issues.some((issue) => issue.code === "INVALID_UNKNOWN_ROUTE" && issue.level === "error")).toBe(true);
+  });
+
+  test("an errorRoute that is not a declared branch is rejected by server validation", () => {
+    const { definition } = routingWorkflow([{ key: "first", label: "First" }], undefined, "not-a-branch");
+    const issues = validateWorkflow(definition, []);
+    expect(issues.some((issue) => issue.code === "INVALID_ERROR_ROUTE" && issue.level === "error")).toBe(true);
   });
 });

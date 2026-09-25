@@ -67,7 +67,7 @@ function validateApprovalNode(node: WorkflowNode, ctx: ValidationContext) {
 }
 
 function validateConditionNode(node: WorkflowNode, ctx: ValidationContext) {
-  const conditionConfig = node.config as { valueSource?: unknown; valueField?: unknown; unknownRoute?: unknown };
+  const conditionConfig = node.config as { valueSource?: unknown; valueField?: unknown; unknownRoute?: unknown; errorRoute?: unknown };
   if (conditionConfig.valueSource !== undefined && !["input", "last_value"].includes(String(conditionConfig.valueSource))) ctx.add("error", "INVALID_CONDITION_SOURCE", "Condition valueSource must be input or last_value.", node.id);
   if (conditionConfig.valueField !== undefined && (typeof conditionConfig.valueField !== "string" || !conditionConfig.valueField.trim() || conditionConfig.valueField.length > 100)) ctx.add("error", "INVALID_CONDITION_FIELD", "Condition valueField must be a non-empty field name of at most 100 characters.", node.id);
   const rawBranches = (node.config as { branches?: unknown }).branches;
@@ -88,12 +88,13 @@ function validateConditionNode(node: WorkflowNode, ctx: ValidationContext) {
   for (const [, duplicates] of lowered) {
     if (duplicates.length > 1) ctx.add("error", "AMBIGUOUS_BRANCH_KEY", `Condition branch keys ${duplicates.map((key) => `"${key}"`).join(", ")} collide case-insensitively.`, node.id);
   }
-  const unknownRoute = conditionConfig.unknownRoute;
-  if (unknownRoute !== undefined && unknownRoute !== null) {
-    if (typeof unknownRoute !== "string" || !unknownRoute.trim() || !keys.has(unknownRoute)) {
-      ctx.add("error", "INVALID_UNKNOWN_ROUTE", "Condition unknownRoute must name one of the declared branches.", node.id);
-    } else if (!ctx.definition.edges.some(edge => edge.source === node.id && edge.kind === "conditional" && edge.branchKey === unknownRoute)) {
-      ctx.add("error", "INVALID_UNKNOWN_ROUTE", "Condition unknownRoute must have an outgoing conditional edge.", node.id);
+  for (const [field, code, label] of [["unknownRoute", "INVALID_UNKNOWN_ROUTE", "unknown"], ["errorRoute", "INVALID_ERROR_ROUTE", "error"]] as const) {
+    const route = conditionConfig[field];
+    if (route === undefined || route === null) continue;
+    if (typeof route !== "string" || !route.trim() || !keys.has(route)) {
+      ctx.add("error", code, `Condition ${label}Route must name one of the declared branches.`, node.id);
+    } else if (!ctx.definition.edges.some(edge => edge.source === node.id && edge.kind === "conditional" && edge.branchKey === route)) {
+      ctx.add("error", code, `Condition ${label}Route must have an outgoing conditional edge.`, node.id);
     }
   }
   for (const edge of ctx.definition.edges.filter((candidate) => candidate.source === node.id && candidate.kind === "conditional")) {

@@ -42,6 +42,7 @@ export function createRunsRouter(
   app.get("/:runId/approvals", (c) => c.json(service.approvals(c.req.param("runId"))));
   app.post("/:runId/approvals/:approvalId/resolve", async (c) => { service.resolveApproval(c.req.param("runId"), c.req.param("approvalId"), await c.req.json().catch(() => ({}))); return c.json({ ok: true }, 202); });
   app.get("/:runId/history", (c) => c.json(service.history(c.req.param("runId"), c.req.query("agentId"))));
+  app.get("/:runId/replay", (c) => c.json(service.replay(c.req.param("runId"))));
   app.get("/:runId", (c) => c.json(service.get(c.req.param("runId"))));
   app.post("/:runId/cancel", (c) => c.json(service.cancel(c.req.param("runId")), 202));
   app.post("/:runId/branches/:branchKey/cancel", (c) => c.json(service.cancelBranch(c.req.param("runId"), c.req.param("branchKey")), 202));

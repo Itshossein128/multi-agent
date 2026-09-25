@@ -261,11 +261,13 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
             issues.push(error(`Branch keys ${duplicates.map((key) => `"${key}"`).join(", ")} collide case-insensitively`, { nodeId: node.id }, "AMBIGUOUS_BRANCH_KEY"));
           }
         }
-        if (config.unknownRoute !== undefined && config.unknownRoute !== null) {
-          if (typeof config.unknownRoute !== "string" || !config.unknownRoute.trim() || !keys.has(config.unknownRoute)) {
-            issues.push(error("Unknown/error route must name one of the declared branches", { nodeId: node.id }, "INVALID_UNKNOWN_ROUTE"));
-          } else if (!outgoing.some((e) => e.kind === "conditional" && e.branchKey === config.unknownRoute)) {
-            issues.push(error("Unknown/error route must have an outgoing conditional edge", { nodeId: node.id }, "INVALID_UNKNOWN_ROUTE"));
+        for (const [field, code, label] of [["unknownRoute", "INVALID_UNKNOWN_ROUTE", "Unknown"], ["errorRoute", "INVALID_ERROR_ROUTE", "Error"]] as const) {
+          const route = config[field];
+          if (route === undefined || route === null) continue;
+          if (typeof route !== "string" || !route.trim() || !keys.has(route)) {
+            issues.push(error(`${label} route must name one of the declared branches`, { nodeId: node.id }, code));
+          } else if (!outgoing.some((e) => e.kind === "conditional" && e.branchKey === route)) {
+            issues.push(error(`${label} route must have an outgoing conditional edge`, { nodeId: node.id }, code));
           }
         }
         for (const branch of config.branches) {

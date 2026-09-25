@@ -202,7 +202,7 @@ export function compileWorkflow(
             if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
             emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
             try {
-              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), signal, { runId, credentialPrincipal: options.credentialPrincipal });
+              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), signal, { runId, credentialPrincipal: options.credentialPrincipal, idempotencyKey: `${runId}:${node.id}` });
               // Boundary 2: validate and bound the tool's output before it
               // enters workflow state or any event stream.
               if (contract?.outputSchema) {
@@ -213,7 +213,7 @@ export function compileWorkflow(
               result = { lastValue: value };
               outcome = createResultEnvelope("success", {
                 value,
-                ...(contract?.captureEvidence ? { evidence: { source: "tool", producedAt: nowIso(), detail: tool.name } } : {}),
+                ...(contract?.captureEvidence ? { evidence: { source: "tool", producedAt: nowIso(), detail: tool.name, runId, nodeId: node.id, producerId: tool.id } } : {}),
               });
             } catch (error) {
               emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000), ...(error instanceof ContractViolationError ? { code: error.code } : {}) });
@@ -253,7 +253,7 @@ export function compileWorkflow(
             }
             emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
           } else if (node.type === "condition") {
-            const config = node.config as { branches: { key: string }[]; valueSource?: "input" | "last_value"; valueField?: string; unknownRoute?: string };
+            const config = node.config as { branches: { key: string }[]; valueSource?: "input" | "last_value"; valueField?: string; unknownRoute?: string; errorRoute?: string };
             // CLI agents often return JSON text; coerce so branch keys transfer through workflow state.
             const routedValue = coerceBranchCarrier(state.lastValue);
             const carrier = routedValue && typeof routedValue === "object" && !Array.isArray(routedValue)
@@ -321,7 +321,7 @@ export function compileWorkflow(
                 value,
                 ...(pendingHuman.envelope.branch ? { branch: pendingHuman.envelope.branch } : {}),
                 ...(contract?.captureEvidence && !pendingHuman.envelope.evidence
-                  ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id } }
+                  ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } }
                   : pendingHuman.envelope.evidence ? { evidence: pendingHuman.envelope.evidence } : {}),
               });
               options.pendingHuman = undefined;
@@ -381,7 +381,7 @@ export function compileWorkflow(
                 throw new NodeOutcomeError(envelope, node.id);
               }
               outcome = contract?.captureEvidence && !envelope.evidence
-                ? { ...envelope, evidence: { source: "agent", producedAt: nowIso(), detail: agent.id } }
+                ? { ...envelope, evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } }
                 : envelope;
               agentValue = "value" in envelope ? envelope.value : envelope;
             } else {
@@ -391,7 +391,7 @@ export function compileWorkflow(
               enforcePayloadBound(value, contract?.maxPayloadBytes, { nodeId: node.id, phase: "agent result" });
               outcome = createResultEnvelope("success", {
                 value,
-                ...(contract?.captureEvidence ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id } } : {}),
+                ...(contract?.captureEvidence ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } } : {}),
               });
             }
 
@@ -449,7 +449,7 @@ export function compileWorkflow(
           outcome ??= createResultEnvelope("success", {
             value: nodeValue,
             ...(result.branch ? { branch: result.branch } : {}),
-            ...(contract?.captureEvidence ? { evidence: { source: node.type, producedAt: nowIso() } } : {}),
+            ...(contract?.captureEvidence ? { evidence: { source: node.type, producedAt: nowIso(), runId, nodeId: node.id } } : {}),
           });
           result.lastOutcome = outcome;
           result.nodeOutcomes = { [node.id]: outcome };

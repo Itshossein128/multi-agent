@@ -79,6 +79,8 @@ Whole-run و conditional branch-level cancellation وجود دارد؛ branch ca
 - PostgreSQL ایزوله منبع durable برای Studio entities، taskها، runها، eventها، approvalها و long-term memory است.
 - migrationها صریح و خارج از startup اجرا می‌شوند.
 - checkpoint و paused context برای recovery approval استفاده می‌شوند؛ state channelهای جدید default امن دارند و proposalهای `needs_human` نیز در paused context نسخه‌پذیر ذخیره می‌شوند. workerهای فعال، SSE listenerها و timerها process-local هستند.
+- runهای queued از snapshotهای durable به scheduler bounded تحویل داده می‌شوند و پس از restart قابل requeue هستند؛ `GET /runs/:runId/replay` timeline persisted را بدون اجرای مجدد workflow بازسازی می‌کند.
+- notification outbox، plugin registry و evaluation runner در `src/notifications`، `src/plugins` و `src/evaluation` قراردادهای عمومی و قابل جایگزینی هستند؛ sinkهای production و pluginهای واقعی باید با allowlist سرور ثبت شوند.
 - short-term memory داخل state/checkpoint همان run است؛ long-term memory از `MemoryService` و namespace/tenant authorization عبور می‌کند.
 - Redis در معماری فعلی استفاده نمی‌شود.
 

@@ -12,6 +12,8 @@ export interface BranchRouteConfig {
   branches: ReadonlyArray<{ key: string }>;
   /** Explicitly declared branch that receives unroutable values, if any. */
   unknownRoute?: string;
+  /** Explicitly declared branch for malformed or mistyped routing input. */
+  errorRoute?: string;
 }
 
 export type BranchRouteReason =
@@ -31,6 +33,8 @@ export interface BranchRouteResolution {
   requested?: string;
   /** True when routing used the declared unknown/error route. */
   viaUnknownRoute?: boolean;
+  /** True when routing used the explicit error route. */
+  viaErrorRoute?: boolean;
 }
 
 /** Stable code surfaced by compiler, runtime, persistence, API, and UI. */
@@ -103,9 +107,12 @@ export function resolveBranchRoute(config: BranchRouteConfig, requested: unknown
     }
   }
 
-  const fallback = typeof config.unknownRoute === "string" ? config.unknownRoute : undefined;
+  const errorReason = reason === "malformed" || reason === "type_mismatch";
+  const fallback = errorReason
+    ? (typeof config.errorRoute === "string" ? config.errorRoute : undefined)
+    : (typeof config.unknownRoute === "string" ? config.unknownRoute : undefined);
   if (fallback && keys.includes(fallback)) {
-    return { status: "routed", branch: fallback, reason, requested: requestedText, viaUnknownRoute: true };
+    return { status: "routed", branch: fallback, reason, requested: requestedText, ...(errorReason ? { viaErrorRoute: true } : { viaUnknownRoute: true }) };
   }
   return { status: "unknown", reason, requested: requestedText };
 }

@@ -247,6 +247,8 @@ export interface ConditionNodeConfig {
    * never silently selects the first configured branch.
    */
   unknownRoute?: string;
+  /** Explicit branch for malformed or mistyped routing input. */
+  errorRoute?: string;
 }
 
 export interface InputNodeConfig {
@@ -308,6 +310,8 @@ export interface WorkflowEdge {
 
 export interface WorkflowDefinition {
   id: string;
+  /** Persisted workflow schema version; omitted legacy definitions migrate from v1. */
+  schemaVersion?: number;
   name: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
@@ -514,6 +518,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
   }
   return structuredCloneSafe({
     id: definition.id,
+    schemaVersion: definition.schemaVersion ?? 2,
     name: definition.name,
     nodes: definition.nodes.map((node) => ({
       id: node.id,
@@ -552,6 +557,7 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
   }
   const definition = {
     ...value,
+    schemaVersion: Number.isInteger(value.schemaVersion) && Number(value.schemaVersion) >= 1 ? Number(value.schemaVersion) : 1,
     nodes: value.nodes.map((rawNode) => {
       const node = (rawNode ?? {}) as Record<string, unknown>;
       const position = (node.position ?? {}) as Record<string, unknown>;
@@ -582,7 +588,8 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
       };
     }),
   } as WorkflowDefinition;
-  return serializeWorkflowDefinition(definition);
+  if ((definition.schemaVersion as number) > 2) throw new Error(`Workflow schema version ${String(definition.schemaVersion)} is newer than supported version 2.`);
+  return serializeWorkflowDefinition({ ...definition, schemaVersion: 2 });
 }
 
 function structuredCloneSafe<T>(value: T): T {
@@ -592,6 +599,7 @@ function structuredCloneSafe<T>(value: T): T {
 export function createEmptyDefinition(name?: string): WorkflowDefinition {
   return {
     id: uid("wf"),
+    schemaVersion: 2,
     name: name ?? "Untitled Workflow",
     nodes: [],
     edges: [],
@@ -607,6 +615,7 @@ export function createSingleAgentWorkflow(agent: AgentRecord, name = "Single Age
   const edge2 = createEdge({ source: agentNode.id, target: outputNode.id });
   return {
     id: uid("wf-task"),
+    schemaVersion: 2,
     name,
     nodes: [inputNode, agentNode, outputNode],
     edges: [edge1, edge2],

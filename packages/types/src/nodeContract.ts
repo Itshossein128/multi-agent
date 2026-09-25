@@ -85,6 +85,12 @@ export interface EvidenceInfo {
   source: string;
   producedAt: string;
   detail?: string;
+  /** Stable execution provenance; identifiers only, never secrets or payloads. */
+  runId?: string;
+  nodeId?: string;
+  producerId?: string;
+  inputDigest?: string;
+  outputDigest?: string;
 }
 
 /** The reusable result envelope replacing arbitrary model text. */

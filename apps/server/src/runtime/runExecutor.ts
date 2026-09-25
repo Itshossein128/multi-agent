@@ -46,6 +46,11 @@ function asCredentialPrincipal(principal?: RequestPrincipal): TrustedCredentialP
   return principal ? { tenantId: principal.tenantId, principalId: principal.userId } : undefined;
 }
 
+function configuredRunConcurrency(): number {
+  const value = Number(process.env.WORKFLOW_MAX_CONCURRENT_RUNS ?? 4);
+  return Number.isInteger(value) && value >= 1 && value <= 256 ? value : 4;
+}
+
 /**
  * Orchestrates run lifecycle: creation, execution, cancellation, retry,
  * and agent testing. Delegates approval handling to ApprovalManager and
@@ -55,6 +60,9 @@ export class RunExecutor {
   private checkpointers = new Map<string, BaseCheckpointSaver>();
   private pausedContext = new Map<string, PausedContext>();
   private branchControllers = new Map<string, Map<string, AbortController>>();
+  private pendingRequests = new Map<string, { request: RunCreateRequest; memoryAccess?: MemoryAccessContext; principal?: RequestPrincipal }>();
+  private activeRuns = new Set<string>();
+  private readonly maxConcurrentRuns = configuredRunConcurrency();
   private approvalManager: ApprovalManager;
   private graphRunner: GraphRunner;
 
@@ -163,8 +171,26 @@ export class RunExecutor {
     this.store.append(id, { id: uid("event"), runId: id, type: "run.created", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     this.branchControllers.set(id, new Map());
-    void this.execute(id, request, memoryAccess, principal);
+    this.pendingRequests.set(id, { request, memoryAccess, principal });
+    this.pumpQueue();
     return id;
+  }
+
+  /** Requeue a durable `queued` run after a process restart. */
+  resumeQueuedRun(runId: string, memoryAccess?: MemoryAccessContext) {
+    const entry = this.store.get(runId);
+    if (!entry || entry.run.status !== "queued") return false;
+    const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+    const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
+    const tools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
+    if (!workflow || !agents) return false;
+    this.pendingRequests.set(runId, {
+      request: { workflow, agents, tools, input: entry.run.input ?? {}, metadata: entry.run.metadata, taskId: entry.run.taskId },
+      memoryAccess,
+      principal: entry.run.ownerId && entry.run.tenantId ? { userId: entry.run.ownerId, tenantId: entry.run.tenantId } : undefined,
+    });
+    this.pumpQueue();
+    return true;
   }
 
   retry(runId: string, memoryAccess?: MemoryAccessContext) {
@@ -269,6 +295,19 @@ export class RunExecutor {
       this.store.update(runId, { metadata: { ...(this.store.get(runId)?.run.metadata ?? {}), observability: { provider: "langfuse", traceId } } });
     }
     return this.telemetry.withWorkflow({ runId, workflowId: request.workflow.id, taskId: request.taskId, input: request.input }, () => this.executeWorkflow(runId, request, memoryAccess, principal));
+  }
+
+  private pumpQueue() {
+    while (this.activeRuns.size < this.maxConcurrentRuns) {
+      const next = this.pendingRequests.keys().next().value as string | undefined;
+      if (!next) return;
+      const pending = this.pendingRequests.get(next);
+      if (!pending) continue;
+      this.pendingRequests.delete(next);
+      this.activeRuns.add(next);
+      void this.execute(next, pending.request, pending.memoryAccess, pending.principal)
+        .finally(() => { this.activeRuns.delete(next); this.pumpQueue(); });
+    }
   }
 
   private async executeWorkflow(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {

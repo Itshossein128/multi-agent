@@ -6,7 +6,7 @@
 
 | بررسی | نتیجه | توضیح |
 | --- | --- | --- |
-| Jest کامل | موفق — 67 suite و 959 تست | `pnpm test --runInBand` با PostgreSQL محلی و schemaهای موقت |
+| Jest کامل | موفق — 72 suite و 967 تست | `pnpm test --runInBand` با PostgreSQL محلی و schemaهای موقت |
 | Typed contract focused tests | موفق — 4 suite | schema validation، tool/agent boundaries، fail-closed branching، persistence و migration |
 | Credential Broker tests | موفق — 5 suite و 101 تست | contract، service، HTTP، security، persistence |
 | PostgreSQL broker persistence | موفق — 18 تست | URI، lease، revoke، revoke، idempotency، audit، Vault fake (نمونه‌گذاری در ادامه) |
@@ -15,6 +15,7 @@
 | Web build | موفق — `pnpm --filter web build` | |
 | Diff hygiene | موفق — `git diff --check` | |
 | Contract compatibility regression | موفق | malformed contract fields rejected; legacy `status: "success"` payload preserved as a plain value |
+| Platform capability primitives | موفق | explicit branch error routes، side-effect/idempotency policy، bounded run scheduler، replay، notification outbox، plugin registry، evaluation runner و workflow schema migration |
 
 ### تست‌های یکپارچهcredential Broker
 

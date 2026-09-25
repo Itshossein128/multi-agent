@@ -470,6 +470,21 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
           first branch.
         </p>
       </Field>
+      <Field label="Malformed / Type Error Route">
+        <select
+          value={config.errorRoute ?? ""}
+          onChange={(event) => updateNodeConfig(node.id, { errorRoute: event.target.value || undefined })}
+          className={inputClass}
+        >
+          <option value="">— use unknown route or fail closed —</option>
+          {config.branches.filter((branch) => branch.key.trim()).map((branch) => (
+            <option key={branch.key} value={branch.key}>{branch.key}</option>
+          ))}
+        </select>
+        <p className="text-[10px] text-zinc-600">
+          Handles missing, malformed, or mistyped branch carriers separately from valid-but-undeclared values.
+        </p>
+      </Field>
       <p className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-2 text-[10px] leading-relaxed text-zinc-500">
         Connect each branch handle (bottom of the node) to a target. The edge inherits the branch
         key — edit it on the edge itself.

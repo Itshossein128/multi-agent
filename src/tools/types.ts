@@ -6,6 +6,8 @@ export interface ToolExecutionInput {
   signal?: AbortSignal;
   runId?: string;
   credentialPrincipal?: { tenantId: string; principalId: string };
+  idempotencyKey?: string;
+  approvalGranted?: boolean;
 }
 
 /** Backend-agnostic tool execution contract. Category-specific engines implement this. */
