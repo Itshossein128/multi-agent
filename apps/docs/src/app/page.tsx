@@ -1,0 +1,14 @@
+import Link from "next/link";
+import { ArrowRight, CheckCircle2, LockKeyhole, Network, Terminal } from "lucide-react";
+import { docPages } from "@/lib/docs";
+
+export default function HomePage() {
+  return <>
+    <section className="hero">
+      <div className="hero-copy"><span className="status-pill"><span className="pulse" /> Documentation v0.1 · current</span><h1>Ship agentic workflows<br /><span>with a clear mental model.</span></h1><p>Everything you need to understand, develop and operate Multi-Agent Studio — from the first local run to production trust boundaries.</p><div className="hero-actions"><Link className="button primary" href="/docs/getting-started">Start building <ArrowRight size={16} /></Link><Link className="button secondary" href="/docs/architecture">Explore architecture</Link></div></div>
+      <div className="hero-visual" aria-label="Platform architecture preview"><div className="visual-grid" /><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="core-node"><Network size={26} /><span>AgentRuntime</span></div><div className="floating-node node-a"><Terminal size={16} /><span>Workflow</span></div><div className="floating-node node-b"><LockKeyhole size={16} /><span>Policy</span></div><div className="floating-node node-c"><CheckCircle2 size={16} /><span>RunStore</span></div></div>
+    </section>
+    <section className="signal-row"><div><strong>Self-hosted</strong><span>Your infrastructure, your data</span></div><div><strong>Typed contracts</strong><span>Predictable nodes and results</span></div><div><strong>Fail-closed</strong><span>Security at every boundary</span></div></section>
+    <section className="content-section"><div className="section-heading"><div><span className="eyebrow">THE MAP</span><h2>Find your way around the platform.</h2></div><Link href="/docs/architecture" className="text-link">View architecture <ArrowRight size={15} /></Link></div><div className="doc-grid">{docPages.slice(0, 6).map((page, index) => <Link className="doc-card" href={`/docs/${page.slug}`} key={page.slug}><span className="card-index">0{index + 1}</span><div><h3>{page.title}</h3><p>{page.description}</p></div><ArrowRight size={17} className="card-arrow" /></Link>)}</div></section>
+  </>;
+}
