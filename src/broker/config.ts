@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { BrokerError, DEFAULT_LEASE_LIMITS, type LeaseRequestLimits } from "./contract";
 import { rateLimitFromEnvironment, type RateLimitConfig } from "./rateLimit";
 import type { Scope } from "./httpApp";
+import { TLS_MIN_VERSION, TLS_MAX_VERSION, type TlsVersion } from "./tls";
 
 /**
  * Configuration boundary for both sides of the broker:
@@ -23,6 +24,23 @@ export interface BrokerTlsConfig {
   caFile: string;
   certFile: string;
   keyFile: string;
+  /** Server cert file (the broker listener cert), not the client cert. */
+  serverCertFile: string;
+  /** Server key file (the broker listener key), not the client key. */
+  serverKeyFile: string;
+  caBundleFile?: string;
+  /** Minimum TLS version accepted by the broker listener. */
+  minimumTlsVersion?: TlsVersion;
+  /** Trust-bundle rotation window end (epoch ms). Certs signed before this are rejected unless superseded by the active CA. */
+  trustBundleRotationEndMs?: number;
+  /** Identity allowlist for client certificates by subject DN (exact/wildcard). */
+  allowedClientSubjects?: string[];
+  /** Identity allowlist for client certificates by SAN (wildcard prefixes stripped). */
+  allowedClientSanPatterns?: string[];
+  /** Allowed service identities for transparent proxy-terminated deployments. */
+  allowedClientServiceIdentities?: string[];
+  /** Trusted source addresses for proxy-terminated deployments. Empty = direct mTLS. */
+  trustedProxyAddresses?: string[];
 }
 
 export interface BrokerClientConfig {
@@ -68,18 +86,42 @@ function validateBrokerUrl(raw: string): string {
 
 function readTlsConfig(env: BrokerEnvironment): BrokerTlsConfig | undefined {
   const caFile = env.CREDENTIAL_BROKER_CA_FILE?.trim();
-  const certFile = env.CREDENTIAL_BROKER_CLIENT_CERT_FILE?.trim();
-  const keyFile = env.CREDENTIAL_BROKER_CLIENT_KEY_FILE?.trim();
-  if (!caFile && !certFile && !keyFile) return undefined;
-  if (!caFile || !certFile || !keyFile) {
-    throw new Error("Credential broker mTLS requires CA, client cert, and client key files together.");
+  const serverCertFile = env.CREDENTIAL_BROKER_SERVER_CERT_FILE?.trim() || env.CREDENTIAL_BROKER_CLIENT_CERT_FILE?.trim();
+  const serverKeyFile = env.CREDENTIAL_BROKER_SERVER_KEY_FILE?.trim() || env.CREDENTIAL_BROKER_CLIENT_KEY_FILE?.trim();
+  const caBundleFile = env.CREDENTIAL_BROKER_CA_BUNDLE_FILE?.trim();
+  const minimumTlsVersion = env.CREDENTIAL_BROKER_TLS_MIN_VERSION === "TLSv1.2" || env.CREDENTIAL_BROKER_TLS_MIN_VERSION === "TLSv1.3"
+    ? env.CREDENTIAL_BROKER_TLS_MIN_VERSION
+    : undefined;
+  const trustBundleRotationEndMs = env.CREDENTIAL_BROKER_TRUST_BUNDLE_ROTATION_END_MS
+    ? Number(env.CREDENTIAL_BROKER_TRUST_BUNDLE_ROTATION_END_MS)
+    : undefined;
+  if (!caFile && !serverCertFile && !serverKeyFile) return undefined;
+  if (!caFile || !serverCertFile || !serverKeyFile) {
+    throw new Error("Credential broker mTLS requires CA, server cert, and server key files together.");
   }
-  return { caFile, certFile, keyFile };
+  return {
+    caFile,
+    certFile: serverCertFile,
+    keyFile: serverKeyFile,
+    serverCertFile,
+    serverKeyFile,
+    caBundleFile: caBundleFile || undefined,
+    minimumTlsVersion,
+    trustBundleRotationEndMs: Number.isInteger(trustBundleRotationEndMs) ? trustBundleRotationEndMs : undefined,
+  };
+}
+
+function parseStringList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 function assertFilesExist(tls: BrokerTlsConfig): void {
   // Only file names appear in errors — never file contents.
-  for (const [label, file] of [["CA", tls.caFile], ["client cert", tls.certFile], ["client key", tls.keyFile]] as const) {
+  for (const [label, file] of [["CA", tls.caFile], ["server cert", tls.certFile], ["server key", tls.keyFile]] as const) {
     let stat: fs.Stats | undefined;
     try {
       stat = fs.statSync(file);
@@ -204,9 +246,10 @@ export function brokerServerConfigFromEnvironment(env: BrokerEnvironment = proce
     throw new Error("Production credential broker requires CREDENTIAL_BROKER_SERVICE_TOKENS.");
   }
 
-  let tls: BrokerServerConfig["tls"];
+  let tls: BrokerTlsConfig | undefined;
   if (requireMtls) {
     const caFile = env.CREDENTIAL_BROKER_CA_FILE?.trim();
+    const caBundleFile = env.CREDENTIAL_BROKER_CA_BUNDLE_FILE?.trim();
     const certFile = env.CREDENTIAL_BROKER_SERVER_CERT_FILE?.trim() || env.CREDENTIAL_BROKER_CLIENT_CERT_FILE?.trim();
     const keyFile = env.CREDENTIAL_BROKER_SERVER_KEY_FILE?.trim() || env.CREDENTIAL_BROKER_CLIENT_KEY_FILE?.trim();
     if (!caFile || !certFile || !keyFile) {
@@ -215,7 +258,30 @@ export function brokerServerConfigFromEnvironment(env: BrokerEnvironment = proce
     for (const file of [caFile, certFile, keyFile]) {
       if (!fs.existsSync(file)) throw new Error(`Credential broker TLS file "${file.split(/[\\/]/).pop()}" is unavailable.`);
     }
-    tls = { caFile, certFile, keyFile, serverCertFile: certFile, serverKeyFile: keyFile };
+    tls = {
+      caFile,
+      certFile,
+      keyFile,
+      serverCertFile: certFile,
+      serverKeyFile: keyFile,
+      caBundleFile,
+      minimumTlsVersion: env.CREDENTIAL_BROKER_TLS_MIN_VERSION === "TLSv1.2" || env.CREDENTIAL_BROKER_TLS_MIN_VERSION === "TLSv1.3" ? env.CREDENTIAL_BROKER_TLS_MIN_VERSION : undefined,
+      trustBundleRotationEndMs: env.CREDENTIAL_BROKER_TRUST_BUNDLE_ROTATION_END_MS
+        ? Number(env.CREDENTIAL_BROKER_TRUST_BUNDLE_ROTATION_END_MS)
+        : undefined,
+      allowedClientSubjects: parseStringList(env.CREDENTIAL_BROKER_ALLOWED_CLIENT_SUBJECTS),
+      allowedClientSanPatterns: parseStringList(env.CREDENTIAL_BROKER_ALLOWED_CLIENT_SAN_PATTERNS),
+      allowedClientServiceIdentities: parseStringList(env.CREDENTIAL_BROKER_ALLOWED_CLIENT_SERVICE_IDENTITIES),
+      trustedProxyAddresses: parseStringList(env.CREDENTIAL_BROKER_TRUSTED_PROXY_ADDRESSES),
+    };
+  } else if (requireMtls === false) {
+    tls = undefined;
+  } else {
+    // requireMtls was not explicitly enabled: production must fail closed.
+    if (production && env.CREDENTIAL_BROKER_REQUIRE_MTLS !== "false") {
+      throw new Error("Production requires CREDENTIAL_BROKER_REQUIRE_MTLS=true.");
+    }
+    tls = undefined;
   }
 
   const vaultBaseUrl = env.CREDENTIAL_BROKER_VAULT_URL?.trim() ?? "";

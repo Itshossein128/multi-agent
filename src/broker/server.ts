@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import https from "node:https";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
+import type { Server } from "node:http";
 import { InMemoryAuditRecorder, PostgresAuditRecorder, type AuditRecorder, type AuditPgPool } from "./audit";
 import { brokerServerConfigFromEnvironment, type BrokerServerConfig } from "./config";
 import { createBrokerApp, StaticServiceAuth } from "./httpApp";
@@ -10,6 +9,11 @@ import { BrokerPolicy, type AuthorizationSource, type QuotaUsageSource } from ".
 import { RateLimiter } from "./rateLimit";
 import { CredentialBrokerService } from "./service";
 import { InMemorySecretStore, VaultSecretStore, type SecretStore } from "./secretStore";
+import {
+  createSecureServer,
+  type BrokerServerHandle,
+  type SecureServerResult,
+} from "./tls";
 
 /**
  * Broker composition and standalone entrypoint.
@@ -67,6 +71,7 @@ export function createBrokerHttpApp(service: CredentialBrokerService, config: Br
 
 export interface RunningBroker {
   app: Hono;
+  diagnostics?: SecureServerResult;
   stopCleanup(): void;
   close(): Promise<void>;
 }
@@ -99,28 +104,43 @@ export async function startBroker(
     onError: () => undefined, // cleanup failures are retried on the next tick
   });
 
-  const server = config.requireMtls && config.tls
-    ? serve({
-        fetch: app.fetch,
-        port: config.port,
-        createServer: https.createServer as never,
-        serverOptions: {
-          cert: fs.readFileSync(config.tls.serverCertFile),
-          key: fs.readFileSync(config.tls.serverKeyFile),
-          ca: fs.readFileSync(config.tls.caFile),
-          requestCert: true,
-          rejectUnauthorized: true,
-          minVersion: "TLSv1.2",
+  const handle = config.requireMtls && config.tls
+    ? createSecureServer(
+        app.fetch,
+        {
+          enabled: true,
+          requireClientCertificate: true,
+          caFile: config.tls.caFile,
+          caBundleFile: config.tls.caBundleFile,
+          serverCertificateFile: config.tls.serverCertFile,
+          serverKeyFile: config.tls.serverKeyFile,
+          allowedClientSubjects: config.tls.allowedClientSubjects,
+          allowedClientSanPatterns: config.tls.allowedClientSanPatterns,
+          allowedClientServiceIdentities: config.tls.allowedClientServiceIdentities,
+          trustBundleRotationEndMs: config.tls.trustBundleRotationEndMs,
         },
-      })
-    : serve({ fetch: app.fetch, port: config.port });
+        {
+          trustedProxyAddresses: config.tls.trustedProxyAddresses,
+        },
+      )
+    : {
+        server: serve({ fetch: app.fetch, port: config.port }) as unknown as Server,
+        diagnostics: undefined,
+        listen: () => ({ close: async () => undefined }),
+        close: async () => {
+          // Plain (non-mTLS) path: no TLS listener to tear down.
+        },
+      };
+
+  handle.listen(config.port);
 
   return {
     app,
+    diagnostics: handle.diagnostics,
     stopCleanup,
     close: async () => {
       stopCleanup();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await handle.close();
     },
   };
 }

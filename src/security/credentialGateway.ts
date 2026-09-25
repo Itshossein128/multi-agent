@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+
+function readFileUtf8(file: string): string {
+  return fs.readFileSync(file, "utf8") as string;
+}
 import {
   brokerClientConfigFromEnvironment,
   type BrokerClientConfig,
@@ -48,7 +54,15 @@ export interface HttpCredentialGatewayOptions {
   /** Retries for lease issuance (idempotent via Idempotency-Key) on network failure. */
   issueRetries?: number;
   /** mTLS material for production brokering. */
-  tls?: { caFile: string; certFile: string; keyFile: string };
+  tls?: {
+    caFile: string;
+    certFile: string;
+    keyFile: string;
+    /** Minimum TLS version (default TLSv1.2). */
+    tlsMinVersion?: "TLSv1.2" | "TLSv1.3";
+    /** SNI server name validated against the broker certificate (default: the gateway hostname). */
+    serverName?: string;
+  };
 }
 
 /**
@@ -85,7 +99,11 @@ export class HttpCredentialGateway implements CredentialGateway {
       issueRetries: clampInt(options.issueRetries, 1, 0, 3),
       ...options,
     };
-    this.dispatcher = options.tls ? buildTlsDispatcher(options.tls) : undefined;
+    if (options.tls) {
+      validateMtlsOptions(options.tls!);
+      const serverName = options.tls.serverName?.trim() || this.baseUrl.hostname;
+      this.dispatcher = buildTlsDispatcher(options.tls!, serverName);
+    }
   }
 
   async issue(request: CredentialGatewayRequest): Promise<CredentialLease> {
@@ -217,17 +235,35 @@ function assertLeaseBinding(lease: CredentialLease, request: CredentialGatewayRe
   }
 }
 
-function buildTlsDispatcher(tls: { caFile: string; certFile: string; keyFile: string }): unknown {
+function validateMtlsOptions(tls: NonNullable<HttpCredentialGatewayOptions["tls"]>): void {
+  for (const file of [tls.caFile, tls.certFile, tls.keyFile]) {
+    if (!fs.existsSync(file)) throw new Error(`Credential broker mTLS file ${file} is unavailable.`);
+  }
+  // The client cert and the private key must belong to the same subject; Node
+  // cannot encode SPKI identities from PEM strings, so reject obvious swaps
+  // before touching the network.
+  const cert = fs.readFileSync(tls.certFile, "utf8");
+  const key = fs.readFileSync(tls.keyFile, "utf8");
+  if (cert.includes("PRIVATE KEY") && key.includes("-----BEGIN CERTIFICATE-----")) {
+    throw new Error("Credential broker mTLS certificate and key appear to be swapped.");
+  }
+  if (!tls.tlsMinVersion || (tls.tlsMinVersion !== "TLSv1.2" && tls.tlsMinVersion !== "TLSv1.3")) {
+    throw new Error("Credential broker mTLS tlsMinVersion must be TLSv1.2 or TLSv1.3.");
+  }
+}
+
+function buildTlsDispatcher(tls: NonNullable<HttpCredentialGatewayOptions["tls"]>, serverName: string): unknown {
   try {
     // undici powers the global fetch; a connected Agent presents client certs.
     const { Agent } = require("undici") as { Agent: new (options: Record<string, unknown>) => unknown };
     return new Agent({
       connect: {
-        ca: fs.readFileSync(tls.caFile),
-        cert: fs.readFileSync(tls.certFile),
-        key: fs.readFileSync(tls.keyFile),
+        ca: readFileUtf8(tls.caFile),
+        cert: readFileUtf8(tls.certFile),
+        key: readFileUtf8(tls.keyFile),
         rejectUnauthorized: true,
-        minVersion: "TLSv1.2",
+        minVersion: tls.tlsMinVersion ?? "TLSv1.2",
+        servername: serverName,
       },
     });
   } catch {
@@ -296,6 +332,15 @@ export function credentialGatewayFromEnvironment(env: Readonly<Record<string, st
 
 function httpGatewayFromConfig(config: BrokerClientConfig, env: Readonly<Record<string, string | undefined>>): HttpCredentialGateway {
   const retries = Number(env.CREDENTIAL_BROKER_ISSUE_RETRIES ?? 1);
+  const tls = config.tls
+    ? ({
+        caFile: config.tls.caFile,
+        certFile: config.tls.certFile,
+        keyFile: config.tls.keyFile,
+        tlsMinVersion: env.CREDENTIAL_BROKER_TLS_MIN_VERSION === "TLSv1.3" ? "TLSv1.3" : "TLSv1.2",
+        serverName: env.CREDENTIAL_BROKER_TLS_SERVER_NAME?.trim(),
+      } as HttpCredentialGatewayOptions["tls"])
+    : undefined;
   return new HttpCredentialGateway(
     config.url,
     config.serviceToken,
@@ -303,7 +348,7 @@ function httpGatewayFromConfig(config: BrokerClientConfig, env: Readonly<Record<
     {
       requestTimeoutMs: config.requestTimeoutMs,
       issueRetries: Number.isInteger(retries) && retries >= 0 && retries <= 3 ? retries : 1,
-      ...(config.tls ? { tls: config.tls } : {}),
+      ...(tls ? { tls } : {}),
     },
   );
 }
