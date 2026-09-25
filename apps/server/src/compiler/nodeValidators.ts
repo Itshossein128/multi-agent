@@ -49,10 +49,11 @@ function validateToolNode(node: WorkflowNode, ctx: ValidationContext) {
 }
 
 function validateMemoryNode(node: WorkflowNode, ctx: ValidationContext) {
-  const config = node.config as { key?: string; mode?: string; memoryType?: string };
+  const config = node.config as { key?: string; mode?: string; memoryType?: string; writeSource?: string };
   if (typeof config.key !== "string" || !config.key.trim()) ctx.add("error", "MISSING_MEMORY_KEY", "Memory node has no memory key", node.id);
   if (!['read', 'write', 'read_write'].includes(config.mode ?? "")) ctx.add("error", "INVALID_MEMORY_MODE", "Memory node has an invalid mode.", node.id);
   if (!['short_term', 'long_term', 'shared'].includes(config.memoryType ?? "")) ctx.add("error", "INVALID_MEMORY_TYPE", "Memory node has an invalid type.", node.id);
+  if (config.writeSource !== undefined && !['last_value', 'node_results', 'handoffs', 'run_report'].includes(config.writeSource)) ctx.add("error", "INVALID_MEMORY_WRITE_SOURCE", "Memory node has an invalid write source.", node.id);
 }
 
 function validateApprovalNode(node: WorkflowNode, ctx: ValidationContext) {

@@ -245,10 +245,16 @@ export function compileWorkflow(
                   : nodeInput === undefined ? state.input : { content: nodeInput },
             };
           } else if (node.type === "memory") {
-            const config = node.config as { mode: string; key: string };
+            const config = node.config as { mode: string; key: string; writeSource?: "last_value" | "node_results" | "handoffs" | "run_report" };
             if (config.mode === "read") result = { lastValue: state.memory[config.key] };
             else {
-              const value = nodeInput ?? state.input;
+              const value = config.writeSource === "node_results"
+                ? { nodeResults: state.nodeResults ?? {}, handoffs: state.handoffs ?? {} }
+                : config.writeSource === "handoffs"
+                  ? { handoffs: state.handoffs ?? {} }
+                  : config.writeSource === "run_report"
+                    ? { input: state.input, nodeResults: state.nodeResults ?? {}, handoffs: state.handoffs ?? {}, memory: state.memory }
+                    : nodeInput ?? state.input;
               result = { memory: { [config.key]: value }, lastValue: value };
             }
             emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
@@ -689,7 +695,20 @@ async function runAgentThroughRuntime(
     onShortTermUpdate: meta.onShortTermUpdate,
     onWorkingMemoryUpdate: meta.onWorkingMemoryUpdate,
     onBackgroundEvent: meta.onAgentEvent,
-    context: { memory: state.memory, branch: state.branch, previousOutput: state.lastValue },
+    context: {
+      memory: state.memory,
+      branch: state.branch,
+      previousOutput: state.lastValue,
+      workflowInput: state.input,
+      nodeResults: state.nodeResults ?? {},
+    },
+    // Preserve the immutable workflow input as first-class context. Node
+    // handoffs intentionally use lastValue, but that value may be replaced by
+    // a memory read, condition, or another agent's output.
+    runtimeState: {
+      workflowInput: state.input,
+      nodeResults: state.nodeResults ?? {},
+    },
     handoffs: state.handoffs,
     workingMemory: state.workingMemory ?? {},
   })) {

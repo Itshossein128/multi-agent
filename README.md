@@ -26,3 +26,11 @@ pnpm --filter web build
 ## مستندات
 
 فهرست canonical مستندات در [`docs/README.md`](docs/README.md) قرار دارد. از فایل‌های prompt، plan و report تاریخی به‌عنوان منبع معماری استفاده نکنید؛ وضعیت جاری در [`docs/roadmap.md`](docs/roadmap.md)، محدودیت‌ها در [`docs/implementation-gaps.md`](docs/implementation-gaps.md) و شواهد آخرین verification در [`docs/verification.md`](docs/verification.md) ثبت می‌شود.
+
+برای مطالعه‌ی آموزشی و استفاده‌ی مرحله‌به‌مرحله از نرم‌افزار، سایت مستندات را اجرا کنید:
+
+```bash
+pnpm --filter docs dev
+```
+
+سپس به `http://localhost:3070` بروید. کد سایت در [`apps/docs`](apps/docs) قرار دارد و محتوای canonical این repository همچنان در `docs/` نگه‌داری می‌شود.

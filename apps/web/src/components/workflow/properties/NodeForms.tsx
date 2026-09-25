@@ -349,6 +349,21 @@ export function MemoryForm({ node }: { node: WorkflowNode }) {
           <option value="read_write">Read / Write</option>
         </select>
       </Field>
+      {config.mode !== "read" && (
+        <Field label="Write Source">
+          <select
+            value={config.writeSource ?? "last_value"}
+            onChange={(event) => updateNodeConfig(node.id, { writeSource: event.target.value })}
+            className={inputClass}
+          >
+            <option value="last_value">Immediately preceding value</option>
+            <option value="node_results">All completed node results</option>
+            <option value="handoffs">Structured agent handoffs</option>
+            <option value="run_report">Complete run report</option>
+          </select>
+          <p className="mt-1 text-xs text-zinc-500">Use a complete run report for final evidence aggregation.</p>
+        </Field>
+      )}
       <Field label="Memory Key">
         <input
           type="text"

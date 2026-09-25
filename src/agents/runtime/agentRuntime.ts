@@ -124,8 +124,10 @@ export class AgentRuntime {
       workingMemory: input.workingMemory,
       previousOutput: input.context?.previousOutput,
       branchState: typeof input.context?.branch === "string" ? input.context.branch : undefined,
-      runtimeState: input.context?.memory && typeof input.context.memory === "object"
-        ? input.context.memory as Record<string, unknown> : undefined,
+      runtimeState: {
+        ...(input.context?.memory && typeof input.context.memory === "object" ? input.context.memory as Record<string, unknown> : {}),
+        ...(input.runtimeState ?? {}),
+      },
       memoryAccess: input.memoryAccess,
       model: input.agent.backend.type === "api"
         ? { provider: input.agent.backend.provider, model: input.agent.backend.model }

@@ -227,6 +227,8 @@ export interface MemoryNodeConfig {
   memoryType: "short_term" | "long_term" | "shared";
   mode: "read" | "write" | "read_write";
   key: string;
+  /** Optional source for writes that need a complete run handoff. */
+  writeSource?: "last_value" | "node_results" | "handoffs" | "run_report";
 }
 
 export interface ConditionBranch {

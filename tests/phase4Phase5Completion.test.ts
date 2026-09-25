@@ -53,6 +53,46 @@ test("real LangGraph fan-out and fan-in execute without serializing the branches
   expect(started.sort()).toEqual(["A", "B"]);
 });
 
+test("agent context preserves immutable workflow input across memory handoffs", async () => {
+  const agent = createAgentRecord({ name: "Context observer" });
+  const input = createNode("input", { x: 0, y: 0 });
+  const memory = createNode("memory", { x: 1, y: 0 });
+  memory.config = { memoryType: "shared", mode: "read", key: "project-coordination" };
+  const worker = createNode("agent", { x: 2, y: 0 }, { agentId: agent.id });
+  const output = createNode("output", { x: 3, y: 0 });
+  const workflow = { ...createEmptyDefinition(), nodes: [input, memory, worker, output], edges: [
+    createEdge({ source: input.id, target: memory.id }),
+    createEdge({ source: memory.id, target: worker.id }),
+    createEdge({ source: worker.id, target: output.id }),
+  ] };
+  let observed: unknown;
+  const graph = compileWorkflow(workflow, [agent], {
+    runtime: { async *execute(execution) {
+      observed = execution.runtimeState?.workflowInput;
+      yield { type: "agent.completed" as const, timestamp: nowIso(), agentId: execution.agent.id, nodeId: execution.nodeId, runId: execution.runId, payload: { content: { status: "success" } } };
+    } },
+  });
+  await graph.graph.invoke({ input: { change_request: "preserve me", requiresIntegration: false } });
+  expect(observed).toEqual({ change_request: "preserve me", requiresIntegration: false });
+});
+
+test("run report memory writes retain node results and handoffs", async () => {
+  const agent = createAgentRecord({ name: "Report producer" });
+  const input = createNode("input", { x: 0, y: 0 });
+  const worker = createNode("agent", { x: 1, y: 0 }, { agentId: agent.id });
+  const memory = createNode("memory", { x: 2, y: 0 });
+  memory.config = { memoryType: "shared", mode: "write", key: "project-coordination", writeSource: "run_report" };
+  const output = createNode("output", { x: 3, y: 0 });
+  const workflow = { ...createEmptyDefinition(), nodes: [input, worker, memory, output], edges: [
+    createEdge({ source: input.id, target: worker.id }),
+    createEdge({ source: worker.id, target: memory.id }),
+    createEdge({ source: memory.id, target: output.id }),
+  ] };
+  const graph = compileWorkflow(workflow, [agent], { agentRunner: async () => ({ status: "success", value: "delivery evidence" }) });
+  const result = await graph.graph.invoke({ input: { change_request: "report me" } });
+  expect(result.output).toMatchObject({ input: { change_request: "report me" }, nodeResults: expect.any(Object), handoffs: expect.any(Object) });
+});
+
 test("condition nodes coerce JSON branch carriers from CLI agent text", async () => {
   const { coerceBranchCarrier } = await import("../apps/server/src/compiler/workflowCompiler");
   expect(coerceBranchCarrier('noise {"branch":"fail","status":1} trailing')).toEqual({ branch: "fail", status: 1 });

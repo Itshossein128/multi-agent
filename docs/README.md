@@ -10,6 +10,21 @@
 4. [محدودیت‌های باقی‌مانده](implementation-gaps.md)
 5. [آخرین شواهد verification](verification.md)
 
+## مسیر آموزشی سایت
+
+برای کاربری که پروژه را تازه می‌شناسد، سایت مستندات در `apps/docs` مسیر زیر را ارائه می‌کند:
+
+1. نصب و راه‌اندازی
+2. اولین workflow از Agent تا Run
+3. مفاهیم Organization، Agent، Workflow، Task و Run
+4. ساخت Agent و طراحی Workflow
+5. مدیریت Task و مشاهده‌ی Run
+6. Tools، Approvals و Memory
+7. Persistence، Worker و Credential Broker
+8. Deployment، Troubleshooting و Limitations
+
+این سایت نقش tutorial و navigation را دارد؛ فایل‌های این پوشه همچنان منبع جزئیات معماری، verification و محدودیت‌های فنی هستند.
+
 ## مستندات عملیاتی و قابلیت‌ها
 
 - [صفحه‌ی Agent و تنظیمات](agent-detail-page.md)
