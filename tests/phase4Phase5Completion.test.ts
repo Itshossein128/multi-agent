@@ -102,7 +102,7 @@ test("condition nodes can drive a bounded loop from the previous node value", as
   const agent = createAgentRecord({ name: "Loop body" });
   const input = createNode("input", { x: 0, y: 0 });
   const condition = createNode("condition", { x: 1, y: 0 });
-  condition.config = { branches: [{ key: "loop", label: "Loop" }, { key: "exit", label: "Exit" }] };
+  condition.config = { branches: [{ key: "loop", label: "Loop" }, { key: "exit", label: "Exit" }], valueSource: "last_value" };
   const body = createNode("agent", { x: 2, y: 0 }, { agentId: agent.id });
   const output = createNode("output", { x: 3, y: 0 });
   const workflow = {
@@ -117,7 +117,9 @@ test("condition nodes can drive a bounded loop from the previous node value", as
   const graph = compileWorkflow(workflow, [agent], {
     runtime: { async *execute(input) { executions += 1; yield { type: "agent.completed" as const, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { content: { branch: "exit" } } }; } },
   });
-  await graph.graph.invoke({ input: {} });
+  // The first hop is seeded explicitly from the run input: fail-closed routing
+  // never falls back to the first configured branch when no branch is carried.
+  await graph.graph.invoke({ input: { branch: "loop" } });
   expect(executions).toBe(1);
 });
 

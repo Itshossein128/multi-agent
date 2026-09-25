@@ -1,4 +1,5 @@
 import type { ToolRecord } from "@multi-agent/types";
+import { enforceSchema, type JsonSchema } from "@multi-agent/types";
 import { toolExecutorFactory } from "./toolExecutorFactory";
 import type { ToolExecutorFactory } from "./toolExecutorFactory";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../runtime/boundedValue";
@@ -12,9 +13,16 @@ export class ToolRuntime {
   async execute(tool: ToolRecord, input: Record<string, unknown>, parentSignal?: AbortSignal, context?: { runId?: string; credentialPrincipal?: { tenantId: string; principalId: string } }) {
     if (!tool.enabled) throw new ToolPolicyError(`Tool "${tool.name}" is disabled.`);
     if (tool.impact !== "read-only" && !this.allowSideEffects) throw new ToolPolicyError(`Tool "${tool.name}" requires server approval because it is ${tool.impact}.`);
+    // Boundary: validate the declared input contract before the tool executes.
+    // Stable codes make rejections machine-readable; diagnostics never echo values.
+    enforceSchema(tool.inputSchema as JsonSchema, input, { code: "TOOL_INPUT_INVALID", phase: "tool input" });
     const signal = parentSignal ? AbortSignal.any([parentSignal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs);
     const output = await this.executors.create(tool.category).execute({ tool, input, signal, ...context });
-    return boundJsonValue(output, this.maxOutputBytes) as Record<string, unknown>;
+    // Boundary: bound first, then validate the *bounded* output against the
+    // declared output contract before it can reach events or persistence.
+    const bounded = boundJsonValue(output, this.maxOutputBytes) as Record<string, unknown>;
+    enforceSchema(tool.outputSchema as JsonSchema, bounded, { code: "TOOL_OUTPUT_INVALID", phase: "tool output" });
+    return bounded;
   }
 }
 function configuredTimeout() { const value = Number(process.env.TOOL_MAX_DURATION_MS ?? 30_000); return Number.isInteger(value) && value >= 1_000 && value <= 60 * 60_000 ? value : 30_000; }

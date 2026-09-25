@@ -8,7 +8,11 @@
 export * from "./memory";
 export * from "./toolConfiguration";
 export * from "./approval";
+export * from "./schemaValidation";
+export * from "./nodeContract";
+export * from "./branching";
 import type { ToolRecord } from "./toolConfiguration";
+import type { NodeContract, NodeResultEnvelope } from "./nodeContract";
 
 export type WorkflowNodeType =
   | "agent"
@@ -236,6 +240,13 @@ export interface ConditionNodeConfig {
   valueSource?: "input" | "last_value";
   /** Optional field to read from the selected value, e.g. `status`. */
   valueField?: string;
+  /**
+   * Explicitly declared branch that receives unroutable values (missing,
+   * malformed, undeclared, mistyped, or ambiguous). When absent, unroutable
+   * values fail closed with a typed BRANCH_ROUTING_UNKNOWN error — the runtime
+   * never silently selects the first configured branch.
+   */
+  unknownRoute?: string;
 }
 
 export interface InputNodeConfig {
@@ -276,6 +287,11 @@ export interface WorkflowNode {
   position: WorkflowPosition;
   config: WorkflowNodeConfig;
   retryPolicy?: NodeRetryPolicy;
+  /**
+   * Versioned input/output contract enforced at execution boundaries.
+   * Optional: legacy definitions without contracts remain valid.
+   */
+  contract?: NodeContract;
 }
 
 export interface WorkflowEdge {
@@ -505,6 +521,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
       position: { x: node.position.x, y: node.position.y },
       config: node.config,
       ...(node.retryPolicy ? { retryPolicy: node.retryPolicy } : {}),
+      ...(node.contract ? { contract: node.contract } : {}),
     })),
     edges: definition.edges.map((edge) => ({
       id: edge.id,
@@ -538,8 +555,13 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
     nodes: value.nodes.map((rawNode) => {
       const node = (rawNode ?? {}) as Record<string, unknown>;
       const position = (node.position ?? {}) as Record<string, unknown>;
+      // Preserve a supplied contract verbatim until server validation runs.
+      // Normalizing here would silently discard malformed or unknown fields
+      // and could turn invalid author input into a valid-looking workflow.
+      const hasContract = Object.prototype.hasOwnProperty.call(node, "contract");
+      const { contract: rawContract, ...nodeRest } = node;
       return {
-        ...node,
+        ...nodeRest,
         id: typeof node.id === "string" ? node.id : "",
         type: node.type,
         position: {
@@ -547,6 +569,7 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
           y: typeof position.y === "number" && Number.isFinite(position.y) ? position.y : 0,
         },
         config: node.config && typeof node.config === "object" && !Array.isArray(node.config) ? node.config : {},
+        ...(hasContract ? { contract: rawContract as NodeContract } : {}),
       };
     }),
     edges: value.edges.map((rawEdge) => {
@@ -691,6 +714,12 @@ export interface Run {
   completedAt?: string;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
+  /**
+   * Deterministic structured result of the run lifecycle: success,
+   * validation failure, operational failure, policy rejection, blocked,
+   * needs-human, or unknown. Persisted alongside the run record.
+   */
+  result?: NodeResultEnvelope;
   error?: string;
   currentNodeId?: string;
   metadata: Record<string, unknown>;

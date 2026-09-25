@@ -42,6 +42,7 @@ export function recoverInterruptedRuns(
       tools: paused?.tools ?? store.getToolSnapshot?.(run.id),
       memoryAccess: paused?.memoryAccess,
       stepBudget: paused?.stepBudget,
+      pendingHuman: paused?.pendingHuman,
     }, checkpointer);
     executor.rearmApprovalTimers(run.id);
     restored.push(run.id);

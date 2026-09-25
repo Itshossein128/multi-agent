@@ -22,6 +22,7 @@ import {
   AgentForm,
   ApprovalForm,
   ConditionForm,
+  ContractForm,
   IOPortalForm,
   MemoryForm,
   ToolForm,
@@ -93,6 +94,7 @@ export function NodeProperties({ node }: { node: WorkflowNode }) {
       {(node.type === "input" || node.type === "output") && (
         <IOPortalForm node={node as WorkflowNode & { type: "input" | "output" }} />
       )}
+      <ContractForm node={node} />
     </div>
   );
 }

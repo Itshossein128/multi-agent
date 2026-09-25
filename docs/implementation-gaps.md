@@ -1,6 +1,6 @@
 # محدودیت‌ها و کارهای باقی‌مانده
 
-آخرین بازبینی: 2026-09-14. این فایل تنها مرجع gapهای باز است؛ قابلیت‌های پیاده‌سازی‌شده در مستندات capability مربوطه و شواهد اجرای تست در [verification.md](verification.md) ثبت می‌شوند.
+آخرین بازبینی: 2026-09-25. این فایل تنها مرجع gapهای باز است؛ قابلیت‌های پیاده‌سازی‌شده در مستندات capability مربوطه و شواهد اجرای تست در [verification.md](verification.md) ثبت می‌شوند.
 
 ## محدودیت‌های عمدی
 
@@ -10,6 +10,7 @@
 - **CLI local:** `CLI_WORKER_MODE=local` محدودسازی process است، نه sandbox امنیتی OS. برای کد untrusted از container استفاده کنید.
 - **Provider cost:** اگر provider هزینه‌ی معتبر گزارش نکند، مقدار `null`/ناموجود باقی می‌ماند و از token count هزینه‌ی مصنوعی محاسبه نمی‌شود.
 - **Credential Broker:** سرویس broker، client `HttpCredentialGateway`، policy، rate limit، audit زنجیره‌ای، storeهای PostgreSQL/Vault و تحویل credential worker پیاده و تست شده‌اند؛ اما استقرار broker واقعی، Vault واقعی، گواهی mTLS و E2E قطع شبکه هنوز انجام نشده، rate limitها process-local هستند، rotation خودکار پیاده نشده، و فهرست هویت باید در deployment از طریق `AuthorizationSource` وصل شود (ورودی standalone پیش‌فرض deny-all است). [deferred architecture](deferred-credential-gateway.md) را ببینید.
+- **Typed contracts:** قراردادهای versioned، schema validation، envelope نتیجه و routing fail-closed پیاده شده‌اند. validator اکنون `pattern`، formatهای محدود و متداول، compositionهای `allOf`/`anyOf`/`oneOf`/`not` و local `$ref` را با سقف‌های ایمنی enforce می‌کند؛ keywordهای باقی‌مانده عمداً fail-closed هستند. `needs_human` تولیدشده توسط agent اکنون به approval قابل resume تبدیل می‌شود و proposal اصلی را بدون replay کردن provider call نگه می‌دارد.
 
 ## کارهای بعدی
 

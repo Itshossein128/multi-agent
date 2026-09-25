@@ -1,18 +1,20 @@
 # شواهد آخرین verification
 
-آخرین اجرای ثبت‌شده در این workspace در 2026-09-24 انجام شده است. این فایل نتیجه‌ی commandها را ثبت می‌کند؛ در صورت تغییر کد باید دوباره اجرا و تاریخ آن به‌روزرسانی شود.
+آخرین اجرای ثبت‌شده در این workspace در 2026-09-25 انجام شده است. این فایل نتیجه‌ی commandها را ثبت می‌کند؛ در صورت تغییر کد باید دوباره اجرا و تاریخ آن به‌روزرسانی شود.
 
 ## نتیجه (اجرای 2026-09-24 — دسته‌های مرتبط مجدداً اجرا شده)
 
 | بررسی | نتیجه | توضیح |
 | --- | --- | --- |
-| Jest کامل | موفق — 63 suite و 918 تست | `pnpm test --runInBand` + `--detectOpenHandles --forceExit` (closeHandleهای لاگیکال، غیربایندی) |
+| Jest کامل | موفق — 67 suite و 959 تست | `pnpm test --runInBand` با PostgreSQL محلی و schemaهای موقت |
+| Typed contract focused tests | موفق — 4 suite | schema validation، tool/agent boundaries، fail-closed branching، persistence و migration |
 | Credential Broker tests | موفق — 5 suite و 101 تست | contract، service، HTTP، security، persistence |
 | PostgreSQL broker persistence | موفق — 18 تست | URI، lease، revoke، revoke، idempotency، audit، Vault fake (نمونه‌گذاری در ادامه) |
 | Typecheck | موفق — `npx tsc --noEmit` ریشه و `apps/server` | بدون خطا |
 | Server build | موفق — `pnpm --filter server build` | |
 | Web build | موفق — `pnpm --filter web build` | |
 | Diff hygiene | موفق — `git diff --check` | |
+| Contract compatibility regression | موفق | malformed contract fields rejected; legacy `status: "success"` payload preserved as a plain value |
 
 ### تست‌های یکپارچهcredential Broker
 
@@ -40,6 +42,7 @@ cd apps/server && npx tsc --noEmit -p tsconfig.json
 pnpm --filter server build
 pnpm --filter web build
 git diff --check
+npx tsc --noEmit -p packages/types/tsconfig.json
 cd apps/server && npx tsc --noEmit -p tsconfig.json
 ```
 
@@ -79,4 +82,4 @@ docker build --file infrastructure/docker/Dockerfile --tag multi-agent-platform:
 docker run --rm multi-agent-platform:verification --help
 ```
 
-E2E providerهای بیرونی و استقرار broker واقعی همچنان به endpoint، Vault واقعی، گواهی mTLS و policy deployment نیاز دارند؛ این موارد در workspace جاری شبیه‌سازی یا ادعا نشده‌اند.
+E2E providerهای بیرونی و استقرار broker واقعی همچنان به endpoint، Vault واقعی، گواهی mTLS و policy deployment نیاز دارند؛ این موارد در workspace جاری شبیه‌سازی یا ادعا نشده‌اند. مسیر agent `needs_human` با provider fake و approval واقعی درون runtime بررسی شده و provider call پس از resume تکرار نمی‌شود.

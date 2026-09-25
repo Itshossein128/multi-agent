@@ -72,11 +72,13 @@ container: codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-s
 
 Whole-run و conditional branch-level cancellation وجود دارد؛ branch cancel از API و scheduler عبور می‌کند و فقط downstream همان branch را cooperative skip می‌کند. loopهای عمومی همچنان محدود به guardrail هستند؛ برای محدودیت‌های دیگر به [implementation-gaps.md](implementation-gaps.md) رجوع کنید.
 
+قراردادهای typed و نتیجه‌ی اجرا در `packages/types/src/nodeContract.ts` و `schemaValidation.ts` تعریف شده‌اند. قرارداد هر node می‌تواند schema ورودی/خروجی، نسخه، سقف payload و ثبت evidence داشته باشد. سرور schema را قبل و بعد از boundary اجرا enforce می‌کند؛ validator علاوه بر انواع پایه، pattern، formatهای محدود، compositionهای منطقی و local `$ref` را نیز واقعاً بررسی می‌کند و keywordهای ناشناخته را fail-closed رد می‌کند. failureهای validation، policy، blocked، needs-human و unknown با `NodeResultEnvelope` از هم جدا می‌شوند. شرط‌ها با resolver مشترک و fail-closed route می‌شوند و مقدار unresolved فقط به `unknownRoute` صریح می‌رود یا با `BRANCH_ROUTING_UNKNOWN` متوقف می‌شود؛ fallback ضمنی به اولین branch وجود ندارد. نتیجه‌ی `needs_human` از agent با proposal bounded در paused context ذخیره می‌شود و پس از approval بدون تکرار provider call ادامه می‌یابد.
+
 ## Persistence و memory
 
 - PostgreSQL ایزوله منبع durable برای Studio entities، taskها، runها، eventها، approvalها و long-term memory است.
 - migrationها صریح و خارج از startup اجرا می‌شوند.
-- checkpoint و paused context برای recovery approval استفاده می‌شوند؛ workerهای فعال، SSE listenerها و timerها process-local هستند.
+- checkpoint و paused context برای recovery approval استفاده می‌شوند؛ state channelهای جدید default امن دارند و proposalهای `needs_human` نیز در paused context نسخه‌پذیر ذخیره می‌شوند. workerهای فعال، SSE listenerها و timerها process-local هستند.
 - short-term memory داخل state/checkpoint همان run است؛ long-term memory از `MemoryService` و namespace/tenant authorization عبور می‌کند.
 - Redis در معماری فعلی استفاده نمی‌شود.
 
@@ -87,6 +89,8 @@ Whole-run و conditional branch-level cancellation وجود دارد؛ branch ca
 Tool entity در registry مستقل است و workflow node یا agent فقط به `toolId` ارجاع می‌دهد. function و configured HTTP قابل اجرا هستند؛ database، search و MCP نیز فقط با aliasهای server-owned و lease کوتاه‌عمر credential broker اجرا می‌شوند. file، CLI و custom همچنان fail-closed هستند.
 
 Human approval با LangGraph `interrupt`/resume انجام می‌شود و branchهای آن فقط `approved` و `rejected` هستند. در حالت PostgreSQL، رکورد approval و paused context durable است؛ execution فعال و timer پس از restart نیازمند recovery است.
+
+Legacy workflowهایی که contract ندارند همچنان معتبرند. contractهای malformed یا دارای field/keyword غیرقابل‌پشتیبانی باید با کد پایدار رد شوند و هنگام deserialize نباید silent normalize شوند. payloadهای قدیمی که صرفاً یک field تجاری `status: "success"` دارند نیز envelope اجرا فرض نمی‌شوند؛ envelope موفق باید marker ساختاری داشته باشد.
 
 ## Credential Broker
 

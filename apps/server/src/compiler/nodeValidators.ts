@@ -67,7 +67,7 @@ function validateApprovalNode(node: WorkflowNode, ctx: ValidationContext) {
 }
 
 function validateConditionNode(node: WorkflowNode, ctx: ValidationContext) {
-  const conditionConfig = node.config as { valueSource?: unknown; valueField?: unknown };
+  const conditionConfig = node.config as { valueSource?: unknown; valueField?: unknown; unknownRoute?: unknown };
   if (conditionConfig.valueSource !== undefined && !["input", "last_value"].includes(String(conditionConfig.valueSource))) ctx.add("error", "INVALID_CONDITION_SOURCE", "Condition valueSource must be input or last_value.", node.id);
   if (conditionConfig.valueField !== undefined && (typeof conditionConfig.valueField !== "string" || !conditionConfig.valueField.trim() || conditionConfig.valueField.length > 100)) ctx.add("error", "INVALID_CONDITION_FIELD", "Condition valueField must be a non-empty field name of at most 100 characters.", node.id);
   const rawBranches = (node.config as { branches?: unknown }).branches;
@@ -77,6 +77,25 @@ function validateConditionNode(node: WorkflowNode, ctx: ValidationContext) {
   if (branches.length > ctx.maxBranches) ctx.add("error", "BRANCH_LIMIT_EXCEEDED", `Condition node exceeds the ${ctx.maxBranches}-branch limit.`, node.id);
   if (branches.some(branch => typeof branch.key !== "string" || !branch.key.trim())) ctx.add("error", "INVALID_BRANCH_KEY", "Condition node has an empty branch key.", node.id);
   if (keys.size !== branches.length) ctx.add("error", "DUPLICATE_BRANCH_KEY", "Condition node has duplicate branch keys", node.id);
+  // Case-insensitive collisions make case-insensitive routing ambiguous, so
+  // they are rejected rather than left to fail closed at runtime.
+  const lowered = new Map<string, string[]>();
+  for (const branch of branches) {
+    if (typeof branch.key !== "string" || !branch.key.trim()) continue;
+    const lower = branch.key.trim().toLowerCase();
+    lowered.set(lower, [...(lowered.get(lower) ?? []), branch.key]);
+  }
+  for (const [, duplicates] of lowered) {
+    if (duplicates.length > 1) ctx.add("error", "AMBIGUOUS_BRANCH_KEY", `Condition branch keys ${duplicates.map((key) => `"${key}"`).join(", ")} collide case-insensitively.`, node.id);
+  }
+  const unknownRoute = conditionConfig.unknownRoute;
+  if (unknownRoute !== undefined && unknownRoute !== null) {
+    if (typeof unknownRoute !== "string" || !unknownRoute.trim() || !keys.has(unknownRoute)) {
+      ctx.add("error", "INVALID_UNKNOWN_ROUTE", "Condition unknownRoute must name one of the declared branches.", node.id);
+    } else if (!ctx.definition.edges.some(edge => edge.source === node.id && edge.kind === "conditional" && edge.branchKey === unknownRoute)) {
+      ctx.add("error", "INVALID_UNKNOWN_ROUTE", "Condition unknownRoute must have an outgoing conditional edge.", node.id);
+    }
+  }
   for (const edge of ctx.definition.edges.filter((candidate) => candidate.source === node.id && candidate.kind === "conditional")) {
     if (!keys.has(edge.branchKey)) ctx.add("error", "INVALID_CONDITIONAL_BRANCH", `Edge branch "${edge.branchKey}" is not defined on the Condition node`, node.id, edge.id);
   }

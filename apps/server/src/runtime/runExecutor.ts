@@ -1,10 +1,35 @@
 import { MemorySaver, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { nowIso, uid, validateAgent, type AgentRecord, type AgentTestRequest, type ApprovalDecisionRequest, type Run, type RunCreateRequest, type RunEvent, type WorkflowDefinition } from "@multi-agent/types";
-import { compileWorkflow, UnsupportedPhase4NodeError, type AgentExecutionEvent, type CompileOptions } from "../compiler/workflowCompiler";
+import {
+  nowIso,
+  uid,
+  validateAgent,
+  ContractViolationError,
+  createResultEnvelope,
+  diagnosticsFromValidation,
+  migrateNodeContract,
+  validateAgainstSchema,
+  type AgentRecord,
+  type AgentTestRequest,
+  type ApprovalDecisionRequest,
+  type NodeResultEnvelope,
+  type Run,
+  type RunCreateRequest,
+  type RunEvent,
+  type WorkflowDefinition,
+} from "@multi-agent/types";
+import {
+  BranchRoutingError,
+  NodeOutcomeError,
+  WorkflowStepLimitError,
+  compileWorkflow,
+  UnsupportedPhase4NodeError,
+  type AgentExecutionEvent,
+  type CompileOptions,
+} from "../compiler/workflowCompiler";
 import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
-import { AgentRuntime, mapAgentExecutionEvent, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
-import { ToolRuntime } from "../../../../src/tools";
+import { AgentRuntime, AgentExecutionFailedError, mapAgentExecutionEvent, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
+import { ToolPolicyError, ToolRuntime } from "../../../../src/tools";
 import { ExecutionTelemetry } from "../../../../src/observability/telemetry";
 import { validateWorkflow } from "../compiler/validation";
 import { runtimeGuardrailsFromEnvironment, type RuntimeGuardrails } from "./guardrails";
@@ -111,12 +136,15 @@ export class RunExecutor {
         if (event.type === "agent.failed") throw new Error((event.payload as { error?: string })?.error ?? "Agent failed");
       }
       this.store.signal(runId)?.throwIfAborted();
-      this.store.update(runId, { status: "completed", completedAt: nowIso(), output });
+      this.store.update(runId, { status: "completed", completedAt: nowIso(), output, result: createResultEnvelope("success", { value: output }) });
       this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const cancelled = Boolean(this.store.signal(runId)?.aborted);
-      this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message });
+      const result = cancelled
+        ? createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Agent test was cancelled.", retryable: false } })
+        : classifyRunFailure(error);
+      this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message, result });
       this.store.append(runId, { id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message, ...(cancelled ? { cancelled: true } : {}) } });
     }
   }
@@ -125,6 +153,7 @@ export class RunExecutor {
     const issues = validateWorkflow(request.workflow, request.agents, this.guardrails, request.tools);
     const errors = issues.filter(issue => issue.level === "error");
     if (errors.length) throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
+    this.assertRunInputContract(request);
     const id = uid("run"); const stamp = nowIso();
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
@@ -173,7 +202,11 @@ export class RunExecutor {
       this.checkpointers.delete(runId);
       this.branchControllers.delete(runId);
       this.store.setPausedContext?.(runId, null);
-      this.store.update(runId, { status: "cancelled", completedAt: nowIso() });
+      this.store.update(runId, {
+        status: "cancelled",
+        completedAt: nowIso(),
+        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while waiting for a human.", retryable: false } }),
+      });
       this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
       return true;
     }
@@ -278,10 +311,83 @@ export class RunExecutor {
     this.branchControllers.delete(runId);
     this.store.setPausedContext?.(runId, null);
     const cancelled = Boolean(this.store.signal(runId)?.aborted);
-    this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message });
-    this.store.append(runId, { id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message, ...(cancelled ? { cancelled: true } : {}) } });
-    const logPayload = { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message };
+    const result = cancelled
+      ? createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled.", retryable: false } })
+      : classifyRunFailure(error);
+    this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message, result });
+    this.store.append(runId, {
+      id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0,
+      payload: {
+        error: message,
+        ...(cancelled ? { cancelled: true } : {}),
+        resultStatus: result.status,
+        ...(result.error ? { code: result.error.code } : {}),
+      },
+    });
+    const logPayload = { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message, resultStatus: result.status, ...(result.error ? { code: result.error.code } : {}) };
     if (cancelled) log.info("run.cancelled", logPayload);
     else log.error("run.failed", logPayload);
   }
+
+  /**
+   * Server-authoritative run input contract: schema + payload bounds are
+   * enforced before any execution happens, regardless of what the client
+   * validated in the browser.
+   */
+  private assertRunInputContract(request: RunCreateRequest) {
+    const inputNode = request.workflow.nodes.find((node) => node.type === "input");
+    const contract = migrateNodeContract(inputNode?.contract);
+    if (!contract) return;
+    const input = request.input ?? {};
+    if (contract.inputSchema) {
+      const validation = validateAgainstSchema(contract.inputSchema, input);
+      if (!validation.valid) {
+        throw new ContractViolationError("INPUT_CONTRACT_VIOLATION", "Run input does not match the workflow input contract", {
+          nodeId: inputNode?.id,
+          diagnostics: diagnosticsFromValidation(validation),
+        });
+      }
+    }
+    if (contract.maxPayloadBytes !== undefined) {
+      const bytes = Buffer.byteLength(JSON.stringify(input) ?? "", "utf8");
+      if (bytes > contract.maxPayloadBytes) {
+        throw new ContractViolationError("PAYLOAD_TOO_LARGE", `Run input of ${bytes} bytes exceeds the declared ${contract.maxPayloadBytes}-byte bound`, {
+          nodeId: inputNode?.id,
+          diagnostics: [{ code: "PAYLOAD_TOO_LARGE", message: "Run input exceeded declared byte bound", path: "$" }],
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Map an execution error to the deterministic result taxonomy so validation
+ * failures, operational failures, policy rejections, blocked execution, and
+ * unknown/ambiguous outcomes stay distinguishable in persisted run state.
+ */
+export function classifyRunFailure(error: unknown): NodeResultEnvelope {
+  if (error instanceof NodeOutcomeError) return error.envelope;
+  if (error instanceof ContractViolationError) return error.envelope;
+  if (error instanceof BranchRoutingError) return error.envelope;
+  if (error instanceof ToolPolicyError) {
+    return createResultEnvelope("policy_rejected", {
+      error: { code: "TOOL_POLICY_REJECTED", message: (error.message || "Tool execution was rejected by server policy").slice(0, 300), retryable: false },
+    });
+  }
+  if (error instanceof WorkflowStepLimitError) {
+    return createResultEnvelope("blocked", {
+      error: { code: "WORKFLOW_STEP_LIMIT", message: `Workflow exceeded the server-owned ${error.limit}-step execution limit`, retryable: false },
+    });
+  }
+  if (error instanceof AgentExecutionFailedError) {
+    return createResultEnvelope("failed", {
+      error: { code: "AGENT_EXECUTION_FAILED", message: (error.message || "Agent execution failed").slice(0, 300), retryable: true },
+    });
+  }
+  const name = error instanceof Error ? error.name : "";
+  if (name === "AbortError") {
+    return createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Execution was cancelled.", retryable: false } });
+  }
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+  return createResultEnvelope("failed", { error: { code: "RUN_EXECUTION_FAILED", message: message || "Run execution failed", retryable: true } });
 }
