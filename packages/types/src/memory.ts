@@ -44,10 +44,24 @@ export interface MemoryRetrievalQuery {
 }
 export interface MemorySearchResult {
   memory: Memory; score: number; tokenCount: number;
-  scores: { semantic: number; lexical: number; recency: number; importance: number; context: number };
+  scores: { semantic: number; lexical: number; recency: number; importance: number; context: number; structured?: number };
   /** Reliability multiplier applied during ranking (Phase 7/8 diagnostics only). */
   reliabilityFactor?: number;
+  /** Phase 7 vocabulary and matching signals contributing to retrieval. */
+  matchReasons?: string[];
 }
+/** Phase 8: Fact identity representing a subject, property dimension, and value. */
+export interface SemanticFactIdentity {
+  subject: string;
+  property: string;
+  value: string;
+  cardinality?: "single" | "multi";
+  temporalScope?: "current" | "historical";
+  timeReference?: string;
+  confidence?: number;
+  source?: "explicit" | "structured_data" | "subject_inference" | "pattern_inference" | "legacy_rule";
+}
+
 export type MemoryRetrievalMode = "hybrid" | "vector" | "lexical" | "fallback";
 export interface MemoryRetrievalDiagnostics {
   latencyMs: number; embeddingLatencyMs: number; candidateCount: number; selectedCount: number;
@@ -56,12 +70,25 @@ export interface MemoryRetrievalDiagnostics {
   formattingLatencyMs?: number;
   securityViolations?: number;
   filteredCounts?: { unauthorized: number; expired: number; superseded: number; invalidated: number };
-  conflict?: { groups: number; candidates: number; suppressed: number; staleSuppressed: number; disputedSuppressed: number; unresolved: number; suppressedByKind?: Partial<Record<MemoryKind, number>> };
+  conflict?: {
+    groups: number; candidates: number; suppressed: number; staleSuppressed: number; disputedSuppressed: number; unresolved: number;
+    suppressedByKind?: Partial<Record<MemoryKind, number>>;
+    /** Phase 8: Fact-level conflict accounting */
+    detected?: number;
+    resolved?: number;
+    falseSuppressed?: number;
+  };
   /** Candidate counts per memory kind. */
   kinds?: Partial<Record<MemoryKind, number>>;
-  candidates: { memoryId: string; score: number; reason: string; kind?: MemoryKind; conflictGroupId?: string; suppressedByMemoryId?: string; dropReason?: "exact_duplicate" | "explicit_superseded" | "invalidated" | "budget_dropped" | "conflict_suppressed"; verificationStatus?: string; freshnessStatus?: string;
+  candidates: {
+    memoryId: string; score: number; reason: string; kind?: MemoryKind; conflictGroupId?: string; suppressedByMemoryId?: string;
+    dropReason?: "exact_duplicate" | "explicit_superseded" | "invalidated" | "budget_dropped" | "conflict_suppressed";
+    verificationStatus?: string; freshnessStatus?: string;
     /** Reliability multiplier in [0,1] applied by the retriever (Phase 7), when known. */
-    reliabilityFactor?: number; scores: MemorySearchResult["scores"] }[];
+    reliabilityFactor?: number; scores: MemorySearchResult["scores"]; matchReasons?: string[];
+    /** Phase 8: Semantic fact identity fields for explainability */
+    factSubject?: string; factProperty?: string; factValue?: string;
+  }[];
 }
 export interface MemoryRetrievalResult { results: MemorySearchResult[]; diagnostics: MemoryRetrievalDiagnostics }
 

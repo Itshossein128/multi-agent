@@ -50,15 +50,32 @@ describe("Phase 5 deterministic production memory benchmark", () => {
     expect(report.regressionGateFailures).toEqual([]);
   });
 
-  test("exposes known weaknesses instead of converting them into passing fixtures", () => {
-    const vocabulary = report.scenarios.find(item => item.scenario === "vocabulary-mismatch" && item.mode === "full")!;
-    expect(vocabulary.taskOutcome.passed).toBe(false);
-    expect(vocabulary.recall).toBe(0);
+  test("retrieves relevant memories across vocabulary mismatch with high recall", () => {
+    const vocabScenarios = report.scenarios.filter(item => item.category === "vocabulary-mismatch" && item.mode === "full");
+    expect(vocabScenarios.length).toBeGreaterThanOrEqual(5);
+    for (const item of vocabScenarios) {
+      if (item.expectedMemories.length > 0) {
+        expect(item.taskOutcome.passed).toBe(true);
+        expect(item.recall).toBeGreaterThanOrEqual(0.8);
+        expect(item.precision).toBe(1);
+      } else {
+        // Negative control
+        expect(item.correctEmptyRetrieval).toBe(true);
+        expect(item.selectedCount).toBe(0);
+      }
+    }
+  });
+
+  test("resolves unknown-domain and generalized semantic conflicts with canonical winner selection", () => {
     const unknownConflict = report.scenarios.find(item => item.scenario === "unknown-domain-conflict" && item.mode === "full")!;
-    expect(unknownConflict.forbiddenRetrieved).toBe(1);
-    expect(unknownConflict.conflictSuppressed).toBe(0);
-    expect(report.weaknesses.some(item => item.issue.includes("Vocabulary mismatch"))).toBe(true);
-    expect(report.weaknesses.some(item => item.issue.includes("domain-specific"))).toBe(true);
+    expect(unknownConflict.taskOutcome.passed).toBe(true);
+    expect(unknownConflict.forbiddenRetrieved).toBe(0);
+    expect(unknownConflict.conflictSuppressed).toBe(1);
+
+    const conflictScenarios = report.scenarios.filter(item => item.category === "conflict" && item.mode === "full");
+    expect(conflictScenarios.length).toBeGreaterThanOrEqual(6);
+    const passedConflicts = conflictScenarios.filter(item => item.taskOutcome.passed);
+    expect(passedConflicts.length / conflictScenarios.length).toBeGreaterThanOrEqual(0.9);
   });
 
   test("measures learning, consolidation, and repeated-run growth", () => {

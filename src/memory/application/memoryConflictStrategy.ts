@@ -1,5 +1,6 @@
 import type { Memory, MemoryCandidate } from "../contracts";
 import { normalizeContent } from "./access";
+import { extractSemanticFact, areFactsContradictory, type SemanticFactIdentity } from "./semanticFact";
 
 type MemoryLike = Memory | MemoryCandidate;
 export type MemoryRelationship = "duplicate" | "conflict" | "supersede" | "independent";
@@ -45,6 +46,10 @@ function semanticContentKey(memory: MemoryLike): string | undefined {
 
 export function semanticConflictKey(memory: MemoryLike): string | undefined {
   if (memory.kind !== "semantic") return undefined;
+  const fact = extractSemanticFact(memory);
+  if (fact) {
+    return `${fact.subject}:${fact.property}`;
+  }
   return semanticSubjectKey(memory) ?? semanticContentKey(memory);
 }
 
@@ -66,8 +71,20 @@ function explicitSupersession(a: MemoryLike, b: MemoryLike): boolean {
     || (!!bSupersededBy && bSupersededBy === a.id);
 }
 
+/** Check if text denotes migration/replacement of a previous value. */
+function detectsTemporalReplacementOf(newer: MemoryLike, older: MemoryLike, factNewer?: SemanticFactIdentity, factOlder?: SemanticFactIdentity): boolean {
+  const content = normalizeContent(newer.content);
+  if (/\b(?:migrated\s+from|changed\s+from|switched\s+from|replaced|updated\s+from)\b/i.test(content)) {
+    if (factOlder && new RegExp(`\\b${factOlder.value}\\b`, "i").test(content)) {
+      return true;
+    }
+    return true;
+  }
+  return false;
+}
+
 /** Shared relationship semantics used by retrieval and consolidation. */
-export function classifyMemoryRelationship(a: MemoryLike, b: MemoryLike): MemoryRelationship {
+export function classifyMemoryRelationship(a: MemoryLike, b: MemoryLike, query?: { text?: string }): MemoryRelationship {
   if (a.kind !== b.kind) return "independent";
   if (explicitSupersession(a, b)) return "supersede";
   if (explicitConflict(a, b)) return "conflict";
@@ -80,14 +97,42 @@ export function classifyMemoryRelationship(a: MemoryLike, b: MemoryLike): Memory
     if (sameTrigger && proceduralAction(a) === proceduralAction(b)) return "duplicate";
     return sameTrigger ? "conflict" : "independent";
   }
-  const left = semanticConflictKey(a), right = semanticConflictKey(b);
-  return left && left === right ? "conflict" : "independent";
+
+  // ── Phase 8 Generalized Semantic Fact Relationship ──
+  if (a.kind === "semantic") {
+    const factA = extractSemanticFact(a);
+    const factB = extractSemanticFact(b);
+
+    if (factA && factB) {
+      if (factA.subject === factB.subject && factA.property === factB.property) {
+        // Check temporal replacement phrasing
+        if (detectsTemporalReplacementOf(a, b, factA, factB)) return "supersede";
+        if (detectsTemporalReplacementOf(b, a, factB, factA)) return "supersede";
+
+        const contradiction = areFactsContradictory(factA, factB, query);
+        if (contradiction.contradictory) {
+          return "conflict";
+        }
+        return "independent";
+      }
+      return "independent";
+    }
+
+    const left = semanticConflictKey(a), right = semanticConflictKey(b);
+    return left && left === right ? "conflict" : "independent";
+  }
+
+  return "independent";
 }
 
-export function conflictGroupKey(a: MemoryLike, b: MemoryLike): string | undefined {
-  const relationship = classifyMemoryRelationship(a, b);
+export function conflictGroupKey(a: MemoryLike, b: MemoryLike, query?: { text?: string }): string | undefined {
+  const relationship = classifyMemoryRelationship(a, b, query);
   if (relationship !== "conflict" && relationship !== "supersede") return undefined;
   if (a.kind === "semantic") {
+    const factA = extractSemanticFact(a);
+    if (factA) {
+      return `semantic|${factA.subject}:${factA.property}`;
+    }
     const key = semanticConflictKey(a);
     return key ? `${a.kind}|${key}` : `explicit|${[a.id, b.id].sort().join("|")}`;
   }

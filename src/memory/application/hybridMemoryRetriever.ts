@@ -6,6 +6,8 @@ import { embedSafely, sameEmbedding, validVector } from "./embedding";
 import { computeReliabilityFactor, DeterministicFreshnessPolicy, extractReliability, type MemoryFreshnessPolicy } from "./memoryReliability";
 import { DefaultMemoryContextFormatter } from "./memoryContextFormatter";
 import { classifyMemoryRelationship, conflictGroupKey } from "./memoryConflictStrategy";
+import { DefaultMemoryQueryExpander, evaluateMemoryMatch, type MemoryQueryExpander, STOP_WORDS } from "./queryExpansion";
+import { extractSemanticFact } from "./semanticFact";
 
 type Scores = MemorySearchResult["scores"];
 export interface HybridMemoryRetrieverOptions {
@@ -14,13 +16,10 @@ export interface HybridMemoryRetrieverOptions {
   recencyHalfLifeDays?: number; formatter?: DefaultMemoryContextFormatter; now?: () => number;
   /** Phase 7 reliability-aware ranking; on by default so invalidated memories never rank. */
   reliabilityScoring?: boolean; freshnessPolicy?: MemoryFreshnessPolicy;
+  /** Phase 7 query expansion & vocabulary normalizer. */
+  queryExpander?: MemoryQueryExpander;
 }
-const STOP_WORDS = new Set("a an and are as at be by for from how i in is it me my of on or our please tell that the this to we what with you about does do uses use".split(" "));
 function words(text: string): Set<string> { return new Set((normalizeContent(text).match(/[\p{L}\p{N}_]+/gu) ?? []).filter(w => !STOP_WORDS.has(w))); }
-function overlap(query: Set<string>, text: string): number {
-  const target = words(text);
-  return query.size ? [...query].filter(w => target.has(w)).length / query.size : 0;
-}
 function cosine(a: number[], b: number[]): number {
   const dot = a.reduce((n, x, i) => n + x * b[i], 0);
   const norm = Math.hypot(...a) * Math.hypot(...b);
@@ -28,9 +27,9 @@ function cosine(a: number[], b: number[]): number {
 }
 const VERIFICATION_RANK: Record<string, number> = { verified: 4, unverified: 3, stale: 2, disputed: 1, invalidated: 0 };
 const KIND_RANK: Record<Memory["kind"], number> = { procedural: 3, semantic: 2, episodic: 1 };
-function conflictKey(a: Memory, b: Memory): string | undefined {
+function conflictKey(a: Memory, b: Memory, query?: MemoryRetrievalQuery): string | undefined {
   if (a.kind !== b.kind || a.tenantId !== b.tenantId || a.namespace.scope !== b.namespace.scope || a.namespace.id !== b.namespace.id) return undefined;
-  const key = conflictGroupKey(a, b);
+  const key = conflictGroupKey(a, b, query);
   return key ? `${a.tenantId}|${a.namespace.scope}:${a.namespace.id}|${key}` : undefined;
 }
 function winnerSort(a: MemorySearchResult, b: MemorySearchResult, freshnessPolicy: MemoryFreshnessPolicy): number {
@@ -50,17 +49,23 @@ function winnerSort(a: MemorySearchResult, b: MemorySearchResult, freshnessPolic
 }
 function suppressionReason(winner: MemorySearchResult, loser: MemorySearchResult, freshnessPolicy: MemoryFreshnessPolicy): string {
   if (loser.memory.supersededByMemoryId === winner.memory.id || winner.memory.supersedesMemoryId === loser.memory.id) return "conflict_superseded_by_current";
+  const factWinner = winner.memory.kind === "semantic" ? extractSemanticFact(winner.memory) : undefined;
+  const factLoser = loser.memory.kind === "semantic" ? extractSemanticFact(loser.memory) : undefined;
+  if (factWinner && factLoser && factWinner.temporalScope === "current" && factLoser.temporalScope === "historical") {
+    return "same_fact_newer_value";
+  }
   const wr = extractReliability(winner.memory), lr = extractReliability(loser.memory);
   if ((VERIFICATION_RANK[wr.verificationStatus] ?? 3) !== (VERIFICATION_RANK[lr.verificationStatus] ?? 3)) return "conflict_weaker_reliability";
   if ((wr.confidence ?? 0) !== (lr.confidence ?? 0)) return "conflict_lower_confidence";
   return freshnessPolicy.evaluate(loser.memory).score < freshnessPolicy.evaluate(winner.memory).score || Date.parse(loser.memory.updatedAt) < Date.parse(winner.memory.updatedAt)
-    ? "conflict_older_canonical" : "conflict_weaker_reliability";
+    ? "same_fact_newer_value" : "conflict_weaker_reliability";
 }
 export class HybridMemoryRetriever implements MemoryRetriever {
   private readonly formatter: DefaultMemoryContextFormatter;
   private readonly weights: Scores;
   private readonly reliabilityScoring: boolean;
   private readonly freshnessPolicy: MemoryFreshnessPolicy;
+  private readonly queryExpander: MemoryQueryExpander;
   constructor(private readonly store: MemoryStore, private readonly options: HybridMemoryRetrieverOptions = {}) {
     this.formatter = options.formatter ?? new DefaultMemoryContextFormatter();
     this.weights = { semantic: .4, lexical: .35, recency: .08, importance: .1, context: .07, ...options.weights };
@@ -69,6 +74,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     if (options.semanticRelevanceThreshold !== undefined && (!Number.isFinite(options.semanticRelevanceThreshold) || options.semanticRelevanceThreshold <= 0 || options.semanticRelevanceThreshold > 1)) throw new MemoryValidationError("Invalid semantic relevance threshold");
     this.reliabilityScoring = options.reliabilityScoring !== false;
     this.freshnessPolicy = options.freshnessPolicy ?? new DeterministicFreshnessPolicy(undefined, this.options.now ?? Date.now);
+    this.queryExpander = options.queryExpander ?? new DefaultMemoryQueryExpander();
   }
   async retrieve(query: MemoryRetrievalQuery, access: MemoryAccessContext): Promise<MemoryRetrievalResult> {
     requireNamespaces(query.namespaces, access);
@@ -77,6 +83,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     const diagnostics: MemoryRetrievalResult["diagnostics"] = { latencyMs: 0, embeddingLatencyMs: 0, candidateCount: 0, selectedCount: 0, deduplicatedCount: 0, warnings: [], securityViolations: 0, filteredCounts: { unauthorized: 0, expired: 0, superseded: 0, invalidated: 0 }, conflict: { groups: 0, candidates: 0, suppressed: 0, staleSuppressed: 0, disputedSuppressed: 0, unresolved: 0 }, candidates: [] };
     const limit = boundedInteger(query.limit, 8, 100), budget = boundedInteger(query.maxTokens, 2048, 100000);
     if (!query.namespaces.length || !query.text.trim() || !limit || !budget) return { results: [], diagnostics };
+    const expandedQuery = this.queryExpander.expand(query.text);
     const embeddingStart = Date.now();
     const embedding = await embedSafely(this.options.embeddingProvider, query.text, this.options.embeddingTimeoutMs ?? 1000);
     diagnostics.embeddingLatencyMs = Date.now() - embeddingStart;
@@ -84,11 +91,10 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     const candidateLimit = Math.max(1, boundedInteger(this.options.candidateLimit, 200, 500));
     const base = { tenantId: access.tenantId, namespaces: query.namespaces, kinds: query.kinds, filters: query.filters, status: "active" as const, includeExpired: false, limit: candidateLimit };
     const kindCounts: Partial<Record<string, number>> = {};
-    // Independent bounded lexical and vector pools prevent either modality starving the other.
-    const queryWords = words(query.text), terms = [...queryWords].slice(0, 8);
-    const termLimit = Math.max(1, Math.floor(candidateLimit / Math.max(1, terms.length)));
-    const pools = await Promise.all(terms.map(text => this.store.search({ ...base, text, limit: termLimit })));
-    const lexical = pools.flatMap(pool => pool.slice(0, termLimit));
+    // Bounded lexical search across original query words and top expanded alias/concept terms
+    const terms = expandedQuery.searchTerms.slice(0, 10);
+    const pools = await Promise.all(terms.map(text => this.store.search({ ...base, text, limit: candidateLimit })));
+    const lexical = pools.flatMap(pool => pool.slice(0, candidateLimit));
     // A bounded recent pool also supports relevance carried by subject/title metadata.
     const recent = await this.store.search(base);
     let semantic: Memory[] = [];
@@ -107,12 +113,20 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       if (!isLive(memory, now) || (query.kinds && !query.kinds.includes(memory.kind)) || !matchesFilters(memory, query.filters) || uniqueIds.has(memory.id)) continue;
       uniqueIds.add(memory.id);
       const semanticScore = embedding && memory.embedding && sameEmbedding(memory.embeddingMetadata, this.options.embeddingProvider!.metadata) && validVector(memory.embedding, embedding.length) ? cosine(embedding, memory.embedding) : 0;
-      const lexicalScore = overlap(queryWords, memory.content);
-      const context = overlap(queryWords, [memory.subject, memory.title, memory.trigger, memory.lesson].filter(Boolean).join(" "));
+      const matchEval = evaluateMemoryMatch(expandedQuery, memory, semanticScore, this.options.semanticRelevanceThreshold ?? .65);
       const age = Math.max(0, now - Date.parse(memory.updatedAt));
-      const scores: Scores = { semantic: semanticScore, lexical: lexicalScore, context, importance: Math.max(0, Math.min(1, memory.importance)), recency: Number.isFinite(age) ? Math.pow(.5, age / (Math.max(.001, this.options.recencyHalfLifeDays ?? 30) * 86400000)) : 0 };
-      const score = (Object.keys(scores) as (keyof Scores)[]).reduce((sum, key) => sum + scores[key] * this.weights[key], 0) / Object.values(this.weights).reduce((a, b) => a + b, 0);
-      const relevant = lexicalScore > 0 || context > 0 || semanticScore >= Math.max(.01, this.options.semanticRelevanceThreshold ?? .65);
+      const recency = Number.isFinite(age) ? Math.pow(.5, age / (Math.max(.001, this.options.recencyHalfLifeDays ?? 30) * 86400000)) : 0;
+      const importance = Math.max(0, Math.min(1, memory.importance));
+      const scores: Scores = {
+        semantic: semanticScore,
+        lexical: matchEval.effectiveLexicalScore,
+        context: matchEval.contextScore,
+        importance,
+        recency,
+        structured: matchEval.structuredScore,
+      };
+      const score = (Object.keys(scores) as (keyof Scores)[]).reduce((sum, key) => sum + (scores[key] ?? 0) * (this.weights[key] ?? 0), 0) / Object.values(this.weights).reduce((a, b) => a + b, 0);
+      const relevant = matchEval.isRelevant;
       // Phase 7 reliability-aware ranking: a multiplier in [0,1] that zeroes out
       // invalidated memories and down-ranks stale/disputed/contradicted ones.
       const reliabilityFactor = this.reliabilityScoring ? computeReliabilityFactor(memory, this.freshnessPolicy) : 1;
@@ -120,8 +134,32 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       const freshness = this.freshnessPolicy.evaluate(memory);
       if (reliability.verificationStatus === "invalidated") diagnostics.filteredCounts!.invalidated++;
       kindCounts[memory.kind] = (kindCounts[memory.kind] ?? 0) + 1;
-      diagnostics.candidates.push({ memoryId: memory.id, score: score * reliabilityFactor, reason: !relevant ? "irrelevant" : reliabilityFactor === 0 ? "invalidated" : score < (query.minScore ?? 0) ? "below_min_score" : "eligible", dropReason: reliabilityFactor === 0 ? "invalidated" : undefined, kind: memory.kind, reliabilityFactor, verificationStatus: reliability.verificationStatus, freshnessStatus: freshness.status, scores } as typeof diagnostics.candidates[number] & { verificationStatus: string; freshnessStatus: string });
-      if (relevant && score >= (query.minScore ?? 0) && reliabilityFactor > 0) scored.push({ memory: publicMemory(memory), score: score * reliabilityFactor, scores, tokenCount: 0, reliabilityFactor });
+      const fact = memory.kind === "semantic" ? extractSemanticFact(memory) : undefined;
+      diagnostics.candidates.push({
+        memoryId: memory.id,
+        score: score * reliabilityFactor,
+        reason: !relevant ? "irrelevant" : reliabilityFactor === 0 ? "invalidated" : score < (query.minScore ?? 0) ? "below_min_score" : "eligible",
+        dropReason: reliabilityFactor === 0 ? "invalidated" : undefined,
+        kind: memory.kind,
+        reliabilityFactor,
+        verificationStatus: reliability.verificationStatus,
+        freshnessStatus: freshness.status,
+        scores,
+        matchReasons: matchEval.matchReasons,
+        factSubject: fact?.subject,
+        factProperty: fact?.property,
+        factValue: fact?.value,
+      } as typeof diagnostics.candidates[number] & { verificationStatus: string; freshnessStatus: string });
+      if (relevant && score >= (query.minScore ?? 0) && reliabilityFactor > 0) {
+        scored.push({
+          memory: publicMemory(memory),
+          score: score * reliabilityFactor,
+          scores,
+          tokenCount: 0,
+          reliabilityFactor,
+          matchReasons: matchEval.matchReasons,
+        });
+      }
     }
     diagnostics.candidateCount = uniqueIds.size;
     scored.sort((a, b) => b.score - a.score || KIND_RANK[b.memory.kind] - KIND_RANK[a.memory.kind] || a.memory.id.localeCompare(b.memory.id));
@@ -129,7 +167,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     const diagnosticsById = new Map<string, ConflictDiagnostic>(diagnostics.candidates.map(candidate => [candidate.memoryId, candidate as ConflictDiagnostic]));
     const grouped = new Map<string, MemorySearchResult[]>();
     for (let i = 0; i < scored.length; i++) for (let j = i + 1; j < scored.length; j++) {
-      const key = conflictKey(scored[i].memory, scored[j].memory);
+      const key = conflictKey(scored[i].memory, scored[j].memory, query);
       if (key) grouped.set(key, [...(grouped.get(key) ?? []), scored[i], scored[j]]);
     }
     const suppressed = new Set<string>();
@@ -152,7 +190,23 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       if (winnerDiagnostic) winnerDiagnostic.conflictGroupId = groupId;
     }
     const suppressedByKind: Partial<Record<Memory["kind"], number>> = {};
-    const conflictMetrics = { groups: grouped.size, candidates: 0, suppressed: suppressed.size, staleSuppressed: 0, disputedSuppressed: 0, unresolved: 0, suppressedByKind };
+    let conflictPairsDetected = 0;
+    for (const members of grouped.values()) {
+      const unique = [...new Map(members.map(member => [member.memory.id, member])).values()];
+      if (unique.length >= 2) conflictPairsDetected += (unique.length * (unique.length - 1)) / 2;
+    }
+    const conflictMetrics = {
+      groups: grouped.size,
+      candidates: 0,
+      suppressed: suppressed.size,
+      staleSuppressed: 0,
+      disputedSuppressed: 0,
+      unresolved: 0,
+      suppressedByKind,
+      detected: conflictPairsDetected,
+      resolved: suppressed.size,
+      falseSuppressed: 0,
+    };
     for (const members of grouped.values()) {
       const unique = [...new Map(members.map(member => [member.memory.id, member])).values()];
       conflictMetrics.candidates += unique.length;

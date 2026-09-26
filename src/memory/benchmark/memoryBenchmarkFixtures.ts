@@ -56,6 +56,26 @@ const procedural = (id: string, trigger: string, procedure: string, confidence: 
 const pnpm = semantic("bench-sem-pnpm", "The repository package manager is pnpm. Use pnpm for install, test, and build commands.", "package-manager-pnpm", 0.9, { verificationStatus: "verified", confidence: 0.95 });
 const npm = semantic("bench-sem-npm-stale", "The repository package manager is npm. Use npm install.", "package-manager-npm", 0.7, { verificationStatus: "stale", confidence: 0.4, ageDays: 180 });
 const postgres = semantic("bench-sem-postgres", "The repository uses PostgreSQL.", "database-postgresql", 0.8, { verificationStatus: "verified", confidence: 0.9 });
+const authBearer = semantic("bench-sem-auth-bearer", "Authentication uses signed bearer tokens.", "authentication-bearer-tokens", 0.9, { verificationStatus: "verified", confidence: 0.95 });
+const workspacePnpm = semantic("bench-sem-workspace-pnpm", "The workspace uses pnpm.", "package-manager-pnpm", 0.9, { verificationStatus: "verified", confidence: 0.95 });
+const dockerRuntime = semantic("bench-sem-docker", "Workers execute inside Docker containers.", "container-runtime-docker", 0.85, { verificationStatus: "verified", confidence: 0.9 });
+const storybook = semantic("bench-sem-storybook", "The UI uses Storybook for component documentation.", "ui-component-storybook", 0.7);
+const migrationEpisode = episodic("bench-epi-migration-failure", "database migration deployment failure", "run pending database migrations then redeploy", "service started successfully", "Deployment failed because the migration had not run.", true);
+const migrationProcedure = procedural("bench-proc-migration-recovery", "database migration failure", "run idempotent schema migration patch", 0.9);
+
+// Phase 8 Generalized Semantic Conflict Fixtures
+const vmDeploy = semantic("bench-deploy-vm", "Production runs on virtual machines.", "deployment-platform-vm", 0.6, { verificationStatus: "stale", confidence: 0.4, ageDays: 180 });
+const k8sDeploy = semantic("bench-deploy-k8s", "Production runs on Kubernetes.", "deployment-platform-k8s", 0.9, { verificationStatus: "verified", confidence: 0.95 });
+const react18 = semantic("bench-react-18", "Application uses React 18.", "framework-version-react18", 0.6, { verificationStatus: "stale", confidence: 0.5, ageDays: 90 });
+const react19 = semantic("bench-react-19", "Application uses React 19.", "framework-version-react19", 0.9, { verificationStatus: "verified", confidence: 0.95 });
+const apiRest = semantic("bench-api-rest", "Internal API uses REST.", "api-style-rest", 0.6, { verificationStatus: "stale", confidence: 0.4, ageDays: 120 });
+const apiGraphql = semantic("bench-api-graphql", "Internal API uses GraphQL.", "api-style-graphql", 0.9, { verificationStatus: "verified", confidence: 0.95 });
+const frontendReact = semantic("bench-frontend-react", "Frontend uses React.", "frontend", 0.85, { verificationStatus: "verified", confidence: 0.95 });
+const backendAspNet = semantic("bench-backend-aspnet", "Backend uses ASP.NET Core.", "backend", 0.85, { verificationStatus: "verified", confidence: 0.95 });
+const browserChrome = semantic("bench-browser-chrome", "Application supports Chrome.", "supported-browsers-chrome", 0.85, { verificationStatus: "verified", confidence: 0.95 });
+const browserFirefox = semantic("bench-browser-firefox", "Application supports Firefox.", "supported-browsers-firefox", 0.85, { verificationStatus: "verified", confidence: 0.95 });
+const pkgHistoricalNpm = semantic("bench-pkg-2025-npm", "In 2025 the project used npm.", "repository package manager", 0.8, { verificationStatus: "verified", confidence: 0.9 });
+const pkgCurrentPnpm = semantic("bench-pkg-current-pnpm", "The project uses pnpm.", "repository package manager", 0.9, { verificationStatus: "verified", confidence: 0.95 });
 
 export const MEMORY_BENCHMARK_SCENARIOS: MemoryBenchmarkScenario[] = [
   {
@@ -160,9 +180,57 @@ export const MEMORY_BENCHMARK_SCENARIOS: MemoryBenchmarkScenario[] = [
     id: "vocabulary-mismatch", title: "PostgreSQL fact with vocabulary mismatch", category: "vocabulary-mismatch",
     setup: { priorRuns: ["Persistence was configured with PostgreSQL."], memories: [postgres] },
     targetTask: "What relational datastore backs persistence?", expectedRelevantMemories: [postgres.id], forbiddenMemories: [],
-    expectedBehavior: ["recall PostgreSQL despite paraphrase"], diagnosticOnly: true,
+    expectedBehavior: ["recall PostgreSQL despite paraphrase"],
     requiredOutputMarkers: ["postgresql"], forbiddenOutputMarkers: [],
     modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 400,
+  },
+  {
+    id: "vocabulary-auth", title: "Authentication fact with vocabulary mismatch", category: "vocabulary-mismatch",
+    setup: { priorRuns: ["Signed bearer tokens configure API access."], memories: [authBearer] },
+    targetTask: "How are API requests authorized?", expectedRelevantMemories: [authBearer.id], forbiddenMemories: [],
+    expectedBehavior: ["recall bearer tokens authorization"],
+    requiredOutputMarkers: ["bearer tokens"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 400,
+  },
+  {
+    id: "vocabulary-package-manager", title: "Package manager with dependency manager phrasing", category: "vocabulary-mismatch",
+    setup: { priorRuns: ["Workspace toolchain configured with pnpm."], memories: [workspacePnpm] },
+    targetTask: "Which dependency manager should I use?", expectedRelevantMemories: [workspacePnpm.id], forbiddenMemories: [],
+    expectedBehavior: ["recall pnpm for dependency manager query"],
+    requiredOutputMarkers: ["pnpm"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 400,
+  },
+  {
+    id: "vocabulary-container-runtime", title: "Docker containers with isolated agent phrasing", category: "vocabulary-mismatch",
+    setup: { priorRuns: ["Isolated worker sandbox runs in Docker."], memories: [dockerRuntime] },
+    targetTask: "Where does isolated agent execution happen?", expectedRelevantMemories: [dockerRuntime.id], forbiddenMemories: [],
+    expectedBehavior: ["recall Docker containers for isolated execution"],
+    requiredOutputMarkers: ["docker"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 400,
+  },
+  {
+    id: "vocabulary-negative-control", title: "Unrelated UI component memory negative control", category: "vocabulary-mismatch",
+    setup: { priorRuns: ["UI design system documented."], memories: [storybook] },
+    targetTask: "Which database backs persistence?", expectedRelevantMemories: [], forbiddenMemories: [storybook.id],
+    expectedBehavior: ["exclude unrelated UI Storybook memory from database query"],
+    requiredOutputMarkers: [], forbiddenOutputMarkers: ["storybook"],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 400,
+  },
+  {
+    id: "vocabulary-episodic", title: "Cross-kind episodic schema initialization retrieval", category: "vocabulary-mismatch",
+    setup: { priorRuns: ["A past deployment missed running database migrations."], memories: [migrationEpisode] },
+    targetTask: "Have we seen a schema initialization issue before?", expectedRelevantMemories: [migrationEpisode.id], forbiddenMemories: [],
+    expectedBehavior: ["recall prior migration deployment failure episode"],
+    requiredOutputMarkers: ["database migrations"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-episodic", "full"], kinds: ["episodic"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "vocabulary-procedural", title: "Cross-kind procedural schema upgrade recovery retrieval", category: "vocabulary-mismatch",
+    setup: { priorRuns: ["Automated recovery for database migration failures."], memories: [migrationProcedure] },
+    targetTask: "schema upgrade broke deployment", expectedRelevantMemories: [migrationProcedure.id], forbiddenMemories: [],
+    expectedBehavior: ["recall migration failure recovery procedure"],
+    requiredOutputMarkers: ["idempotent schema migration patch"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "full"], kinds: ["procedural"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 420,
   },
   {
     id: "unknown-domain-conflict", title: "Unknown authentication conflict family", category: "conflict",
@@ -171,8 +239,64 @@ export const MEMORY_BENCHMARK_SCENARIOS: MemoryBenchmarkScenario[] = [
       semantic("bench-auth-bearer", "Authentication mode is bearer tokens.", "authentication-mode-bearer", 0.9, { verificationStatus: "verified", confidence: 0.95 }),
     ] },
     targetTask: "Which authentication mode should the API client use?", expectedRelevantMemories: ["bench-auth-bearer"], forbiddenMemories: ["bench-auth-session"],
-    expectedBehavior: ["select bearer tokens", "suppress obsolete session cookies"], diagnosticOnly: true,
+    expectedBehavior: ["select bearer tokens", "suppress obsolete session cookies"],
     requiredOutputMarkers: ["bearer tokens"], forbiddenOutputMarkers: ["session cookies"],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "conflict-deployment-platform", title: "Deployment platform conflict resolution", category: "conflict",
+    setup: { priorRuns: ["Production deployment migrated from virtual machines to Kubernetes."], memories: [vmDeploy, k8sDeploy] },
+    targetTask: "Where does production deploy and run?", expectedRelevantMemories: [k8sDeploy.id], forbiddenMemories: [vmDeploy.id],
+    expectedBehavior: ["select Kubernetes platform", "suppress obsolete virtual machines"],
+    requiredOutputMarkers: ["kubernetes"], forbiddenOutputMarkers: ["virtual machines"],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "conflict-framework-version", title: "Framework version conflict resolution", category: "conflict",
+    setup: { priorRuns: ["Application updated from React 18 to React 19."], memories: [react18, react19] },
+    targetTask: "Which React version does the application use?", expectedRelevantMemories: [react19.id], forbiddenMemories: [react18.id],
+    expectedBehavior: ["select React 19", "suppress obsolete React 18"],
+    requiredOutputMarkers: ["react 19"], forbiddenOutputMarkers: ["react 18"],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "conflict-api-style", title: "Internal API style conflict resolution", category: "conflict",
+    setup: { priorRuns: ["Internal API architecture transitioned from REST to GraphQL."], memories: [apiRest, apiGraphql] },
+    targetTask: "What API architecture style is used for internal services?", expectedRelevantMemories: [apiGraphql.id], forbiddenMemories: [apiRest.id],
+    expectedBehavior: ["select GraphQL API style", "suppress obsolete REST"],
+    requiredOutputMarkers: ["graphql"], forbiddenOutputMarkers: ["rest"],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "non-conflict-multidomain", title: "Multi-domain independent stack coexistence", category: "conflict",
+    setup: { priorRuns: ["Architecture stack contains frontend and backend technologies."], memories: [frontendReact, backendAspNet] },
+    targetTask: "What technologies do the frontend and backend use?", expectedRelevantMemories: [frontendReact.id, backendAspNet.id], forbiddenMemories: [],
+    expectedBehavior: ["retain both frontend and backend facts", "do not falsely suppress independent domains"],
+    requiredOutputMarkers: ["react", "asp.net core"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "non-conflict-multivalued", title: "Multi-valued browser support coexistence", category: "conflict",
+    setup: { priorRuns: ["Browser support matrix configured."], memories: [browserChrome, browserFirefox] },
+    targetTask: "Which browsers are supported by the application?", expectedRelevantMemories: [browserChrome.id, browserFirefox.id], forbiddenMemories: [],
+    expectedBehavior: ["retain both supported browsers", "do not treat multi-valued facts as mutually exclusive"],
+    requiredOutputMarkers: ["chrome", "firefox"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "temporal-historical-query", title: "Historical query targets past package manager", category: "conflict",
+    setup: { priorRuns: ["Historical package manager was npm in 2025."], memories: [pkgHistoricalNpm, pkgCurrentPnpm] },
+    targetTask: "What package manager did the project use in 2025?", expectedRelevantMemories: [pkgHistoricalNpm.id], forbiddenMemories: [],
+    expectedBehavior: ["select historical npm memory for historical query"],
+    requiredOutputMarkers: ["npm"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "temporal-current-query", title: "Current query selects current package manager", category: "conflict",
+    setup: { priorRuns: ["Current package manager is pnpm."], memories: [pkgHistoricalNpm, pkgCurrentPnpm] },
+    targetTask: "What package manager does the project use now?", expectedRelevantMemories: [pkgCurrentPnpm.id], forbiddenMemories: [pkgHistoricalNpm.id],
+    expectedBehavior: ["select current pnpm", "suppress historical npm"],
+    requiredOutputMarkers: ["pnpm"], forbiddenOutputMarkers: ["used npm"],
     modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
   },
   {

@@ -139,6 +139,8 @@ export interface LiveEvaluationReport {
   memoryOnCorrect?: boolean;
   memoryOffOutput?: string;
   memoryOnOutput?: string;
+  liveEmbeddingStatus?: "not-requested" | "skipped" | "completed" | "failed";
+  liveEmbeddingReason?: string;
 }
 
 export interface MemoryBenchmarkReport {
@@ -549,14 +551,21 @@ function contentToString(content: unknown): string {
 }
 
 async function runLiveEvaluation(requested: boolean): Promise<LiveEvaluationReport> {
-  if (!requested) return { status: "not-requested" };
-  if (process.env.MEMORY_LIVE_EVAL !== "1") return { status: "skipped", reason: "Set MEMORY_LIVE_EVAL=1 to authorize live provider calls." };
+  const liveEmbeddingRequested = process.env.MEMORY_LIVE_EMBEDDING_EVAL === "1";
+  let liveEmbeddingStatus: LiveEvaluationReport["liveEmbeddingStatus"] = liveEmbeddingRequested ? "skipped" : "not-requested";
+  let liveEmbeddingReason: string | undefined = liveEmbeddingRequested
+    ? "No live embedding credentials configured (set OPENAI_API_KEY, GEMINI_API_KEY, or EMBEDDING_ENDPOINT)."
+    : undefined;
+
+  if (!requested && !liveEmbeddingRequested) return { status: "not-requested", liveEmbeddingStatus, liveEmbeddingReason };
+  if (!requested && liveEmbeddingRequested) return { status: "skipped", reason: "Live LLM evaluation was not requested.", liveEmbeddingStatus, liveEmbeddingReason };
+  if (process.env.MEMORY_LIVE_EVAL !== "1") return { status: "skipped", reason: "Set MEMORY_LIVE_EVAL=1 to authorize live provider calls.", liveEmbeddingStatus, liveEmbeddingReason };
   const provider = process.env.MEMORY_LIVE_EVAL_PROVIDER ?? process.env.LLM_PROVIDER ?? "openai";
   const model = process.env.MEMORY_LIVE_EVAL_MODEL ?? process.env.LLM_MODEL;
   const keyAvailable = provider === "openai" ? !!process.env.OPENAI_API_KEY
     : provider === "anthropic" ? !!process.env.ANTHROPIC_API_KEY
       : ["google", "gemini"].includes(provider) ? !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) : false;
-  if (!keyAvailable) return { status: "skipped", provider, model, reason: `No credential found for ${provider}.` };
+  if (!keyAvailable) return { status: "skipped", provider, model, reason: `No credential found for ${provider}.`, liveEmbeddingStatus, liveEmbeddingReason };
   try {
     const { llmFactory } = await import("../../agents/core/llmFactory");
     const chat = llmFactory.getModel(provider, { model, settings: { temperature: 0, maxTokens: 32 } });
@@ -573,9 +582,10 @@ async function runLiveEvaluation(requested: boolean): Promise<LiveEvaluationRepo
       memoryOffCorrect: /\bpnpm\b/i.test(offText) && !/\bnpm\b/i.test(offText.replace(/pnpm/ig, "")),
       memoryOnCorrect: /\bpnpm\b/i.test(onText) && !/\bnpm\b/i.test(onText.replace(/pnpm/ig, "")),
       memoryOffOutput: offText, memoryOnOutput: onText,
+      liveEmbeddingStatus, liveEmbeddingReason,
     };
   } catch (error) {
-    return { status: "failed", provider, model, reason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500) };
+    return { status: "failed", provider, model, reason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500), liveEmbeddingStatus, liveEmbeddingReason };
   }
 }
 
@@ -669,6 +679,29 @@ export async function runMemoryBenchmark(options: RunMemoryBenchmarkOptions = {}
   if (canonical && canonical.recall !== 1) regressionGateFailures.push("expected canonical semantic recall must equal 100%");
   const novel = full.find(result => result.scenario === "novel-task");
   if (novel && novel.forbiddenRetrieved !== 0) regressionGateFailures.push("novel task forbidden injection must equal zero");
+  const diversity = full.find(result => result.scenario === "episodic-diversity");
+  if (diversity && diversity.recall !== 1) regressionGateFailures.push("episodic diversity recall must equal 100%");
+
+  // Phase 7 Quality Gate: vocabulary_mismatch_recall >= 0.8
+  const vocabScenarios = full.filter(r => r.category === "vocabulary-mismatch" && r.expectedMemories.length > 0);
+  const vocabRecall = vocabScenarios.length ? vocabScenarios.reduce((sum, r) => sum + r.recall, 0) / vocabScenarios.length : 1;
+  if (vocabRecall < 0.8) regressionGateFailures.push(`vocabulary mismatch recall gate failed: ${round(vocabRecall)} < 0.8`);
+
+  // Phase 8 Quality Gates:
+  // 1. Conflict scenario accuracy >= 0.9
+  const conflictScenarios = full.filter(r => r.category === "conflict");
+  const conflictPassed = conflictScenarios.filter(r => r.taskOutcome.passed).length;
+  const conflictAccuracy = conflictScenarios.length ? conflictPassed / conflictScenarios.length : 1;
+  if (conflictAccuracy < 0.9) regressionGateFailures.push(`conflict accuracy gate failed: ${round(conflictAccuracy)} < 0.9`);
+
+  // 2. Semantic false suppression == 0
+  const nonConflictScenarios = full.filter(r => r.scenario.startsWith("non-conflict-") || r.scenario === "novel-task");
+  const falselySuppressed = nonConflictScenarios.filter(r => r.recall < 1).length;
+  if (falselySuppressed > 0) regressionGateFailures.push(`semantic false suppression gate failed: ${falselySuppressed} > 0`);
+
+  // 3. Consolidation temporal replacement recognized
+  if (!consolidation.replacementCorrect) regressionGateFailures.push("consolidation temporal replacement gate failed");
+
   if (!learning.episodic.meaningfulCreated || !learning.episodic.trivialRejected || !learning.episodic.duplicateAvoided) regressionGateFailures.push("episodic learning quality gate failed");
   if (!learning.procedural.minimumEvidenceRejected || !learning.procedural.duplicateEvidenceRejected || !learning.procedural.majorityFailureRejected) regressionGateFailures.push("procedural evidence gate failed");
   if (consolidation.falseMerges) regressionGateFailures.push("consolidation false merge gate failed");
@@ -735,6 +768,7 @@ export function memoryBenchmarkReportToMarkdown(report: MemoryBenchmarkReport): 
     `- Generated: ${report.generatedAt}`,
     `- Deterministic regression gates: **${report.passed ? "PASS" : "FAIL"}**`,
     `- Live evaluation: **${report.live.status}**`,
+    `- Live embedding evaluation: **${report.live.liveEmbeddingStatus ?? "not-requested"}**${report.live.liveEmbeddingReason ? ` (${report.live.liveEmbeddingReason})` : ""}`,
     "",
     "## Memory ON vs OFF",
     "",

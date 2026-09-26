@@ -98,26 +98,18 @@ export class DeterministicMemoryConsolidationJudge implements MemoryConsolidatio
     }));
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
+    const relationship = classifyMemoryRelationship(incoming, best.memory);
+    if (relationship === "supersede" || this.hasExplicitSupersedes(incoming) || (incoming.kind === "semantic" && this.detectTemporalReplacement(incoming, best.memory))) {
+      return {
+        type: "supersede",
+        canonicalMemoryId: undefined,
+        relatedMemoryIds: [best.memory.id],
+        reason: this.hasExplicitSupersedes(incoming) ? "explicit_supersedes" : "temporal_replacement",
+        confidence: best.score,
+      };
+    }
+
     if (best.score >= this.config.autoMergeThreshold) {
-      const relationship = classifyMemoryRelationship(incoming, best.memory);
-      if (relationship === "supersede" || this.hasExplicitSupersedes(incoming)) {
-        return {
-          type: "supersede",
-          canonicalMemoryId: undefined,
-          relatedMemoryIds: [best.memory.id],
-          reason: "explicit_supersedes",
-          confidence: best.score,
-        };
-      }
-      if (this.detectTemporalReplacement(incoming, best.memory)) {
-        return {
-          type: "supersede",
-          canonicalMemoryId: undefined,
-          relatedMemoryIds: [best.memory.id],
-          reason: "temporal_replacement",
-          confidence: best.score,
-        };
-      }
       if (incoming.kind === "episodic") {
         return { type: "keep_both", relatedMemoryIds: [best.memory.id], reason: "episodic_distinct_event", confidence: best.score };
       }

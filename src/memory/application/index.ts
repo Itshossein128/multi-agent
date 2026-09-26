@@ -15,3 +15,6 @@ export * from "./episodicMemory";
 export * from "./proceduralMemory";
 export * from "./memoryReliability";
 export * from "./memoryEvaluation";
+export * from "./queryExpansion";
+export * from "./embedding";
+export * from "./semanticFact";

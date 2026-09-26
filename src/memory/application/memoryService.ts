@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Memory, MemoryAccessContext, MemoryListQuery, MemoryRetrievalQuery, MemoryRetriever, MemoryService, MemoryStore, MemoryWritePolicy, MemoryWriteResult, RememberMemoryInput, UpdateMemoryInput, MemoryConsolidationScheduler } from "../contracts";
 import { MemoryAccessDeniedError, MemoryConflictError, MemoryValidationError } from "../contracts";
 import { boundedInteger, canAccessMemory, contentHash, IDEMPOTENCY_METADATA_KEY, isLive, matchesFilters, namespaceKey, publicMemory, requireAccess, requireNamespaces, sameNamespace } from "./access";
-import { embedSafely } from "./embedding";
+import { embedSafely, embeddableMemoryText } from "./embedding";
 import { HybridMemoryRetriever, HybridMemoryRetrieverOptions } from "./hybridMemoryRetriever";
 import { DefaultMemoryWritePolicy } from "./memoryWritePolicy";
 
@@ -37,8 +37,10 @@ export class DefaultMemoryService implements MemoryService {
     if (options.defaultTtlMs !== undefined && (!Number.isFinite(options.defaultTtlMs) || options.defaultTtlMs <= 0)) throw new MemoryValidationError("Invalid default memory TTL");
   }
   private now(): number { return (this.options.now ?? Date.now)(); }
-  private async embedding(content: string): Promise<Pick<Memory, "embedding" | "embeddingMetadata">> {
-    const embedding = await embedSafely(this.options.embeddingProvider, content, this.options.embeddingTimeoutMs ?? 1000);
+  private async embedding(memory: Pick<Memory, "content" | "subject" | "trigger" | "title">): Promise<Pick<Memory, "embedding" | "embeddingMetadata">> {
+    const version = this.options.embeddingProvider?.metadata.version ?? "1";
+    const text = embeddableMemoryText(memory, version);
+    const embedding = await embedSafely(this.options.embeddingProvider, text, this.options.embeddingTimeoutMs ?? 1000);
     return { embedding, embeddingMetadata: embedding ? structuredClone(this.options.embeddingProvider!.metadata) : undefined };
   }
   private async authorized(store: MemoryStore, id: string, access: MemoryAccessContext, write = false): Promise<Memory> {
@@ -85,7 +87,7 @@ export class DefaultMemoryService implements MemoryService {
     if (memory.idempotencyKey) memory.metadata = { ...memory.metadata, [IDEMPOTENCY_METADATA_KEY]: [{ key: retryKey(memory.idempotencyKey), fingerprint: fingerprint(memory) }] };
     if (!memory.expiresAt && this.options.defaultTtlMs) memory.expiresAt = new Date(now + this.options.defaultTtlMs).toISOString();
     if (!canAccessMemory(memory, access, true)) throw new MemoryAccessDeniedError();
-    Object.assign(memory, await this.embedding(memory.content));
+    Object.assign(memory, await this.embedding(memory));
     const result: MemoryWriteResult = await this.store.transaction(namespaceKey(access.tenantId, input.namespace), async store => {
       let duplicate: Memory | undefined;
       const retries = memory.idempotencyKey ? await this.identityMatches(store, memory, true) : [];
@@ -154,7 +156,7 @@ export class DefaultMemoryService implements MemoryService {
       if (memory.contentHash !== old.contentHash) for (const other of await this.identityMatches(store, memory)) {
         if (other.id !== memory.id && canAccessMemory(other, access, true) && isLive(other, this.now()) && other.kind === memory.kind && other.visibility === memory.visibility && other.contentHash === memory.contentHash) throw new MemoryConflictError("An active memory already has this content");
       }
-      if (memory.content !== old.content) Object.assign(memory, await this.embedding(memory.content));
+      if (memory.content !== old.content || memory.subject !== old.subject || memory.trigger !== old.trigger || memory.title !== old.title) Object.assign(memory, await this.embedding(memory));
       memory.version = old.version + 1; memory.updatedAt = new Date(this.now()).toISOString();
       await store.update(memory, old.version);
       return publicMemory(memory);

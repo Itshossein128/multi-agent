@@ -1644,9 +1644,9 @@
     "semantic_hash": ""
   },
   "packages/types/src/memory.ts": {
-    "mtime": 1790449977.9305515,
-    "seen": 1790450911.5004013,
-    "ast_hash": "2a7a0fa3fc78b50ee3f90d829e09c7ce",
+    "mtime": 1790448457.3770926,
+    "seen": 1790449359.527817,
+    "ast_hash": "6ab363479c2c19af4dedfb4962a977b7",
     "semantic_hash": ""
   },
   "packages/types/src/toolConfiguration.ts": {
@@ -1704,15 +1704,15 @@
     "semantic_hash": ""
   },
   "src/memory/application/hybridMemoryRetriever.ts": {
-    "mtime": 1790450499.7066274,
-    "seen": 1790450911.5039968,
-    "ast_hash": "0200276a084b4fea0d714535c102d502",
+    "mtime": 1790448837.228959,
+    "seen": 1790449359.5287406,
+    "ast_hash": "73023d2c0372df2c1b48b478e312be7b",
     "semantic_hash": ""
   },
   "src/memory/application/index.ts": {
-    "mtime": 1790450095.3715634,
-    "seen": 1790450911.503999,
-    "ast_hash": "db4d2a14b308cc4fc2ab95b26f638b80",
+    "mtime": 1790449056.425216,
+    "seen": 1790449359.5287416,
+    "ast_hash": "e2c3213ed8ec5174e9be4e68f21e1371",
     "semantic_hash": ""
   },
   "src/memory/application/memoryBackgroundJobs.ts": {
@@ -1752,9 +1752,9 @@
     "semantic_hash": ""
   },
   "src/memory/contracts.ts": {
-    "mtime": 1790449992.6924229,
-    "seen": 1790450911.504908,
-    "ast_hash": "28639be73d5cbb0fafc7d2a98ee8e5f8",
+    "mtime": 1790439607.4533157,
+    "seen": 1790449359.5288856,
+    "ast_hash": "8213e80379f4fe9850b0f74d005723d9",
     "semantic_hash": ""
   },
   "src/memory/infrastructure/in-memory-memory-store.ts": {
@@ -2886,9 +2886,9 @@
     "semantic_hash": ""
   },
   "src/memory/application/memoryConflictStrategy.ts": {
-    "mtime": 1790450242.145428,
-    "seen": 1790450911.5040627,
-    "ast_hash": "b2c1a1342a4741d4e0c853a7a52afd7e",
+    "mtime": 1790445049.3073192,
+    "seen": 1790449359.5287843,
+    "ast_hash": "518f1392ae732ce936ffd642575501e3",
     "semantic_hash": ""
   },
   "src/memory/application/memoryConsolidationBackfill.ts": {
@@ -2910,9 +2910,9 @@
     "semantic_hash": ""
   },
   "src/memory/application/memoryConsolidationJudge.ts": {
-    "mtime": 1790450167.0739965,
-    "seen": 1790450911.504246,
-    "ast_hash": "9148e00d51205fa60cc5be3009b3080a",
+    "mtime": 1790444993.429712,
+    "seen": 1790449359.5287893,
+    "ast_hash": "2cb26f90589e74461abb930688c03511",
     "semantic_hash": ""
   },
   "src/memory/application/memoryConsolidationScheduler.ts": {
@@ -2952,15 +2952,15 @@
     "semantic_hash": ""
   },
   "src/memory/benchmark/memoryBenchmarkFixtures.ts": {
-    "mtime": 1790450731.3611465,
-    "seen": 1790450911.504904,
-    "ast_hash": "578772ad3b35886e0aeeb3037d84d459",
+    "mtime": 1790448906.2035747,
+    "seen": 1790449359.5288832,
+    "ast_hash": "af6aeb7deba1153e429b0ed45b02f4d2",
     "semantic_hash": ""
   },
   "src/memory/benchmark/memoryBenchmarkRunner.ts": {
-    "mtime": 1790450152.3381112,
-    "seen": 1790450911.504906,
-    "ast_hash": "be1906ff8891a297add88d9fe9765d71",
+    "mtime": 1790448986.4531174,
+    "seen": 1790449359.5288842,
+    "ast_hash": "9f7461740db472ba0f4685fb0263acf6",
     "semantic_hash": ""
   },
   "src/memory/evaluation/memoryEvalFixtures.ts": {
@@ -3126,9 +3126,9 @@
     "semantic_hash": ""
   },
   "tests/memoryBenchmark.test.ts": {
-    "mtime": 1790450277.3101695,
-    "seen": 1790450911.5077822,
-    "ast_hash": "0a6e1a529c02cb2208bcfb900215fbf3",
+    "mtime": 1790449011.8764024,
+    "seen": 1790449359.5294669,
+    "ast_hash": "a6eedc541f8972c3606cc716918ce354",
     "semantic_hash": ""
   },
   "tests/memoryConsolidation.test.ts": {
@@ -3561,18 +3561,6 @@
     "mtime": 1790008452.3714926,
     "seen": 1790449359.533204,
     "ast_hash": "ae2891513605f10d41a37c28bea1b6d6",
-    "semantic_hash": ""
-  },
-  "src/memory/application/semanticFact.ts": {
-    "mtime": 1790450697.9523542,
-    "seen": 1790450911.5049005,
-    "ast_hash": "05cfd911fd3d8c040667605d91bde664",
-    "semantic_hash": ""
-  },
-  "tests/memorySemanticConflict.test.ts": {
-    "mtime": 1790450351.9296353,
-    "seen": 1790450911.5081692,
-    "ast_hash": "f6d3c5cb01fea34f56ef60b40dd27b82",
     "semantic_hash": ""
   }
 }
