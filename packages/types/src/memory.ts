@@ -55,7 +55,7 @@ export interface MemoryRetrievalDiagnostics {
   retrievalMode?: MemoryRetrievalMode;
   /** Candidate counts per memory kind. */
   kinds?: Partial<Record<MemoryKind, number>>;
-  candidates: { memoryId: string; score: number; reason: string; kind?: MemoryKind;
+  candidates: { memoryId: string; score: number; reason: string; kind?: MemoryKind; conflictGroupId?: string; suppressedByMemoryId?: string; verificationStatus?: string; freshnessStatus?: string;
     /** Reliability multiplier in [0,1] applied by the retriever (Phase 7), when known. */
     reliabilityFactor?: number; scores: MemorySearchResult["scores"] }[];
 }

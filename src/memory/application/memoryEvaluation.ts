@@ -39,7 +39,9 @@ export type MemorySelectionStage = "retrieved" | "selected" | "injected" | "drop
 /** Why a candidate memory did not reach the model context. */
 export type MemoryDropReason =
   | "not_retrieved" | "low_score" | "budget" | "scope_denied" | "stale" | "invalidated"
-  | "superseded" | "kind_disabled" | "duplicate" | "formatter_dropped";
+  | "superseded" | "kind_disabled" | "duplicate" | "formatter_dropped"
+  | "conflict_weaker_reliability" | "conflict_superseded_by_current"
+  | "conflict_lower_confidence" | "conflict_older_canonical";
 
 // ─── Retrieval Trace ─────────────────────────────────────────────────────────
 
@@ -451,12 +453,14 @@ export class MemoryEvaluationRecorder {
         at: nowIso(),
       });
       const selections = diagnostics.candidates.map(candidate => {
+        const reliabilityDiagnostic = candidate as typeof candidate & { verificationStatus?: string; freshnessStatus?: string };
         const selected = result.results.find(r => r.memory.id === candidate.memoryId);
         const scores = candidate.scores;
         // The retriever drops eligible candidates only via its token-budget/limit
         // selection, so an eligible candidate missing from results is a budget drop.
         const dropReason: MemoryDropReason | undefined = selected ? undefined
           : candidate.reason === "invalidated" ? "invalidated"
+          : candidate.reason.startsWith("conflict_") ? candidate.reason as MemoryDropReason
           : candidate.reason === "eligible" ? "budget"
           : "low_score";
         return {
@@ -473,6 +477,8 @@ export class MemoryEvaluationRecorder {
           selected: Boolean(selected),
           dropReason,
           estimatedTokens: selected?.tokenCount,
+          verificationStatus: reliabilityDiagnostic.verificationStatus,
+          freshnessStatus: reliabilityDiagnostic.freshnessStatus,
         } satisfies MemorySelectionDiagnostic;
       });
       this.sink.recordSelections(context.invocationId, selections);

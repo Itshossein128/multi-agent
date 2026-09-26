@@ -85,6 +85,14 @@ The durable store remains authoritative across restart: server startup enumerate
 
 Consolidation remains separate from retrieval-time stale/disputed conflict suppression and from production evaluation telemetry. External embedding/provider availability is still deployment-dependent; lexical discovery remains available when embeddings fail.
 
+## Retrieval-time canonical conflict selection
+
+Retrieval now performs deterministic conflict suppression after hybrid candidate scoring and reliability calculation, but before token-budget selection. Active candidates are grouped only within the same tenant, namespace and kind. Grouping prefers explicit reliability conflict links, normalized subjects, procedural triggers and a small conservative set of semantic fact families (such as package managers and database engines); unrelated facts and distinct episodic history remain separate.
+
+Within a conflict group, verified memories outrank unverified, stale and disputed memories; freshness, confidence, evidence count, relevance score, update time and finally memory ID provide deterministic tie-breaking. Explicit supersession is authoritative. A stale or disputed memory remains eligible when no competing canonical alternative exists, but is suppressed when a stronger conflicting candidate wins. Suppression is retrieval-only: no storage mutation occurs and the memory remains available for historical or audit access. Candidate diagnostics record conflict group, winner ID and bounded reason codes such as `conflict_weaker_reliability`, `conflict_superseded_by_current`, `conflict_lower_confidence` and `conflict_older_canonical`.
+
+The selected set then follows the existing `MemoryService` → `RuntimeMemory` → `ContextAssembler` path. All memory remains untrusted context data and cannot alter system instructions, authorization or approval policy.
+
 ## Verification
 
 Focused suites: memoryStorage, memoryRetrieval, memoryService, memoryRuntime, memoryApi, memoryEmbedding and memoryEndToEnd. They cover relevance fixtures, isolation, budgets, retries, transactions, expiration/superseding, authenticated APIs, checkpoints, failures and RunEvents.
