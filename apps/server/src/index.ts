@@ -53,6 +53,7 @@ async function main() {
   });
 
   const memory = createMemoryComposition();
+  await memory.recover();
   const studio = createStudioComposition();
   const resolveMemoryAccess = memoryAccessResolverFromEnvironment();
 
@@ -80,6 +81,11 @@ async function main() {
     ),
     checkpointer,
     observability.telemetry,
+    undefined,
+    undefined,
+    memory.episodeService,
+    memory.proceduralService,
+    memory.jobs,
   );
   const recovery = recoverInterruptedRuns(executor, runStore, checkpointer);
   if (recovery.restored.length || recovery.failed.length) {

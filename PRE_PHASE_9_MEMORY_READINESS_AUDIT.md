@@ -322,3 +322,12 @@ Specifically, before building further on memory: wire consolidation/episodic/pro
 10. **Are fallback paths being used unexpectedly often?** No — fallback_rate 0 everywhere; all audited retrievals ran hybrid; raw handoff fallback is structurally rare (handoffs always built in workflows).
 11. **What is the single largest remaining memory weakness?** The dormant Phase 4/5/6 creation pipelines: the system can remember what it is explicitly told, but cannot yet maintain (consolidate) or grow (episodes/procedures) its long-term memory on its own in the running product.
 12. **Is the system ready to move beyond memory development?** With the listed fixes — yes, after H1/M1/M2 are addressed; the retrieval, reliability, isolation, and measurement foundations are solid and regression-guarded.
+
+## Phase 0 Update: Production Episodic Memory Wiring (Completed)
+
+- **Status**: Production-wired and verified.
+- **Trigger Point**: Centralized run completion / failure handler in `GraphRunner` and `RunExecutor`. When a run reaches a terminal state (`completed` or `failed`), `DefaultEpisodeService.processRun(...)` is invoked automatically.
+- **Idempotency**: Enforced via deterministic `idempotencyKey` (`episode:${runId}:${EPISODIC_EXTRACTOR_VERSION}`). Duplicate completion events, replays, or retries do not create duplicate episodic memories.
+- **Security & Scope**: Namespace and tenant isolation are enforced using server-authoritative `MemoryAccessContext`.
+- **Failure Semantics**: Episodic memory extraction and persistence errors are safely caught and logged as bounded diagnostics. Memory failures never cause an otherwise successful workflow run to fail.
+- **Remaining Gaps**: Consolidation scheduling (Phase 4) and automatic procedural learning (Phase 6) remain dormant in production and are scheduled for future wiring phases.

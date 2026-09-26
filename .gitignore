@@ -43,3 +43,5 @@ graphify-out/cost.json
 # Phase 8 generated memory evaluation reports
 MEMORY_EVALUATION_REPORT.json
 MEMORY_EVALUATION_REPORT.md
+MEMORY_BENCHMARK_REPORT.json
+MEMORY_BENCHMARK_REPORT.md

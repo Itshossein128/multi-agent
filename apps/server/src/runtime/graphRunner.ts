@@ -1,5 +1,7 @@
+import type { EpisodeService, EpisodeExtractionInput, EpisodeExtractionResult } from "../../../../src/memory/application";
+import { log } from "../logging";
 import type { AgentRecord, WorkflowDefinition } from "@multi-agent/types";
-import { createResultEnvelope, type NodeResultEnvelope } from "@multi-agent/types";
+import { createResultEnvelope, nowIso, uid, type NodeResultEnvelope } from "@multi-agent/types";
 import { LangGraphEventAdapter } from "../adapters/langGraphEventAdapter";
 import type { RunStoreContract } from "./store/contracts";
 import type { ApprovalManager, PausedContext } from "./approvalManager";
@@ -21,6 +23,8 @@ export class GraphRunner {
     private readonly store: RunStoreContract,
     private readonly pausedContext: Map<string, PausedContext>,
     private readonly checkpointers: Map<string, BaseCheckpointSaver>,
+    private readonly episodeService?: EpisodeService,
+    private readonly onEpisodicMemoryPersisted?: (runId: string, input: EpisodeExtractionInput, access: import("../../../../src/memory/contracts").MemoryAccessContext, result: EpisodeExtractionResult) => void,
   ) {}
 
   /**
@@ -45,6 +49,8 @@ export class GraphRunner {
     const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal, recursionLimit: recursionLimit ?? 100, configurable: { thread_id: runId } } as never);
     let output: Record<string, unknown> | undefined;
     let nodeOutcomes: Record<string, NodeResultEnvelope> | undefined;
+    let streamHandoffs: Record<string, unknown> | undefined;
+    let streamWorkingMemory: Record<string, unknown> | undefined;
     let pendingHuman: PausedContext["pendingHuman"];
     for await (const raw of stream as AsyncIterable<unknown>) {
       const rawRecord = raw as { method?: string; params?: { data?: unknown; node?: string } };
@@ -63,6 +69,15 @@ export class GraphRunner {
         const values = rawRecord.params.data as { output?: Record<string, unknown>; nodeOutcomes?: Record<string, NodeResultEnvelope> };
         if (values.output) output = values.output;
         if (values.nodeOutcomes) nodeOutcomes = values.nodeOutcomes;
+        for (const event of adapter.adapt(raw, runId, workflow, agents)) {
+          if (event.type === "agent.completed" && event.payload) {
+            const payload = event.payload as Record<string, unknown>;
+            if (payload.handoffs && typeof payload.handoffs === "object") {
+              if (!streamHandoffs) streamHandoffs = {};
+              Object.assign(streamHandoffs, payload.handoffs);
+            }
+          }
+        }
       }
       for (const event of adapter.adapt(raw, runId, workflow, agents)) {
         if (!event.type.startsWith("agent.")) this.store.append(runId, event);
@@ -79,7 +94,6 @@ export class GraphRunner {
     this.pausedContext.delete(runId);
     this.checkpointers.delete(runId);
     this.store.setPausedContext?.(runId, null);
-    const { nowIso, uid } = await import("@multi-agent/types");
     // The output node's structured result is the run's deterministic result;
     // fall back to a synthesized success envelope carrying the raw output.
     const outputNodeId = workflow.nodes.find((node) => node.type === "output")?.id;
@@ -95,5 +109,80 @@ export class GraphRunner {
       id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0,
       payload: { output, resultStatus: result.status },
     });
+
+    // Episodic memory extraction on successful completion
+    const entry = this.store.get(runId);
+    const effectiveAccess = memoryAccess ?? entry?.memoryAccess;
+    if (this.episodeService && effectiveAccess && effectiveAccess.writableNamespaces.length > 0) {
+      this.store.markEpisodicMemoryPending?.(runId);
+      try {
+        const stateValues = (state as any)?.values;
+        let handoffs = stateValues?.handoffs ?? streamHandoffs;
+        let workingMemory = stateValues?.workingMemory ?? streamWorkingMemory;
+
+        if ((!handoffs || Object.keys(handoffs).length === 0) && output && typeof output === "object" && (output as any).handoffs) {
+          handoffs = (output as any).handoffs;
+        }
+
+        const primaryAgentId = agents[0]?.id ?? "unknown";
+
+        // Check handoffs
+        let hasHandoffDecisionsOrWarnings = false;
+        if (handoffs) {
+          const hList = Object.values(handoffs) as Array<Record<string, unknown>>;
+          hasHandoffDecisionsOrWarnings = hList.some(h => (Array.isArray(h.warnings) && h.warnings.length > 0) || (Array.isArray(h.decisions) && h.decisions.length > 0));
+        }
+
+        // If no handoff warnings/decisions, check node outcomes for agent completed payload handoffs
+        if (!hasHandoffDecisionsOrWarnings && nodeOutcomes) {
+          const synthesizedHandoffs: Record<string, unknown> = {};
+          for (const [nodeId, outcome] of Object.entries(nodeOutcomes)) {
+            const agentNode = workflow.nodes.find(n => n.id === nodeId && n.type === "agent");
+            if (agentNode && outcome.status === "success" && outcome.value) {
+              const val = outcome.value as Record<string, unknown>;
+              synthesizedHandoffs[nodeId] = {
+                id: `synthetic-handoff-${nodeId}`,
+                version: 1,
+                sourceNodeId: nodeId,
+                sourceAgentId: (agentNode.config as any)?.agentId ?? primaryAgentId,
+                status: "success",
+                summary: typeof val.content === "string" ? val.content : JSON.stringify(val),
+                findings: [],
+                decisions: [{ decision: "Executed agent task" }],
+                assumptions: [],
+                remainingWork: [],
+                warnings: [],
+              };
+            }
+          }
+          if (Object.keys(synthesizedHandoffs).length > 0) {
+            handoffs = synthesizedHandoffs;
+          }
+        }
+        const extractionInput: EpisodeExtractionInput = {
+          runId,
+          workflowId: workflow.id,
+          nodeId: outputNodeId ?? "output",
+          agentId: primaryAgentId,
+          task: entry?.run.input ?? input,
+          output,
+          succeeded: true,
+          handoffs,
+          workingMemory,
+          startedAt: entry?.run.startedAt,
+          completedAt: entry?.run.completedAt,
+          approvals: entry?.approvals?.map(a => ({ decision: a.status })),
+          namespace: effectiveAccess.writableNamespaces[0],
+        };
+
+        const epResult = await this.episodeService.processRun(extractionInput, effectiveAccess);
+        this.store.setEpisodicMemoryStatus?.(runId, epResult.reason === "persistence_failed" || epResult.reason === "extraction_failed" ? "failed" : "processed");
+        log.info("memory.episodic.extracted", { runId, created: epResult.created, reason: epResult.reason, memoryId: epResult.memoryId });
+        if (epResult.reason !== "persistence_failed" && epResult.reason !== "extraction_failed") this.onEpisodicMemoryPersisted?.(runId, extractionInput, effectiveAccess, epResult);
+      } catch (err) {
+        this.store.setEpisodicMemoryStatus?.(runId, "failed");
+        log.warn("memory.episodic.extraction_failed", { runId, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
   }
 }

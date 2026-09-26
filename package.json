@@ -35,7 +35,8 @@
     "credentials:login-codex": "ts-node --transpile-only scripts/login-agent-codex.ts",
     "credentials:status-codex": "ts-node --transpile-only scripts/login-agent-codex.ts -- --status",
     "memory:backfill-embeddings": "node scripts/memory/backfill-embeddings.mjs",
-    "memory:eval": "ts-node --transpile-only scripts/memory/memoryEval.ts"
+    "memory:eval": "ts-node --transpile-only scripts/memory/memoryEval.ts",
+    "memory:benchmark": "ts-node --transpile-only scripts/memory/memoryBenchmark.ts"
   },
   "license": "MIT",
   "dependencies": {

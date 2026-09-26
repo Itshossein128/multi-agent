@@ -69,6 +69,38 @@ Existing memory.read/memory.write events carry counts, IDs, timings and outcomes
 
 Expired/superseded records are excluded from active retrieval. Both stores expose bounded expiration cleanup and namespace deletion for scheduled retention and trusted entity-lifecycle hooks. Browser-local entity deletion does not automatically delete backend memory: browser IDs are not deletion authority. Integrations must invoke scoped cleanup from their authenticated lifecycle operation.
 
+## Production episodic-to-procedural learning
+
+Completed production runs persist curated episodic memories first. The run lifecycle then enqueues a bounded procedural-learning job; the job reads only active, authorized episodic records in the run's trusted tenant/namespace and invokes the existing `DefaultProceduralService`. The learner deduplicates evidence by stable source run ID, excludes invalidated, stale, disputed, superseded and expired records, requires the existing minimum evidence and success-consistency policy, and writes the structured `kind: procedural` candidate through `MemoryService`.
+
+The run store persists independent procedural-learning status (`pending`, `processed`, `failed`). Queue shutdown drains accepted jobs; restart recovery retries pending/failed learning, while the episode idempotency key and procedure trigger idempotency prevent duplicate rows. Equivalent procedures are reinforced with bounded metadata evidence accumulation. Learning is supplementary: extraction, retrieval and persistence failures are logged with bounded IDs/counts/reason codes and do not change the originating run result.
+
+Future runs use the unchanged `MemoryService` retrieval path through `RuntimeMemory` and `ContextAssembler`; no procedure is manually injected. Phase 1 did not make consolidation production-wired, redesign conflict suppression, or prove external provider/embedding availability; the production consolidation maintenance described below is the follow-on wiring.
+
+## Production consolidation maintenance
+
+Durable `MemoryService.remember()` inserts now schedule the existing `RealMemoryConsolidator` through a coalescing bounded maintenance queue after the write transaction commits. The scheduler operates per trusted tenant/namespace scope, preserves the existing semantic/episodic/procedural kind boundaries, and marks scopes dirty when another write arrives while a pass is running. Queue rejection, embedding failure, judge failure, and transaction conflicts leave the newly written record intact and emit bounded diagnostics.
+
+The durable store remains authoritative across restart: server startup enumerates persisted memory scopes and requeues bounded consolidation passes. This is recovery-by-scan rather than a distributed job queue; multiple workers may repeat a pass, but store transactions, version checks, stable canonical links, and active-record filtering make retries converge. Consolidation preserves merge provenance, explicit supersession links, and excludes invalidated, disputed, stale, expired, or already superseded records from canonical consideration. Ordinary retrieval therefore sees active canonical records only.
+
+Consolidation remains separate from retrieval-time stale/disputed conflict suppression and from production evaluation telemetry. External embedding/provider availability is still deployment-dependent; lexical discovery remains available when embeddings fail.
+
+## Retrieval-time canonical conflict selection
+
+Retrieval now performs deterministic conflict suppression after hybrid candidate scoring and reliability calculation, but before token-budget selection. Active candidates are grouped only within the same tenant, namespace and kind. Grouping prefers explicit reliability conflict links, normalized subjects, procedural triggers and a small conservative set of semantic fact families (such as package managers and database engines); unrelated facts and distinct episodic history remain separate.
+
+Within a conflict group, verified memories outrank unverified, stale and disputed memories; freshness, confidence, evidence count, relevance score, update time and finally memory ID provide deterministic tie-breaking. Explicit supersession is authoritative. A stale or disputed memory remains eligible when no competing canonical alternative exists, but is suppressed when a stronger conflicting candidate wins. Suppression is retrieval-only: no storage mutation occurs and the memory remains available for historical or audit access. Candidate diagnostics record conflict group, winner ID and bounded reason codes such as `conflict_weaker_reliability`, `conflict_superseded_by_current`, `conflict_lower_confidence` and `conflict_older_canonical`.
+
+The selected set then follows the existing `MemoryService` → `RuntimeMemory` → `ContextAssembler` path. All memory remains untrusted context data and cannot alter system instructions, authorization or approval policy.
+
+## Production memory evaluation and telemetry
+
+The default server memory composition now enables the existing evaluation recorder and a bounded in-memory sink. Runtime retrieval automatically records candidate/selection diagnostics, reliability and conflict suppression counters, filtered/security counts, embedding/formatting/retrieval timings, and injected token accounting. Successful agent invocations add run-level memory latency, context-source token distribution, injected counts and usefulness labels where deterministic evaluation rules are configured.
+
+The sink retains bounded IDs/counts/statuses for a configurable retention window and emits structured `memory.evaluation.retrieval`, `memory.evaluation.invocation`, and zero-tolerance `memory.evaluation.security_violation` events through the existing server logger. `MEMORY_EVALUATION_ENABLED` defaults to enabled, `MEMORY_EVALUATION_SAMPLE_RATE` controls detailed retrieval event sampling, and `MEMORY_EVALUATION_RETENTION_DAYS` is bounded to 1–30 days. Evaluation errors are fail-soft and cannot change retrieval, context assembly or workflow results. Episodic extraction, procedural learning, and consolidation continue to emit their existing bounded lifecycle diagnostics, including creation/reinforcement/evidence and consolidation decision counts.
+
+Evaluation is intentionally observational rather than a second durable memory store. Structured logs can be retained by the deployment’s existing log/telemetry backend; the process-local sink is bounded and restart-ephemeral. No prompts, transcripts, credentials, vectors or full memory contents are stored by default.
+
 ## Verification
 
 Focused suites: memoryStorage, memoryRetrieval, memoryService, memoryRuntime, memoryApi, memoryEmbedding and memoryEndToEnd. They cover relevance fixtures, isolation, budgets, retries, transactions, expiration/superseding, authenticated APIs, checkpoints, failures and RunEvents.

@@ -1,6 +1,7 @@
 import type { AgentRecord, ApprovalRequest, Run, RunEvent, WorkflowDefinition } from "@multi-agent/types";
 import type { PgPool } from "../../../../../src/memory/infrastructure";
 import type { RequestPrincipal } from "../../auth/principal";
+import type { MemoryAccessContext } from "../../../../../src/memory/contracts";
 import type { MemoryOwner, RunEntry, RunListFilters, RunStoreContract } from "./contracts";
 import { InMemoryRunStore } from "./inMemoryRunStore";
 import { asIso } from "./helpers";
@@ -71,7 +72,10 @@ export class PostgresRunStore implements RunStoreContract {
         workflow: row.workflow_snapshot as WorkflowDefinition | undefined,
         agents: row.agents_snapshot as AgentRecord[] | undefined,
         tools: row.tools_snapshot as import("@multi-agent/types").ToolRecord[] | undefined,
-      });
+      }, undefined, row.memory_access ? row.memory_access as MemoryAccessContext : undefined);
+      const hydrated = this.memory.get(run.id);
+      if (hydrated && row.episodic_memory_status) hydrated.episodicMemoryStatus = row.episodic_memory_status;
+      if (hydrated && row.procedural_memory_status) hydrated.proceduralMemoryStatus = row.procedural_memory_status;
       if (row.paused_context) this.memory.setPausedContext(run.id, row.paused_context as RunEntry["pausedContext"]);
 
       const events = await this.pool.query("SELECT event FROM studio_run_events WHERE run_id = $1 ORDER BY sequence ASC", [run.id]);
@@ -104,19 +108,20 @@ export class PostgresRunStore implements RunStoreContract {
     memoryOwner?: MemoryOwner,
     snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
+    memoryAccess?: MemoryAccessContext,
   ) {
     this.assertHealthy();
     if (principal) {
       run = { ...run, ownerId: principal.userId, tenantId: principal.tenantId };
     }
-    const created = this.memory.create(run, memoryOwner, snapshots, principal);
+    const created = this.memory.create(run, memoryOwner, snapshots, principal, memoryAccess);
     this.enqueue(async () => {
       await this.pool.query(
         `INSERT INTO studio_runs (
            id, workflow_id, task_id, status, started_at, completed_at, input, output, result, error, current_node_id, metadata,
            memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, tools_snapshot, updated_at,
-           owner_id, tenant_id
-         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12::jsonb,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,now(),$18,$19)
+           owner_id, tenant_id, memory_access
+         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12::jsonb,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,now(),$18,$19,$20::jsonb)
          ON CONFLICT (id) DO UPDATE SET
            status = EXCLUDED.status, completed_at = EXCLUDED.completed_at, input = EXCLUDED.input, output = EXCLUDED.output,
            result = EXCLUDED.result, error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata,
@@ -141,6 +146,7 @@ export class PostgresRunStore implements RunStoreContract {
           snapshots?.tools ? JSON.stringify(snapshots.tools) : null,
           run.ownerId ?? principal?.userId ?? null,
           run.tenantId ?? principal?.tenantId ?? null,
+          memoryAccess ? JSON.stringify(memoryAccess) : null,
         ],
       );
     });
@@ -294,5 +300,37 @@ export class PostgresRunStore implements RunStoreContract {
   }
   getToolSnapshot(runId: string) {
     return this.memory.getToolSnapshot(runId);
+  }
+
+  markEpisodicMemoryPending(runId: string) {
+    this.assertHealthy();
+    this.memory.markEpisodicMemoryPending(runId);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET episodic_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
+    });
+  }
+
+  setEpisodicMemoryStatus(runId: string, status: "processed" | "failed") {
+    this.assertHealthy();
+    this.memory.setEpisodicMemoryStatus(runId, status);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET episodic_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
+    });
+  }
+
+  markProceduralMemoryPending(runId: string) {
+    this.assertHealthy();
+    this.memory.markProceduralMemoryPending(runId);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET procedural_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
+    });
+  }
+
+  setProceduralMemoryStatus(runId: string, status: "processed" | "failed") {
+    this.assertHealthy();
+    this.memory.setProceduralMemoryStatus(runId, status);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET procedural_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
+    });
   }
 }

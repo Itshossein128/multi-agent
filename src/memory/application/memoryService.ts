@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Memory, MemoryAccessContext, MemoryListQuery, MemoryRetrievalQuery, MemoryRetriever, MemoryService, MemoryStore, MemoryWritePolicy, MemoryWriteResult, RememberMemoryInput, UpdateMemoryInput } from "../contracts";
+import type { Memory, MemoryAccessContext, MemoryListQuery, MemoryRetrievalQuery, MemoryRetriever, MemoryService, MemoryStore, MemoryWritePolicy, MemoryWriteResult, RememberMemoryInput, UpdateMemoryInput, MemoryConsolidationScheduler } from "../contracts";
 import { MemoryAccessDeniedError, MemoryConflictError, MemoryValidationError } from "../contracts";
 import { boundedInteger, canAccessMemory, contentHash, IDEMPOTENCY_METADATA_KEY, isLive, matchesFilters, namespaceKey, publicMemory, requireAccess, requireNamespaces, sameNamespace } from "./access";
 import { embedSafely } from "./embedding";
@@ -8,6 +8,7 @@ import { DefaultMemoryWritePolicy } from "./memoryWritePolicy";
 
 export interface DefaultMemoryServiceOptions extends HybridMemoryRetrieverOptions {
   retriever?: MemoryRetriever; writePolicy?: MemoryWritePolicy; defaultTtlMs?: number;
+  consolidationScheduler?: MemoryConsolidationScheduler;
 }
 const optionalFields = ["subject", "structuredData", "situation", "action", "result", "lesson", "success", "title", "procedure", "trigger", "metadata", "confidence", "expiresAt"] as const;
 interface RetryIdentity { key: string; fingerprint: string }
@@ -85,7 +86,7 @@ export class DefaultMemoryService implements MemoryService {
     if (!memory.expiresAt && this.options.defaultTtlMs) memory.expiresAt = new Date(now + this.options.defaultTtlMs).toISOString();
     if (!canAccessMemory(memory, access, true)) throw new MemoryAccessDeniedError();
     Object.assign(memory, await this.embedding(memory.content));
-    return this.store.transaction(namespaceKey(access.tenantId, input.namespace), async store => {
+    const result: MemoryWriteResult = await this.store.transaction(namespaceKey(access.tenantId, input.namespace), async store => {
       let duplicate: Memory | undefined;
       const retries = memory.idempotencyKey ? await this.identityMatches(store, memory, true) : [];
       for (const item of retries) {
@@ -118,6 +119,12 @@ export class DefaultMemoryService implements MemoryService {
       await store.insert(memory);
       return { memory: publicMemory(memory), action: "inserted" };
     });
+    // Consolidation is post-commit maintenance. A scheduler failure must never
+    // change the result of the originating durable memory write.
+    if (result.action === "inserted") {
+      try { this.options.consolidationScheduler?.schedule(access, memory.namespace); } catch { /* maintenance is optional */ }
+    }
+    return result;
   }
   async recall(query: MemoryRetrievalQuery, access: MemoryAccessContext) { requireNamespaces(query.namespaces, access); return this.retriever.retrieve(query, access); }
   async get(id: string, access: MemoryAccessContext): Promise<Memory | null> {
@@ -132,7 +139,7 @@ export class DefaultMemoryService implements MemoryService {
     if (patch.expectedVersion !== undefined && (!Number.isInteger(patch.expectedVersion) || patch.expectedVersion < 1)) throw new MemoryValidationError("Invalid expected memory version");
     rejectReservedMetadata(patch.metadata);
     const initial = await this.authorized(this.store, id, access, true);
-    return this.store.transaction(namespaceKey(access.tenantId, initial.namespace), async store => {
+    const result = await this.store.transaction(namespaceKey(access.tenantId, initial.namespace), async store => {
       const old = await this.authorized(store, id, access, true);
       if (patch.expectedVersion !== undefined && patch.expectedVersion !== old.version) throw new MemoryConflictError();
       const memory = { ...old };
@@ -152,6 +159,8 @@ export class DefaultMemoryService implements MemoryService {
       await store.update(memory, old.version);
       return publicMemory(memory);
     });
+    try { this.options.consolidationScheduler?.schedule(access, result.namespace); } catch { /* maintenance is optional */ }
+    return result;
   }
   async forget(id: string, access: MemoryAccessContext): Promise<void> {
     const initial = await this.authorized(this.store, id, access, true);

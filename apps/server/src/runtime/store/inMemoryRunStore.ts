@@ -2,6 +2,7 @@ import type { AgentRecord, ApprovalRequest, Run, RunEvent, RunStatus, WorkflowDe
 import { redact } from "../../adapters/langGraphEventAdapter";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../../../../../src/runtime/boundedValue";
 import type { RequestPrincipal } from "../../auth/principal";
+import type { MemoryAccessContext } from "../../../../../src/memory/contracts";
 import type { MemoryOwner, RunEntry, RunListFilters, RunStoreContract } from "./contracts";
 import { matchesFilters, redactApproval, boundedEventCount, createBoundedRun } from "./helpers";
 
@@ -25,6 +26,7 @@ export class InMemoryRunStore implements RunStoreContract {
     memoryOwner?: MemoryOwner,
     snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
+    memoryAccess?: MemoryAccessContext,
   ) {
     if (principal) {
       run = { ...run, ownerId: principal.userId, tenantId: principal.tenantId };
@@ -42,6 +44,7 @@ export class InMemoryRunStore implements RunStoreContract {
       listeners: new Set(),
       abort: new AbortController(),
       memoryOwner: effectiveOwner,
+      memoryAccess: memoryAccess ? structuredClone(memoryAccess) : undefined,
       approvals: [],
       approvalTimers: new Map(),
       workflowSnapshot: snapshots?.workflow ? structuredClone(snapshots.workflow) : undefined,
@@ -193,5 +196,25 @@ export class InMemoryRunStore implements RunStoreContract {
   getToolSnapshot(runId: string) {
     const snapshot = this.entries.get(runId)?.toolsSnapshot;
     return snapshot ? structuredClone(snapshot) : undefined;
+  }
+
+  markEpisodicMemoryPending(runId: string) {
+    const entry = this.entries.get(runId);
+    if (entry) entry.episodicMemoryStatus = "pending";
+  }
+
+  setEpisodicMemoryStatus(runId: string, status: "processed" | "failed") {
+    const entry = this.entries.get(runId);
+    if (entry) entry.episodicMemoryStatus = status;
+  }
+
+  markProceduralMemoryPending(runId: string) {
+    const entry = this.entries.get(runId);
+    if (entry) entry.proceduralMemoryStatus = "pending";
+  }
+
+  setProceduralMemoryStatus(runId: string, status: "processed" | "failed") {
+    const entry = this.entries.get(runId);
+    if (entry) entry.proceduralMemoryStatus = status;
   }
 }

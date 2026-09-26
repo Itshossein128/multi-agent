@@ -1,7 +1,9 @@
-import { HybridMemoryRetriever, DefaultMemoryContextFormatter } from "../src/memory/application";
+import { HybridMemoryRetriever, DefaultMemoryContextFormatter, DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryBackgroundJobs } from "../src/memory/application";
 import { InMemoryMemoryStore } from "../src/memory/infrastructure/in-memory-memory-store";
 import type { Memory, MemoryAccessContext, EmbeddingProvider, MemoryStoreQuery } from "../src/memory/contracts";
 import { MemoryAccessDeniedError } from "../src/memory/contracts";
+import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
+import { createAgentRecord } from "@multi-agent/types";
 
 const now = Date.parse("2026-09-09T00:00:00Z");
 const namespace = { scope: "agent" as const, id: "agent-a" };
@@ -137,4 +139,71 @@ test("vector store failure preserves lexical results; every candidate query is b
   expect(result.results[0].memory.id).toBe("db");
   expect(result.diagnostics.warnings).toEqual(["Semantic search unavailable; lexical retrieval used"]);
   expect(search.mock.calls.every(([q]) => q.limit > 0 && q.limit <= 20)).toBe(true);
+});
+
+test("retrieval suppresses stale and disputed conflicting facts before context budgeting", async () => {
+  const { retriever } = await setup([
+    memory("current", "The project package manager is pnpm.", { confidence: .95, metadata: { __reliability_verification_status: "verified" } }),
+    memory("stale", "The project package manager is npm.", { confidence: .9, metadata: { __reliability_verification_status: "stale" } }),
+    memory("disputed", "The project package manager is yarn.", { confidence: .9, metadata: { __reliability_verification_status: "disputed" } }),
+    memory("database", "The backend database is PostgreSQL.", { subject: "database" }),
+  ]);
+  const result = await retriever.retrieve({ text: "project package manager database", namespaces: [namespace], maxTokens: 2048 }, access);
+  expect(result.results.map(item => item.memory.id)).toEqual(expect.arrayContaining(["current", "database"]));
+  expect(result.results.map(item => item.memory.id)).not.toEqual(expect.arrayContaining(["stale", "disputed"]));
+  expect(result.diagnostics.candidates.find(candidate => candidate.memoryId === "stale")).toMatchObject({ reason: "conflict_weaker_reliability", suppressedByMemoryId: "current" });
+  expect(result.diagnostics.candidates.find(candidate => candidate.memoryId === "disputed")).toMatchObject({ reason: "conflict_weaker_reliability", suppressedByMemoryId: "current" });
+});
+
+test("a stale or disputed memory remains available when it is the only relevant alternative", async () => {
+  const { retriever } = await setup([
+    memory("stale-only", "The project package manager is npm.", { metadata: { __reliability_verification_status: "stale" } }),
+  ]);
+  const result = await retriever.retrieve({ text: "project package manager", namespaces: [namespace] }, access);
+  expect(result.results.map(item => item.memory.id)).toEqual(["stale-only"]);
+  expect(result.diagnostics.candidates[0].reason).toBe("eligible");
+});
+
+test("related facts and procedures with different triggers are not conflict-suppressed", async () => {
+  const records = [
+    memory("package", "The project package manager is pnpm."),
+    memory("build", "The project uses Nx for task orchestration."),
+    memory("procedure-a", "Install dependencies with pnpm.", { kind: "procedural", trigger: "when installing dependencies", procedure: "run pnpm install" }),
+    memory("procedure-b", "Build the project with Nx.", { kind: "procedural", trigger: "when building the project", procedure: "run nx build" }),
+  ];
+  const { retriever } = await setup(records);
+  const result = await retriever.retrieve({ text: "project package manager build install", namespaces: [namespace] }, access);
+  expect(result.results.map(item => item.memory.id)).toEqual(expect.arrayContaining(["package", "build", "procedure-a", "procedure-b"]));
+});
+
+test("explicit supersession wins even when the older memory is more relevant", async () => {
+  const newer = memory("newer", "The project package manager is pnpm.", { confidence: .8, metadata: { __reliability_verification_status: "verified" } });
+  const older = memory("older", "The project package manager is npm.", { confidence: 1, supersededByMemoryId: newer.id, updatedAt: new Date(now - 90 * 86400000).toISOString(), metadata: { __reliability_verification_status: "verified" } });
+  const { retriever } = await setup([older, newer]);
+  const result = await retriever.retrieve({ text: "project package manager", namespaces: [namespace] }, access);
+  expect(result.results.map(item => item.memory.id)).toEqual(["newer"]);
+  expect(result.diagnostics.candidates.find(candidate => candidate.memoryId === "older")).toMatchObject({ reason: "conflict_superseded_by_current", suppressedByMemoryId: "newer" });
+});
+
+test("normal AgentRuntime and ContextAssembler receive only the canonical conflict winner", async () => {
+  const store = new InMemoryMemoryStore(() => new Date(now));
+  for (const record of [
+    memory("current", "The project package manager is pnpm.", { confidence: .95, metadata: { __reliability_verification_status: "verified" } }),
+    memory("stale", "The project package manager is npm.", { metadata: { __reliability_verification_status: "stale" } }),
+    memory("disputed", "The project package manager is yarn.", { metadata: { __reliability_verification_status: "disputed" } }),
+    memory("database", "The backend database is PostgreSQL.", { subject: "database" }),
+  ]) await store.insert(record);
+  const service = new DefaultMemoryService(store, { retriever: new HybridMemoryRetriever(store, { now: () => now }) });
+  const agent = { ...createAgentRecord(), id: "agent-a", enabled: true, backend: { type: "api" as const, provider: "openai" as const, model: "test" }, memory: { enabled: true, type: "run" as const, scope: "agent" as const, mode: "read" as const, maxEntries: 5, shortTerm: { enabled: false }, longTerm: { enabled: true, readableNamespaces: [namespace], writableNamespace: namespace, retrieval: { maxTokens: 2048 } } } };
+  const seen: any[] = [];
+  const runtime = new AgentRuntime({ create: () => ({ async *execute(input: any) { seen.push(input); yield { type: "agent.completed", timestamp: new Date().toISOString(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { content: "ok" } }; } }) }, {
+    service, extractor: new DefaultMemoryExtractor(), writePolicy: new DefaultMemoryWritePolicy(), formatter: new DefaultMemoryContextFormatter(), jobs: new DefaultMemoryBackgroundJobs(),
+  });
+  const events: any[] = [];
+  for await (const event of runtime.execute({ agent, input: "Which package manager and database does the project use?", runId: "retrieval-run", nodeId: "node", workflowId: "flow-a", memoryAccess: access })) events.push(event);
+  if (!seen.length) throw new Error(`executor not called: ${JSON.stringify(events)}`);
+  expect(seen[0].context?.memoryContext).toContain("The project package manager is pnpm.");
+  expect(seen[0].context?.memoryContext).toContain("The backend database is PostgreSQL.");
+  expect(seen[0].context?.memoryContext).not.toContain("The project package manager is npm.");
+  expect(seen[0].context?.memoryContext).not.toContain("The project package manager is yarn.");
 });

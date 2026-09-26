@@ -10,6 +10,7 @@ export * from "./memoryConsolidationEngine";
 export * from "./memoryConsolidationJudge";
 export * from "./memoryConsolidationConfig";
 export * from "./memoryConsolidationBackfill";
+export * from "./memoryConsolidationScheduler";
 export * from "./episodicMemory";
 export * from "./proceduralMemory";
 export * from "./memoryReliability";

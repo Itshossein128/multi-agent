@@ -46,6 +46,10 @@ export interface MemoryEvalScenarioResult {
   retrievalLatencyMs: number;
   embeddingLatencyMs: number;
   retrievalMode: string;
+  conflictGroupCount: number;
+  conflictSuppressedCount: number;
+  staleConflictSuppressed: number;
+  disputedConflictSuppressed: number;
   /** precision@k against fixture ground truth (undefined when no relevant ids exist). */
   precisionAtK?: number;
   /** recall@k against fixture ground truth. */
@@ -215,6 +219,10 @@ async function runScenario(
     retrievalLatencyMs: result.diagnostics.latencyMs,
     embeddingLatencyMs: result.diagnostics.embeddingLatencyMs,
     retrievalMode: result.diagnostics.retrievalMode ?? "lexical",
+    conflictGroupCount: result.diagnostics.conflict?.groups ?? 0,
+    conflictSuppressedCount: result.diagnostics.conflict?.suppressed ?? 0,
+    staleConflictSuppressed: result.diagnostics.conflict?.staleSuppressed ?? 0,
+    disputedConflictSuppressed: result.diagnostics.conflict?.disputedSuppressed ?? 0,
     precisionAtK,
     recallAtK,
     misses,
@@ -331,6 +339,10 @@ export async function runMemoryEvaluation(options: RunMemoryEvalOptions = {}): P
       if (item.label !== "unknown") population.knownLabelCount += 1;
     }
     population.invalidatedInjections += result.invalidatedInjectionCount;
+    population.conflictGroups += result.conflictGroupCount;
+    population.conflictSuppressed += result.conflictSuppressedCount;
+    population.staleConflictsSuppressed += result.staleConflictSuppressed;
+    population.disputedConflictsSuppressed += result.disputedConflictSuppressed;
   }
   const metrics = computePopulationMetrics(population);
   // Zero-tolerance checks apply to every run mode; dataset-derived label-mix

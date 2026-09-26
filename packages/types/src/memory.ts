@@ -53,9 +53,13 @@ export interface MemoryRetrievalDiagnostics {
   latencyMs: number; embeddingLatencyMs: number; candidateCount: number; selectedCount: number;
   deduplicatedCount: number; warnings: string[];
   retrievalMode?: MemoryRetrievalMode;
+  formattingLatencyMs?: number;
+  securityViolations?: number;
+  filteredCounts?: { unauthorized: number; expired: number; superseded: number; invalidated: number };
+  conflict?: { groups: number; candidates: number; suppressed: number; staleSuppressed: number; disputedSuppressed: number; unresolved: number };
   /** Candidate counts per memory kind. */
   kinds?: Partial<Record<MemoryKind, number>>;
-  candidates: { memoryId: string; score: number; reason: string; kind?: MemoryKind;
+  candidates: { memoryId: string; score: number; reason: string; kind?: MemoryKind; conflictGroupId?: string; suppressedByMemoryId?: string; verificationStatus?: string; freshnessStatus?: string;
     /** Reliability multiplier in [0,1] applied by the retriever (Phase 7), when known. */
     reliabilityFactor?: number; scores: MemorySearchResult["scores"] }[];
 }

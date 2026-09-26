@@ -63,12 +63,14 @@ export interface MemoryEvalFixture {
   confidence?: number;
   /** Episodic structure. */
   situation?: string;
+  action?: string;
   result?: string;
   lesson?: string;
   success?: boolean;
   /** Procedural structure. */
   trigger?: string;
   procedure?: string;
+  metadata?: Record<string, unknown>;
 }
 
 const daysAgo = (days: number) => new Date(MEMORY_EVAL_NOW - days * 86400000).toISOString();
@@ -92,7 +94,7 @@ export const MEMORY_EVAL_FIXTURES: MemoryEvalFixture[] = [
 /** Materialize a fixture into a store-ready Memory record (no embeddings stored; the provider supplies query-side vectors). */
 export function fixtureToMemory(fixture: MemoryEvalFixture, tenantId = MEMORY_EVAL_TENANT, namespace = MEMORY_EVAL_NAMESPACE): Memory {
   const updatedAt = daysAgo(fixture.ageDays ?? 1);
-  const metadata: Record<string, unknown> = {};
+  const metadata: Record<string, unknown> = { ...fixture.metadata };
   if (fixture.verificationStatus) metadata[RELIABILITY_KEYS.verificationStatus] = fixture.verificationStatus;
   if (fixture.contradictionCount) metadata[RELIABILITY_KEYS.contradictionCount] = fixture.contradictionCount;
   return {
@@ -104,6 +106,7 @@ export function fixtureToMemory(fixture: MemoryEvalFixture, tenantId = MEMORY_EV
     content: fixture.content,
     subject: fixture.subject,
     situation: fixture.situation,
+    action: fixture.action,
     result: fixture.result,
     lesson: fixture.lesson,
     success: fixture.success,
