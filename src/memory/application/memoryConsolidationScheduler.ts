@@ -28,7 +28,7 @@ export class BoundedMemoryConsolidationScheduler implements MemoryConsolidationS
       let result: Awaited<ReturnType<MemoryConsolidator["consolidate"]>> | undefined;
       try {
         result = await this.consolidator.consolidate(access, namespace);
-        this.options.onDiagnostic?.({ event: "completed", tenantId: access.tenantId, namespace: namespace.id, merged: result.merged, candidates: result.diagnostics.candidatesEvaluated, semanticCandidates: result.diagnostics.semanticCandidates, latencyMs: result.diagnostics.latencyMs });
+        this.options.onDiagnostic?.({ event: "completed", tenantId: access.tenantId, namespace: namespace.id, merged: result.merged, candidates: result.diagnostics.candidatesEvaluated, semanticCandidates: result.diagnostics.semanticCandidates, exactDuplicates: result.diagnostics.exactDuplicates, ignored: result.diagnostics.ignored, keptBoth: result.diagnostics.keptSeparate, superseded: result.diagnostics.superseded, judgeFailures: result.diagnostics.judgeFailures, latencyMs: result.diagnostics.latencyMs });
       } catch (error) {
         this.options.onDiagnostic?.({ event: "failed", tenantId: access.tenantId, namespace: namespace.id, reason: "consolidation_failed", latencyMs: Date.now() - started });
         throw error;

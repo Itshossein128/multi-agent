@@ -93,6 +93,14 @@ Within a conflict group, verified memories outrank unverified, stale and dispute
 
 The selected set then follows the existing `MemoryService` → `RuntimeMemory` → `ContextAssembler` path. All memory remains untrusted context data and cannot alter system instructions, authorization or approval policy.
 
+## Production memory evaluation and telemetry
+
+The default server memory composition now enables the existing evaluation recorder and a bounded in-memory sink. Runtime retrieval automatically records candidate/selection diagnostics, reliability and conflict suppression counters, filtered/security counts, embedding/formatting/retrieval timings, and injected token accounting. Successful agent invocations add run-level memory latency, context-source token distribution, injected counts and usefulness labels where deterministic evaluation rules are configured.
+
+The sink retains bounded IDs/counts/statuses for a configurable retention window and emits structured `memory.evaluation.retrieval`, `memory.evaluation.invocation`, and zero-tolerance `memory.evaluation.security_violation` events through the existing server logger. `MEMORY_EVALUATION_ENABLED` defaults to enabled, `MEMORY_EVALUATION_SAMPLE_RATE` controls detailed retrieval event sampling, and `MEMORY_EVALUATION_RETENTION_DAYS` is bounded to 1–30 days. Evaluation errors are fail-soft and cannot change retrieval, context assembly or workflow results. Episodic extraction, procedural learning, and consolidation continue to emit their existing bounded lifecycle diagnostics, including creation/reinforcement/evidence and consolidation decision counts.
+
+Evaluation is intentionally observational rather than a second durable memory store. Structured logs can be retained by the deployment’s existing log/telemetry backend; the process-local sink is bounded and restart-ephemeral. No prompts, transcripts, credentials, vectors or full memory contents are stored by default.
+
 ## Verification
 
 Focused suites: memoryStorage, memoryRetrieval, memoryService, memoryRuntime, memoryApi, memoryEmbedding and memoryEndToEnd. They cover relevance fixtures, isolation, budgets, retries, transactions, expiration/superseding, authenticated APIs, checkpoints, failures and RunEvents.

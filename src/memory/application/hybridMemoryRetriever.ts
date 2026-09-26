@@ -104,7 +104,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     requireNamespaces(query.namespaces, access);
     if (typeof query.text !== "string" || query.text.length > 16000 || (query.minScore !== undefined && (!Number.isFinite(query.minScore) || query.minScore < 0 || query.minScore > 1))) throw new MemoryValidationError("Invalid memory retrieval query");
     const start = Date.now(), now = (this.options.now ?? Date.now)();
-    const diagnostics: MemoryRetrievalResult["diagnostics"] = { latencyMs: 0, embeddingLatencyMs: 0, candidateCount: 0, selectedCount: 0, deduplicatedCount: 0, warnings: [], candidates: [] };
+    const diagnostics: MemoryRetrievalResult["diagnostics"] = { latencyMs: 0, embeddingLatencyMs: 0, candidateCount: 0, selectedCount: 0, deduplicatedCount: 0, warnings: [], securityViolations: 0, filteredCounts: { unauthorized: 0, expired: 0, superseded: 0, invalidated: 0 }, conflict: { groups: 0, candidates: 0, suppressed: 0, staleSuppressed: 0, disputedSuppressed: 0, unresolved: 0 }, candidates: [] };
     const limit = boundedInteger(query.limit, 8, 100), budget = boundedInteger(query.maxTokens, 2048, 100000);
     if (!query.namespaces.length || !query.text.trim() || !limit || !budget) return { results: [], diagnostics };
     const embeddingStart = Date.now();
@@ -130,7 +130,11 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     const scored: MemorySearchResult[] = [];
     for (const memory of [...lexical.slice(0, candidateLimit), ...recent.slice(0, candidateLimit), ...semantic.slice(0, candidateLimit)]) {
       // Repeat all checks before scoring or diagnostics, even with an over-permissive adapter.
-      if (!canAccessMemory(memory, access) || !query.namespaces.some(n => sameNamespace(n, memory.namespace)) || !isLive(memory, now) || (query.kinds && !query.kinds.includes(memory.kind)) || !matchesFilters(memory, query.filters) || uniqueIds.has(memory.id)) continue;
+      if (!canAccessMemory(memory, access)) { diagnostics.filteredCounts!.unauthorized++; diagnostics.securityViolations!++; continue; }
+      if (!query.namespaces.some(n => sameNamespace(n, memory.namespace))) { diagnostics.filteredCounts!.unauthorized++; diagnostics.securityViolations!++; continue; }
+      if (memory.status === "superseded") { diagnostics.filteredCounts!.superseded++; continue; }
+      if (memory.expiresAt && Date.parse(memory.expiresAt) <= now) { diagnostics.filteredCounts!.expired++; continue; }
+      if (!isLive(memory, now) || (query.kinds && !query.kinds.includes(memory.kind)) || !matchesFilters(memory, query.filters) || uniqueIds.has(memory.id)) continue;
       uniqueIds.add(memory.id);
       const semanticScore = embedding && memory.embedding && sameEmbedding(memory.embeddingMetadata, this.options.embeddingProvider!.metadata) && validVector(memory.embedding, embedding.length) ? cosine(embedding, memory.embedding) : 0;
       const lexicalScore = overlap(queryWords, memory.content);
@@ -144,6 +148,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       const reliabilityFactor = this.reliabilityScoring ? computeReliabilityFactor(memory, this.freshnessPolicy) : 1;
       const reliability = extractReliability(memory);
       const freshness = this.freshnessPolicy.evaluate(memory);
+      if (reliability.verificationStatus === "invalidated") diagnostics.filteredCounts!.invalidated++;
       kindCounts[memory.kind] = (kindCounts[memory.kind] ?? 0) + 1;
       diagnostics.candidates.push({ memoryId: memory.id, score: score * reliabilityFactor, reason: !relevant ? "irrelevant" : reliabilityFactor === 0 ? "invalidated" : score < (query.minScore ?? 0) ? "below_min_score" : "eligible", kind: memory.kind, reliabilityFactor, verificationStatus: reliability.verificationStatus, freshnessStatus: freshness.status, scores } as typeof diagnostics.candidates[number] & { verificationStatus: string; freshnessStatus: string });
       if (relevant && score >= (query.minScore ?? 0) && reliabilityFactor > 0) scored.push({ memory: publicMemory(memory), score: score * reliabilityFactor, scores, tokenCount: 0, reliabilityFactor });
@@ -175,6 +180,17 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       const winnerDiagnostic = diagnosticsById.get(winner.memory.id);
       if (winnerDiagnostic) winnerDiagnostic.conflictGroupId = groupId;
     }
+    const conflictMetrics = { groups: grouped.size, candidates: 0, suppressed: suppressed.size, staleSuppressed: 0, disputedSuppressed: 0, unresolved: 0 };
+    for (const members of grouped.values()) {
+      const unique = [...new Map(members.map(member => [member.memory.id, member])).values()];
+      conflictMetrics.candidates += unique.length;
+      for (const loser of unique) if (suppressed.has(loser.memory.id)) {
+        const status = extractReliability(loser.memory).verificationStatus;
+        if (status === "stale") conflictMetrics.staleSuppressed++;
+        if (status === "disputed") conflictMetrics.disputedSuppressed++;
+      }
+    }
+    diagnostics.conflict = conflictMetrics;
     const conflictFree = scored.filter(item => !suppressed.has(item.memory.id));
     const seen = new Set<string>();
     const deduplicated = conflictFree.filter(item => {
@@ -182,7 +198,9 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       if (seen.has(key)) { diagnostics.deduplicatedCount++; return false; }
       seen.add(key); return true;
     });
+    const formattingStart = Date.now();
     const results = this.formatter.select(deduplicated, budget).slice(0, limit);
+    diagnostics.formattingLatencyMs = Date.now() - formattingStart;
     diagnostics.selectedCount = results.length;
     diagnostics.latencyMs = Date.now() - start;
     diagnostics.retrievalMode = !this.options.embeddingProvider ? "lexical"

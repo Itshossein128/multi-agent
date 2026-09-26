@@ -51,10 +51,11 @@ export class RuntimeMemory {
       throw new Error("Required memory operation failed");
     }
   }
-  async read(): Promise<{ context?: string; events: AgentExecutionEvent[]; injectedTokens?: number; tokensByKind?: MemoryTokenAccounting }> {
+  async read(): Promise<{ context?: string; events: AgentExecutionEvent[]; injectedTokens?: number; tokensByKind?: MemoryTokenAccounting; retrievalDiagnostics?: import("@multi-agent/types").MemoryRetrievalDiagnostics }> {
     let context: string | undefined;
     let injectedTokens: number | undefined;
     let tokensByKind: MemoryTokenAccounting | undefined;
+    let retrievalDiagnostics: import("@multi-agent/types").MemoryRetrievalDiagnostics | undefined;
     const events = await this.guard("memory.read", async () => {
       const access = this.requireAccess();
       const config = this.config!;
@@ -77,6 +78,7 @@ export class RuntimeMemory {
         namespaces, kinds: config.kinds, maxTokens: contextBudget, limit, minScore: config.retrieval?.minScore,
       };
       const result = await this.telemetry.withMemory("memory.retrieve", { runId: this.input.runId, workflowId: this.input.workflowId, nodeId: this.input.nodeId, agentId: this.input.agent.id, namespaceCount: namespaces.length, input: recallInput }, () => this.deps!.service.recall(recallInput, access));
+      retrievalDiagnostics = result.diagnostics;
       this.input.signal?.throwIfAborted();
       // Phase 8: record the retrieval trace from diagnostics. Observational only.
       this.deps!.evaluation?.recorder.recordRetrieval({
@@ -84,6 +86,7 @@ export class RuntimeMemory {
         invocationId: `${this.input.runId}:${this.input.nodeId}`,
         agentId: this.input.agent.id,
         nodeId: this.input.nodeId,
+        namespaceCount: namespaces.length,
       }, result);
       // Defense in depth: never format a result outside the requested, granted namespaces.
       const selected = { ...result, results: result.results.filter(r => r.memory.tenantId === access.tenantId && namespaces.some(ns => sameNamespace(ns, r.memory.namespace))).slice(0, limit) };
@@ -113,12 +116,13 @@ export class RuntimeMemory {
       }
       events.push(memoryEvent(this.input, "memory.read", {
         status: "completed", retrievedCount,
+        ...(result.diagnostics.securityViolations ? { securityViolations: result.diagnostics.securityViolations } : {}),
         ...(injected ? { count: injected.length, selectedCount: injected.length, memoryIds: injected.map(r => r.memory.id) } : {}),
         latencyMs: Date.now() - start, deniedCount,
       }));
       return events;
     });
-    return { context, events, injectedTokens, tokensByKind };
+    return { context, events, injectedTokens, tokensByKind, retrievalDiagnostics };
   }
   private async write(output: unknown): Promise<AgentExecutionEvent[]> {
     const events: AgentExecutionEvent[] = [];

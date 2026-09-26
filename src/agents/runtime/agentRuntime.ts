@@ -87,8 +87,13 @@ export class AgentRuntime {
     let injectedTokens = 0;
     let tokensByKind: MemoryTokenAccounting = emptyTokens();
     let injectedMemoryIds: string[] = [];
+    let memoryLatencyMs = 0;
+    let retrievalDiagnostics: import("@multi-agent/types").MemoryRetrievalDiagnostics | undefined;
     if (longTerm.enabled) {
+      const memoryStart = Date.now();
       const read = await longTerm.read();
+      memoryLatencyMs = Date.now() - memoryStart;
+      retrievalDiagnostics = read.retrievalDiagnostics;
       for (const event of read.events) yield event;
       longTerm.assertResult(read.events);
       memoryContext = read.context;
@@ -179,6 +184,11 @@ export class AgentRuntime {
           tokensByKind,
           contextTokensBySource: assembled.diagnostics.sources,
           contextDroppedTokens: assembled.budget.droppedTokens,
+          retrievalCalls: retrievalDiagnostics ? 1 : 0,
+          memoryLatencyMs,
+          conflictGroups: retrievalDiagnostics?.conflict?.groups,
+          conflictSuppressed: retrievalDiagnostics?.conflict?.suppressed,
+          securityViolations: retrievalDiagnostics?.securityViolations,
           outcome: "success",
         },
       );

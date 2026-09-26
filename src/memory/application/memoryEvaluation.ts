@@ -56,9 +56,15 @@ export interface MemoryRetrievalTrace {
   selectedCount: number;
   latencyMs: number;
   embeddingLatencyMs?: number;
+  formattingLatencyMs?: number;
+  deduplicatedCount?: number;
   retrievalMode: "hybrid" | "vector" | "lexical" | "fallback";
   kinds: Partial<Record<MemoryKind, number>>;
   tenantId?: string;
+  namespaceCount?: number;
+  securityViolations?: number;
+  filteredCounts?: { unauthorized: number; expired: number; superseded: number; invalidated: number };
+  conflict?: { groups: number; candidates: number; suppressed: number; staleSuppressed: number; disputedSuppressed: number; unresolved: number };
   at: string;
 }
 
@@ -123,6 +129,11 @@ export interface MemoryInvocationEvaluation {
   /** Full per-source context distribution from the ContextAssembler (Step 64). */
   contextTokensBySource?: Record<string, { count: number; tokens: number }>;
   contextDroppedTokens?: number;
+  retrievalCalls?: number;
+  memoryLatencyMs?: number;
+  conflictGroups?: number;
+  conflictSuppressed?: number;
+  securityViolations?: number;
   relevantCount?: number;
   irrelevantCount?: number;
   harmfulCount?: number;
@@ -257,10 +268,18 @@ export interface MemoryPopulationMetrics {
   usefulInjections: number;
   memoryTokens: number;
   totalInputTokens: number;
+  conflictGroups: number;
+  conflictCandidates: number;
+  conflictSuppressed: number;
+  staleConflictsSuppressed: number;
+  disputedConflictsSuppressed: number;
+  unresolvedConflicts: number;
+  securityViolations: number;
+  totalMemoryLatencyMs: number;
 }
 
 export function emptyPopulationMetrics(): MemoryPopulationMetrics {
-  return { invocations: 0, retrievals: 0, retrievedCount: 0, selectedCount: 0, injectedCount: 0, droppedAfterSelectionCount: 0, emptyRetrievals: 0, fallbackRetrievals: 0, staleInjections: 0, disputedInjections: 0, invalidatedInjections: 0, duplicateCandidates: 0, knownLabelCount: 0, irrelevantInjections: 0, harmfulInjections: 0, usefulInjections: 0, memoryTokens: 0, totalInputTokens: 0 };
+  return { invocations: 0, retrievals: 0, retrievedCount: 0, selectedCount: 0, injectedCount: 0, droppedAfterSelectionCount: 0, emptyRetrievals: 0, fallbackRetrievals: 0, staleInjections: 0, disputedInjections: 0, invalidatedInjections: 0, duplicateCandidates: 0, knownLabelCount: 0, irrelevantInjections: 0, harmfulInjections: 0, usefulInjections: 0, memoryTokens: 0, totalInputTokens: 0, conflictGroups: 0, conflictCandidates: 0, conflictSuppressed: 0, staleConflictsSuppressed: 0, disputedConflictsSuppressed: 0, unresolvedConflicts: 0, securityViolations: 0, totalMemoryLatencyMs: 0 };
 }
 
 function rate(numerator: number, denominator: number): number {
@@ -284,6 +303,14 @@ export function computePopulationMetrics(metrics: MemoryPopulationMetrics): Reco
     retrieved_count: metrics.retrievedCount,
     selected_count: metrics.selectedCount,
     useful_injected_count: metrics.usefulInjections,
+    conflict_groups: metrics.conflictGroups,
+    conflict_candidates: metrics.conflictCandidates,
+    conflict_suppressed: metrics.conflictSuppressed,
+    stale_conflict_suppressed: metrics.staleConflictsSuppressed,
+    disputed_conflict_suppressed: metrics.disputedConflictsSuppressed,
+    unresolved_conflicts: metrics.unresolvedConflicts,
+    security_violations: metrics.securityViolations,
+    total_memory_latency_ms: metrics.totalMemoryLatencyMs,
   };
 }
 
@@ -407,6 +434,103 @@ export class InMemoryMemoryEvaluationSink implements MemoryEvaluationSink {
     return stored ? { evaluation: { ...stored.evaluation }, selections: stored.selections.map(s => ({ ...s })) } : undefined;
   }
   getInvocations(): readonly MemoryInvocationEvaluation[] { return [...this.invocations.values()].map(s => ({ ...s.evaluation })); }
+  getPopulationMetrics(): MemoryPopulationMetrics {
+    const metrics = emptyPopulationMetrics();
+    metrics.invocations = this.invocations.size;
+    metrics.retrievals = this.traces.length;
+    for (const trace of this.traces) {
+      metrics.retrievedCount += trace.candidateCount;
+      metrics.selectedCount += trace.selectedCount;
+      metrics.duplicateCandidates += trace.deduplicatedCount ?? 0;
+      if (!trace.candidateCount) metrics.emptyRetrievals++;
+      if (trace.retrievalMode === "fallback") metrics.fallbackRetrievals++;
+      metrics.conflictGroups += trace.conflict?.groups ?? 0;
+      metrics.conflictCandidates += trace.conflict?.candidates ?? 0;
+      metrics.conflictSuppressed += trace.conflict?.suppressed ?? 0;
+      metrics.staleConflictsSuppressed += trace.conflict?.staleSuppressed ?? 0;
+      metrics.disputedConflictsSuppressed += trace.conflict?.disputedSuppressed ?? 0;
+      metrics.unresolvedConflicts += trace.conflict?.unresolved ?? 0;
+      metrics.securityViolations += trace.securityViolations ?? 0;
+      metrics.totalMemoryLatencyMs += trace.latencyMs;
+    }
+    for (const stored of this.invocations.values()) {
+      const evaluation = stored.evaluation;
+      metrics.injectedCount += evaluation.injectedMemoryCount;
+      metrics.memoryTokens += evaluation.memoryTokens;
+      metrics.totalInputTokens += Object.values(evaluation.contextTokensBySource ?? {}).reduce((sum, source) => sum + source.tokens, 0);
+      metrics.securityViolations += evaluation.securityViolations ?? 0;
+      for (const selection of stored.selections) {
+        if (selection.stage === "injected") {
+          if (selection.verificationStatus === "stale" || selection.freshnessStatus === "stale" || selection.freshnessStatus === "expired") metrics.staleInjections++;
+          if (selection.verificationStatus === "disputed") metrics.disputedInjections++;
+          if (selection.verificationStatus === "invalidated") metrics.invalidatedInjections++;
+        }
+        if (selection.dropReason === "budget") metrics.droppedAfterSelectionCount++;
+        if (selection.dropReason?.startsWith("conflict_")) metrics.conflictSuppressed++;
+      }
+    }
+    return metrics;
+  }
+}
+
+export interface StructuredMemoryEvaluationEvent {
+  event: string;
+  runId?: string;
+  invocationId?: string;
+  agentId?: string;
+  nodeId?: string;
+  candidateCount?: number;
+  selectedCount?: number;
+  suppressedCount?: number;
+  conflictGroups?: number;
+  securityViolations?: number;
+  unauthorizedFiltered?: number;
+  expiredFiltered?: number;
+  supersededFiltered?: number;
+  invalidatedFiltered?: number;
+  staleConflictSuppressed?: number;
+  disputedConflictSuppressed?: number;
+  embeddingLatencyMs?: number;
+  formattingLatencyMs?: number;
+  fallbackMode?: string;
+  latencyMs?: number;
+  memoryTokens?: number;
+  tokensByKind?: MemoryTokenAccounting;
+  reasonCounts?: Record<string, number>;
+}
+
+/** Bounded structured production adapter over the existing evaluation sink. */
+export class StructuredMemoryEvaluationSink implements MemoryEvaluationSink {
+  constructor(
+    private readonly inner: MemoryEvaluationSink,
+    private readonly emit: (event: StructuredMemoryEvaluationEvent) => void,
+    private readonly sampleRate = 1,
+  ) {}
+  private maybeEmit(event: StructuredMemoryEvaluationEvent, mandatory = false): void {
+    if (!mandatory && this.sampleRate < 1 && Math.random() >= this.sampleRate) return;
+    try { this.emit(event); } catch { /* telemetry is never on the workflow critical path */ }
+  }
+  recordRetrieval(trace: MemoryRetrievalTrace): void {
+    this.inner.recordRetrieval(trace);
+    const securityViolations = trace.securityViolations ?? 0;
+    this.maybeEmit({ event: "memory.evaluation.retrieval", runId: trace.runId, invocationId: trace.invocationId, agentId: trace.agentId, nodeId: trace.nodeId, candidateCount: trace.candidateCount, selectedCount: trace.selectedCount, conflictGroups: trace.conflict?.groups, suppressedCount: trace.conflict?.suppressed, staleConflictSuppressed: trace.conflict?.staleSuppressed, disputedConflictSuppressed: trace.conflict?.disputedSuppressed, unauthorizedFiltered: trace.filteredCounts?.unauthorized, expiredFiltered: trace.filteredCounts?.expired, supersededFiltered: trace.filteredCounts?.superseded, invalidatedFiltered: trace.filteredCounts?.invalidated, securityViolations, embeddingLatencyMs: trace.embeddingLatencyMs, formattingLatencyMs: trace.formattingLatencyMs, fallbackMode: trace.retrievalMode, latencyMs: trace.latencyMs }, securityViolations > 0);
+    if (securityViolations > 0) this.maybeEmit({ event: "memory.evaluation.security_violation", runId: trace.runId, invocationId: trace.invocationId, securityViolations }, true);
+  }
+  recordSelections(invocationId: string, selections: MemorySelectionDiagnostic[]): void { this.inner.recordSelections(invocationId, selections); }
+  recordInjection(invocationId: string, event: { runId: string; memoryIds: string[]; tokens: number; tokensByKind: MemoryTokenAccounting }): void { this.inner.recordInjection(invocationId, event); }
+  recordInvocation(evaluation: MemoryInvocationEvaluation): void {
+    this.inner.recordInvocation(evaluation);
+    const selections = this.inner.getInvocation?.(evaluation.invocationId)?.selections ?? [];
+    const reasonCounts: Record<string, number> = {};
+    for (const selection of selections) if (selection.dropReason) reasonCounts[selection.dropReason] = (reasonCounts[selection.dropReason] ?? 0) + 1;
+    const suppressedCount = Object.entries(reasonCounts).filter(([reason]) => reason.startsWith("conflict_")).reduce((sum, [, count]) => sum + count, 0);
+    this.maybeEmit({ event: "memory.evaluation.invocation", runId: evaluation.runId, invocationId: evaluation.invocationId, agentId: evaluation.agentId, nodeId: evaluation.nodeId, candidateCount: evaluation.retrievedMemoryCount, selectedCount: evaluation.injectedMemoryCount, suppressedCount, conflictGroups: evaluation.conflictGroups, securityViolations: evaluation.securityViolations ?? 0, latencyMs: evaluation.memoryLatencyMs, memoryTokens: evaluation.memoryTokens, tokensByKind: evaluation.tokensByKind, reasonCounts });
+  }
+  getInvocation(invocationId: string) { return this.inner.getInvocation?.(invocationId); }
+  peekSelections(invocationId: string) { return (this.inner as InMemoryMemoryEvaluationSink).peekSelections?.(invocationId); }
+  getTraces() { return (this.inner as InMemoryMemoryEvaluationSink).getTraces?.(); }
+  getInvocations() { return (this.inner as InMemoryMemoryEvaluationSink).getInvocations?.(); }
+  getPopulationMetrics() { return (this.inner as InMemoryMemoryEvaluationSink).getPopulationMetrics?.(); }
 }
 
 // ─── Evaluation Recorder (runtime-facing, observational) ─────────────────────
@@ -419,6 +543,7 @@ export interface MemoryEvaluationRecorderContext {
   queryType?: string;
   relevanceRules?: DeterministicRelevanceRule;
   freshnessPolicy?: MemoryFreshnessPolicy;
+  namespaceCount?: number;
 }
 
 export interface MemoryInjectionRecord {
@@ -448,8 +573,14 @@ export class MemoryEvaluationRecorder {
         selectedCount: diagnostics.selectedCount,
         latencyMs: diagnostics.latencyMs,
         embeddingLatencyMs: diagnostics.embeddingLatencyMs,
+        formattingLatencyMs: diagnostics.formattingLatencyMs,
+        deduplicatedCount: diagnostics.deduplicatedCount,
         retrievalMode: diagnostics.retrievalMode ?? "hybrid",
         kinds: { ...diagnostics.kinds },
+        namespaceCount: context.namespaceCount,
+        securityViolations: diagnostics.securityViolations,
+        filteredCounts: diagnostics.filteredCounts,
+        conflict: diagnostics.conflict,
         at: nowIso(),
       });
       const selections = diagnostics.candidates.map(candidate => {
@@ -535,6 +666,7 @@ export class MemoryEvaluationRecorder {
     tokensByKind: MemoryTokenAccounting; outcome?: string;
     contextTokensBySource?: Record<string, { count: number; tokens: number }>;
     contextDroppedTokens?: number;
+    retrievalCalls?: number; memoryLatencyMs?: number; conflictGroups?: number; conflictSuppressed?: number; securityViolations?: number;
   }): void {
     if (!this.sink) return;
     try {
@@ -555,6 +687,11 @@ export class MemoryEvaluationRecorder {
         tokensByKind: summary.tokensByKind,
         contextTokensBySource: summary.contextTokensBySource,
         contextDroppedTokens: summary.contextDroppedTokens,
+        retrievalCalls: summary.retrievalCalls,
+        memoryLatencyMs: summary.memoryLatencyMs,
+        conflictGroups: summary.conflictGroups,
+        conflictSuppressed: summary.conflictSuppressed,
+        securityViolations: summary.securityViolations,
         relevantCount: counts.useful,
         irrelevantCount: counts.irrelevant,
         harmfulCount: counts.harmful,
