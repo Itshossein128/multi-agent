@@ -34,6 +34,8 @@ function RunsHistoryContent() {
     queryKey: ["runs", filters],
     queryFn: () => runService.listRuns(filters),
     refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+    staleTime: 2000,
   });
 
   return (

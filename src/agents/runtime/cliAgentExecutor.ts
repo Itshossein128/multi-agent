@@ -379,7 +379,14 @@ export function codexArgs(explicit: string[] | undefined, workerMode: CliWorkerM
   // reasoning, ordinary non-Git folders). Docker remains the security
   // boundary; local workers keep Codex's own approval/sandbox model.
   const defaults = ["--skip-git-repo-check"];
-  if (workerMode === "container") defaults.push("--dangerously-bypass-approvals-and-sandbox", "--ephemeral");
+  if (workerMode === "container") {
+    defaults.push("--dangerously-bypass-approvals-and-sandbox", "--ephemeral");
+  } else {
+    // Local workers have no interactive approval channel. Keep Codex inside
+    // its workspace-write sandbox while routing approvals automatically and
+    // avoid leaving session state behind after a headless run.
+    defaults.push("--approve-for-me", "--ephemeral");
+  }
   const autoFlags = defaults.filter((flag) => !custom.includes(flag));
   return ["exec", ...autoFlags, ...custom, ...(custom.includes("-") ? [] : ["-"])];
 }

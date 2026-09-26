@@ -23,7 +23,7 @@ export const useRunStore = create<RunStoreState>((set) => {
   return {
     runId: null, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "idle", error: null,
     load: async (runId) => {
-      set({ runId, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "idle", error: null });
+      set({ runId, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "connecting", error: null });
       try {
         const [run, approvals, history] = await Promise.all([
           runService.getRun(runId),
@@ -40,8 +40,8 @@ export const useRunStore = create<RunStoreState>((set) => {
     },
     attach: (runId) => {
       set((state) => state.runId === runId
-        ? { runId, streamStatus: "idle" }
-        : { runId, events: [], approvals: [], selectedEventId: null, streamStatus: "idle" });
+        ? { runId, streamStatus: "connecting" }
+        : { runId, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "connecting" });
       const stream = createRunEventStream(runId, {
         onStatus: (streamStatus) => set((state) => state.runId === runId ? { streamStatus } : state),
         onEvent: (event) => {

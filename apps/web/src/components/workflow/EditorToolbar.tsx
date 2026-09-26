@@ -150,7 +150,17 @@ export function EditorToolbar() {
           disabled={hasErrors}
           onClick={async () => {
             try {
-              const { runId } = await runService.startRun(definition, agents, { input: runInput }, undefined, tools);
+              const parsedInput: unknown = JSON.parse(runInput);
+              if (!parsedInput || typeof parsedInput !== "object" || Array.isArray(parsedInput)) {
+                throw new Error("Run input must be a JSON object.");
+              }
+              const { runId } = await runService.startRun(
+                definition,
+                agents,
+                parsedInput as Record<string, unknown>,
+                undefined,
+                tools,
+              );
               sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
               router.push(`/runs/${runId}`);
             } catch (error) {

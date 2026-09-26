@@ -158,7 +158,7 @@ describe("CLI and local executors", () => {
     for await (const event of new CliAgentExecutor(workerRuntime, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
 
     expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"], cwd: "/workspace" }),
+      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--approve-for-me", "--ephemeral", "--json", "-"], cwd: "/workspace" }),
       undefined,
       expect.stringContaining("USER INPUT:\nsummarize"),
       undefined,
@@ -452,15 +452,15 @@ describe("CLI and local executors", () => {
     for await (const _event of new CliAgentExecutor(workerRuntime, { enabled: true, workerMode: "local", allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096 }).execute({ agent, input: "test", runId: "r", nodeId: "n" })) { /* drain */ }
 
     expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"] }),
+      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--approve-for-me", "--ephemeral", "--json", "-"] }),
       undefined,
       expect.any(String),
       undefined,
     );
   });
 
-  test("keeps local Codex runs free of sandbox bypass and session-ephemeral flags", () => {
-    expect(codexArgs(["--json"], "local")).toEqual(["exec", "--skip-git-repo-check", "--json", "-"]);
+  test("keeps local Codex runs inside the sandbox without interactive approval", () => {
+    expect(codexArgs(["--json"], "local")).toEqual(["exec", "--skip-git-repo-check", "--approve-for-me", "--ephemeral", "--json", "-"]);
   });
 
   test("auto-injects container Codex defaults once without duplicating explicit flags", () => {
@@ -502,7 +502,8 @@ describe("CLI and local executors", () => {
     expect(args).toContain("--skip-git-repo-check");
     expect(args).toEqual(expect.arrayContaining(["exec", "-"]));
     expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
-    expect(args).not.toContain("--ephemeral");
+    expect(args).toContain("--approve-for-me");
+    expect(args).toContain("--ephemeral");
   });
 
   test("keeps Claude permissions enabled for local workers", async () => {

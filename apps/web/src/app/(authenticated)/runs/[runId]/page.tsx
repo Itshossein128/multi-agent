@@ -25,8 +25,8 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
   const load = useRunStore((state) => state.load);
   const attach = useRunStore((state) => state.attach);
   useEffect(() => {
-    void load(runId);
     const close = attach(runId);
+    void load(runId);
     void runService.getRunDefinition(runId)
       .then((snapshot) => setDefinition(snapshot.workflow))
       .catch(() => {

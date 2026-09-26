@@ -108,7 +108,7 @@ test("switching backend type asks before resetting incompatible fields and prese
   await page.evaluate(() => {
     const messages: string[] = [];
     (window as unknown as { __confirmMessages: string[] }).__confirmMessages = messages;
-    window.confirm = (message: string) => { messages.push(message); return true; };
+    window.confirm = (message?: string) => { messages.push(message ?? ""); return true; };
   });
   await page.getByLabel("Backend type").selectOption("cli");
   const confirmMessages = await page.evaluate(() => (window as unknown as { __confirmMessages: string[] }).__confirmMessages);
@@ -184,7 +184,7 @@ test("deleting a saved-workflow-referenced agent is blocked with instructions", 
   await createAgentViaUi(page, "Referenced delete agent");
   const agentId = page.url().split("/").pop()!;
 
-  await studioRequest(page, `/workflows`, { method: "POST", body: JSON.stringify({ name: "Guard workflow" }) })
+  await studioRequest<{ id: string }>(page, `/workflows`, { method: "POST", body: JSON.stringify({ name: "Guard workflow" }) })
     .then(async (workflow: { id: string }) => {
       const node = (id: string, type: string, x: number, config: Record<string, unknown>) => ({ id, type, position: { x, y: 0 }, config });
       const edge = (id: string, source: string, target: string) => ({ id, source, target, kind: "normal", label: "", branchKey: "" });
