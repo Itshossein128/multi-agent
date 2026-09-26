@@ -1,7 +1,7 @@
-import type { EpisodeService, EpisodeExtractionInput } from "../../../../src/memory/application";
+import type { EpisodeService, EpisodeExtractionInput, EpisodeExtractionResult } from "../../../../src/memory/application";
 import { log } from "../logging";
 import type { AgentRecord, WorkflowDefinition } from "@multi-agent/types";
-import { createResultEnvelope, type NodeResultEnvelope } from "@multi-agent/types";
+import { createResultEnvelope, nowIso, uid, type NodeResultEnvelope } from "@multi-agent/types";
 import { LangGraphEventAdapter } from "../adapters/langGraphEventAdapter";
 import type { RunStoreContract } from "./store/contracts";
 import type { ApprovalManager, PausedContext } from "./approvalManager";
@@ -24,6 +24,7 @@ export class GraphRunner {
     private readonly pausedContext: Map<string, PausedContext>,
     private readonly checkpointers: Map<string, BaseCheckpointSaver>,
     private readonly episodeService?: EpisodeService,
+    private readonly onEpisodicMemoryPersisted?: (runId: string, input: EpisodeExtractionInput, access: import("../../../../src/memory/contracts").MemoryAccessContext, result: EpisodeExtractionResult) => void,
   ) {}
 
   /**
@@ -93,7 +94,6 @@ export class GraphRunner {
     this.pausedContext.delete(runId);
     this.checkpointers.delete(runId);
     this.store.setPausedContext?.(runId, null);
-    const { nowIso, uid } = await import("@multi-agent/types");
     // The output node's structured result is the run's deterministic result;
     // fall back to a synthesized success envelope carrying the raw output.
     const outputNodeId = workflow.nodes.find((node) => node.type === "output")?.id;
@@ -112,8 +112,9 @@ export class GraphRunner {
 
     // Episodic memory extraction on successful completion
     const entry = this.store.get(runId);
-    const effectiveAccess = memoryAccess ?? (entry?.memoryOwner ? { principalId: entry.memoryOwner.principalId, tenantId: entry.memoryOwner.tenantId, readableNamespaces: [{ scope: "project", id: entry.memoryOwner.tenantId }], writableNamespaces: [{ scope: "project", id: entry.memoryOwner.tenantId }] } : undefined);
+    const effectiveAccess = memoryAccess ?? entry?.memoryAccess;
     if (this.episodeService && effectiveAccess && effectiveAccess.writableNamespaces.length > 0) {
+      this.store.markEpisodicMemoryPending?.(runId);
       try {
         const stateValues = (state as any)?.values;
         let handoffs = stateValues?.handoffs ?? streamHandoffs;
@@ -175,8 +176,11 @@ export class GraphRunner {
         };
 
         const epResult = await this.episodeService.processRun(extractionInput, effectiveAccess);
+        this.store.setEpisodicMemoryStatus?.(runId, epResult.reason === "persistence_failed" || epResult.reason === "extraction_failed" ? "failed" : "processed");
         log.info("memory.episodic.extracted", { runId, created: epResult.created, reason: epResult.reason, memoryId: epResult.memoryId });
+        if (epResult.reason !== "persistence_failed" && epResult.reason !== "extraction_failed") this.onEpisodicMemoryPersisted?.(runId, extractionInput, effectiveAccess, epResult);
       } catch (err) {
+        this.store.setEpisodicMemoryStatus?.(runId, "failed");
         log.warn("memory.episodic.extraction_failed", { runId, error: err instanceof Error ? err.message : String(err) });
       }
     }

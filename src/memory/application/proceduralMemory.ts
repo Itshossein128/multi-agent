@@ -1,6 +1,7 @@
 import type { MemoryCandidate, MemoryAccessContext, MemoryNamespace, MemoryService, Memory } from "../contracts";
 import { containsSecretAssignment, containsSensitiveContent, isTrivialContent } from "./memoryWritePolicy";
 import { contentHash } from "./access";
+import { RELIABILITY_KEYS } from "./memoryReliability";
 
 // ─── Procedural Domain Model ─────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ export interface ProceduralExtractionInput {
   namespace: MemoryNamespace;
   /** Agent ID for provenance. */
   agentId: string;
+  /** Trusted runtime access; never derived from episode content. */
+  access?: MemoryAccessContext;
 }
 
 export interface ProceduralMemoryCandidate {
@@ -54,6 +57,8 @@ export interface ProceduralMemoryCandidate {
   evidenceRefs?: string[];
   confidence: number;
   origin: ProcedureOrigin;
+  /** Success ratio of the independent evidence cluster. */
+  successRatio?: number;
 }
 
 export interface ProceduralPolicyDecision {
@@ -107,6 +112,9 @@ export class DeterministicProceduralPolicy implements ProceduralMemoryPolicy {
       if (evidenceCount < this.config.minEpisodes) {
         return { remember: false, reason: "insufficient_evidence", confidence: 0 };
       }
+      if (candidate.successRatio !== undefined && candidate.successRatio < this.config.minConsistency) {
+        return { remember: false, reason: "inconsistent_evidence", confidence: 0 };
+      }
 
       // Cap confidence for learned procedures
       const confidence = Math.min(candidate.confidence, this.config.maxLearnedConfidence);
@@ -131,10 +139,11 @@ export class DeterministicProceduralExtractor implements ProceduralMemoryExtract
   constructor(private readonly config: ProceduralEvidenceConfig = DEFAULT_PROCEDURAL_EVIDENCE_CONFIG) {}
 
   async extract(input: ProceduralExtractionInput): Promise<ProceduralMemoryCandidate[]> {
-    if (!input.episodes.length) return [];
+    const distinctEpisodes = this.distinctEpisodes(input.episodes);
+    if (!distinctEpisodes.length) return [];
 
     // Group episodes by task similarity (simple clustering)
-    const clusters = this.clusterEpisodes(input.episodes);
+    const clusters = this.clusterEpisodes(distinctEpisodes);
     const candidates: ProceduralMemoryCandidate[] = [];
 
     for (const cluster of clusters) {
@@ -145,6 +154,16 @@ export class DeterministicProceduralExtractor implements ProceduralMemoryExtract
     }
 
     return candidates;
+  }
+
+  private distinctEpisodes(episodes: Memory[]): Memory[] {
+    const seen = new Set<string>();
+    return episodes.filter((episode) => {
+      const key = episode.source.runId ? `run:${episode.source.runId}` : `episode:${episode.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   private clusterEpisodes(episodes: Memory[]): Memory[][] {
@@ -192,6 +211,7 @@ export class DeterministicProceduralExtractor implements ProceduralMemoryExtract
     if (procedure.length === 0) return null;
 
     // Calculate confidence based on evidence strength
+    const successRatio = successes.length / cluster.length;
     const confidence = this.calculateConfidence(cluster.length, successes.length);
 
     // Build evidence references
@@ -203,6 +223,7 @@ export class DeterministicProceduralExtractor implements ProceduralMemoryExtract
       confidence,
       origin: "learned",
       evidenceRefs,
+      successRatio,
     };
   }
 
@@ -328,16 +349,19 @@ export interface ProceduralExtractionResult {
   reinforced: number;
   skipped: number;
   reason: string;
+  failed?: boolean;
 }
 
 export interface ProceduralService {
   learnFromEpisodes(input: ProceduralExtractionInput): Promise<ProceduralExtractionResult>;
+  learnFromAuthorizedEpisodes(input: { access: MemoryAccessContext; namespace: MemoryNamespace; agentId: string }): Promise<ProceduralExtractionResult>;
 }
 
 export interface ProceduralServiceOptions {
   policy?: ProceduralMemoryPolicy;
   extractor?: ProceduralMemoryExtractor;
   evidenceConfig?: ProceduralEvidenceConfig;
+  onDiagnostic?: (diagnostic: { namespace: MemoryNamespace; qualifyingEpisodes: number; distinctRuns: number; reason: string }) => void;
 }
 
 /**
@@ -359,10 +383,25 @@ export class DefaultProceduralService implements ProceduralService {
     let created = 0;
     let reinforced = 0;
     let skipped = 0;
+    let persistenceFailures = 0;
 
     try {
       // 1. Extract procedural candidates from episodes
-      const candidates = await this.extractor.extract(input);
+      // A retry or duplicate write must not manufacture independent evidence.
+      // Production episodes carry source.runId; the memory id is the safe fallback
+      // for older/imported records without a run reference.
+      const seenRuns = new Set<string>();
+      const episodes = input.episodes.filter((episode) => {
+        if (episode.kind !== "episodic" || episode.status !== "active") return false;
+        const verification = episode.metadata?.[RELIABILITY_KEYS.verificationStatus];
+        if (verification === "invalidated" || verification === "disputed" || verification === "stale") return false;
+        const runKey = episode.source.runId ? `run:${episode.source.runId}` : `episode:${episode.id}`;
+        if (seenRuns.has(runKey)) return false;
+        seenRuns.add(runKey);
+        return true;
+      });
+      this.options.onDiagnostic?.({ namespace: input.namespace, qualifyingEpisodes: episodes.length, distinctRuns: seenRuns.size, reason: episodes.length ? "evidence_evaluated" : "insufficient_evidence" });
+      const candidates = await this.extractor.extract({ ...input, episodes });
 
       for (const candidate of candidates) {
         // 2. Policy check
@@ -381,7 +420,7 @@ export class DefaultProceduralService implements ProceduralService {
         } else {
           // Create new procedure
           const memoryCandidate = proceduralToMemoryCandidate(candidate, input);
-          const access: MemoryAccessContext = {
+          const access: MemoryAccessContext = input.access ?? {
             principalId: `procedure:${input.agentId}`,
             tenantId: input.namespace.id,
             readableNamespaces: [input.namespace],
@@ -392,27 +431,38 @@ export class DefaultProceduralService implements ProceduralService {
             await this.memoryService.remember(memoryCandidate, access);
             created++;
           } catch {
-            // Persistence failure is non-fatal
+            persistenceFailures++;
+            // Persistence failure is non-fatal to the originating workflow.
           }
         }
       }
     } catch {
-      // Extraction failure is non-fatal
+      // Extraction failure is non-fatal to the originating workflow.
+      return { created, reinforced, skipped, reason: "extraction_complete", failed: true };
     }
 
     return {
       created,
       reinforced,
       skipped,
-      reason: "extraction_complete",
+      reason: persistenceFailures ? "persistence_failed" : (created || reinforced ? "extraction_complete" : "insufficient_evidence"),
+      ...(persistenceFailures ? { failed: true } : {}),
     };
+  }
+
+  async learnFromAuthorizedEpisodes(input: { access: MemoryAccessContext; namespace: MemoryNamespace; agentId: string }): Promise<ProceduralExtractionResult> {
+    if (input.access.tenantId === "" || !input.access.writableNamespaces.some(ns => ns.scope === input.namespace.scope && ns.id === input.namespace.id)) {
+      return { created: 0, reinforced: 0, skipped: 0, reason: "unauthorized_namespace" };
+    }
+    const episodes = await this.memoryService.list({ namespaces: [input.namespace], kinds: ["episodic"], limit: 100 }, input.access);
+    return this.learnFromEpisodes({ episodes, namespace: input.namespace, agentId: input.agentId, access: input.access });
   }
 
   private async findSimilarProcedure(
     candidate: ProceduralMemoryCandidate,
     input: ProceduralExtractionInput,
   ): Promise<Memory | null> {
-    const access: MemoryAccessContext = {
+    const access: MemoryAccessContext = input.access ?? {
       principalId: `procedure:${input.agentId}`,
       tenantId: input.namespace.id,
       readableNamespaces: [input.namespace],
@@ -454,7 +504,7 @@ export class DefaultProceduralService implements ProceduralService {
     candidate: ProceduralMemoryCandidate,
     input: ProceduralExtractionInput,
   ): Promise<void> {
-    const access: MemoryAccessContext = {
+    const access: MemoryAccessContext = input.access ?? {
       principalId: `procedure:${input.agentId}`,
       tenantId: input.namespace.id,
       readableNamespaces: [input.namespace],
@@ -472,6 +522,10 @@ export class DefaultProceduralService implements ProceduralService {
         metadata: {
           ...existing.metadata,
           reinforcements: currentReinforcements + 1,
+          evidenceRefs: [...new Set([
+            ...((existing.metadata?.evidenceRefs as string[] | undefined) ?? []),
+            ...((candidate.evidenceRefs as string[] | undefined) ?? []),
+          ])],
           lastReinforcedAt: new Date().toISOString(),
         },
       }, access);

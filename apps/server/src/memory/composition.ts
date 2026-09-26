@@ -1,12 +1,12 @@
-import type { MemoryService, RuntimeMemoryDependencies } from "../../../../src/memory/contracts";
-import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs } from "../../../../src/memory/application";
+import type { MemoryService, RuntimeMemoryDependencies, MemoryBackgroundJobs } from "../../../../src/memory/contracts";
+import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs, DefaultEpisodeService, DefaultProceduralService, type EpisodeService, type ProceduralService } from "../../../../src/memory/application";
 import { PostgresMemoryStore, InMemoryMemoryStore, type PgPool } from "../../../../src/memory/infrastructure";
 import { createPostgresPool, type ManagedPool } from "../infrastructure/postgresPool";
 import { embeddingProviderFromEnvironment } from "./embeddingProvider";
 import { log } from "../logging";
 
 export interface MemoryComposition {
-  service?: MemoryService; runtime?: RuntimeMemoryDependencies;
+  service?: MemoryService; runtime?: RuntimeMemoryDependencies; episodeService?: EpisodeService; proceduralService?: ProceduralService; jobs?: MemoryBackgroundJobs;
   close(): Promise<void>;
 }
 /** No migrations at startup; durable storage never silently falls back to a Map. */
@@ -29,6 +29,16 @@ export function createMemoryComposition(): MemoryComposition {
   if (!Number.isFinite(ttlDays) || ttlDays < 0 || ttlDays > 36500) throw new Error("Invalid MEMORY_DEFAULT_TTL_DAYS.");
   const service = new DefaultMemoryService(store, { embeddingProvider, defaultTtlMs: ttlDays === 0 ? undefined : ttlDays * 86400000 });
   const jobs = new DefaultMemoryBackgroundJobs({ onError: () => console.warn("Background memory operation failed.") });
+  const proceduralService = new DefaultProceduralService(service, {
+    onDiagnostic: (diagnostic) => log.info("memory.procedural.evidence", {
+      namespaceScope: diagnostic.namespace.scope,
+      namespaceId: diagnostic.namespace.id,
+      qualifyingEpisodes: diagnostic.qualifyingEpisodes,
+      distinctRuns: diagnostic.distinctRuns,
+      reason: diagnostic.reason,
+    }),
+  });
+  const episodeService = new DefaultEpisodeService(service);
   const runtime: RuntimeMemoryDependencies = { service, jobs, extractor: new DefaultMemoryExtractor(), writePolicy: new DefaultMemoryWritePolicy(), formatter: new DefaultMemoryContextFormatter() };
 
   // Startup observability: log memory configuration without secrets.
@@ -45,5 +55,5 @@ export function createMemoryComposition(): MemoryComposition {
     log.warn("memory.vector.misconfigured", { message: "MEMORY_VECTOR_ENABLED=true but no embedding provider configured; vector retrieval will fail at query time" });
   }
 
-  return { service, runtime, close: async () => { try { await jobs.drain(); } finally { await pool?.end(); } } };
+  return { service, runtime, episodeService, proceduralService, jobs, close: async () => { try { await jobs.drain(); } finally { await pool?.end(); } } };
 }

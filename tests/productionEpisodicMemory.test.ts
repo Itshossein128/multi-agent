@@ -1,12 +1,18 @@
 import {
   DefaultMemoryService,
   DefaultEpisodeService,
+  DefaultProceduralService,
+  DefaultMemoryExtractor,
+  DefaultMemoryWritePolicy,
+  DefaultMemoryContextFormatter,
+  DefaultMemoryBackgroundJobs,
 } from "../src/memory/application";
 import type { MemoryAccessContext, MemoryNamespace } from "../src/memory/contracts";
 import { InMemoryMemoryStore } from "../src/memory/infrastructure/in-memory-memory-store";
 import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { InMemoryRunStore } from "../apps/server/src/runtime/store/inMemoryRunStore";
 import { createEmptyDefinition, createNode, createEdge, type AgentRecord, type WorkflowDefinition } from "@multi-agent/types";
+import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
 
 // Setup test constants & helper fixtures
 const tenantA = "tenant-a";
@@ -40,7 +46,9 @@ function createMemoryComponents() {
     },
   });
   const episodeService = new DefaultEpisodeService(service);
-  return { store, service, episodeService };
+  const jobs = new DefaultMemoryBackgroundJobs();
+  const proceduralService = new DefaultProceduralService(service);
+  return { store, service, episodeService, proceduralService, jobs };
 }
 
 function makeWorkflow(id: string, name: string): WorkflowDefinition {
@@ -76,6 +84,42 @@ const mockAgent: AgentRecord = {
 };
 
 describe("Production Episodic Memory Wiring Tests", () => {
+  test("Scenario 0 — repeated production runs learn and later runtime context retrieves the procedure", async () => {
+    const { service, episodeService, proceduralService, jobs } = createMemoryComponents();
+    const workflow = makeWorkflow("wf-procedural", "Procedural Workflow");
+    const agentRuntime = {
+      async *execute(input: any) {
+        yield { type: "agent.completed", agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, timestamp: new Date().toISOString(), payload: {
+          content: `Authentication middleware was updated successfully in ${input.runId}.`,
+          handoffs: { [input.nodeId]: { id: "h1", version: 1, sourceNodeId: input.nodeId, sourceAgentId: input.agent.id, status: "success", summary: "run auth tests; run cross-tenant tests", findings: [], decisions: [{ decision: "Use the existing auth middleware test path" }], assumptions: [], remainingWork: [], warnings: [] } },
+        } };
+      },
+    };
+    for (let i = 0; i < 3; i++) {
+      const executor = new RunExecutor(new InMemoryRunStore(), agentRuntime as any, undefined, undefined, undefined, undefined, episodeService, proceduralService, jobs);
+      executor.start({ workflow, agents: [mockAgent], input: { task: "authentication middleware modified" } }, accessA);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+    await jobs.drain();
+
+    const learned = await service.list({ namespaces: [namespaceA], kinds: ["procedural"] }, accessA);
+    expect(learned).toHaveLength(1);
+    expect(learned[0].procedure).toContain("Authentication middleware was updated");
+
+    const agent = { ...mockAgent, backend: { type: "api" as const, provider: "openai" as const, model: "test-model" }, memory: { enabled: true, type: "run" as const, scope: "agent" as const, mode: "read" as const, maxEntries: 5, shortTerm: { enabled: false }, longTerm: { enabled: true, readableNamespaces: [namespaceA], writableNamespace: namespaceA, retrieval: { maxTokens: 1024 } } } };
+    const seen: any[] = [];
+    const runtime = new AgentRuntime({ create: () => ({ async *execute(input: any) { seen.push(input); yield { type: "agent.completed", agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, timestamp: new Date().toISOString(), payload: { content: "ok" } }; } }) }, {
+      service,
+      extractor: new DefaultMemoryExtractor(),
+      writePolicy: new DefaultMemoryWritePolicy(),
+      formatter: new DefaultMemoryContextFormatter(),
+      jobs,
+    });
+    for await (const _event of runtime.execute({ agent, input: "authentication middleware modified", runId: "run-d", nodeId: "agentNode", workflowId: workflow.id, memoryAccess: accessA })) { /* consume normal runtime path */ }
+    expect(seen[0].context?.memoryContext).toContain("Trigger:");
+    expect(seen[0].context?.memoryContext).toContain("Authentication middleware was updated");
+  });
+
   test("Scenario A — Successful meaningful run automatically creates an episodic memory and is retrievable", async () => {
     const { service: memService, episodeService } = createMemoryComponents();
     const runStore = new InMemoryRunStore();

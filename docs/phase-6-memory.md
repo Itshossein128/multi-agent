@@ -69,6 +69,14 @@ Existing memory.read/memory.write events carry counts, IDs, timings and outcomes
 
 Expired/superseded records are excluded from active retrieval. Both stores expose bounded expiration cleanup and namespace deletion for scheduled retention and trusted entity-lifecycle hooks. Browser-local entity deletion does not automatically delete backend memory: browser IDs are not deletion authority. Integrations must invoke scoped cleanup from their authenticated lifecycle operation.
 
+## Production episodic-to-procedural learning
+
+Completed production runs persist curated episodic memories first. The run lifecycle then enqueues a bounded procedural-learning job; the job reads only active, authorized episodic records in the run's trusted tenant/namespace and invokes the existing `DefaultProceduralService`. The learner deduplicates evidence by stable source run ID, excludes invalidated, stale, disputed, superseded and expired records, requires the existing minimum evidence and success-consistency policy, and writes the structured `kind: procedural` candidate through `MemoryService`.
+
+The run store persists independent procedural-learning status (`pending`, `processed`, `failed`). Queue shutdown drains accepted jobs; restart recovery retries pending/failed learning, while the episode idempotency key and procedure trigger idempotency prevent duplicate rows. Equivalent procedures are reinforced with bounded metadata evidence accumulation. Learning is supplementary: extraction, retrieval and persistence failures are logged with bounded IDs/counts/reason codes and do not change the originating run result.
+
+Future runs use the unchanged `MemoryService` retrieval path through `RuntimeMemory` and `ContextAssembler`; no procedure is manually injected. This phase does not make consolidation production-wired, redesign conflict suppression, or prove external provider/embedding availability.
+
 ## Verification
 
 Focused suites: memoryStorage, memoryRetrieval, memoryService, memoryRuntime, memoryApi, memoryEmbedding and memoryEndToEnd. They cover relevance fixtures, isolation, budgets, retries, transactions, expiration/superseding, authenticated APIs, checkpoints, failures and RunEvents.
