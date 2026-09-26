@@ -53,6 +53,7 @@ async function main() {
   });
 
   const memory = createMemoryComposition();
+  await memory.recover();
   const studio = createStudioComposition();
   const resolveMemoryAccess = memoryAccessResolverFromEnvironment();
 

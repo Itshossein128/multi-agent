@@ -1,19 +1,20 @@
-import type { MemoryService, RuntimeMemoryDependencies, MemoryBackgroundJobs } from "../../../../src/memory/contracts";
-import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs, DefaultEpisodeService, DefaultProceduralService, type EpisodeService, type ProceduralService } from "../../../../src/memory/application";
+import type { MemoryService, RuntimeMemoryDependencies, MemoryBackgroundJobs, MemoryConsolidationScheduler } from "../../../../src/memory/contracts";
+import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs, DefaultEpisodeService, DefaultProceduralService, RealMemoryConsolidator, BoundedMemoryConsolidationScheduler, type EpisodeService, type ProceduralService } from "../../../../src/memory/application";
 import { PostgresMemoryStore, InMemoryMemoryStore, type PgPool } from "../../../../src/memory/infrastructure";
 import { createPostgresPool, type ManagedPool } from "../infrastructure/postgresPool";
 import { embeddingProviderFromEnvironment } from "./embeddingProvider";
 import { log } from "../logging";
 
 export interface MemoryComposition {
-  service?: MemoryService; runtime?: RuntimeMemoryDependencies; episodeService?: EpisodeService; proceduralService?: ProceduralService; jobs?: MemoryBackgroundJobs;
+  service?: MemoryService; runtime?: RuntimeMemoryDependencies; episodeService?: EpisodeService; proceduralService?: ProceduralService; jobs?: MemoryBackgroundJobs; consolidationScheduler?: MemoryConsolidationScheduler;
+  recover(): Promise<number>;
   close(): Promise<void>;
 }
 /** No migrations at startup; durable storage never silently falls back to a Map. */
 export function createMemoryComposition(): MemoryComposition {
   const connectionString = process.env.MEMORY_DATABASE_URL;
   const mode = process.env.MEMORY_STORE ?? (connectionString ? "postgres" : "disabled");
-  if (mode === "disabled") { log.info("memory.store", { mode: "disabled" }); return { close: async () => {} }; }
+  if (mode === "disabled") { log.info("memory.store", { mode: "disabled" }); return { recover: async () => 0, close: async () => {} }; }
   if (!["postgres", "in-memory"].includes(mode)) throw new Error("Invalid MEMORY_STORE mode.");
   if (mode === "postgres" && !connectionString) throw new Error("MEMORY_DATABASE_URL is required for PostgreSQL memory.");
   if (mode === "in-memory" && process.env.NODE_ENV === "production") throw new Error("Volatile memory storage is not supported in production.");
@@ -27,8 +28,12 @@ export function createMemoryComposition(): MemoryComposition {
   const embeddingConfigured = !!embeddingProvider;
   const ttlDays = Number(process.env.MEMORY_DEFAULT_TTL_DAYS ?? 90);
   if (!Number.isFinite(ttlDays) || ttlDays < 0 || ttlDays > 36500) throw new Error("Invalid MEMORY_DEFAULT_TTL_DAYS.");
-  const service = new DefaultMemoryService(store, { embeddingProvider, defaultTtlMs: ttlDays === 0 ? undefined : ttlDays * 86400000 });
   const jobs = new DefaultMemoryBackgroundJobs({ onError: () => console.warn("Background memory operation failed.") });
+  const consolidator = new RealMemoryConsolidator({ store, embeddingProvider });
+  const consolidationScheduler = new BoundedMemoryConsolidationScheduler(store, consolidator, jobs, {
+    onDiagnostic: (event) => log.info("memory.consolidation", event),
+  });
+  const service = new DefaultMemoryService(store, { embeddingProvider, defaultTtlMs: ttlDays === 0 ? undefined : ttlDays * 86400000, consolidationScheduler });
   const proceduralService = new DefaultProceduralService(service, {
     onDiagnostic: (diagnostic) => log.info("memory.procedural.evidence", {
       namespaceScope: diagnostic.namespace.scope,
@@ -55,5 +60,5 @@ export function createMemoryComposition(): MemoryComposition {
     log.warn("memory.vector.misconfigured", { message: "MEMORY_VECTOR_ENABLED=true but no embedding provider configured; vector retrieval will fail at query time" });
   }
 
-  return { service, runtime, episodeService, proceduralService, jobs, close: async () => { try { await jobs.drain(); } finally { await pool?.end(); } } };
+  return { service, runtime, episodeService, proceduralService, jobs, consolidationScheduler, recover: () => consolidationScheduler.recover(), close: async () => { try { await jobs.drain(); } finally { await pool?.end(); } } };
 }

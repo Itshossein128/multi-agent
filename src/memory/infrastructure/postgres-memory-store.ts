@@ -108,6 +108,10 @@ export class PostgresMemoryStore implements MemoryStore {
     const sql = `${prefix}SELECT * FROM ${prefix ? "candidates" : `studio_memories WHERE ${clauses.join(" AND ")}`} ORDER BY ${order} LIMIT ${bind(limit)} OFFSET ${bind(offset)}`;
     return (await this.query(sql, parameters)).rows.map(decode);
   }
+  async listNamespaces(limit = 1000): Promise<Array<{ tenantId: string; namespace: MemoryNamespace }>> {
+    const result = await this.query(`SELECT DISTINCT tenant_id, namespace_scope, namespace_id FROM studio_memories ORDER BY tenant_id, namespace_scope, namespace_id LIMIT $1`, [limit]);
+    return result.rows.map(row => ({ tenantId: String(row.tenant_id), namespace: { scope: row.namespace_scope, id: String(row.namespace_id) } as MemoryNamespace }));
+  }
   async deleteNamespace(tenantId: string, namespace: MemoryNamespace): Promise<number> {
     validateScope(tenantId, [namespace]);
     return (await this.query("DELETE FROM studio_memories WHERE tenant_id = $1 AND namespace_scope = $2 AND namespace_id = $3", [tenantId, namespace.scope, namespace.id])).rowCount ?? 0;

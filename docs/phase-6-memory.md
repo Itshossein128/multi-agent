@@ -75,7 +75,15 @@ Completed production runs persist curated episodic memories first. The run lifec
 
 The run store persists independent procedural-learning status (`pending`, `processed`, `failed`). Queue shutdown drains accepted jobs; restart recovery retries pending/failed learning, while the episode idempotency key and procedure trigger idempotency prevent duplicate rows. Equivalent procedures are reinforced with bounded metadata evidence accumulation. Learning is supplementary: extraction, retrieval and persistence failures are logged with bounded IDs/counts/reason codes and do not change the originating run result.
 
-Future runs use the unchanged `MemoryService` retrieval path through `RuntimeMemory` and `ContextAssembler`; no procedure is manually injected. This phase does not make consolidation production-wired, redesign conflict suppression, or prove external provider/embedding availability.
+Future runs use the unchanged `MemoryService` retrieval path through `RuntimeMemory` and `ContextAssembler`; no procedure is manually injected. Phase 1 did not make consolidation production-wired, redesign conflict suppression, or prove external provider/embedding availability; the production consolidation maintenance described below is the follow-on wiring.
+
+## Production consolidation maintenance
+
+Durable `MemoryService.remember()` inserts now schedule the existing `RealMemoryConsolidator` through a coalescing bounded maintenance queue after the write transaction commits. The scheduler operates per trusted tenant/namespace scope, preserves the existing semantic/episodic/procedural kind boundaries, and marks scopes dirty when another write arrives while a pass is running. Queue rejection, embedding failure, judge failure, and transaction conflicts leave the newly written record intact and emit bounded diagnostics.
+
+The durable store remains authoritative across restart: server startup enumerates persisted memory scopes and requeues bounded consolidation passes. This is recovery-by-scan rather than a distributed job queue; multiple workers may repeat a pass, but store transactions, version checks, stable canonical links, and active-record filtering make retries converge. Consolidation preserves merge provenance, explicit supersession links, and excludes invalidated, disputed, stale, expired, or already superseded records from canonical consideration. Ordinary retrieval therefore sees active canonical records only.
+
+Consolidation remains separate from retrieval-time stale/disputed conflict suppression and from production evaluation telemetry. External embedding/provider availability is still deployment-dependent; lexical discovery remains available when embeddings fail.
 
 ## Verification
 

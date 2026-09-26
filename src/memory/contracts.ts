@@ -37,6 +37,8 @@ export interface MemoryStore {
   delete(tenantId: string, id: string): Promise<void>;
   get(tenantId: string, id: string): Promise<Memory | null>;
   search(query: MemoryStoreQuery): Promise<Memory[]>;
+  /** Optional internal maintenance discovery; never exposed to untrusted callers. */
+  listNamespaces?(limit?: number): Promise<Array<{ tenantId: string; namespace: MemoryNamespace }>>;
 }
 export interface EmbeddingProvider {
   readonly metadata: MemoryEmbeddingMetadata;
@@ -53,6 +55,10 @@ export interface MemoryService {
   update(id: string, patch: UpdateMemoryInput, access: MemoryAccessContext): Promise<Memory>;
   forget(id: string, access: MemoryAccessContext): Promise<void>;
   list(query: MemoryListQuery, access: MemoryAccessContext): Promise<Memory[]>;
+}
+export interface MemoryConsolidationScheduler {
+  schedule(access: MemoryAccessContext, namespace: MemoryNamespace): boolean;
+  recover(): Promise<number>;
 }
 export interface MemoryRetriever { retrieve(query: MemoryRetrievalQuery, access: MemoryAccessContext): Promise<MemoryRetrievalResult> }
 export interface MemoryCandidate extends RememberMemoryInput { explicit?: boolean; id?: string }

@@ -5,6 +5,7 @@ import { normalizeContent, contentHash, isLive, sameNamespace, namespaceKey, pub
 import { embedSafely, sameEmbedding, validVector } from "./embedding";
 import { DeterministicMemoryConsolidationJudge } from "./memoryConsolidationJudge";
 import { resolveConsolidationConfig } from "./memoryConsolidationConfig";
+import { RELIABILITY_KEYS } from "./memoryReliability";
 
 export interface ConsolidationEngineOptions {
   store: MemoryStore;
@@ -17,6 +18,16 @@ export interface ConsolidationEngineOptions {
 
 function createDefaultDiagnostics(): ConsolidationDiagnostics {
   return { candidatesEvaluated: 0, exactDuplicates: 0, semanticCandidates: 0, merged: 0, superseded: 0, ignored: 0, keptSeparate: 0, judgeFailures: 0, latencyMs: 0 };
+}
+
+function consolidatable(memory: Memory, now: number): boolean {
+  if (!isLive(memory, now)) return false;
+  const verification = memory.metadata?.[RELIABILITY_KEYS.verificationStatus];
+  return verification !== "invalidated" && verification !== "disputed" && verification !== "stale";
+}
+
+function provenance(memory: Memory): Record<string, unknown> {
+  return { memoryId: memory.id, source: memory.source, createdAt: memory.createdAt, updatedAt: memory.updatedAt };
 }
 
 /** Core consolidation engine: discovers candidates, makes decisions, persists results. */
@@ -45,11 +56,15 @@ export class ConsolidationEngine {
       includeExpired: false,
       limit: this.config.candidateSearchLimit,
     };
-    const lexicalResults = await this.store.search({
+    // Search bounded significant terms independently. Passing the entire new
+    // sentence as one substring misses paraphrases in lexical-only stores.
+    const terms = [...new Set(normalizeContent(incoming.content).split(/\s+/).filter(term => term.length > 2))].slice(0, 8);
+    const lexicalPools = await Promise.all((terms.length ? terms : [incoming.content.slice(0, 200)]).map(text => this.store.search({
       ...baseQuery,
-      text: incoming.content.slice(0, 200),
+      text,
       limit: Math.min(this.config.candidateSearchLimit, 20),
-    });
+    })));
+    const lexicalResults = lexicalPools.flat();
     let semanticResults: Memory[] = [];
     if (this.embeddingProvider) {
       try {
@@ -67,7 +82,7 @@ export class ConsolidationEngine {
     const seen = new Set<string>();
     const candidates: Memory[] = [];
     for (const memory of [...lexicalResults, ...semanticResults]) {
-      if (!seen.has(memory.id) && isLive(memory, this.now()) && memory.id !== excludeId) {
+      if (!seen.has(memory.id) && consolidatable(memory, this.now()) && memory.id !== excludeId) {
         seen.add(memory.id);
         candidates.push(memory);
       }
@@ -100,7 +115,7 @@ export class ConsolidationEngine {
           try {
             await this.store.transaction(namespaceKey(access.tenantId, incoming.namespace), async store => {
               const current = await store.get(access.tenantId, incoming.id!);
-              if (current && isLive(current, this.now())) {
+      if (current && consolidatable(current, this.now())) {
                 const now = new Date(this.now()).toISOString();
                 await store.update({
                   ...current,
@@ -149,7 +164,7 @@ export class ConsolidationEngine {
         contentHash: contentHash(mergedCandidate.content),
         importance: Math.max(canonical.importance, mergedCandidate.importance ?? 0.5),
         confidence: mergedCandidate.confidence ?? canonical.confidence,
-        metadata: {
+          metadata: {
           ...canonical.metadata,
           ...mergedCandidate.metadata,
           mergedFromMemoryIds: [
@@ -161,8 +176,14 @@ export class ConsolidationEngine {
               ...(incoming.id && incoming.id !== canonicalId ? [incoming.id] : []),
             ]),
           ],
-          consolidationTimestamp: now,
-        },
+            consolidationTimestamp: now,
+            consolidationDecision: "merge",
+            consolidationProvenance: [
+              ...((canonical.metadata?.consolidationProvenance as unknown[]) ?? []),
+              provenance(canonical),
+              provenance(incoming as Memory),
+            ].slice(-100),
+          },
         version: canonical.version + 1,
         updatedAt: now,
       };
@@ -177,11 +198,12 @@ export class ConsolidationEngine {
       for (const supersedeId of toSupersede) {
         try {
           const related = await store.get(access.tenantId, supersedeId);
-          if (related && isLive(related, this.now()) && sameNamespace(related.namespace, incoming.namespace) && related.kind === incoming.kind && related.id !== canonicalId) {
+          if (related && consolidatable(related, this.now()) && sameNamespace(related.namespace, incoming.namespace) && related.kind === incoming.kind && related.id !== canonicalId) {
             await store.update({
               ...related,
               status: "superseded",
               supersededByMemoryId: canonicalId,
+              metadata: { ...related.metadata, consolidationDecision: "merged_into", canonicalMemoryId: canonicalId },
               version: related.version + 1,
               updatedAt: now,
             }, related.version);
@@ -198,11 +220,12 @@ export class ConsolidationEngine {
       for (const relatedId of decision.relatedMemoryIds) {
         try {
           const existing = await store.get(access.tenantId, relatedId);
-          if (existing && isLive(existing, this.now()) && sameNamespace(existing.namespace, incoming.namespace) && existing.kind === incoming.kind) {
+          if (existing && consolidatable(existing, this.now()) && sameNamespace(existing.namespace, incoming.namespace) && existing.kind === incoming.kind) {
             await store.update({
               ...existing,
               status: "superseded",
-              supersededByMemoryId: incoming.supersedesMemoryId ?? "pending",
+              supersededByMemoryId: incoming.id ?? incoming.supersedesMemoryId,
+              metadata: { ...existing.metadata, consolidationDecision: "superseded", consolidationProvenance: [...((existing.metadata?.consolidationProvenance as unknown[]) ?? []), provenance(existing)].slice(-100) },
               version: existing.version + 1,
               updatedAt: now,
             }, existing.version);
@@ -228,7 +251,7 @@ export class ConsolidationEngine {
     let totalMerged = 0;
     const processedIds = new Set<string>();
     for (const memory of activeMemories) {
-      if (!isLive(memory, this.now()) || processedIds.has(memory.id)) continue;
+      if (!consolidatable(memory, this.now()) || processedIds.has(memory.id)) continue;
       const incoming: MemoryCandidate = {
         namespace: memory.namespace,
         kind: memory.kind,
@@ -240,7 +263,11 @@ export class ConsolidationEngine {
         structuredData: memory.structuredData,
         metadata: memory.metadata,
         id: memory.id,
-      };
+        procedure: memory.procedure,
+        trigger: memory.trigger,
+        supersedesMemoryId: memory.supersedesMemoryId,
+        embedding: memory.embedding,
+      } as MemoryCandidate & { embedding?: number[] };
       const result = await this.consolidateMemory(incoming, access, diagnostics, memory.id);
       totalMerged += result.merged;
       processedIds.add(memory.id);
