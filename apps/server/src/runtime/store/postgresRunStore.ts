@@ -53,6 +53,7 @@ export class PostgresRunStore implements RunStoreContract {
         completedAt: row.completed_at ? asIso(row.completed_at) : undefined,
         input: row.input ?? undefined,
         output: row.output ?? undefined,
+        result: (row.result as import("@multi-agent/types").NodeResultEnvelope | null) ?? undefined,
         error: row.error ?? undefined,
         currentNodeId: row.current_node_id ?? undefined,
         metadata: (row.metadata ?? {}) as Record<string, unknown>,
@@ -112,13 +113,13 @@ export class PostgresRunStore implements RunStoreContract {
     this.enqueue(async () => {
       await this.pool.query(
         `INSERT INTO studio_runs (
-           id, workflow_id, task_id, status, started_at, completed_at, input, output, error, current_node_id, metadata,
+           id, workflow_id, task_id, status, started_at, completed_at, input, output, result, error, current_node_id, metadata,
            memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, tools_snapshot, updated_at,
            owner_id, tenant_id
-         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9,$10,$11::jsonb,$12,$13,$14::jsonb,$15::jsonb,$16::jsonb,now(),$17,$18)
+         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12::jsonb,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,now(),$18,$19)
          ON CONFLICT (id) DO UPDATE SET
            status = EXCLUDED.status, completed_at = EXCLUDED.completed_at, input = EXCLUDED.input, output = EXCLUDED.output,
-           error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata,
+           result = EXCLUDED.result, error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata,
            tools_snapshot = EXCLUDED.tools_snapshot, updated_at = now()`,
         [
           run.id,
@@ -129,6 +130,7 @@ export class PostgresRunStore implements RunStoreContract {
           run.completedAt ?? null,
           run.input ? JSON.stringify(run.input) : null,
           run.output ? JSON.stringify(run.output) : null,
+          run.result ? JSON.stringify(run.result) : null,
           run.error ?? null,
           run.currentNodeId ?? null,
           JSON.stringify(run.metadata ?? {}),
@@ -177,7 +179,7 @@ export class PostgresRunStore implements RunStoreContract {
       this.enqueue(async () => {
         await this.pool.query(
           `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
-             error = $6, current_node_id = $7, metadata = $8::jsonb, updated_at = now()
+             result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb, updated_at = now()
            WHERE id = $1`,
           [
             runId,
@@ -185,6 +187,7 @@ export class PostgresRunStore implements RunStoreContract {
             run.completedAt ?? null,
             run.input ? JSON.stringify(run.input) : null,
             run.output ? JSON.stringify(run.output) : null,
+            run.result ? JSON.stringify(run.result) : null,
             run.error ?? null,
             run.currentNodeId ?? null,
             JSON.stringify(run.metadata ?? {}),

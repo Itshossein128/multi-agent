@@ -3,7 +3,7 @@ import { validateAgent, type AgentBackend, type AgentRecord } from "@multi-agent
 /** Suggested identifiers; providers remain extensible in the domain model. */
 export const BACKEND_PROVIDERS = {
   api: ["openai", "anthropic", "google", "gemini"],
-  cli: ["codex", "claude-code", "agy"],
+  cli: ["codex", "claude-code", "agy", "cursor"],
   local: ["ollama", "lmstudio"],
 } satisfies Record<AgentBackend["type"], string[]>;
 

@@ -20,8 +20,8 @@ export class McpToolExecutor implements ToolExecutor {
     if (!endpoint) throw new Error(`MCP server "${alias}" has no server-configured endpoint.`);
     const url = safeEndpoint(endpoint);
     if (!credentialPrincipal || !runId) throw new Error("MCP tool requires an authenticated run context.");
-    const lease = await this.gateway.issue({ provider: "mcp", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId });
-    const token = await this.gateway.consume(lease, { provider: "mcp", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId });
+    const lease = await this.gateway.issue({ provider: "mcp", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId, toolId: tool.id, purpose: "mcp" });
+    const token = await this.gateway.consume(lease, { provider: "mcp", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId, toolId: tool.id, purpose: "mcp" });
     const headers = { Accept: "application/json, text/event-stream", "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
     const initialized = await rpc(this.fetchImpl, url, headers, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "multi-agent-platform", version: "1.0" } }, signal);
     const sessionId = initialized.sessionId;

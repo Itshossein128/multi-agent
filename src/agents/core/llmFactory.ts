@@ -24,14 +24,19 @@ export interface LLMProvider {
   createModel(): BaseChatModel;
 }
 
+/** Optional per-invocation credential supplied by the broker lease path. */
+export interface ModelCredentialOptions {
+  apiKey?: string;
+}
+
 export class GoogleProvider implements LLMProvider {
-  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}) { }
+  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}, private readonly credential?: string) { }
 
   createModel(): BaseChatModel {
     const modelName = this.modelOverride || process.env.LLM_MODEL || 'gemini-3.6-flash';
     return new ChatGoogleGenerativeAI({
       model: modelName,
-      apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'mock-key',
+      apiKey: this.credential || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'mock-key',
       temperature: this.settings.temperature,
       topP: this.settings.topP,
       maxOutputTokens: this.settings.maxTokens,
@@ -40,13 +45,13 @@ export class GoogleProvider implements LLMProvider {
 }
 
 export class AnthropicProvider implements LLMProvider {
-  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}) { }
+  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}, private readonly credential?: string) { }
 
   createModel(): BaseChatModel {
     const modelName = this.modelOverride || process.env.LLM_MODEL || 'claude-3-5-sonnet-20241022';
     return new ChatAnthropic({
       modelName,
-      apiKey: process.env.ANTHROPIC_API_KEY || 'mock-key',
+      apiKey: this.credential || process.env.ANTHROPIC_API_KEY || 'mock-key',
       temperature: this.settings.temperature,
       topP: this.settings.topP,
       maxTokens: this.settings.maxTokens ?? 4096,
@@ -55,13 +60,13 @@ export class AnthropicProvider implements LLMProvider {
 }
 
 export class OpenAIProvider implements LLMProvider {
-  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}) { }
+  constructor(private readonly modelOverride?: string, private readonly settings: AgentModelSettings = {}, private readonly credential?: string) { }
 
   createModel(): BaseChatModel {
     const modelName = this.modelOverride || process.env.LLM_MODEL || 'gpt-4o';
     return new ChatOpenAI({
       modelName,
-      openAIApiKey: process.env.OPENAI_API_KEY || 'mock-key',
+      openAIApiKey: this.credential || process.env.OPENAI_API_KEY || 'mock-key',
       temperature: this.settings.temperature,
       topP: this.settings.topP,
       maxTokens: this.settings.maxTokens,
@@ -70,7 +75,7 @@ export class OpenAIProvider implements LLMProvider {
 }
 
 export class LLMFactory {
-  private providers: Map<string, new (model?: string, settings?: AgentModelSettings) => LLMProvider> = new Map();
+  private providers: Map<string, new (model?: string, settings?: AgentModelSettings, credential?: string) => LLMProvider> = new Map();
 
   constructor() {
     this.register('gemini', GoogleProvider);
@@ -79,14 +84,20 @@ export class LLMFactory {
     this.register('openai', OpenAIProvider);
   }
 
-  register(name: string, provider: new (model?: string, settings?: AgentModelSettings) => LLMProvider) {
+  register(name: string, provider: new (model?: string, settings?: AgentModelSettings, credential?: string) => LLMProvider) {
     this.providers.set(name.toLowerCase(), provider);
   }
 
-  getModel(providerName: string, options?: { model?: string; settings?: AgentModelSettings }): BaseChatModel {
+  /**
+   * Build a chat model. `options.apiKey` is a short-lived leased credential
+   * from the broker; when absent, providers fall back to server environment.
+   * The key is held only by the model instance for this invocation and is
+   * never logged, persisted, or placed in agent/tool records.
+   */
+  getModel(providerName: string, options?: { model?: string; settings?: AgentModelSettings; apiKey?: string }): BaseChatModel {
     const Provider = this.providers.get(providerName.toLowerCase());
     if (Provider) {
-      return new Provider(options?.model, options?.settings).createModel();
+      return new Provider(options?.model, options?.settings, options?.apiKey).createModel();
     }
     throw new Error(`Unsupported API provider: ${providerName}`);
   }

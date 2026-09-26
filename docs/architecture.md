@@ -11,6 +11,7 @@ Next server-side BFF (/api/execution)
         ▼
 Hono Execution Server
         │ authenticate → authorize → validate → compile
+        │ issue/consume lease ─────▶ Credential Broker خارجی (fail-closed در production)
         ▼
 LangGraph StateGraph
         │
@@ -27,6 +28,7 @@ LangGraph StateGraph
 - Execution Server assertion را verify می‌کند و ownership/tenant را در Store و APIها اعمال می‌کند. نبودن یا نامعتبر بودن assertion باید fail-closed باشد.
 - Workflow validation و انتخاب agent/tool در سرور انجام می‌شود. داده‌ی client فقط پیشنهاد یا درخواست است.
 - credentialهای provider در AgentRecord، WorkflowDefinition، ToolRecord، run input، event و `WorkerSpec.env` ذخیره نمی‌شوند.
+- در production هیچ long-lived secretی از process environment برای providerها و ابزارها استفاده نمی‌شود؛ execution server فقط lease تک‌مصرف و کوتاه‌عمر از credential broker خارجی می‌گیرد و نبود آن fail-closed است.
 
 ## اجرای agent
 
@@ -70,11 +72,15 @@ container: codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-s
 
 Whole-run و conditional branch-level cancellation وجود دارد؛ branch cancel از API و scheduler عبور می‌کند و فقط downstream همان branch را cooperative skip می‌کند. loopهای عمومی همچنان محدود به guardrail هستند؛ برای محدودیت‌های دیگر به [implementation-gaps.md](implementation-gaps.md) رجوع کنید.
 
+قراردادهای typed و نتیجه‌ی اجرا در `packages/types/src/nodeContract.ts` و `schemaValidation.ts` تعریف شده‌اند. قرارداد هر node می‌تواند schema ورودی/خروجی، نسخه، سقف payload و ثبت evidence داشته باشد. سرور schema را قبل و بعد از boundary اجرا enforce می‌کند؛ validator علاوه بر انواع پایه، pattern، formatهای محدود، compositionهای منطقی و local `$ref` را نیز واقعاً بررسی می‌کند و keywordهای ناشناخته را fail-closed رد می‌کند. failureهای validation، policy، blocked، needs-human و unknown با `NodeResultEnvelope` از هم جدا می‌شوند. شرط‌ها با resolver مشترک و fail-closed route می‌شوند و مقدار unresolved فقط به `unknownRoute` صریح می‌رود یا با `BRANCH_ROUTING_UNKNOWN` متوقف می‌شود؛ fallback ضمنی به اولین branch وجود ندارد. نتیجه‌ی `needs_human` از agent با proposal bounded در paused context ذخیره می‌شود و پس از approval بدون تکرار provider call ادامه می‌یابد.
+
 ## Persistence و memory
 
 - PostgreSQL ایزوله منبع durable برای Studio entities، taskها، runها، eventها، approvalها و long-term memory است.
 - migrationها صریح و خارج از startup اجرا می‌شوند.
-- checkpoint و paused context برای recovery approval استفاده می‌شوند؛ workerهای فعال، SSE listenerها و timerها process-local هستند.
+- checkpoint و paused context برای recovery approval استفاده می‌شوند؛ state channelهای جدید default امن دارند و proposalهای `needs_human` نیز در paused context نسخه‌پذیر ذخیره می‌شوند. workerهای فعال، SSE listenerها و timerها process-local هستند.
+- runهای queued از snapshotهای durable به scheduler bounded تحویل داده می‌شوند و پس از restart قابل requeue هستند؛ `GET /runs/:runId/replay` timeline persisted را بدون اجرای مجدد workflow بازسازی می‌کند.
+- notification outbox، plugin registry و evaluation runner در `src/notifications`، `src/plugins` و `src/evaluation` قراردادهای عمومی و قابل جایگزینی هستند؛ sinkهای production و pluginهای واقعی باید با allowlist سرور ثبت شوند.
 - short-term memory داخل state/checkpoint همان run است؛ long-term memory از `MemoryService` و namespace/tenant authorization عبور می‌کند.
 - Redis در معماری فعلی استفاده نمی‌شود.
 
@@ -82,9 +88,15 @@ Whole-run و conditional branch-level cancellation وجود دارد؛ branch ca
 
 ## Tools و approval
 
-Tool entity در registry مستقل است و workflow node یا agent فقط به `toolId` ارجاع می‌دهد. function و configured HTTP قابل اجرا هستند؛ database، search و MCP نیز فقط با aliasهای server-owned و credential gateway کوتاه‌عمر اجرا می‌شوند. file، CLI و custom همچنان fail-closed هستند.
+Tool entity در registry مستقل است و workflow node یا agent فقط به `toolId` ارجاع می‌دهد. function و configured HTTP قابل اجرا هستند؛ database، search و MCP نیز فقط با aliasهای server-owned و lease کوتاه‌عمر credential broker اجرا می‌شوند. file، CLI و custom همچنان fail-closed هستند.
 
 Human approval با LangGraph `interrupt`/resume انجام می‌شود و branchهای آن فقط `approved` و `rejected` هستند. در حالت PostgreSQL، رکورد approval و paused context durable است؛ execution فعال و timer پس از restart نیازمند recovery است.
+
+Legacy workflowهایی که contract ندارند همچنان معتبرند. contractهای malformed یا دارای field/keyword غیرقابل‌پشتیبانی باید با کد پایدار رد شوند و هنگام deserialize نباید silent normalize شوند. payloadهای قدیمی که صرفاً یک field تجاری `status: "success"` دارند نیز envelope اجرا فرض نمی‌شوند؛ envelope موفق باید marker ساختاری داشته باشد.
+
+## Credential Broker
+
+مرز credential در `src/security/credentialGateway.ts` است: در production فقط `HttpCredentialGateway` فعال می‌شود و lease تک‌مصرف، کوتاه‌عمر و محدود به tenant/principal/run را از سرویس مستقل broker (`src/broker/`) می‌گیرد. سرویس broker policy پیش‌فرض deny (عضویت run، agent→provider، alias ابزار، quota/budget)، rate limit، consume اتمیک از PostgreSQL، revoke idempotent و audit به‌صورت hash chain با trigger append-only دارد و secret را فقط از Vault KV v2 (یا in-memory در development) می‌خواند. ابزارهای database/search/MCP، کلیدهای agentهای API و credential مربوط به worker از همین مسیر عبور می‌کنند و secret وارد AgentRecord، ToolRecord، event، log یا image نمی‌شود. سرویس standalone بدون directory پیش‌فرض deny-all است و deployment فهرست هویت خود را وصل می‌کند. جزئیات و شرط‌های deployment در [deferred-credential-gateway.md](deferred-credential-gateway.md) است.
 
 ## Observability
 
@@ -98,6 +110,8 @@ apps/server/              Hono API، composition، compiler، RunExecutor و sto
 packages/types/            قراردادهای مشترک domain و event
 src/agents/runtime/        AgentRuntime، executors و WorkerRuntime
 src/tools/                ToolRuntime و executorهای ابزار
+src/security/             credential gateway client و resolver کلید provider
+src/broker/               Credential Broker مستقل (contract، policy، storeها، audit، HTTP)
 src/memory/                قراردادها، application و PostgreSQL/in-memory adapters
 src/observability/         telemetry و redaction
 infrastructure/            PostgreSQL migrations و Docker worker image

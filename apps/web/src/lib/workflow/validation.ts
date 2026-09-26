@@ -17,11 +17,14 @@ import {
   ToolRecord,
   WorkflowDefinition,
   agentHasConfiguredModel,
+  validateRawNodeContract,
 } from "./types";
 import { validateAgent } from "@multi-agent/types";
 
 export interface WorkflowIssue {
   id: string;
+  /** Stable machine-readable reason; the server enforces the same codes. */
+  code?: string;
   severity: "error" | "warning" | "info";
   message: string;
   nodeId?: string;
@@ -29,12 +32,13 @@ export interface WorkflowIssue {
 }
 
 interface IssueBuilder {
-  (message: string, target?: { nodeId?: string; edgeId?: string }): WorkflowIssue;
+  (message: string, target?: { nodeId?: string; edgeId?: string }, code?: string): WorkflowIssue;
 }
 
 function issueFactory(severity: WorkflowIssue["severity"], counter: { n: number }): IssueBuilder {
-  return (message, target) => ({
+  return (message, target, code) => ({
     id: `issue-${severity}-${counter.n++}`,
+    code,
     severity,
     message,
     nodeId: target?.nodeId,
@@ -165,6 +169,17 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
 
   // -- Node configuration ---------------------------------------------------
   for (const node of def.nodes) {
+    // Node contracts are validated with the same stable codes the server
+    // enforces on save — this assists authoring but never replaces the server.
+    for (const contractIssue of validateRawNodeContract(node.contract)) {
+      issues.push(
+        error(
+          contractIssue.field ? `${contractIssue.message} (${contractIssue.field})` : contractIssue.message,
+          { nodeId: node.id },
+          contractIssue.code,
+        )
+      );
+    }
     switch (node.type) {
       case "agent": {
         const config = node.config as AgentNodeConfig;
@@ -225,9 +240,35 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
         if (config.branches.length < 2) {
           issues.push(warning("Condition node defines fewer than two branches", { nodeId: node.id }));
         }
+        if (config.valueSource !== undefined && !["input", "last_value"].includes(String(config.valueSource))) {
+          issues.push(error("Condition branch source must be input or last_value", { nodeId: node.id }, "INVALID_CONDITION_SOURCE"));
+        }
+        if (config.valueField !== undefined && (typeof config.valueField !== "string" || !config.valueField.trim() || config.valueField.length > 100)) {
+          issues.push(error("Condition result field must be a non-empty field name of at most 100 characters", { nodeId: node.id }, "INVALID_CONDITION_FIELD"));
+        }
         const keys = new Set(config.branches.map((b) => b.key));
         if (keys.size !== config.branches.length) {
-          issues.push(error("Condition node has duplicate branch keys", { nodeId: node.id }));
+          issues.push(error("Condition node has duplicate branch keys", { nodeId: node.id }, "DUPLICATE_BRANCH_KEY"));
+        }
+        const lowered = new Map<string, string[]>();
+        for (const branch of config.branches) {
+          if (!branch.key.trim()) continue;
+          const lower = branch.key.trim().toLowerCase();
+          lowered.set(lower, [...(lowered.get(lower) ?? []), branch.key]);
+        }
+        for (const duplicates of lowered.values()) {
+          if (duplicates.length > 1) {
+            issues.push(error(`Branch keys ${duplicates.map((key) => `"${key}"`).join(", ")} collide case-insensitively`, { nodeId: node.id }, "AMBIGUOUS_BRANCH_KEY"));
+          }
+        }
+        for (const [field, code, label] of [["unknownRoute", "INVALID_UNKNOWN_ROUTE", "Unknown"], ["errorRoute", "INVALID_ERROR_ROUTE", "Error"]] as const) {
+          const route = config[field];
+          if (route === undefined || route === null) continue;
+          if (typeof route !== "string" || !route.trim() || !keys.has(route)) {
+            issues.push(error(`${label} route must name one of the declared branches`, { nodeId: node.id }, code));
+          } else if (!outgoing.some((e) => e.kind === "conditional" && e.branchKey === route)) {
+            issues.push(error(`${label} route must have an outgoing conditional edge`, { nodeId: node.id }, code));
+          }
         }
         for (const branch of config.branches) {
           if (!branch.key.trim()) {

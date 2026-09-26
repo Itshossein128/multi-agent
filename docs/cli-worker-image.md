@@ -1,12 +1,15 @@
 # Immutable CLI worker image
 
-The hardened container runtime uses a dedicated Linux/amd64 image containing only Node.js, Git, Bash, CA certificates, Codex CLI, Claude Code, and their runtime libraries. It contains no credentials, login state, SSH keys, or user configuration. SSH is intentionally absent; add it only if an approved deployment requires Git-over-SSH rather than HTTPS. The Dockerfile rejects any target other than `linux/amd64`; the pinned native CLI packages do not support another architecture in this image.
+The hardened container runtime uses a dedicated Linux/amd64 image containing only Node.js, Git, Bash, CA certificates, Codex CLI, Claude Code, the Cursor Agent CLI, and their runtime libraries. It contains no credentials, login state, SSH keys, or user configuration. SSH is intentionally absent; add it only if an approved deployment requires Git-over-SSH rather than HTTPS. The Dockerfile rejects any target other than `linux/amd64`; the pinned native CLI packages do not support another architecture in this image.
 
 Pinned components:
 
 - Node.js `22.23.2` on Debian Bookworm slim, base manifest `sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5`
 - `@openai/codex` `0.154.0`
 - `@anthropic-ai/claude-code` `2.1.270`
+- Cursor Agent CLI `2026.09.18-9a7762b` (`/opt/cursor-agent`, symlinked as `/usr/local/bin/agent`)
+
+The Cursor Agent CLI tarball is the exact versioned artifact the official installer downloads, locked with a recorded SHA-256 digest that BuildKit verifies on every build. Cursor does not publish checksums; after bumping the version, record the new artifact's digest in `infrastructure/docker/worker.Dockerfile` at the same time. The CLI attempts runtime auto-updates, but the read-only root filesystem and the non-writable install location (`/opt/cursor-agent`) prevent image mutation, so the pinned artifact remains the effective version. The package ships its own Node runtime and writes only to the per-run `XDG_CACHE_HOME` tmpfs.
 
 Claude self-updates and npm update notifications are disabled. Codex is installed into the immutable global Node prefix and cannot update the read-only root filesystem at runtime.
 
@@ -19,7 +22,7 @@ docker build --pull --platform linux/amd64 --build-arg HTTP_PROXY --build-arg HT
 pnpm worker:image:smoke -- multi-agent-cli-worker:local
 ```
 
-The smoke test runs the same isolation arguments produced by `buildContainerArgs`. It verifies both CLI entry points, non-root execution, writable temporary home/config/cache paths, read-only root and workspace behavior, optional writable workspace behavior, no external network interface, and `--rm` cleanup.
+The smoke test runs the same isolation arguments produced by `buildContainerArgs`. It verifies all three CLI entry points (`codex`, `claude`, `agent`), non-root execution, writable temporary home/config/cache paths, read-only root and workspace behavior, optional writable workspace behavior, no external network interface, and `--rm` cleanup.
 
 The proxy arguments are Docker predefined build arguments. They forward values only when corresponding variables exist in the invoking environment and are not persisted in the image configuration or history. The checksum-pinned CLI archives are fetched by BuildKit and installed offline inside the image.
 
@@ -45,7 +48,7 @@ configure that complete value:
 
 ```dotenv
 CLI_AGENT_ENABLED=true
-CLI_AGENT_ALLOWED_EXECUTABLES=codex,claude
+CLI_AGENT_ALLOWED_EXECUTABLES=codex,claude,agent
 CLI_AGENT_WORKSPACE_ROOTS=/absolute/host/path/to/allowed/workspaces
 CLI_WORKER_MODE=container
 CLI_WORKER_IMAGE=registry.example/multi-agent-cli-worker@sha256:<64-hex-manifest-digest>

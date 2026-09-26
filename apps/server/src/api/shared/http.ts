@@ -12,6 +12,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: ContentfulStatusCode,
     message: string,
+    /** Optional structured details (e.g. validation issues) for API clients. */
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -30,7 +32,9 @@ export function requirePrincipal(
 }
 
 export function respondWithApiError(error: unknown, context: Context) {
-  if (error instanceof ApiError) return context.json({ error: error.message }, error.status);
+  if (error instanceof ApiError) {
+    return context.json(error.details !== undefined ? { error: error.message, details: error.details } : { error: error.message }, error.status);
+  }
   return context.json({ error: error instanceof Error ? error.message : String(error) }, 400);
 }
 

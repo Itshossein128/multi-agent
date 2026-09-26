@@ -35,6 +35,15 @@ export type ToolImpact = "read-only" | "write" | "external" | "high-impact";
 
 export const TOOL_IMPACTS: ToolImpact[] = ["read-only", "write", "external", "high-impact"];
 
+export interface ToolExecutionPolicy {
+  /** Side-effecting execution must be explicitly enabled/approved by the server. */
+  requiresApproval: boolean;
+  /** Required keys make retries/replays return the first result instead of executing twice. */
+  idempotency: "required" | "optional" | "none";
+  /** Whether the runtime may retry this tool after a transport failure. */
+  retryable: boolean;
+}
+
 export interface ToolRecord {
   id: string;
   name: string;
@@ -45,6 +54,7 @@ export interface ToolRecord {
   configuration: Record<string, string | number | boolean>;
   enabled: boolean;
   impact: ToolImpact;
+  executionPolicy?: ToolExecutionPolicy;
   metadata: Record<string, string | number | boolean>;
   createdAt: string;
   updatedAt: string;
@@ -69,6 +79,7 @@ export function createToolRecord(input?: {
     configuration: {},
     enabled: true,
     impact: "read-only",
+    executionPolicy: { requiresApproval: false, idempotency: "optional", retryable: true },
     metadata: {},
     createdAt: stamp,
     updatedAt: stamp,
@@ -85,6 +96,7 @@ interface LegacyToolRecord {
   configuration?: unknown;
   enabled?: boolean;
   impact?: string;
+  executionPolicy?: unknown;
   metadata?: unknown;
   createdAt?: string;
   updatedAt?: string;
@@ -108,6 +120,9 @@ function asConfiguration(value: unknown): Record<string, string | number | boole
 export function migrateToolRecord(raw: unknown): ToolRecord {
   const record = (raw ?? {}) as LegacyToolRecord;
   const stamp = nowIso();
+  const impact = TOOL_IMPACTS.includes(record.impact as ToolImpact) ? (record.impact as ToolImpact) : "read-only";
+  const policy = record.executionPolicy && typeof record.executionPolicy === "object" && !Array.isArray(record.executionPolicy)
+    ? record.executionPolicy as Record<string, unknown> : undefined;
   return {
     id: typeof record.id === "string" && record.id ? record.id : uid("tool"),
     name: typeof record.name === "string" && record.name.trim() ? record.name : "New Tool",
@@ -117,7 +132,12 @@ export function migrateToolRecord(raw: unknown): ToolRecord {
     outputSchema: asJsonObject(record.outputSchema),
     configuration: asConfiguration(record.configuration),
     enabled: record.enabled !== false,
-    impact: TOOL_IMPACTS.includes(record.impact as ToolImpact) ? (record.impact as ToolImpact) : "read-only",
+    impact,
+    executionPolicy: {
+      requiresApproval: typeof policy?.requiresApproval === "boolean" ? policy.requiresApproval : impact !== "read-only",
+      idempotency: policy?.idempotency === "required" || policy?.idempotency === "none" ? policy.idempotency : impact === "read-only" ? "optional" : "required",
+      retryable: typeof policy?.retryable === "boolean" ? policy.retryable : impact === "read-only",
+    },
     metadata: asConfiguration(record.metadata),
     createdAt: typeof record.createdAt === "string" ? record.createdAt : stamp,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : stamp,
@@ -129,6 +149,7 @@ export function validateTool(tool: ToolRecord): string[] {
   if (typeof tool?.name !== "string" || !tool.name.trim()) errors.push("Tool name is required.");
   if (!TOOL_CATEGORIES.includes(tool?.category)) errors.push("A valid tool category is required.");
   if (!TOOL_IMPACTS.includes(tool?.impact)) errors.push("A valid tool impact/permission level is required.");
+  if (tool.executionPolicy !== undefined && (!tool.executionPolicy || typeof tool.executionPolicy !== "object" || !["required", "optional", "none"].includes(tool.executionPolicy.idempotency) || typeof tool.executionPolicy.requiresApproval !== "boolean" || typeof tool.executionPolicy.retryable !== "boolean")) errors.push("Tool executionPolicy must declare approval, idempotency, and retry behavior.");
   if (tool.enabled !== undefined && typeof tool.enabled !== "boolean") errors.push("Enabled must be a boolean.");
   if (typeof tool.description !== "string") errors.push("Description must be a string.");
   if (!tool.inputSchema || typeof tool.inputSchema !== "object" || Array.isArray(tool.inputSchema)) errors.push("Input schema must be a JSON object.");

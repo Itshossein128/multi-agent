@@ -8,7 +8,11 @@
 export * from "./memory";
 export * from "./toolConfiguration";
 export * from "./approval";
+export * from "./schemaValidation";
+export * from "./nodeContract";
+export * from "./branching";
 import type { ToolRecord } from "./toolConfiguration";
+import type { NodeContract, NodeResultEnvelope } from "./nodeContract";
 
 export type WorkflowNodeType =
   | "agent"
@@ -37,7 +41,7 @@ export type AgentBackend =
   }
   | {
     type: "cli";
-    provider: "codex" | "claude-code" | "agy" | (string & {});
+    provider: "codex" | "claude-code" | "agy" | "cursor" | (string & {});
     model?: string;
     executable?: string;
     args?: string[];
@@ -223,6 +227,8 @@ export interface MemoryNodeConfig {
   memoryType: "short_term" | "long_term" | "shared";
   mode: "read" | "write" | "read_write";
   key: string;
+  /** Optional source for writes that need a complete run handoff. */
+  writeSource?: "last_value" | "node_results" | "handoffs" | "run_report";
 }
 
 export interface ConditionBranch {
@@ -236,6 +242,15 @@ export interface ConditionNodeConfig {
   valueSource?: "input" | "last_value";
   /** Optional field to read from the selected value, e.g. `status`. */
   valueField?: string;
+  /**
+   * Explicitly declared branch that receives unroutable values (missing,
+   * malformed, undeclared, mistyped, or ambiguous). When absent, unroutable
+   * values fail closed with a typed BRANCH_ROUTING_UNKNOWN error — the runtime
+   * never silently selects the first configured branch.
+   */
+  unknownRoute?: string;
+  /** Explicit branch for malformed or mistyped routing input. */
+  errorRoute?: string;
 }
 
 export interface InputNodeConfig {
@@ -276,6 +291,11 @@ export interface WorkflowNode {
   position: WorkflowPosition;
   config: WorkflowNodeConfig;
   retryPolicy?: NodeRetryPolicy;
+  /**
+   * Versioned input/output contract enforced at execution boundaries.
+   * Optional: legacy definitions without contracts remain valid.
+   */
+  contract?: NodeContract;
 }
 
 export interface WorkflowEdge {
@@ -292,6 +312,8 @@ export interface WorkflowEdge {
 
 export interface WorkflowDefinition {
   id: string;
+  /** Persisted workflow schema version; omitted legacy definitions migrate from v1. */
+  schemaVersion?: number;
   name: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
@@ -498,6 +520,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
   }
   return structuredCloneSafe({
     id: definition.id,
+    schemaVersion: definition.schemaVersion ?? 2,
     name: definition.name,
     nodes: definition.nodes.map((node) => ({
       id: node.id,
@@ -505,6 +528,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
       position: { x: node.position.x, y: node.position.y },
       config: node.config,
       ...(node.retryPolicy ? { retryPolicy: node.retryPolicy } : {}),
+      ...(node.contract ? { contract: node.contract } : {}),
     })),
     edges: definition.edges.map((edge) => ({
       id: edge.id,
@@ -535,11 +559,17 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
   }
   const definition = {
     ...value,
+    schemaVersion: Number.isInteger(value.schemaVersion) && Number(value.schemaVersion) >= 1 ? Number(value.schemaVersion) : 1,
     nodes: value.nodes.map((rawNode) => {
       const node = (rawNode ?? {}) as Record<string, unknown>;
       const position = (node.position ?? {}) as Record<string, unknown>;
+      // Preserve a supplied contract verbatim until server validation runs.
+      // Normalizing here would silently discard malformed or unknown fields
+      // and could turn invalid author input into a valid-looking workflow.
+      const hasContract = Object.prototype.hasOwnProperty.call(node, "contract");
+      const { contract: rawContract, ...nodeRest } = node;
       return {
-        ...node,
+        ...nodeRest,
         id: typeof node.id === "string" ? node.id : "",
         type: node.type,
         position: {
@@ -547,6 +577,7 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
           y: typeof position.y === "number" && Number.isFinite(position.y) ? position.y : 0,
         },
         config: node.config && typeof node.config === "object" && !Array.isArray(node.config) ? node.config : {},
+        ...(hasContract ? { contract: rawContract as NodeContract } : {}),
       };
     }),
     edges: value.edges.map((rawEdge) => {
@@ -559,7 +590,8 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
       };
     }),
   } as WorkflowDefinition;
-  return serializeWorkflowDefinition(definition);
+  if ((definition.schemaVersion as number) > 2) throw new Error(`Workflow schema version ${String(definition.schemaVersion)} is newer than supported version 2.`);
+  return serializeWorkflowDefinition({ ...definition, schemaVersion: 2 });
 }
 
 function structuredCloneSafe<T>(value: T): T {
@@ -569,6 +601,7 @@ function structuredCloneSafe<T>(value: T): T {
 export function createEmptyDefinition(name?: string): WorkflowDefinition {
   return {
     id: uid("wf"),
+    schemaVersion: 2,
     name: name ?? "Untitled Workflow",
     nodes: [],
     edges: [],
@@ -584,6 +617,7 @@ export function createSingleAgentWorkflow(agent: AgentRecord, name = "Single Age
   const edge2 = createEdge({ source: agentNode.id, target: outputNode.id });
   return {
     id: uid("wf-task"),
+    schemaVersion: 2,
     name,
     nodes: [inputNode, agentNode, outputNode],
     edges: [edge1, edge2],
@@ -691,6 +725,12 @@ export interface Run {
   completedAt?: string;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
+  /**
+   * Deterministic structured result of the run lifecycle: success,
+   * validation failure, operational failure, policy rejection, blocked,
+   * needs-human, or unknown. Persisted alongside the run record.
+   */
+  result?: NodeResultEnvelope;
   error?: string;
   currentNodeId?: string;
   metadata: Record<string, unknown>;

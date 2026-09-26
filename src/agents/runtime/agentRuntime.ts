@@ -12,6 +12,7 @@ import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolic
 import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../../runtime/boundedValue";
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver } from "./workerCredentials";
+import { NO_API_CREDENTIALS, type ApiProviderCredentialResolver } from "../../security/providerCredentials";
 import { DefaultContextAssembler, type ContextAssembler } from "./contextAssembler";
 import { splitWorkingMemoryUpdates, visibleWorkingMemoryEntries, type WorkingMemoryEntries } from "./workingMemory";
 import { emptyTokens } from "./runtimeMemory";
@@ -27,14 +28,15 @@ export class AgentRuntime {
     readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
     maxExecutionMs = configuredAgentTimeout(),
     workerRuntime?: WorkerRuntime,
-    private readonly maxOutputBytes = boundedBytesFromEnvironment(process.env.AGENT_MAX_OUTPUT_BYTES, 256 * 1024),
+    private readonly    maxOutputBytes = boundedBytesFromEnvironment(process.env.AGENT_MAX_OUTPUT_BYTES, 256 * 1024),
     credentialResolver: WorkerCredentialResolver = NO_WORKER_CREDENTIALS,
+    apiCredentialResolver: ApiProviderCredentialResolver = NO_API_CREDENTIALS,
   ) {
     const cliPolicy = cliRuntimePolicyFromEnvironment();
     const defaultWorker = cliPolicy.workerMode === "container"
       ? new ContainerWorkerRuntime(cliPolicy, containerWorkerPolicyFromEnvironment())
       : new LocalProcessWorkerRuntime(cliPolicy);
-    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker, cliPolicy, credentialResolver);
+    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker, cliPolicy, credentialResolver, apiCredentialResolver);
     this.maxExecutionMs = maxExecutionMs;
   }
 
@@ -122,8 +124,10 @@ export class AgentRuntime {
       workingMemory: input.workingMemory,
       previousOutput: input.context?.previousOutput,
       branchState: typeof input.context?.branch === "string" ? input.context.branch : undefined,
-      runtimeState: input.context?.memory && typeof input.context.memory === "object"
-        ? input.context.memory as Record<string, unknown> : undefined,
+      runtimeState: {
+        ...(input.context?.memory && typeof input.context.memory === "object" ? input.context.memory as Record<string, unknown> : {}),
+        ...(input.runtimeState ?? {}),
+      },
       memoryAccess: input.memoryAccess,
       model: input.agent.backend.type === "api"
         ? { provider: input.agent.backend.provider, model: input.agent.backend.model }

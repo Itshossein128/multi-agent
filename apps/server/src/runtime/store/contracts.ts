@@ -1,4 +1,4 @@
-import type { AgentRecord, ApprovalRequest, Run, RunEvent, RunStatus, WorkflowDefinition } from "@multi-agent/types";
+import type { AgentRecord, ApprovalRequest, NodeResultEnvelope, Run, RunEvent, RunStatus, WorkflowDefinition } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../../../../src/memory/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 
@@ -17,7 +17,7 @@ export interface RunEntry {
   workflowSnapshot?: WorkflowDefinition;
   agentsSnapshot?: AgentRecord[];
   toolsSnapshot?: import("@multi-agent/types").ToolRecord[];
-  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[]; memoryAccess?: MemoryAccessContext; stepBudget?: { count: number } };
+  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[]; memoryAccess?: MemoryAccessContext; stepBudget?: { count: number }; pendingHuman?: { nodeId: string; envelope: NodeResultEnvelope } };
 }
 
 export interface RunListFilters {

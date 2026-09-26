@@ -18,7 +18,7 @@ export function recoverInterruptedRuns(
     const paused = store.getPausedContext?.(run.id);
     const workflow = paused?.workflow ?? store.getWorkflowSnapshot?.(run.id);
     const agents = paused?.agents ?? store.get(run.id)?.agentsSnapshot;
-    if (!checkpointer || !workflow || !agents?.length) {
+    if (!checkpointer || !workflow || !agents) {
       store.update(run.id, {
         status: "failed",
         completedAt: nowIso(),
@@ -42,9 +42,20 @@ export function recoverInterruptedRuns(
       tools: paused?.tools ?? store.getToolSnapshot?.(run.id),
       memoryAccess: paused?.memoryAccess,
       stepBudget: paused?.stepBudget,
+      pendingHuman: paused?.pendingHuman,
     }, checkpointer);
     executor.rearmApprovalTimers(run.id);
     restored.push(run.id);
+  }
+
+  // Queued runs have durable workflow/agent snapshots and can be safely
+  // handed back to the bounded scheduler after a process restart.
+  for (const run of store.list({ status: "queued" })) {
+    if (executor.resumeQueuedRun(run.id)) restored.push(run.id);
+    else {
+      store.update(run.id, { status: "failed", completedAt: nowIso(), error: "Queued run could not be recovered after server restart (missing workflow snapshot)." });
+      failed.push(run.id);
+    }
   }
 
   for (const run of store.list()) {

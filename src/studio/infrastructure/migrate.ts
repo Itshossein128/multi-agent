@@ -75,7 +75,7 @@ async function reconcileLegacySchema(client: { query(text: string, values?: any[
 /** Explicit operator action only. Never called from a store constructor or server startup. */
 export async function runStudioMigrations(pool: PgPool, options: { directory?: string } = {}): Promise<string[]> {
   const directory = options.directory ?? resolve(process.cwd(), "infrastructure/studio/migrations");
-  const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql", "004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql"];
+  const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql", "004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql", "008_run_result.sql"];
   const migrations = await Promise.all(names.map(async (name) => {
     const sql = await readFile(resolve(directory, name), "utf8");
     return { name, sql, checksum: createHash("sha256").update(sql).digest("hex") };

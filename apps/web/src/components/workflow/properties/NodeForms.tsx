@@ -15,6 +15,8 @@ import {
   ConditionNodeConfig,
   InputNodeConfig,
   MemoryNodeConfig,
+  NODE_CONTRACT_VERSION,
+  NodeContract,
   OutputNodeConfig,
   ToolNodeConfig,
   ToolRecord,
@@ -142,7 +144,7 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
             />
           </Field>
           {agent.backend.type === "cli" && <>
-            <Field label="Executable (optional)"><input className={inputClass} value={agent.backend.executable ?? ""} placeholder="codex, claude, or agy" onChange={(event) => patchAgent({ backend: { ...agent.backend, executable: event.target.value || undefined } as AgentBackend })} /></Field>
+            <Field label="Executable (optional)"><input className={inputClass} value={agent.backend.executable ?? ""} placeholder="codex, claude, agent, or agy" onChange={(event) => patchAgent({ backend: { ...agent.backend, executable: event.target.value || undefined } as AgentBackend })} /></Field>
             <Field label="Arguments (one per line)"><textarea className={inputClass} rows={3} value={(agent.backend.args ?? []).join("\n")} onChange={(event) => patchAgent({ backend: { ...agent.backend, args: event.target.value ? event.target.value.split("\n") : undefined } as AgentBackend })} /></Field>
             <Field label="Workspace root"><input className={inputClass} value={agent.executionPolicy?.workspaceRoot ?? ""} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, workspaceRoot: event.target.value || undefined } })} /></Field>
             <Field label="Shell access"><select className={inputClass} value={agent.executionPolicy?.shell ?? "disabled"} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, shell: event.target.value as AgentExecutionPolicy["shell"] } })}><option value="disabled">Disabled</option><option value="restricted">Restricted</option><option value="full">Full</option></select></Field>
@@ -347,6 +349,21 @@ export function MemoryForm({ node }: { node: WorkflowNode }) {
           <option value="read_write">Read / Write</option>
         </select>
       </Field>
+      {config.mode !== "read" && (
+        <Field label="Write Source">
+          <select
+            value={config.writeSource ?? "last_value"}
+            onChange={(event) => updateNodeConfig(node.id, { writeSource: event.target.value })}
+            className={inputClass}
+          >
+            <option value="last_value">Immediately preceding value</option>
+            <option value="node_results">All completed node results</option>
+            <option value="handoffs">Structured agent handoffs</option>
+            <option value="run_report">Complete run report</option>
+          </select>
+          <p className="mt-1 text-xs text-zinc-500">Use a complete run report for final evidence aggregation.</p>
+        </Field>
+      )}
       <Field label="Memory Key">
         <input
           type="text"
@@ -417,10 +434,137 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
           + Add branch
         </button>
       </div>
+      <Field label="Branch Source">
+        <select
+          value={config.valueSource ?? "input"}
+          onChange={(event) =>
+            updateNodeConfig(node.id, {
+              valueSource: event.target.value === "last_value" ? "last_value" : "input",
+            })
+          }
+          className={inputClass}
+        >
+          <option value="input">Run input (legacy-compatible input routing)</option>
+          <option value="last_value">Previous node result</option>
+        </select>
+      </Field>
+      <Field label="Result Field (optional)">
+        <input
+          type="text"
+          value={config.valueField ?? ""}
+          onChange={(event) =>
+            updateNodeConfig(node.id, { valueField: event.target.value.trim() || undefined })
+          }
+          placeholder="e.g. status"
+          className={cn(inputClass, "font-mono text-[11px]")}
+        />
+        <p className="text-[10px] text-zinc-600">
+          Field of the selected carrier that holds the structured result / branch value.
+        </p>
+      </Field>
+      <Field label="Unknown / Error Route">
+        <select
+          value={config.unknownRoute ?? ""}
+          onChange={(event) =>
+            updateNodeConfig(node.id, { unknownRoute: event.target.value || undefined })
+          }
+          className={inputClass}
+        >
+          <option value="">— fail closed with BRANCH_ROUTING_UNKNOWN —</option>
+          {config.branches
+            .filter((branch) => branch.key.trim())
+            .map((branch) => (
+              <option key={branch.key} value={branch.key}>
+                {branch.key}
+              </option>
+            ))}
+        </select>
+        <p className="text-[10px] text-zinc-600">
+          Route taken when the branch value is missing, malformed, undeclared, mistyped, or
+          ambiguous. Without an explicit route the run fails instead of falling back to the
+          first branch.
+        </p>
+      </Field>
+      <Field label="Malformed / Type Error Route">
+        <select
+          value={config.errorRoute ?? ""}
+          onChange={(event) => updateNodeConfig(node.id, { errorRoute: event.target.value || undefined })}
+          className={inputClass}
+        >
+          <option value="">— use unknown route or fail closed —</option>
+          {config.branches.filter((branch) => branch.key.trim()).map((branch) => (
+            <option key={branch.key} value={branch.key}>{branch.key}</option>
+          ))}
+        </select>
+        <p className="text-[10px] text-zinc-600">
+          Handles missing, malformed, or mistyped branch carriers separately from valid-but-undeclared values.
+        </p>
+      </Field>
       <p className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-2 text-[10px] leading-relaxed text-zinc-500">
         Connect each branch handle (bottom of the node) to a target. The edge inherits the branch
         key — edit it on the edge itself.
       </p>
+    </div>
+  );
+}
+
+/**
+ * Generic versioned input/output contract editor. Domain-agnostic: it edits
+ * only the schema/version/bounds declared on the node itself.
+ */
+export function ContractForm({ node }: { node: WorkflowNode }) {
+  const updateNodeContract = useWorkflowStore((s) => s.updateNodeContract);
+  const contract: NodeContract = node.contract ?? { version: NODE_CONTRACT_VERSION };
+
+  return (
+    <div className="space-y-3 rounded-lg border border-zinc-800/60 bg-zinc-900/30 p-2.5">
+      <div className="flex items-center justify-between">
+        <label className={labelClass}>I/O Contract</label>
+        <span className="text-[10px] text-zinc-500">
+          {node.contract ? `version ${contract.version}` : "not set (unvalidated beyond bounds)"}
+        </span>
+      </div>
+      <JsonField
+        label="Input Schema (JSON)"
+        value={(contract.inputSchema ?? {}) as Record<string, unknown>}
+        onChange={(inputSchema) => updateNodeContract(node.id, { ...contract, version: contract.version || NODE_CONTRACT_VERSION, inputSchema })}
+      />
+      <JsonField
+        label="Output Schema (JSON)"
+        value={(contract.outputSchema ?? {}) as Record<string, unknown>}
+        onChange={(outputSchema) => updateNodeContract(node.id, { ...contract, version: contract.version || NODE_CONTRACT_VERSION, outputSchema })}
+      />
+      <Field label="Max payload bytes (optional)">
+        <input
+          type="number"
+          min={1024}
+          max={10 * 1024 * 1024}
+          value={contract.maxPayloadBytes ?? ""}
+          onChange={(event) =>
+            updateNodeContract(node.id, {
+              ...contract,
+              version: contract.version || NODE_CONTRACT_VERSION,
+              maxPayloadBytes: event.target.value ? Number(event.target.value) : undefined,
+            })
+          }
+          placeholder="default: no node-level bound"
+          className={cn(inputClass, "font-mono text-[11px]")}
+        />
+      </Field>
+      <label className="flex items-center gap-2 text-xs text-zinc-300">
+        <input
+          type="checkbox"
+          checked={contract.captureEvidence === true}
+          onChange={(event) =>
+            updateNodeContract(node.id, {
+              ...contract,
+              version: contract.version || NODE_CONTRACT_VERSION,
+              captureEvidence: event.target.checked || undefined,
+            })
+          }
+        />
+        Capture evidence / provenance on results
+      </label>
     </div>
   );
 }
