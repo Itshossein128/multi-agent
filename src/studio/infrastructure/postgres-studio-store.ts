@@ -363,72 +363,65 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const workflow of workspace.workflows) {
-        if (principal) {
-          const stamped = { ...workflow, ownerId: principal.userId, tenantId: principal.tenantId };
-          await client.query(
-            `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at,
-               owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id`,
-            [stamped.id, stamped.name, JSON.stringify(stamped), stamped.updatedAt, stamped.updatedAt, principal.userId, principal.tenantId],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at`,
-            [workflow.id, workflow.name, JSON.stringify(workflow), workflow.updatedAt, workflow.updatedAt],
-          );
-        }
+    if (!this.client) {
+      return this.transaction((tx) => tx.importWorkspace(workspace, principal));
+    }
+    for (const workflow of workspace.workflows) {
+      if (principal) {
+        const stamped = { ...workflow, ownerId: principal.userId, tenantId: principal.tenantId };
+        await this.query(
+          `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at,
+             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id`,
+          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.updatedAt, stamped.updatedAt, principal.userId, principal.tenantId],
+        );
+      } else {
+        await this.query(
+          `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at`,
+          [workflow.id, workflow.name, JSON.stringify(workflow), workflow.updatedAt, workflow.updatedAt],
+        );
       }
-      for (const agent of workspace.agents) {
-        if (principal) {
-          const stamped = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-          await client.query(
-            `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-               owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
-            [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO studio_agents (id, name, record, created_at, updated_at)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-            [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt],
-          );
-        }
+    }
+    for (const agent of workspace.agents) {
+      if (principal) {
+        const stamped = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+        await this.query(
+          `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
+             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
+          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
+        );
+      } else {
+        await this.query(
+          `INSERT INTO studio_agents (id, name, record, created_at, updated_at)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
+          [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt],
+        );
       }
-      for (const tool of workspace.tools) {
-        if (principal) {
-          const stamped = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-          await client.query(
-            `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-               owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
-            [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO studio_tools (id, name, record, created_at, updated_at)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-            [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt],
-          );
-        }
+    }
+    for (const tool of workspace.tools) {
+      if (principal) {
+        const stamped = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+        await this.query(
+          `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
+             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
+          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
+        );
+      } else {
+        await this.query(
+          `INSERT INTO studio_tools (id, name, record, created_at, updated_at)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
+          [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt],
+        );
       }
-      await client.query("COMMIT");
-    } catch (error) {
-      try { await client.query("ROLLBACK"); } catch { /* preserve */ }
-      throw error;
-    } finally {
-      client.release();
     }
   }
 }
