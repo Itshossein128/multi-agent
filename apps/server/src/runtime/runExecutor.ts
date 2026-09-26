@@ -1,3 +1,4 @@
+import type { EpisodeService, EpisodeExtractionInput } from "../../../../src/memory/application";
 import { MemorySaver, type BaseCheckpointSaver } from "@langchain/langgraph";
 import {
   nowIso,
@@ -73,9 +74,10 @@ export class RunExecutor {
     private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
     private readonly guardrails: RuntimeGuardrails = runtimeGuardrailsFromEnvironment(),
     private readonly toolRuntime?: Pick<ToolRuntime, "execute">,
+    private readonly episodeService?: EpisodeService,
   ) {
     // Wire up the extracted managers with shared state.
-    this.graphRunner = new GraphRunner(this.store, this.pausedContext, this.checkpointers);
+    this.graphRunner = new GraphRunner(this.store, this.pausedContext, this.checkpointers, this.episodeService);
     this.approvalManager = new ApprovalManager({
       store: this.store,
       checkpointers: this.checkpointers,
@@ -366,6 +368,10 @@ export class RunExecutor {
     const logPayload = { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message, resultStatus: result.status, ...(result.error ? { code: result.error.code } : {}) };
     if (cancelled) log.info("run.cancelled", logPayload);
     else log.error("run.failed", logPayload);
+
+    if (this.episodeService) {
+      void this.processTerminalEpisodicMemory(runId, { succeeded: false, error: message, cancelled });
+    }
   }
 
   /**
@@ -373,6 +379,65 @@ export class RunExecutor {
    * enforced before any execution happens, regardless of what the client
    * validated in the browser.
    */
+
+  private async processTerminalEpisodicMemory(runId: string, opts: { succeeded: boolean; error?: string; cancelled?: boolean }) {
+    if (!this.episodeService) return;
+    try {
+      const entry = this.store.get(runId);
+      if (!entry) return;
+      const memoryOwner = entry.memoryOwner;
+      const memoryAccess: MemoryAccessContext | undefined = memoryOwner
+        ? {
+            principalId: memoryOwner.principalId,
+            tenantId: memoryOwner.tenantId,
+            readableNamespaces: [{ scope: "project", id: memoryOwner.tenantId }],
+            writableNamespaces: [{ scope: "project", id: memoryOwner.tenantId }],
+          }
+        : undefined;
+      if (!memoryAccess || !memoryAccess.writableNamespaces.length) return;
+      const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+      const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
+      const outputNodeId = workflow?.nodes.find((node) => node.type === "output")?.id ?? "unknown";
+      const primaryAgentId = agents?.[0]?.id ?? "unknown";
+
+      let handoffs: Record<string, unknown> | undefined;
+      let workingMemory: Record<string, unknown> | undefined;
+      if (this.checkpointer) {
+        try {
+          const state = await (this.checkpointer as any).get({ configurable: { thread_id: runId } });
+          if (state?.values) {
+            handoffs = state.values.handoffs;
+            workingMemory = state.values.workingMemory;
+          }
+        } catch {
+          /* ignore checkpointer read errors for optional memory */
+        }
+      }
+
+      const input: EpisodeExtractionInput = {
+        runId,
+        workflowId: entry.run.workflowId,
+        nodeId: outputNodeId,
+        agentId: primaryAgentId,
+        task: entry.run.input,
+        output: entry.run.output,
+        succeeded: opts.succeeded,
+        error: opts.error,
+        handoffs,
+        workingMemory,
+        startedAt: entry.run.startedAt,
+        completedAt: entry.run.completedAt,
+        approvals: entry.approvals?.map(a => ({ decision: a.status })),
+        namespace: memoryAccess.writableNamespaces[0],
+      };
+
+      const result = await this.episodeService.processRun(input, memoryAccess);
+      log.info("memory.episodic.extracted", { runId, created: result.created, reason: result.reason, memoryId: result.memoryId });
+    } catch (err) {
+      log.warn("memory.episodic.extraction_failed", { runId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   private assertRunInputContract(request: RunCreateRequest) {
     const inputNode = request.workflow.nodes.find((node) => node.type === "input");
     const contract = migrateNodeContract(inputNode?.contract);
