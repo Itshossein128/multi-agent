@@ -289,4 +289,71 @@ describePostgres("Studio Postgres persistence and rollback", () => {
     expect(await restartedStore.getAgent(agent.id, { userId: "other-user", tenantId: alice.tenantId })).toBeNull();
     void restartedApp;
   });
+
+  test("importWorkspace inside store.transaction rolls back atomically if transaction fails", async () => {
+    const store = new PostgresStudioStore(pool);
+    const agent = createAgentRecord({ name: "Rolled back imported agent" });
+    const workflow = agentGraph(agent.id, "Rolled back imported wf");
+
+    await expect(
+      store.transaction(async (tx) => {
+        await tx.importWorkspace({ workflows: [workflow], agents: [agent], tools: [] }, alice);
+        expect(await tx.getAgent(agent.id, alice)).not.toBeNull();
+        throw new Error("simulated outer transaction failure");
+      })
+    ).rejects.toThrow("simulated outer transaction failure");
+
+    expect(await store.getAgent(agent.id, alice)).toBeNull();
+    expect(await store.getWorkflow(workflow.id, alice)).toBeNull();
+  });
+});
+
+describe("PostgresStudioStore importWorkspace transaction boundaries (Unit)", () => {
+  test("importWorkspace inside transaction executes queries on transaction client and rolls back on failure", async () => {
+    const executedQueries: string[] = [];
+    let clientConnectCalls = 0;
+    let released = false;
+
+    const mockClient = {
+      query: jest.fn(async (sql: string) => {
+        executedQueries.push(sql);
+        return { rows: [], rowCount: 1 };
+      }),
+      release: jest.fn(() => {
+        released = true;
+      }),
+    };
+
+    const mockPool = {
+      connect: jest.fn(async () => {
+        clientConnectCalls += 1;
+        return mockClient;
+      }),
+      query: jest.fn(),
+    };
+
+    const store = new PostgresStudioStore(mockPool as any);
+    const agent = createAgentRecord({ name: "Transaction import agent" });
+    const workflow = createEmptyDefinition("Transaction import wf");
+
+    await expect(
+      store.transaction(async (tx) => {
+        await tx.importWorkspace({ workflows: [workflow], agents: [agent], tools: [] }, alice);
+        throw new Error("simulated transaction failure after import");
+      })
+    ).rejects.toThrow("simulated transaction failure after import");
+
+    expect(clientConnectCalls).toBe(1);
+    expect(executedQueries).toContain("BEGIN");
+    expect(executedQueries).toContain("ROLLBACK");
+    expect(released).toBe(true);
+    expect(mockClient.query).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO studio_workflows"),
+      expect.anything()
+    );
+    expect(mockClient.query).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO studio_agents"),
+      expect.anything()
+    );
+  });
 });
