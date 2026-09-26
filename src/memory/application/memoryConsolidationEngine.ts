@@ -23,6 +23,9 @@ function createDefaultDiagnostics(): ConsolidationDiagnostics {
 function consolidatable(memory: Memory, now: number): boolean {
   if (!isLive(memory, now)) return false;
   const verification = memory.metadata?.[RELIABILITY_KEYS.verificationStatus];
+  // Historical episodes remain valid evidence even when old or disputed; only
+  // explicit invalidation removes them from consolidation consideration.
+  if (memory.kind === "episodic") return verification !== "invalidated";
   return verification !== "invalidated" && verification !== "disputed" && verification !== "stale";
 }
 
@@ -260,11 +263,18 @@ export class ConsolidationEngine {
         importance: memory.importance,
         confidence: memory.confidence,
         subject: memory.subject,
+        title: memory.title,
+        situation: memory.situation,
+        action: memory.action,
+        result: memory.result,
+        lesson: memory.lesson,
+        success: memory.success,
         structuredData: memory.structuredData,
         metadata: memory.metadata,
         id: memory.id,
         procedure: memory.procedure,
         trigger: memory.trigger,
+        idempotencyKey: memory.idempotencyKey,
         supersedesMemoryId: memory.supersedesMemoryId,
         embedding: memory.embedding,
       } as MemoryCandidate & { embedding?: number[] };

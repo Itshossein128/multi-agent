@@ -127,7 +127,6 @@ export const MEMORY_BENCHMARK_SCENARIOS: MemoryBenchmarkScenario[] = [
     expectedRelevantMemories: ["bench-epi-duplicate-column", "bench-epi-lock-timeout", "bench-epi-permission"], forbiddenMemories: [],
     expectedBehavior: ["retain distinct causes", "do not collapse separate incidents"],
     requiredOutputMarkers: ["inspect schema", "blocking transaction", "role grants"], forbiddenOutputMarkers: [],
-    diagnosticOnly: true,
     modes: ["no-memory", "semantic-episodic", "full"], kinds: ["episodic"], maxMemories: 3, memoryTokenBudget: 4096, baseContextTokens: 450,
   },
   {

@@ -580,7 +580,11 @@ async function runLiveEvaluation(requested: boolean): Promise<LiveEvaluationRepo
 }
 
 function gitCommit(): string | null {
-  try { return execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).toString().trim() || null; }
+  try {
+    const sha = execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).toString().trim();
+    const dirty = execSync("git status --porcelain", { stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).toString().trim();
+    return sha ? `${sha}${dirty ? "-dirty" : ""}` : null;
+  }
   catch { return null; }
 }
 
