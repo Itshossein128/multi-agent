@@ -1,5 +1,5 @@
-import type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity } from "@multi-agent/types";
-export type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity } from "@multi-agent/types";
+import type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent } from "@multi-agent/types";
+export type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent } from "@multi-agent/types";
 
 /** Phase 8 evaluation/telemetry types (observational; never memory content). */
 export type {

@@ -1644,9 +1644,9 @@
     "semantic_hash": ""
   },
   "packages/types/src/memory.ts": {
-    "mtime": 1790449977.9305515,
-    "seen": 1790450911.5004013,
-    "ast_hash": "2a7a0fa3fc78b50ee3f90d829e09c7ce",
+    "mtime": 1790451502.6823714,
+    "seen": 1790452201.5225852,
+    "ast_hash": "cdb21f77dfefd84b61bfc5754123396b",
     "semantic_hash": ""
   },
   "packages/types/src/toolConfiguration.ts": {
@@ -1704,9 +1704,9 @@
     "semantic_hash": ""
   },
   "src/memory/application/hybridMemoryRetriever.ts": {
-    "mtime": 1790450499.7066274,
-    "seen": 1790450911.5039968,
-    "ast_hash": "0200276a084b4fea0d714535c102d502",
+    "mtime": 1790452011.4940562,
+    "seen": 1790452201.5263617,
+    "ast_hash": "f906e98f0011efcb0a831b7662ad6c1e",
     "semantic_hash": ""
   },
   "src/memory/application/index.ts": {
@@ -1728,9 +1728,9 @@
     "semantic_hash": ""
   },
   "src/memory/application/memoryContextFormatter.ts": {
-    "mtime": 1788966322.073303,
-    "seen": 1789119423.6132474,
-    "ast_hash": "ae52766474210f6f4b5f34a922c5a3fd",
+    "mtime": 1790451648.9697323,
+    "seen": 1790452201.526756,
+    "ast_hash": "84e4da66d2fe057a9e3bd7f8f2edd806",
     "semantic_hash": ""
   },
   "src/memory/application/memoryExtractor.ts": {
@@ -1752,9 +1752,9 @@
     "semantic_hash": ""
   },
   "src/memory/contracts.ts": {
-    "mtime": 1790449992.6924229,
-    "seen": 1790450911.504908,
-    "ast_hash": "28639be73d5cbb0fafc7d2a98ee8e5f8",
+    "mtime": 1790451519.9562974,
+    "seen": 1790452201.527084,
+    "ast_hash": "4059e749796aeb9e0f1f8c7ffc77d679",
     "semantic_hash": ""
   },
   "src/memory/infrastructure/in-memory-memory-store.ts": {
@@ -2772,9 +2772,9 @@
     "semantic_hash": ""
   },
   "src/agents/runtime/contextAssembler.ts": {
-    "mtime": 1790351301.173432,
-    "seen": 1790449359.5283837,
-    "ast_hash": "c0fb9429ae13a5242d4a6f9519b798a9",
+    "mtime": 1790451665.8456569,
+    "seen": 1790452201.5240853,
+    "ast_hash": "731a3e84ce2e9537735d890503a77588",
     "semantic_hash": ""
   },
   "src/agents/runtime/handoff.ts": {
@@ -2940,9 +2940,9 @@
     "semantic_hash": ""
   },
   "src/memory/application/queryExpansion.ts": {
-    "mtime": 1790449200.6878824,
-    "seen": 1790449359.5288813,
-    "ast_hash": "ed98244510d98afe8ba67147e6894bed",
+    "mtime": 1790451556.5271394,
+    "seen": 1790452201.5269976,
+    "ast_hash": "05043e02e3a92b46c6e08c0a5bde2249",
     "semantic_hash": ""
   },
   "src/memory/application/realMemoryConsolidator.ts": {
@@ -2952,15 +2952,15 @@
     "semantic_hash": ""
   },
   "src/memory/benchmark/memoryBenchmarkFixtures.ts": {
-    "mtime": 1790450731.3611465,
-    "seen": 1790450911.504904,
-    "ast_hash": "578772ad3b35886e0aeeb3037d84d459",
+    "mtime": 1790452053.8258548,
+    "seen": 1790452201.527081,
+    "ast_hash": "b1fd09d11d9ba356143b561112d9aefd",
     "semantic_hash": ""
   },
   "src/memory/benchmark/memoryBenchmarkRunner.ts": {
-    "mtime": 1790450152.3381112,
-    "seen": 1790450911.504906,
-    "ast_hash": "be1906ff8891a297add88d9fe9765d71",
+    "mtime": 1790452057.5858366,
+    "seen": 1790452201.5270827,
+    "ast_hash": "7e4a0164e3cba9947ba772f56175d99f",
     "semantic_hash": ""
   },
   "src/memory/evaluation/memoryEvalFixtures.ts": {
@@ -3573,6 +3573,12 @@
     "mtime": 1790450351.9296353,
     "seen": 1790450911.5081692,
     "ast_hash": "f6d3c5cb01fea34f56ef60b40dd27b82",
+    "semantic_hash": ""
+  },
+  "tests/memoryCandidatePrecision.test.ts": {
+    "mtime": 1790451982.0541961,
+    "seen": 1790452201.529262,
+    "ast_hash": "cffedac0de741e8e4b32c9e53f999cd1",
     "semantic_hash": ""
   }
 }

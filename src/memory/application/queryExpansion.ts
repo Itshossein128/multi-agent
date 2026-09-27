@@ -132,18 +132,26 @@ export const TECHNICAL_ALIASES: Record<string, string[]> = {
   upgrade: ["migration", "schema upgrade", "schema migration"],
 };
 
+import type { QueryIntent } from "@multi-agent/types";
+
 export interface ConceptCluster {
   id: string;
+  triggers?: string[];
   terms: string[];
 }
 
 /**
  * Compact, bounded domain concept clusters for explaining and connecting semantically
  * related vocabulary without external ontologies or LLM calls.
+ * Triggers guard clusters so single generic words do not flood candidate searches.
  */
 export const CONCEPT_CLUSTERS: ConceptCluster[] = [
   {
     id: "relational-persistence",
+    triggers: [
+      "database", "datastore", "persistence", "relational",
+      "persistence store", "rdbms", "sql", "postgresql", "postgres",
+    ],
     terms: [
       "database", "datastore", "persistence", "relational",
       "persistence store", "rdbms", "sql", "postgresql", "postgres",
@@ -151,6 +159,11 @@ export const CONCEPT_CLUSTERS: ConceptCluster[] = [
   },
   {
     id: "authentication-authorization",
+    triggers: [
+      "authentication", "authorization", "authorized", "authorize",
+      "bearer token", "bearer tokens", "signed bearer tokens", "token",
+      "tokens", "auth", "credentials", "api requests", "api client",
+    ],
     terms: [
       "authentication", "authorization", "authorized", "authorize",
       "bearer token", "bearer tokens", "signed bearer tokens", "token",
@@ -159,6 +172,10 @@ export const CONCEPT_CLUSTERS: ConceptCluster[] = [
   },
   {
     id: "dependency-management",
+    triggers: [
+      "package manager", "dependency manager", "dependencies", "dependency",
+      "pnpm", "npm", "yarn", "workspace",
+    ],
     terms: [
       "package manager", "dependency manager", "dependencies", "dependency",
       "package", "packages", "pnpm", "npm", "yarn", "workspace",
@@ -166,6 +183,10 @@ export const CONCEPT_CLUSTERS: ConceptCluster[] = [
   },
   {
     id: "isolated-container-execution",
+    triggers: [
+      "container", "containers", "docker", "isolated", "isolation",
+      "sandbox", "isolated execution", "container runtime",
+    ],
     terms: [
       "container", "containers", "docker", "isolated", "isolation",
       "sandbox", "execution", "execute", "runtime", "workers", "worker",
@@ -173,6 +194,10 @@ export const CONCEPT_CLUSTERS: ConceptCluster[] = [
   },
   {
     id: "schema-migration",
+    triggers: [
+      "migration", "schema", "schema initialization", "schema migration",
+      "schema upgrade", "database migration", "idempotent guard", "alter table",
+    ],
     terms: [
       "migration", "schema", "schema initialization", "schema migration",
       "schema upgrade", "database migration", "upgrade", "migration failure",
@@ -181,6 +206,9 @@ export const CONCEPT_CLUSTERS: ConceptCluster[] = [
   },
   {
     id: "system-failure",
+    triggers: [
+      "failure", "failed", "crash", "incident", "migration failure",
+    ],
     terms: [
       "failure", "failed", "broken", "broke", "issue", "incident",
       "error", "bug", "crash",
@@ -188,12 +216,33 @@ export const CONCEPT_CLUSTERS: ConceptCluster[] = [
   },
   {
     id: "service-deployment",
+    triggers: [
+      "deployment", "deploy", "release", "ship", "production",
+      "health check", "restart service",
+    ],
     terms: [
       "deployment", "deploy", "release", "ship", "production",
       "restart", "health check",
     ],
   },
 ];
+
+export function classifyQueryIntent(text: string): QueryIntent {
+  const lower = text.toLowerCase();
+  if (/\b(prior|encountered|before|previous|history|incident|historical|when did|in \d{4})\b/i.test(lower)) {
+    return "historical_experience";
+  }
+  if (/\b(how (to|should|do|can)|steps|procedure|recover|retry|prepare a|process for)\b/i.test(lower)) {
+    return "procedure";
+  }
+  if (/\b(architecture|stack|backend|frontend|technologies|platform|engine|relational datastore|datastore|persistence|database)\b/i.test(lower)) {
+    return "architecture_fact";
+  }
+  if (/\b(what|which|current|uses|use|is the|package manager|dependency manager|auth|authentication|tokens|supported|browser)\b/i.test(lower)) {
+    return "current_fact";
+  }
+  return "general";
+}
 
 export interface ExpandedQuery {
   originalText: string;
@@ -203,6 +252,7 @@ export interface ExpandedQuery {
   aliases: Set<string>;
   concepts: Set<string>;
   searchTerms: string[];
+  queryIntent: QueryIntent;
 }
 
 export interface MemoryQueryExpander {
@@ -249,10 +299,11 @@ export class DefaultMemoryQueryExpander implements MemoryQueryExpander {
       }
     }
 
-    // 3. Domain concept clusters matching
+    // 3. Domain concept clusters matching (using triggers if defined)
     for (const cluster of CONCEPT_CLUSTERS) {
       let clusterMatched = false;
-      for (const term of cluster.terms) {
+      const triggers = cluster.triggers ?? cluster.terms;
+      for (const term of triggers) {
         if (term.includes(" ")) {
           if (normalizedText.includes(term)) {
             clusterMatched = true;
@@ -277,7 +328,7 @@ export class DefaultMemoryQueryExpander implements MemoryQueryExpander {
     }
 
     // 4. Central bounded candidate search terms for storage queries:
-    // First original query words, then aliases, then concept words (up to 12 total terms).
+    // First original query words, then aliases, then concept words (up to 10 total terms).
     const searchTerms: string[] = [];
     const seen = new Set<string>();
     const addSearchTerm = (term: string) => {
@@ -286,15 +337,20 @@ export class DefaultMemoryQueryExpander implements MemoryQueryExpander {
       searchTerms.push(term);
     };
 
-    for (const word of queryWords) addSearchTerm(word);
+    for (const word of queryWords) {
+      if (searchTerms.length >= 6) break;
+      addSearchTerm(word);
+    }
     for (const alias of aliases) {
-      if (searchTerms.length >= 10) break;
+      if (searchTerms.length >= 8) break;
       addSearchTerm(alias);
     }
     for (const concept of concepts) {
-      if (searchTerms.length >= 12) break;
+      if (searchTerms.length >= 10) break;
       addSearchTerm(concept);
     }
+
+    const queryIntent = classifyQueryIntent(text);
 
     return {
       originalText: text,
@@ -304,6 +360,7 @@ export class DefaultMemoryQueryExpander implements MemoryQueryExpander {
       aliases,
       concepts,
       searchTerms,
+      queryIntent,
     };
   }
 }

@@ -62,6 +62,32 @@ export interface SemanticFactIdentity {
   source?: "explicit" | "structured_data" | "subject_inference" | "pattern_inference" | "legacy_rule";
 }
 
+/** Phase 9: Candidate origin channel */
+export type CandidateSource =
+  | "lexical"
+  | "expanded_lexical"
+  | "semantic"
+  | "structured"
+  | "alias"
+  | "concept"
+  | "multiple";
+
+export interface CandidateSourceStats {
+  lexicalCandidates: number;
+  semanticCandidates: number;
+  structuredCandidates: number;
+  expandedTermCandidates: number;
+  multiSignalCandidates: number;
+}
+
+export type QueryIntent =
+  | "current_fact"
+  | "historical_experience"
+  | "procedure"
+  | "architecture_fact"
+  | "entity_lookup"
+  | "general";
+
 export type MemoryRetrievalMode = "hybrid" | "vector" | "lexical" | "fallback";
 export interface MemoryRetrievalDiagnostics {
   latencyMs: number; embeddingLatencyMs: number; candidateCount: number; selectedCount: number;
@@ -80,14 +106,22 @@ export interface MemoryRetrievalDiagnostics {
   };
   /** Candidate counts per memory kind. */
   kinds?: Partial<Record<MemoryKind, number>>;
+  /** Phase 9: Candidate source breakdown and precision accounting */
+  candidateSources?: CandidateSourceStats;
+  candidatePrecision?: number;
+  candidateFalsePositiveRate?: number;
+  queryIntent?: QueryIntent;
   candidates: {
     memoryId: string; score: number; reason: string; kind?: MemoryKind; conflictGroupId?: string; suppressedByMemoryId?: string;
-    dropReason?: "exact_duplicate" | "explicit_superseded" | "invalidated" | "budget_dropped" | "conflict_suppressed";
+    dropReason?: "exact_duplicate" | "explicit_superseded" | "invalidated" | "budget_dropped" | "conflict_suppressed" | "candidate_pruned_low_confidence" | "budget_diversity_drop" | "cross_source_duplicate";
     verificationStatus?: string; freshnessStatus?: string;
     /** Reliability multiplier in [0,1] applied by the retriever (Phase 7), when known. */
     reliabilityFactor?: number; scores: MemorySearchResult["scores"]; matchReasons?: string[];
     /** Phase 8: Semantic fact identity fields for explainability */
     factSubject?: string; factProperty?: string; factValue?: string;
+    /** Phase 9: Candidate provenance and multi-signal classification */
+    candidateSource?: CandidateSource;
+    sources?: string[];
   }[];
 }
 export interface MemoryRetrievalResult { results: MemorySearchResult[]; diagnostics: MemoryRetrievalDiagnostics }

@@ -55,6 +55,9 @@ export interface MemoryBenchmarkScenarioResult {
   failedRetrieval: boolean;
   falsePositiveCandidateRate: number;
   falsePositiveInjectionRate: number;
+  candidatePrecision?: number | null;
+  candidateSources?: import("@multi-agent/types").CandidateSourceStats;
+  queryIntent?: import("@multi-agent/types").QueryIntent;
   memoryTokens: number;
   usefulMemoryTokens: number;
   totalContextTokens: number;
@@ -177,6 +180,11 @@ export interface MemoryBenchmarkReport {
     correctEmptyRetrievalRate: number;
     falsePositiveCandidateRate: number;
     falsePositiveInjectionRate: number;
+    candidatePrecision?: number;
+    memoryValueDensity?: number;
+    tokensPerRelevantMemory?: number;
+    tokensPerSuccessfulHit?: number;
+    candidateSources?: import("@multi-agent/types").CandidateSourceStats;
     memoryTokens: number;
     totalContextTokens: number;
     memoryContextRatio: number;
@@ -333,6 +341,9 @@ async function runScenario(scenario: MemoryBenchmarkScenario, mode: MemoryBenchm
   const crossNamespaceLeakage = results.filter(result => result.memory.namespace.scope !== MEMORY_EVAL_NAMESPACE.scope || result.memory.namespace.id !== MEMORY_EVAL_NAMESPACE.id).length;
   const securityViolations = (diagnostics.securityViolations ?? 0) + crossTenantLeakage + crossNamespaceLeakage;
 
+  const relevantCandidates = candidateIds.filter(id => relevantSet.has(id)).length;
+  const candidatePrecision = candidateIds.length ? round(relevantCandidates / candidateIds.length) : null;
+
   return {
     scenario: scenario.id, category: scenario.category, mode, diagnosticOnly: scenario.diagnosticOnly ?? false,
     taskOutcome: {
@@ -352,6 +363,9 @@ async function runScenario(scenario: MemoryBenchmarkScenario, mode: MemoryBenchm
     failedRetrieval: !expectsEmpty && selectedIds.length === 0,
     falsePositiveCandidateRate: diagnostics.candidateCount ? round(falsePositiveCandidates / diagnostics.candidateCount) : 0,
     falsePositiveInjectionRate: selectedIds.length ? round(irrelevantSelected / selectedIds.length) : 0,
+    candidatePrecision,
+    candidateSources: diagnostics.candidateSources,
+    queryIntent: diagnostics.queryIntent,
     memoryTokens, usefulMemoryTokens, totalContextTokens,
     memoryContextRatio: totalContextTokens ? round(memoryTokens / totalContextTokens) : 0,
     usefulMemoryTokenRatio: memoryTokens ? round(usefulMemoryTokens / memoryTokens) : 1,
@@ -667,6 +681,27 @@ export async function runMemoryBenchmark(options: RunMemoryBenchmarkOptions = {}
   const emptyExpected = full.filter(result => result.expectedMemories.length === 0);
   const totalCandidates = full.reduce((sum, result) => sum + result.candidateCount, 0);
   const falsePositiveCandidates = full.reduce((sum, result) => sum + Math.round(result.falsePositiveCandidateRate * result.candidateCount), 0);
+  const allUsefulMemoryTokens = full.reduce((sum, result) => sum + result.usefulMemoryTokens, 0);
+  const totalSuccessfulHits = full.filter(result => result.memoryHit).length;
+  const allCandidatePrecisions = full.map(r => r.candidatePrecision).filter((p): p is number => p !== null && p !== undefined);
+  const avgCandidatePrecision = allCandidatePrecisions.length ? round(allCandidatePrecisions.reduce((a, b) => a + b, 0) / allCandidatePrecisions.length) : 1;
+
+  const aggCandidateSources: import("@multi-agent/types").CandidateSourceStats = {
+    lexicalCandidates: 0,
+    semanticCandidates: 0,
+    structuredCandidates: 0,
+    expandedTermCandidates: 0,
+    multiSignalCandidates: 0,
+  };
+  for (const r of full) {
+    if (r.candidateSources) {
+      aggCandidateSources.lexicalCandidates += r.candidateSources.lexicalCandidates;
+      aggCandidateSources.semanticCandidates += r.candidateSources.semanticCandidates;
+      aggCandidateSources.structuredCandidates += r.candidateSources.structuredCandidates;
+      aggCandidateSources.expandedTermCandidates += r.candidateSources.expandedTermCandidates;
+      aggCandidateSources.multiSignalCandidates += r.candidateSources.multiSignalCandidates;
+    }
+  }
   const regressionGateFailures: string[] = [];
   for (const result of full) {
     if (!result.diagnosticOnly && !result.taskOutcome.passed) regressionGateFailures.push(`${result.scenario}: required deterministic invariant failed`);
@@ -733,6 +768,11 @@ export async function runMemoryBenchmark(options: RunMemoryBenchmarkOptions = {}
       correctEmptyRetrievalRate: emptyExpected.length ? round(emptyExpected.filter(result => result.correctEmptyRetrieval).length / emptyExpected.length) : 1,
       falsePositiveCandidateRate: totalCandidates ? round(falsePositiveCandidates / totalCandidates) : 0,
       falsePositiveInjectionRate: allSelected ? round((allSelected - allRelevant) / allSelected) : 0,
+      candidatePrecision: avgCandidatePrecision,
+      memoryValueDensity: allMemoryTokens ? round(allUsefulMemoryTokens / allMemoryTokens) : 1,
+      tokensPerRelevantMemory: allRelevant ? round(allMemoryTokens / allRelevant) : 0,
+      tokensPerSuccessfulHit: totalSuccessfulHits ? round(allMemoryTokens / totalSuccessfulHits) : 0,
+      candidateSources: aggCandidateSources,
       memoryTokens: allMemoryTokens,
       totalContextTokens: allContextTokens,
       memoryContextRatio: allContextTokens ? round(allMemoryTokens / allContextTokens) : 0,
@@ -784,7 +824,7 @@ export function memoryBenchmarkReportToMarkdown(report: MemoryBenchmarkReport): 
     "",
     "## Aggregate",
     "",
-    ...Object.entries(report.aggregate).map(([key, value]) => `- ${key}: ${value}`),
+    ...Object.entries(report.aggregate).map(([key, value]) => `- ${key}: ${typeof value === "object" && value !== null ? JSON.stringify(value) : value}`),
     `- retrieval latency p50/p95/max ms: ${report.latency.retrieval.p50} / ${report.latency.retrieval.p95} / ${report.latency.retrieval.max}`,
     `- preparation latency p50/p95/max ms: ${report.latency.memoryPreparation.p50} / ${report.latency.memoryPreparation.p95} / ${report.latency.memoryPreparation.max}`,
     "- provider monetary cost: unavailable (not fabricated)",

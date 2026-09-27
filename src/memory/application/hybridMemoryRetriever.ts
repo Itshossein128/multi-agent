@@ -1,6 +1,6 @@
 import type { EmbeddingProvider, Memory, MemoryAccessContext, MemoryRetrievalQuery, MemoryRetrievalResult, MemoryRetriever, MemoryStore } from "../contracts";
 import { MemoryValidationError } from "../contracts";
-import type { MemorySearchResult } from "@multi-agent/types";
+import type { MemorySearchResult, CandidateSource } from "@multi-agent/types";
 import { boundedInteger, canAccessMemory, isLive, matchesFilters, normalizeContent, publicMemory, requireNamespaces, sameNamespace } from "./access";
 import { embedSafely, sameEmbedding, validVector } from "./embedding";
 import { computeReliabilityFactor, DeterministicFreshnessPolicy, extractReliability, type MemoryFreshnessPolicy } from "./memoryReliability";
@@ -91,15 +91,34 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     const candidateLimit = Math.max(1, boundedInteger(this.options.candidateLimit, 200, 500));
     const base = { tenantId: access.tenantId, namespaces: query.namespaces, kinds: query.kinds, filters: query.filters, status: "active" as const, includeExpired: false, limit: candidateLimit };
     const kindCounts: Partial<Record<string, number>> = {};
+    // Track candidate source channels: lexical, alias, concept, structured, semantic
+    const memorySources = new Map<string, Set<string>>();
+    const recordSource = (id: string, src: string) => {
+      let set = memorySources.get(id);
+      if (!set) { set = new Set(); memorySources.set(id, set); }
+      set.add(src);
+    };
+
     // Bounded lexical search across original query words and top expanded alias/concept terms
     const terms = expandedQuery.searchTerms.slice(0, 10);
-    const pools = await Promise.all(terms.map(text => this.store.search({ ...base, text, limit: candidateLimit })));
+    const pools = await Promise.all(terms.map(async text => {
+      const pool = await this.store.search({ ...base, text, limit: candidateLimit });
+      const src = expandedQuery.queryWords.has(text) ? "lexical"
+        : expandedQuery.aliases.has(text) ? "alias"
+        : expandedQuery.concepts.has(text) ? "concept" : "expanded_lexical";
+      for (const m of pool) recordSource(m.id, src);
+      return pool;
+    }));
     const lexical = pools.flatMap(pool => pool.slice(0, candidateLimit));
     // A bounded recent pool also supports relevance carried by subject/title metadata.
     const recent = await this.store.search(base);
+    for (const m of recent) recordSource(m.id, "structured");
     let semantic: Memory[] = [];
     if (embedding) {
-      try { semantic = await this.store.search({ ...base, embedding, embeddingMetadata: this.options.embeddingProvider!.metadata }); }
+      try {
+        semantic = await this.store.search({ ...base, embedding, embeddingMetadata: this.options.embeddingProvider!.metadata });
+        for (const m of semantic) recordSource(m.id, "semantic");
+      }
       catch { diagnostics.warnings.push("Semantic search unavailable; lexical retrieval used"); }
     }
     const uniqueIds = new Set<string>();
@@ -127,6 +146,23 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       };
       const score = (Object.keys(scores) as (keyof Scores)[]).reduce((sum, key) => sum + (scores[key] ?? 0) * (this.weights[key] ?? 0), 0) / Object.values(this.weights).reduce((a, b) => a + b, 0);
       const relevant = matchEval.isRelevant;
+
+      // Enrich source channels with match signals
+      if (matchEval.matchReasons.includes("structured_match")) recordSource(memory.id, "structured");
+      if (matchEval.matchReasons.includes("semantic_match")) recordSource(memory.id, "semantic");
+      if (matchEval.matchReasons.includes("lexical_match")) recordSource(memory.id, "lexical");
+      if (matchEval.matchReasons.includes("alias_match")) recordSource(memory.id, "alias");
+      if (matchEval.matchReasons.includes("expanded_term_match")) recordSource(memory.id, "concept");
+
+      const rawSources = Array.from(memorySources.get(memory.id) ?? ["lexical"]);
+      const candidateSource: CandidateSource = rawSources.length > 1 ? "multiple"
+        : rawSources.includes("semantic") ? "semantic"
+        : rawSources.includes("structured") ? "structured"
+        : rawSources.includes("alias") ? "alias"
+        : rawSources.includes("concept") ? "concept"
+        : rawSources.includes("expanded_lexical") ? "expanded_lexical"
+        : "lexical";
+
       // Phase 7 reliability-aware ranking: a multiplier in [0,1] that zeroes out
       // invalidated memories and down-ranks stale/disputed/contradicted ones.
       const reliabilityFactor = this.reliabilityScoring ? computeReliabilityFactor(memory, this.freshnessPolicy) : 1;
@@ -135,11 +171,25 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       if (reliability.verificationStatus === "invalidated") diagnostics.filteredCounts!.invalidated++;
       kindCounts[memory.kind] = (kindCounts[memory.kind] ?? 0) + 1;
       const fact = memory.kind === "semantic" ? extractSemanticFact(memory) : undefined;
+
+      const isLowConfidence = !relevant || (
+        matchEval.literalContentOverlap === 0 &&
+        matchEval.structuredScore === 0 &&
+        matchEval.semanticScore < (this.options.semanticRelevanceThreshold ?? 0.65) &&
+        matchEval.effectiveLexicalScore < 0.25
+      );
+
+      const dropReason = reliabilityFactor === 0
+        ? "invalidated"
+        : isLowConfidence
+          ? "candidate_pruned_low_confidence"
+          : undefined;
+
       diagnostics.candidates.push({
         memoryId: memory.id,
         score: score * reliabilityFactor,
-        reason: !relevant ? "irrelevant" : reliabilityFactor === 0 ? "invalidated" : score < (query.minScore ?? 0) ? "below_min_score" : "eligible",
-        dropReason: reliabilityFactor === 0 ? "invalidated" : undefined,
+        reason: !relevant ? "irrelevant" : isLowConfidence ? "low_confidence" : reliabilityFactor === 0 ? "invalidated" : score < (query.minScore ?? 0) ? "below_min_score" : "eligible",
+        dropReason,
         kind: memory.kind,
         reliabilityFactor,
         verificationStatus: reliability.verificationStatus,
@@ -149,8 +199,11 @@ export class HybridMemoryRetriever implements MemoryRetriever {
         factSubject: fact?.subject,
         factProperty: fact?.property,
         factValue: fact?.value,
+        candidateSource,
+        sources: rawSources,
       } as typeof diagnostics.candidates[number] & { verificationStatus: string; freshnessStatus: string });
-      if (relevant && score >= (query.minScore ?? 0) && reliabilityFactor > 0) {
+
+      if (relevant && !isLowConfidence && score >= (query.minScore ?? 0) && reliabilityFactor > 0) {
         scored.push({
           memory: publicMemory(memory),
           score: score * reliabilityFactor,
@@ -163,7 +216,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     }
     diagnostics.candidateCount = uniqueIds.size;
     scored.sort((a, b) => b.score - a.score || KIND_RANK[b.memory.kind] - KIND_RANK[a.memory.kind] || a.memory.id.localeCompare(b.memory.id));
-    type ConflictDiagnostic = (typeof diagnostics.candidates)[number] & { conflictGroupId?: string; suppressedByMemoryId?: string; dropReason?: "exact_duplicate" | "explicit_superseded" | "invalidated" | "budget_dropped" | "conflict_suppressed" };
+    type ConflictDiagnostic = (typeof diagnostics.candidates)[number] & { conflictGroupId?: string; suppressedByMemoryId?: string };
     const diagnosticsById = new Map<string, ConflictDiagnostic>(diagnostics.candidates.map(candidate => [candidate.memoryId, candidate as ConflictDiagnostic]));
     const grouped = new Map<string, MemorySearchResult[]>();
     for (let i = 0; i < scored.length; i++) for (let j = i + 1; j < scored.length; j++) {
@@ -236,10 +289,41 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     const formattingStart = Date.now();
     const results = this.formatter.select(deduplicated, budget).slice(0, limit);
     const selectedIds = new Set(results.map(result => result.memory.id));
+    const selectedLessons = new Set(results.filter(r => r.memory.kind === "episodic" && r.memory.lesson).map(r => r.memory.lesson!.trim().toLowerCase()));
     for (const item of deduplicated) if (!selectedIds.has(item.memory.id)) {
       const diagnostic = diagnosticsById.get(item.memory.id);
-      if (diagnostic && !diagnostic.dropReason) diagnostic.dropReason = "budget_dropped";
+      if (diagnostic && !diagnostic.dropReason) {
+        if (item.memory.kind === "episodic" && item.memory.lesson && selectedLessons.has(item.memory.lesson.trim().toLowerCase())) {
+          diagnostic.dropReason = "budget_diversity_drop";
+          diagnostic.reason = "budget_diversity_redundant";
+        } else {
+          diagnostic.dropReason = "budget_dropped";
+        }
+      }
     }
+
+    let lexicalCandidates = 0;
+    let semanticCandidates = 0;
+    let structuredCandidates = 0;
+    let expandedTermCandidates = 0;
+    let multiSignalCandidates = 0;
+    for (const candidate of diagnostics.candidates) {
+      const s = candidate.sources ?? [];
+      if (s.includes("lexical")) lexicalCandidates++;
+      if (s.includes("semantic")) semanticCandidates++;
+      if (s.includes("structured")) structuredCandidates++;
+      if (s.includes("alias") || s.includes("concept") || s.includes("expanded_lexical")) expandedTermCandidates++;
+      if (s.length > 1 || candidate.candidateSource === "multiple") multiSignalCandidates++;
+    }
+    diagnostics.candidateSources = {
+      lexicalCandidates,
+      semanticCandidates,
+      structuredCandidates,
+      expandedTermCandidates,
+      multiSignalCandidates,
+    };
+    diagnostics.queryIntent = expandedQuery.queryIntent;
+
     diagnostics.formattingLatencyMs = Date.now() - formattingStart;
     diagnostics.selectedCount = results.length;
     diagnostics.latencyMs = Date.now() - start;

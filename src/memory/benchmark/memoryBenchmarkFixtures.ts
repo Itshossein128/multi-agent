@@ -15,7 +15,9 @@ export type MemoryBenchmarkCategory =
   | "episodic-diversity"
   | "procedural-conflict"
   | "vocabulary-mismatch"
-  | "context-budget";
+  | "context-budget"
+  | "candidate-precision"
+  | "cross-source-dedup";
 
 export interface MemoryBenchmarkScenario {
   id: string;
@@ -76,6 +78,33 @@ const browserChrome = semantic("bench-browser-chrome", "Application supports Chr
 const browserFirefox = semantic("bench-browser-firefox", "Application supports Firefox.", "supported-browsers-firefox", 0.85, { verificationStatus: "verified", confidence: 0.95 });
 const pkgHistoricalNpm = semantic("bench-pkg-2025-npm", "In 2025 the project used npm.", "repository package manager", 0.8, { verificationStatus: "verified", confidence: 0.9 });
 const pkgCurrentPnpm = semantic("bench-pkg-current-pnpm", "The project uses pnpm.", "repository package manager", 0.9, { verificationStatus: "verified", confidence: 0.95 });
+
+// Phase 9 Distractors and Scenarios
+const generateDistractors = (count = 100): MemoryEvalFixture[] => {
+  const topics = [
+    "css-grid", "color-theme", "unit-test-coverage", "webhook-retry", "image-optimization",
+    "markdown-parser", "icon-sprite", "font-loading", "rate-limiting", "cookie-banner",
+    "dns-records", "tls-certificate", "email-template", "csv-export", "pdf-generation",
+    "cron-scheduler", "session-timeout", "oauth-provider", "graphql-schema", "websocket-heartbeat",
+  ];
+  return Array.from({ length: count }, (_, i) => {
+    const topic = topics[i % topics.length];
+    return semantic(
+      `distractor-${i}`,
+      `Configuration notes for ${topic} feature item ${i} in operational docs.`,
+      `system-${topic}-${i}`,
+      0.2,
+      { confidence: 0.5 }
+    );
+  });
+};
+const distractors100 = generateDistractors(100);
+
+const epiDiverse1 = episodic("bench-epi-div-1", "migration incident with database lock timeout", "terminate blocking locks and retry migration", "migration succeeded after unlocking", "kill blocking locks before retrying", true);
+const epiDiverse2 = episodic("bench-epi-div-2", "migration incident with duplicate column", "inspect schema then add idempotent guard", "migration succeeded", "avoid blindly rerunning failing ALTER statement", true);
+const epiDiverse3 = episodic("bench-epi-div-3", "migration incident with secondary lock conflict", "terminate blocking locks and retry migration", "migration succeeded after unlocking", "kill blocking locks before retrying", true);
+
+const procFiveSteps = procedural("bench-proc-five-steps", "execute production release", "1. run security audit; 2. run regression suite; 3. compile release artifacts; 4. execute blue-green deployment; 5. verify health check and smoke tests", 0.95);
 
 export const MEMORY_BENCHMARK_SCENARIOS: MemoryBenchmarkScenario[] = [
   {
@@ -310,6 +339,46 @@ export const MEMORY_BENCHMARK_SCENARIOS: MemoryBenchmarkScenario[] = [
     expectedBehavior: ["preserve the highest-value procedure under budget"],
     requiredOutputMarkers: ["back up", "migrate", "verify health"], forbiddenOutputMarkers: ["sometime", "dashboard"],
     modes: ["no-memory", "full"], kinds: ["procedural"], maxMemories: 8, memoryTokenBudget: 330, baseContextTokens: 180,
+  },
+  {
+    id: "candidate-precision-noise-scale", title: "Relevant fact discovered amid 100+ distractor memories", category: "candidate-precision",
+    setup: { priorRuns: ["Extensive operational notes recorded in repository."], memories: [pnpm, ...distractors100] },
+    targetTask: "Which package manager should be used for repository commands?", expectedRelevantMemories: [pnpm.id], forbiddenMemories: [],
+    expectedBehavior: ["select pnpm", "exclude all distractors"],
+    requiredOutputMarkers: ["pnpm"], forbiddenOutputMarkers: ["distractor", "configuration notes"],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "candidate-precision-vocab-noise", title: "Vocabulary mismatch resolved amid 100+ distractor memories", category: "candidate-precision",
+    setup: { priorRuns: ["Extensive operational notes recorded in repository."], memories: [postgres, ...distractors100] },
+    targetTask: "What relational datastore backs persistence?", expectedRelevantMemories: [postgres.id], forbiddenMemories: [],
+    expectedBehavior: ["select postgresql despite vocabulary mismatch and noise distractors"],
+    requiredOutputMarkers: ["postgresql"], forbiddenOutputMarkers: ["distractor", "configuration notes"],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "episodic-diversity-budget", title: "Episodic diversity preserved under constrained context budget", category: "episodic-diversity",
+    setup: { priorRuns: ["Three distinct migration incidents were encountered."], memories: [epiDiverse1, epiDiverse2, epiDiverse3] },
+    targetTask: "Resolve database migration failure incidents.", expectedRelevantMemories: [epiDiverse1.id, epiDiverse2.id], forbiddenMemories: [],
+    expectedBehavior: ["select informative diverse incidents under budget", "do not falsely treat distinct incidents as conflicts"],
+    requiredOutputMarkers: ["retry migration", "idempotent guard"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-episodic", "full"], kinds: ["episodic"], maxMemories: 2, memoryTokenBudget: 850, baseContextTokens: 400,
+  },
+  {
+    id: "procedural-completeness", title: "Multi-step safety-critical procedure remains completely intact", category: "procedural-recall",
+    setup: { priorRuns: ["Verified 5-step release procedure documented."], memories: [procFiveSteps] },
+    targetTask: "Execute production release.", expectedRelevantMemories: [procFiveSteps.id], forbiddenMemories: [],
+    expectedBehavior: ["all 5 procedure steps must remain intact without partial truncation"],
+    requiredOutputMarkers: ["security audit", "regression suite", "compile release artifacts", "blue-green deployment", "health check and smoke tests"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "full"], kinds: ["procedural"], maxMemories: 3, memoryTokenBudget: 2048, baseContextTokens: 400,
+  },
+  {
+    id: "cross-source-duplication", title: "Cross-source redundant memory pruned without loss of authority", category: "cross-source-dedup",
+    setup: { priorRuns: ["Handoff already established that the package manager is pnpm."], memories: [pnpm] },
+    targetTask: "Which package manager should be used for repository commands?", expectedRelevantMemories: [pnpm.id], forbiddenMemories: [],
+    expectedBehavior: ["select pnpm", "authority preserved"],
+    requiredOutputMarkers: ["pnpm"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
   },
 ];
 
