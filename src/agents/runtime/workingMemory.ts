@@ -472,13 +472,13 @@ export function applyWorkingMemoryUpdates(
       }
       content = validated.content;
     }
-    let supersededBy = target.supersededBy;
+    let supersedes = target.supersedes;
     if (raw.supersedes !== undefined) {
       if (typeof raw.supersedes !== "string" || !view[raw.supersedes] || !isWorkingMemoryVisible(view[raw.supersedes], context)) {
         reject(index, "unknown_supersede_target");
         continue;
       }
-      supersededBy = raw.supersedes;
+      supersedes = raw.supersedes;
       const retired: WorkingMemoryEntry = {
         ...view[raw.supersedes],
         status: "superseded",
@@ -497,7 +497,8 @@ export function applyWorkingMemoryUpdates(
       status: status.status ?? target.status,
       ...(importance.importance !== undefined ? { importance: importance.importance } : {}),
       ...(metadata.metadata !== undefined ? { metadata: metadata.metadata } : {}),
-      ...(supersededBy ? { supersededBy } : {}),
+      ...(supersedes ? { supersedes } : {}),
+      ...(target.supersededBy ? { supersededBy: target.supersededBy } : {}),
       updatedAt: now(),
     };
     view[target.id] = patched;

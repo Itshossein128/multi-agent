@@ -206,6 +206,42 @@ describe("working memory lifecycle", () => {
     expect(afterDiscard[questionId].status).toBe("resolved");
   });
 
+  test("superseding an entry via op update correctly links supersedes and supersededBy", () => {
+    const seeded = applyTo({}, [
+      { kind: "finding", content: "Initial assumption about API endpoint." },
+      { kind: "question", content: "Updated finding replacing initial assumption." },
+    ]);
+    const firstId = idOf(seeded, "finding");
+    const secondId = idOf(seeded, "question");
+
+    // Perform an op: "update" on secondId to supersede firstId
+    const result = applyWorkingMemoryUpdates(seeded, [
+      { op: "update", id: secondId, supersedes: firstId },
+    ], writeContext({ now: () => T1 }));
+    const merged = mergeWorkingMemory(seeded, result.entries);
+
+    // Verify firstId is retired with status superseded and supersededBy secondId
+    expect(merged[firstId]).toMatchObject({
+      status: "superseded",
+      supersededBy: secondId,
+    });
+
+    // Verify secondId remains active and has supersedes set to firstId (and NOT supersededBy)
+    expect(merged[secondId]).toMatchObject({
+      status: "active",
+      supersedes: firstId,
+    });
+    expect(merged[secondId].supersededBy).toBeUndefined();
+
+    // Verify same behavior via ScopedWorkingMemory service
+    const wm = new ScopedWorkingMemory(seeded, writeContext({ now: () => T1 }));
+    wm.update(secondId, { supersedes: firstId });
+    const snapshot = wm.entriesSnapshot();
+    expect(snapshot[firstId]).toMatchObject({ status: "superseded", supersededBy: secondId });
+    expect(snapshot[secondId]).toMatchObject({ status: "active", supersedes: firstId });
+    expect(snapshot[secondId].supersededBy).toBeUndefined();
+  });
+
   test("the WorkingMemory service is the single mutation surface", () => {
     const wm = new ScopedWorkingMemory({}, writeContext({ now: () => T0 }));
     const finding = wm.add({ kind: "finding", content: "The repository uses pnpm workspaces." });
