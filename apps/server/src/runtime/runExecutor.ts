@@ -217,6 +217,18 @@ export class RunExecutor {
     const entry = this.store.get(runId);
     if (!entry) return false;
     if (["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
+    if (this.pendingRequests.has(runId)) {
+      this.pendingRequests.delete(runId);
+      this.branchControllers.delete(runId);
+      this.store.update(runId, {
+        status: "cancelled",
+        completedAt: nowIso(),
+        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while queued.", retryable: false } }),
+      });
+      this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      this.store.cancel(runId);
+      return true;
+    }
     if (entry.run.status === "waiting_for_human") {
       for (const approval of this.store.listApprovals(runId)) {
         if (approval.status === "requested") {
