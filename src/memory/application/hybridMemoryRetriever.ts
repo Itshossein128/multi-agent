@@ -8,6 +8,7 @@ import { DefaultMemoryContextFormatter } from "./memoryContextFormatter";
 import { classifyMemoryRelationship, conflictGroupKey } from "./memoryConflictStrategy";
 import { DefaultMemoryQueryExpander, evaluateMemoryMatch, type MemoryQueryExpander, STOP_WORDS } from "./queryExpansion";
 import { extractSemanticFact } from "./semanticFact";
+import { compareTimeline, interpretMemoryTemporalQuery, matchesTemporalQuery, memoryValidity, validityIntervalsOverlap } from "./memoryTemporal";
 
 type Scores = MemorySearchResult["scores"];
 export interface HybridMemoryRetrieverOptions {
@@ -82,7 +83,13 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     requireNamespaces(query.namespaces, access);
     if (typeof query.text !== "string" || query.text.length > 16000 || (query.minScore !== undefined && (!Number.isFinite(query.minScore) || query.minScore < 0 || query.minScore > 1))) throw new MemoryValidationError("Invalid memory retrieval query");
     const start = Date.now(), now = (this.options.now ?? Date.now)();
+    const temporalQuery = interpretMemoryTemporalQuery(query.text, now, query.temporal);
+    if (!["current", "as_of", "history", "range"].includes(temporalQuery.mode)
+      || [temporalQuery.at, temporalQuery.from, temporalQuery.to].some(value => value !== undefined && !Number.isFinite(Date.parse(value)))) throw new MemoryValidationError("Invalid temporal memory query");
     const diagnostics: MemoryRetrievalResult["diagnostics"] = { latencyMs: 0, embeddingLatencyMs: 0, candidateCount: 0, selectedCount: 0, deduplicatedCount: 0, warnings: [], securityViolations: 0, filteredCounts: { unauthorized: 0, expired: 0, superseded: 0, invalidated: 0 }, conflict: { groups: 0, candidates: 0, suppressed: 0, staleSuppressed: 0, disputedSuppressed: 0, unresolved: 0 }, candidates: [] };
+    diagnostics.temporalMode = temporalQuery.mode;
+    diagnostics.queryTime = temporalQuery.at ?? temporalQuery.from ?? temporalQuery.to;
+    diagnostics.temporal = { matched: 0, dropped: 0, overlapUnresolved: 0, historicalMatches: 0 };
     const limit = boundedInteger(query.limit, 8, 100), budget = boundedInteger(query.maxTokens, 2048, 100000);
     if (!query.namespaces.length || !query.text.trim() || !limit || !budget) return { results: [], diagnostics };
     const ablation = this.options.ablationMode ?? "full_hybrid";
@@ -166,6 +173,22 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       if (memory.expiresAt && Date.parse(memory.expiresAt) <= now) { diagnostics.filteredCounts!.expired++; continue; }
       if (!isLive(memory, now) || (query.kinds && !query.kinds.includes(memory.kind)) || !matchesFilters(memory, query.filters) || uniqueIds.has(memory.id)) continue;
       uniqueIds.add(memory.id);
+      const temporal = matchesTemporalQuery(memory, temporalQuery, now);
+      const validity = memoryValidity(memory);
+      if (!temporal.match) {
+        diagnostics.temporal!.dropped++;
+        const fact = memory.kind === "semantic" ? extractSemanticFact(memory) : undefined;
+        diagnostics.candidates.push({
+          memoryId: memory.id, score: 0, reason: temporal.reason!, dropReason: temporal.reason,
+          kind: memory.kind, scores: { semantic: 0, lexical: 0, context: 0, importance: 0, recency: 0 },
+          factSubject: fact?.subject, factProperty: fact?.property, factValue: fact?.value,
+          validFrom: validity.from, validUntil: validity.until, temporalMatch: false, temporalDropReason: temporal.reason,
+          sources: Array.from(memorySources.get(memory.id) ?? ["structured"]),
+        });
+        continue;
+      }
+      diagnostics.temporal!.matched++;
+      if (temporal.historicalMatch) diagnostics.temporal!.historicalMatches++;
       const semanticScore = embedding && memory.embedding && sameEmbedding(memory.embeddingMetadata, this.options.embeddingProvider!.metadata) && validVector(memory.embedding, embedding.length) ? cosine(embedding, memory.embedding) : 0;
       const matchEval = evaluateMemoryMatch(expandedQuery, memory, semanticScore, this.options.semanticRelevanceThreshold ?? .65);
       const age = Math.max(0, now - Date.parse(memory.updatedAt));
@@ -234,6 +257,9 @@ export class HybridMemoryRetriever implements MemoryRetriever {
         factSubject: fact?.subject,
         factProperty: fact?.property,
         factValue: fact?.value,
+        validFrom: validity.from,
+        validUntil: validity.until,
+        temporalMatch: true,
         candidateSource,
         sources: rawSources,
       } as typeof diagnostics.candidates[number] & { verificationStatus: string; freshnessStatus: string });
@@ -250,18 +276,38 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       }
     }
     diagnostics.candidateCount = uniqueIds.size;
-    scored.sort((a, b) => b.score - a.score || KIND_RANK[b.memory.kind] - KIND_RANK[a.memory.kind] || a.memory.id.localeCompare(b.memory.id));
+    scored.sort((a, b) => temporalQuery.mode === "history"
+      ? compareTimeline(a.memory, b.memory) || b.score - a.score
+      // Temporal eligibility has already been applied above. Preserve configured
+      // relevance weighting among equally eligible facts; reliability is already
+      // represented in the final score.
+      : b.score - a.score || KIND_RANK[b.memory.kind] - KIND_RANK[a.memory.kind] || a.memory.id.localeCompare(b.memory.id));
     type ConflictDiagnostic = (typeof diagnostics.candidates)[number] & { conflictGroupId?: string; suppressedByMemoryId?: string };
     const diagnosticsById = new Map<string, ConflictDiagnostic>(diagnostics.candidates.map(candidate => [candidate.memoryId, candidate as ConflictDiagnostic]));
     const grouped = new Map<string, MemorySearchResult[]>();
+    const unresolvedTemporalGroups = new Set<string>();
     for (let i = 0; i < scored.length; i++) for (let j = i + 1; j < scored.length; j++) {
+      if (temporalQuery.mode === "history" && scored[i].memory.kind === "semantic" && scored[j].memory.kind === "semantic") continue;
       const key = conflictKey(scored[i].memory, scored[j].memory, query);
-      if (key) grouped.set(key, [...(grouped.get(key) ?? []), scored[i], scored[j]]);
+      if (key) {
+        const leftFact = extractSemanticFact(scored[i].memory), rightFact = extractSemanticFact(scored[j].memory);
+        const leftValidity = memoryValidity(scored[i].memory), rightValidity = memoryValidity(scored[j].memory);
+        const explicitIntervals = !!(leftValidity.from || leftValidity.until) && !!(rightValidity.from || rightValidity.until);
+        if (leftFact?.cardinality !== "multi" && rightFact?.cardinality !== "multi" && explicitIntervals && validityIntervalsOverlap(scored[i].memory, scored[j].memory)) {
+          unresolvedTemporalGroups.add(key);
+          for (const item of [scored[i], scored[j]]) {
+            const diagnostic = diagnosticsById.get(item.memory.id);
+            if (diagnostic) diagnostic.reason = "temporal_overlap_unresolved";
+          }
+        }
+        grouped.set(key, [...(grouped.get(key) ?? []), scored[i], scored[j]]);
+      }
     }
     const suppressed = new Set<string>();
     for (const [groupId, members] of grouped) {
       const unique = [...new Map(members.map(member => [member.memory.id, member])).values()];
       if (unique.length < 2) continue;
+      if (unresolvedTemporalGroups.has(groupId)) continue;
       const winner = [...unique].sort((a, b) => winnerSort(a, b, this.freshnessPolicy))[0];
       for (const loser of unique) {
         if (loser.memory.id === winner.memory.id) continue;
@@ -289,12 +335,13 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       suppressed: suppressed.size,
       staleSuppressed: 0,
       disputedSuppressed: 0,
-      unresolved: 0,
+      unresolved: unresolvedTemporalGroups.size,
       suppressedByKind,
       detected: conflictPairsDetected,
       resolved: suppressed.size,
       falseSuppressed: 0,
     };
+    diagnostics.temporal!.overlapUnresolved = unresolvedTemporalGroups.size;
     for (const members of grouped.values()) {
       const unique = [...new Map(members.map(member => [member.memory.id, member])).values()];
       conflictMetrics.candidates += unique.length;
@@ -322,7 +369,7 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       seen.add(item.memory.id); return true;
     });
     const formattingStart = Date.now();
-    const results = this.formatter.select(deduplicated, budget).slice(0, limit);
+    const results = this.formatter.select(deduplicated, budget, temporalQuery.mode).slice(0, limit);
     const selectedIds = new Set(results.map(result => result.memory.id));
     const selectedLessons = new Set(results.filter(r => r.memory.kind === "episodic" && r.memory.lesson).map(r => r.memory.lesson!.trim().toLowerCase()));
     for (const item of deduplicated) if (!selectedIds.has(item.memory.id)) {

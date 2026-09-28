@@ -5,6 +5,10 @@ import { TECHNICAL_ALIASES, CONCEPT_CLUSTERS } from "./queryExpansion";
 
 type MemoryLike = Memory | MemoryCandidate;
 
+function semanticScope(memory: MemoryLike, fallback: SemanticFactIdentity["temporalScope"] = "current"): SemanticFactIdentity["temporalScope"] {
+  return memory.temporalScope ?? (memory.validUntil ? "historical" : memory.validFrom ? "current" : fallback);
+}
+
 /** Normalized single-value technology or concept aliases. */
 const VALUE_CANONICAL_ALIASES: Record<string, string> = {
   // Database engines
@@ -200,7 +204,7 @@ export function extractSemanticFact(memory: MemoryLike): SemanticFactIdentity | 
       property,
       value: normalizeFactValue(explicit.value),
       cardinality,
-      temporalScope: explicit.temporalScope ?? "current",
+      temporalScope: explicit.temporalScope ?? semanticScope(memory),
       timeReference: explicit.timeReference,
       confidence: explicit.confidence ?? 1.0,
       source: "explicit",
@@ -217,7 +221,7 @@ export function extractSemanticFact(memory: MemoryLike): SemanticFactIdentity | 
         property,
         value: normalizeFactValue(sd.technology),
         cardinality: MULTI_VALUED_PROPERTIES.has(property) ? "multi" : "single",
-        temporalScope: "current",
+        temporalScope: semanticScope(memory),
         confidence: 0.95,
         source: "structured_data",
       };
@@ -229,7 +233,7 @@ export function extractSemanticFact(memory: MemoryLike): SemanticFactIdentity | 
         property,
         value: normalizeFactValue(sd.value),
         cardinality: MULTI_VALUED_PROPERTIES.has(property) ? "multi" : "single",
-        temporalScope: "current",
+        temporalScope: semanticScope(memory),
         confidence: 0.95,
         source: "structured_data",
       };

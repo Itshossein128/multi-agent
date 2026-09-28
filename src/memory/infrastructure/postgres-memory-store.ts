@@ -14,11 +14,13 @@ const fields = {
   structuredData: "structured_data", situation: "situation", action: "action", result: "result", lesson: "lesson", success: "success",
   title: "title", procedure: "procedure", trigger: "trigger", importance: "importance", confidence: "confidence", source: "source",
   status: "status", supersedesMemoryId: "supersedes_memory_id", supersededByMemoryId: "superseded_by_memory_id",
+  replacesMemoryId: "replaces_memory_id", replacedByMemoryId: "replaced_by_memory_id",
+  validFrom: "valid_from", validUntil: "valid_until", observedAt: "observed_at", temporalScope: "temporal_scope", transition: "transition",
   createdAt: "created_at", updatedAt: "updated_at", expiresAt: "expires_at", embedding: "embedding", metadata: "metadata",
   idempotencyKey: "idempotency_key", contentHash: "content_hash", version: "version", lastAccessedAt: "last_accessed_at",
   accessCount: "access_count", reinforcementCount: "reinforcement_count",
 } as const;
-const jsonFields = new Set(["structuredData", "source", "metadata"]);
+const jsonFields = new Set(["structuredData", "source", "metadata", "transition"]);
 const entries = Object.entries(fields) as [keyof typeof fields, string][];
 const columns = [...entries.map(([, column]) => column), "namespace_scope", "namespace_id", "embedding_provider", "embedding_model", "embedding_dimensions", "embedding_version"];
 function values(memory: Memory): unknown[] {

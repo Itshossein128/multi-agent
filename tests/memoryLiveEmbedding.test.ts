@@ -48,6 +48,7 @@ describe("Phase 10: Real Embedding and Provider Validation (PostgreSQL + pgvecto
     const applied = await runMemoryMigrations(pool, { vectorEnabled: true });
     expect(applied).toContain("001_memories.sql");
     expect(applied).toContain("002_pgvector.sql");
+    expect(applied).toContain("003_temporal_validity.sql");
   }, 30000);
 
   afterAll(async () => {
@@ -92,6 +93,18 @@ describe("Phase 10: Real Embedding and Provider Validation (PostgreSQL + pgvecto
     expect(result.diagnostics.embeddingProvider).toBe("test-semantic");
     expect(result.diagnostics.vectorSearchMs).toBeDefined();
     expect(result.diagnostics.vectorSearchMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("PostgreSQL persists semantic validity and supports current/as-of selection without changing pgvector search", async () => {
+    const store = new PostgresMemoryStore(pool, { vectorEnabled: true });
+    const service = new DefaultMemoryService(store, { embeddingProvider: provider, now: () => Date.parse("2026-09-28T00:00:00.000Z") });
+    await service.remember({ namespace: ns, kind: "semantic", content: "The project package manager is npm.", subject: "repository package manager", validFrom: "2024-01-01T00:00:00.000Z", validUntil: "2026-03-01T00:00:00.000Z", source: { type: "user" } }, access);
+    await service.remember({ namespace: ns, kind: "semantic", content: "The project package manager is pnpm.", subject: "repository package manager", validFrom: "2026-03-01T00:00:00.000Z", observedAt: "2026-03-02T00:00:00.000Z", source: { type: "user" } }, access);
+    const current = await service.recall({ text: "What package manager does the project use now?", namespaces: [ns] }, access);
+    expect(current.results.map(item => item.memory.content)).toEqual([expect.stringContaining("pnpm")]);
+    const historical = await service.recall({ text: "What package manager did the project use as of 2025-06-01?", namespaces: [ns] }, access);
+    expect(historical.results.map(item => item.memory.content)).toEqual([expect.stringContaining("npm")]);
+    expect(historical.diagnostics.retrievalMode).toBe("hybrid");
   });
 
   test("embedding cache prevents redundant vector generation on repeated queries", async () => {

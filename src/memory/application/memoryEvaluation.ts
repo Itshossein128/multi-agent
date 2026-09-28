@@ -41,7 +41,9 @@ export type MemoryDropReason =
   | "not_retrieved" | "low_score" | "budget" | "scope_denied" | "stale" | "invalidated"
   | "superseded" | "kind_disabled" | "duplicate" | "formatter_dropped"
   | "conflict_weaker_reliability" | "conflict_superseded_by_current"
-  | "conflict_lower_confidence" | "conflict_older_canonical";
+  | "conflict_lower_confidence" | "conflict_older_canonical"
+  | "not_yet_valid" | "no_longer_current" | "outside_as_of_time"
+  | "unknown_validity_for_historical_query" | "outside_requested_range" | "temporal_overlap_unresolved";
 
 // ─── Retrieval Trace ─────────────────────────────────────────────────────────
 
@@ -65,6 +67,9 @@ export interface MemoryRetrievalTrace {
   securityViolations?: number;
   filteredCounts?: { unauthorized: number; expired: number; superseded: number; invalidated: number };
   conflict?: { groups: number; candidates: number; suppressed: number; staleSuppressed: number; disputedSuppressed: number; unresolved: number };
+  temporalMode?: import("@multi-agent/types").MemoryTemporalQuery["mode"];
+  queryTime?: string;
+  temporal?: { matched: number; dropped: number; overlapUnresolved: number; historicalMatches: number };
   at: string;
 }
 
@@ -497,6 +502,11 @@ export interface StructuredMemoryEvaluationEvent {
   memoryTokens?: number;
   tokensByKind?: MemoryTokenAccounting;
   reasonCounts?: Record<string, number>;
+  temporalMode?: import("@multi-agent/types").MemoryTemporalQuery["mode"];
+  queryTime?: string;
+  temporalMatched?: number;
+  temporalDropped?: number;
+  temporalOverlapUnresolved?: number;
 }
 
 /** Bounded structured production adapter over the existing evaluation sink. */
@@ -513,7 +523,7 @@ export class StructuredMemoryEvaluationSink implements MemoryEvaluationSink {
   recordRetrieval(trace: MemoryRetrievalTrace): void {
     this.inner.recordRetrieval(trace);
     const securityViolations = trace.securityViolations ?? 0;
-    this.maybeEmit({ event: "memory.evaluation.retrieval", runId: trace.runId, invocationId: trace.invocationId, agentId: trace.agentId, nodeId: trace.nodeId, candidateCount: trace.candidateCount, selectedCount: trace.selectedCount, conflictGroups: trace.conflict?.groups, suppressedCount: trace.conflict?.suppressed, staleConflictSuppressed: trace.conflict?.staleSuppressed, disputedConflictSuppressed: trace.conflict?.disputedSuppressed, unauthorizedFiltered: trace.filteredCounts?.unauthorized, expiredFiltered: trace.filteredCounts?.expired, supersededFiltered: trace.filteredCounts?.superseded, invalidatedFiltered: trace.filteredCounts?.invalidated, securityViolations, embeddingLatencyMs: trace.embeddingLatencyMs, formattingLatencyMs: trace.formattingLatencyMs, fallbackMode: trace.retrievalMode, latencyMs: trace.latencyMs }, securityViolations > 0);
+    this.maybeEmit({ event: "memory.evaluation.retrieval", runId: trace.runId, invocationId: trace.invocationId, agentId: trace.agentId, nodeId: trace.nodeId, candidateCount: trace.candidateCount, selectedCount: trace.selectedCount, conflictGroups: trace.conflict?.groups, suppressedCount: trace.conflict?.suppressed, staleConflictSuppressed: trace.conflict?.staleSuppressed, disputedConflictSuppressed: trace.conflict?.disputedSuppressed, unauthorizedFiltered: trace.filteredCounts?.unauthorized, expiredFiltered: trace.filteredCounts?.expired, supersededFiltered: trace.filteredCounts?.superseded, invalidatedFiltered: trace.filteredCounts?.invalidated, securityViolations, embeddingLatencyMs: trace.embeddingLatencyMs, formattingLatencyMs: trace.formattingLatencyMs, fallbackMode: trace.retrievalMode, latencyMs: trace.latencyMs, temporalMode: trace.temporalMode, queryTime: trace.queryTime, temporalMatched: trace.temporal?.matched, temporalDropped: trace.temporal?.dropped, temporalOverlapUnresolved: trace.temporal?.overlapUnresolved }, securityViolations > 0);
     if (securityViolations > 0) this.maybeEmit({ event: "memory.evaluation.security_violation", runId: trace.runId, invocationId: trace.invocationId, securityViolations }, true);
   }
   recordSelections(invocationId: string, selections: MemorySelectionDiagnostic[]): void { this.inner.recordSelections(invocationId, selections); }
@@ -581,6 +591,9 @@ export class MemoryEvaluationRecorder {
         securityViolations: diagnostics.securityViolations,
         filteredCounts: diagnostics.filteredCounts,
         conflict: diagnostics.conflict,
+        temporalMode: diagnostics.temporalMode,
+        queryTime: diagnostics.queryTime,
+        temporal: diagnostics.temporal,
         at: nowIso(),
       });
       const selections = diagnostics.candidates.map(candidate => {
@@ -592,6 +605,7 @@ export class MemoryEvaluationRecorder {
         const dropReason: MemoryDropReason | undefined = selected ? undefined
           : candidate.reason === "invalidated" ? "invalidated"
           : candidate.reason.startsWith("conflict_") ? candidate.reason as MemoryDropReason
+          : candidate.temporalDropReason ? candidate.temporalDropReason as MemoryDropReason
           : candidate.reason === "eligible" ? "budget"
           : "low_score";
         return {

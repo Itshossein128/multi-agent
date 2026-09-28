@@ -61,6 +61,11 @@ export interface MemoryEvalFixture {
   verificationStatus?: "verified" | "stale" | "disputed" | "invalidated";
   contradictionCount?: number;
   confidence?: number;
+  validFrom?: string;
+  validUntil?: string;
+  observedAt?: string;
+  temporalScope?: Memory["temporalScope"];
+  transition?: Memory["transition"];
   /** Episodic structure. */
   situation?: string;
   action?: string;
@@ -114,6 +119,11 @@ export function fixtureToMemory(fixture: MemoryEvalFixture, tenantId = MEMORY_EV
     procedure: fixture.procedure,
     importance: fixture.importance,
     confidence: fixture.confidence,
+    validFrom: fixture.validFrom,
+    validUntil: fixture.validUntil,
+    observedAt: fixture.observedAt,
+    temporalScope: fixture.temporalScope,
+    transition: fixture.transition,
     source: { type: "user" },
     status: "active",
     createdAt: updatedAt,

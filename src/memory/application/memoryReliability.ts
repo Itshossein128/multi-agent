@@ -4,7 +4,7 @@ import { contentHash, isLive } from "./access";
 // ─── Reliability Model ───────────────────────────────────────────────────────
 
 export type VerificationStatus = "unverified" | "verified" | "stale" | "disputed" | "invalidated";
-export type FreshnessStatus = "fresh" | "aging" | "stale" | "expired";
+export type FreshnessStatus = "fresh" | "aging" | "stale" | "expired" | "historical" | "future";
 export type ConflictRelation = "duplicate" | "compatible" | "temporal_successor" | "contradiction" | "uncertain";
 
 export interface MemoryReliability {
@@ -126,15 +126,14 @@ export class DeterministicFreshnessPolicy implements MemoryFreshnessPolicy {
       return { status: "fresh", reason: "episodic_historical", score: 1.0 };
     }
 
-    // Check explicit validity windows
-    const validUntil = memory.metadata?.[RELIABILITY_KEYS.validUntil] as string | undefined;
-    if (validUntil && Date.parse(validUntil) <= now) {
-      return { status: "expired", reason: "valid_until_exceeded", score: 0 };
-    }
-
-    const validFrom = memory.metadata?.[RELIABILITY_KEYS.validFrom] as string | undefined;
-    if (validFrom && Date.parse(validFrom) > now) {
-      return { status: "stale", reason: "not_yet_valid", score: 0.2 };
+    // Semantic valid time is handled by temporal selection, not reliability.
+    // An ended historical fact can remain perfectly reliable, and a future fact
+    // is not stale merely because its effective date has not arrived.
+    if (memory.kind === "semantic") {
+      const validUntil = memory.validUntil ?? memory.metadata?.[RELIABILITY_KEYS.validUntil] as string | undefined;
+      if (validUntil && Date.parse(validUntil) <= now) return { status: "historical", reason: "historical_validity_ended", score: 1 };
+      const validFrom = memory.validFrom ?? memory.metadata?.[RELIABILITY_KEYS.validFrom] as string | undefined;
+      if (validFrom && Date.parse(validFrom) > now) return { status: "future", reason: "future_effective", score: 1 };
     }
 
     // Kind-specific freshness thresholds
@@ -184,6 +183,8 @@ export class DeterministicConfidencePolicy implements MemoryConfidencePolicy {
         aging: -0.1,
         stale: -0.25,
         expired: -0.5,
+        historical: 0,
+        future: 0,
       };
       confidence += freshnessPenalty[freshness.status] ?? 0;
     }

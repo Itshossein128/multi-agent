@@ -1,5 +1,5 @@
-import type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent } from "@multi-agent/types";
-export type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent } from "@multi-agent/types";
+import type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent, MemoryTemporalQuery, MemoryTemporalScope, MemoryTransition } from "@multi-agent/types";
+export type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent, MemoryTemporalQuery, MemoryTemporalScope, MemoryTransition } from "@multi-agent/types";
 
 /** Phase 8 evaluation/telemetry types (observational; never memory content). */
 export type {
@@ -46,7 +46,7 @@ export interface EmbeddingProvider {
   embedBatch?(texts: string[]): Promise<number[][]>;
 }
 export interface MemoryWriteResult { memory: Memory; action: "inserted" | "updated" | "duplicate" }
-export type UpdateMemoryInput = Partial<Pick<Memory, "content" | "importance" | "confidence" | "structuredData" | "metadata" | "expiresAt" | "status" | "subject" | "procedure" | "trigger" | "title" | "situation" | "action" | "result" | "lesson" | "success">> & { expectedVersion?: number };
+export type UpdateMemoryInput = Partial<Pick<Memory, "content" | "importance" | "confidence" | "structuredData" | "metadata" | "expiresAt" | "status" | "subject" | "procedure" | "trigger" | "title" | "situation" | "action" | "result" | "lesson" | "success" | "validFrom" | "validUntil" | "observedAt" | "temporalScope" | "transition">> & { expectedVersion?: number };
 export interface MemoryListQuery { namespaces: MemoryNamespace[]; kinds?: MemoryKind[]; limit?: number; offset?: number; status?: Memory["status"]; filters?: Record<string, unknown> }
 export interface MemoryService {
   remember(input: RememberMemoryInput, access: MemoryAccessContext): Promise<MemoryWriteResult>;

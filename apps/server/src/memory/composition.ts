@@ -60,6 +60,11 @@ export function createMemoryComposition(): MemoryComposition {
         latencyMs: event.latencyMs,
         memoryTokenCount: event.memoryTokens,
         reasonCodes: event.reasonCounts ? JSON.stringify(event.reasonCounts) : undefined,
+        temporalMode: event.temporalMode,
+        queryTime: event.queryTime,
+        temporalMatched: event.temporalMatched,
+        temporalDropped: event.temporalDropped,
+        temporalOverlapUnresolved: event.temporalOverlapUnresolved,
       };
       if (security > 0 || event.event.endsWith("security_violation")) log.error(event.event, context);
       else log.info(event.event, context);

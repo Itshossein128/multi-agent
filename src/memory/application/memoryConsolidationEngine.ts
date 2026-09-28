@@ -216,22 +216,40 @@ export class ConsolidationEngine {
       return { persisted: true, merged: 1 };
     });
   }
-  private async executeSupersede(incoming: MemoryCandidate, decision: { relatedMemoryIds: string[] }, access: MemoryAccessContext, _diagnostics: ConsolidationDiagnostics): Promise<{ persisted: boolean; merged: number }> {
+  private async executeSupersede(incoming: MemoryCandidate, decision: { relatedMemoryIds: string[]; reason: string }, access: MemoryAccessContext, _diagnostics: ConsolidationDiagnostics): Promise<{ persisted: boolean; merged: number }> {
     return this.store.transaction(namespaceKey(access.tenantId, incoming.namespace), async store => {
       const now = new Date(this.now()).toISOString();
       let supersededCount = 0;
+      const effectiveAt = incoming.validFrom ?? incoming.transition?.effectiveAt;
+      const isEvolution = decision.reason === "temporal_replacement";
+      // Without explicit effective time, consolidation must not invent a valid-time
+      // boundary from record timestamps. Leave the competing facts visible.
+      if (isEvolution && !effectiveAt) return { persisted: false, merged: 0 };
       for (const relatedId of decision.relatedMemoryIds) {
         try {
           const existing = await store.get(access.tenantId, relatedId);
           if (existing && consolidatable(existing, this.now()) && sameNamespace(existing.namespace, incoming.namespace) && existing.kind === incoming.kind) {
-            await store.update({
-              ...existing,
-              status: "superseded",
-              supersededByMemoryId: incoming.id ?? incoming.supersedesMemoryId,
-              metadata: { ...existing.metadata, consolidationDecision: "superseded", consolidationProvenance: [...((existing.metadata?.consolidationProvenance as unknown[]) ?? []), provenance(existing)].slice(-100) },
-              version: existing.version + 1,
-              updatedAt: now,
-            }, existing.version);
+            if (isEvolution) {
+              if (existing.validFrom && Date.parse(existing.validFrom) >= Date.parse(effectiveAt!)) continue;
+              await store.update({
+                ...existing, validUntil: effectiveAt, temporalScope: "historical",
+                replacedByMemoryId: incoming.id,
+                metadata: { ...existing.metadata, consolidationDecision: "temporal_replaced", consolidationProvenance: [...((existing.metadata?.consolidationProvenance as unknown[]) ?? []), provenance(existing)].slice(-100) },
+                version: existing.version + 1, updatedAt: now,
+              }, existing.version);
+              if (incoming.id) {
+                const current = await store.get(access.tenantId, incoming.id);
+                if (current && current.id !== existing.id && !current.replacesMemoryId) {
+                  await store.update({ ...current, replacesMemoryId: existing.id, temporalScope: "current", version: current.version + 1, updatedAt: now }, current.version);
+                }
+              }
+            } else {
+              await store.update({
+                ...existing, status: "superseded", supersededByMemoryId: incoming.id ?? incoming.supersedesMemoryId,
+                metadata: { ...existing.metadata, consolidationDecision: "corrected", consolidationProvenance: [...((existing.metadata?.consolidationProvenance as unknown[]) ?? []), provenance(existing)].slice(-100) },
+                version: existing.version + 1, updatedAt: now,
+              }, existing.version);
+            }
             supersededCount++;
           }
         } catch { /* Individual supersede failure does not break the batch. */ }
@@ -276,6 +294,12 @@ export class ConsolidationEngine {
         trigger: memory.trigger,
         idempotencyKey: memory.idempotencyKey,
         supersedesMemoryId: memory.supersedesMemoryId,
+        replacesMemoryId: memory.replacesMemoryId,
+        validFrom: memory.validFrom,
+        validUntil: memory.validUntil,
+        observedAt: memory.observedAt,
+        temporalScope: memory.temporalScope,
+        transition: memory.transition,
         embedding: memory.embedding,
       } as MemoryCandidate & { embedding?: number[] };
       const result = await this.consolidateMemory(incoming, access, diagnostics, memory.id);

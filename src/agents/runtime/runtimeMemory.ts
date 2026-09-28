@@ -93,10 +93,10 @@ export class RuntimeMemory {
       // Optional selection is already implemented by the default formatter. Keep format-only
       // injected implementations compatible while the coordinator extends the shared contract.
       const formatter = this.deps!.formatter as MemoryContextFormatter & {
-        select?: (results: MemorySearchResult[], maxTokens: number) => MemorySearchResult[];
+        select?: (results: MemorySearchResult[], maxTokens: number, temporalMode?: import("@multi-agent/types").MemoryTemporalQuery["mode"]) => MemorySearchResult[];
       };
       const retrievedCount = selected.results.length;
-      if (formatter.select) selected.results = formatter.select(selected.results, contextBudget);
+      if (formatter.select) selected.results = formatter.select(selected.results, contextBudget, selected.diagnostics.temporalMode);
       const formatted = contextBudget > 0 && selected.results.length
         ? formatter.format(selected, contextBudget) : "";
       // Formatting owns whole-record budgeting; never cut its serialized records or delimiters.

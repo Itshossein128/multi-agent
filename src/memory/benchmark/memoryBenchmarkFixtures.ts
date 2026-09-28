@@ -1,7 +1,7 @@
 import type { MemoryKind } from "@multi-agent/types";
 import type { MemoryEvalFixture } from "../evaluation/memoryEvalFixtures";
 
-export const MEMORY_BENCHMARK_VERSION = 1;
+export const MEMORY_BENCHMARK_VERSION = 2;
 export const MEMORY_BENCHMARK_NOW = Date.parse("2026-09-26T00:00:00.000Z");
 
 export type MemoryBenchmarkMode = "no-memory" | "semantic-only" | "semantic-episodic" | "full";
@@ -76,8 +76,9 @@ const frontendReact = semantic("bench-frontend-react", "Frontend uses React.", "
 const backendAspNet = semantic("bench-backend-aspnet", "Backend uses ASP.NET Core.", "backend", 0.85, { verificationStatus: "verified", confidence: 0.95 });
 const browserChrome = semantic("bench-browser-chrome", "Application supports Chrome.", "supported-browsers-chrome", 0.85, { verificationStatus: "verified", confidence: 0.95 });
 const browserFirefox = semantic("bench-browser-firefox", "Application supports Firefox.", "supported-browsers-firefox", 0.85, { verificationStatus: "verified", confidence: 0.95 });
-const pkgHistoricalNpm = semantic("bench-pkg-2025-npm", "In 2025 the project used npm.", "repository package manager", 0.8, { verificationStatus: "verified", confidence: 0.9 });
-const pkgCurrentPnpm = semantic("bench-pkg-current-pnpm", "The project uses pnpm.", "repository package manager", 0.9, { verificationStatus: "verified", confidence: 0.95 });
+const pkgHistoricalNpm = semantic("bench-pkg-2025-npm", "In 2025 the project used npm.", "repository package manager", 0.8, { verificationStatus: "verified", confidence: 0.9, validFrom: "2024-01-01T00:00:00.000Z", validUntil: "2026-03-01T00:00:00.000Z", temporalScope: "historical" });
+const pkgCurrentPnpm = semantic("bench-pkg-current-pnpm", "The project uses pnpm.", "repository package manager", 0.9, { verificationStatus: "verified", confidence: 0.95, validFrom: "2026-03-01T00:00:00.000Z", temporalScope: "current" });
+const futurePostgres = semantic("bench-future-postgres", "The project database is PostgreSQL.", "database", 0.9, { validFrom: "2026-10-01T00:00:00.000Z", temporalScope: "future", verificationStatus: "verified" });
 
 // Phase 9 Distractors and Scenarios
 const generateDistractors = (count = 100): MemoryEvalFixture[] => {
@@ -327,6 +328,40 @@ export const MEMORY_BENCHMARK_SCENARIOS: MemoryBenchmarkScenario[] = [
     expectedBehavior: ["select current pnpm", "suppress historical npm"],
     requiredOutputMarkers: ["pnpm"], forbiddenOutputMarkers: ["used npm"],
     modes: ["no-memory", "semantic-only", "semantic-episodic", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "temporal-timeline-query", title: "Timeline retains ordered package-manager evolution", category: "conflict",
+    setup: { priorRuns: ["The package manager evolved from npm to pnpm."], memories: [pkgCurrentPnpm, pkgHistoricalNpm] },
+    targetTask: "Show the package-manager history.", expectedRelevantMemories: [pkgHistoricalNpm.id, pkgCurrentPnpm.id], forbiddenMemories: [],
+    expectedBehavior: ["return the ordered npm to pnpm timeline"], requiredOutputMarkers: ["npm", "pnpm"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "temporal-future-effective", title: "Future-effective fact does not leak", category: "conflict",
+    setup: { priorRuns: ["PostgreSQL becomes effective in October."], memories: [futurePostgres] },
+    targetTask: "What database does the project use now?", expectedRelevantMemories: [], forbiddenMemories: [futurePostgres.id],
+    expectedBehavior: ["return no current database before activation"], requiredOutputMarkers: [], forbiddenOutputMarkers: ["postgresql"],
+    modes: ["no-memory", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "temporal-validity-gap", title: "Validity gaps do not fabricate a value", category: "conflict",
+    setup: { priorRuns: ["No package manager was recorded between March and June."], memories: [
+      semantic("bench-gap-npm", "The project package manager is npm.", "repository package manager", 0.8, { validFrom: "2024-01-01T00:00:00.000Z", validUntil: "2026-03-01T00:00:00.000Z" }),
+      semantic("bench-gap-pnpm", "The project package manager is pnpm.", "repository package manager", 0.9, { validFrom: "2026-06-01T00:00:00.000Z" }),
+    ] },
+    targetTask: "What package manager did the project use as of 2026-04-15?", expectedRelevantMemories: [], forbiddenMemories: ["bench-gap-npm", "bench-gap-pnpm"],
+    expectedBehavior: ["return no known valid fact"], requiredOutputMarkers: [], forbiddenOutputMarkers: ["npm", "pnpm"],
+    modes: ["no-memory", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
+  },
+  {
+    id: "temporal-overlap", title: "Overlapping intervals remain unresolved", category: "conflict",
+    setup: { priorRuns: ["Conflicting overlapping package-manager dates require review."], memories: [
+      semantic("bench-overlap-npm", "The project package manager is npm.", "repository package manager", 0.8, { validFrom: "2026-01-01T00:00:00.000Z", validUntil: "2026-12-01T00:00:00.000Z" }),
+      semantic("bench-overlap-pnpm", "The project package manager is pnpm.", "repository package manager", 0.9, { validFrom: "2026-06-01T00:00:00.000Z" }),
+    ] },
+    targetTask: "What package manager does the project use now?", expectedRelevantMemories: ["bench-overlap-npm", "bench-overlap-pnpm"], forbiddenMemories: [],
+    expectedBehavior: ["retain both and flag unresolved overlap"], requiredOutputMarkers: ["npm", "pnpm"], forbiddenOutputMarkers: [],
+    modes: ["no-memory", "full"], kinds: ["semantic"], maxMemories: 4, memoryTokenBudget: 2048, baseContextTokens: 420,
   },
   {
     id: "context-budget", title: "Highest-value memory survives a tight budget", category: "context-budget",

@@ -5,7 +5,7 @@ import {
 } from "../src/memory/benchmark/memoryBenchmarkRunner";
 import { MEMORY_BENCHMARK_SCENARIOS, MEMORY_BENCHMARK_VERSION } from "../src/memory/benchmark/memoryBenchmarkFixtures";
 
-describe("Phase 5 deterministic production memory benchmark", () => {
+describe("production memory benchmark", () => {
   let report: Awaited<ReturnType<typeof runMemoryBenchmark>>;
 
   beforeAll(async () => {
@@ -13,7 +13,7 @@ describe("Phase 5 deterministic production memory benchmark", () => {
   });
 
   test("catalog covers the required retrieval and budget categories", () => {
-    expect(MEMORY_BENCHMARK_VERSION).toBe(1);
+    expect(MEMORY_BENCHMARK_VERSION).toBe(2);
     const categories = new Set(MEMORY_BENCHMARK_SCENARIOS.map(scenario => scenario.category));
     for (const category of [
       "semantic-recall", "episodic-recall", "procedural-recall", "novel-task",
@@ -89,7 +89,7 @@ describe("Phase 5 deterministic production memory benchmark", () => {
 
   test("serializes stable machine-readable and human-readable reports", () => {
     const parsed = JSON.parse(memoryBenchmarkReportToJson(report));
-    expect(parsed.benchmarkVersion).toBe(1);
+    expect(parsed.benchmarkVersion).toBe(2);
     expect(parsed.commit).toEqual(expect.any(String));
     expect(parsed.configuration.embeddingProvider).toBe("eval-deterministic");
     const markdown = memoryBenchmarkReportToMarkdown(report);

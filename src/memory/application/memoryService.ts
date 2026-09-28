@@ -5,15 +5,16 @@ import { boundedInteger, canAccessMemory, contentHash, IDEMPOTENCY_METADATA_KEY,
 import { embedSafely, embeddableMemoryText } from "./embedding";
 import { HybridMemoryRetriever, HybridMemoryRetrieverOptions } from "./hybridMemoryRetriever";
 import { DefaultMemoryWritePolicy } from "./memoryWritePolicy";
+import { extractEffectiveAt, extractTransition } from "./memoryTemporal";
 
 export interface DefaultMemoryServiceOptions extends HybridMemoryRetrieverOptions {
   retriever?: MemoryRetriever; writePolicy?: MemoryWritePolicy; defaultTtlMs?: number;
   consolidationScheduler?: MemoryConsolidationScheduler;
 }
-const optionalFields = ["subject", "structuredData", "situation", "action", "result", "lesson", "success", "title", "procedure", "trigger", "metadata", "confidence", "expiresAt"] as const;
+const optionalFields = ["subject", "structuredData", "situation", "action", "result", "lesson", "success", "title", "procedure", "trigger", "metadata", "confidence", "expiresAt", "validFrom", "validUntil", "observedAt", "temporalScope", "transition"] as const;
 interface RetryIdentity { key: string; fingerprint: string }
 function retryKey(key: string): string { return createHash("sha256").update(key, "utf8").digest("hex"); }
-function fingerprint(memory: Memory): string { return retryKey(JSON.stringify([memory.contentHash, memory.kind, memory.visibility, memory.supersedesMemoryId ?? null])); }
+function fingerprint(memory: Memory): string { return retryKey(JSON.stringify([memory.contentHash, memory.kind, memory.visibility, memory.supersedesMemoryId ?? null, memory.replacesMemoryId ?? null, memory.validFrom ?? null, memory.validUntil ?? null])); }
 function identities(memory: Memory): RetryIdentity[] { return (memory.metadata?.[IDEMPOTENCY_METADATA_KEY] as RetryIdentity[] | undefined) ?? []; }
 function rejectReservedMetadata(metadata?: Record<string, unknown>): void {
   if (metadata && Object.prototype.hasOwnProperty.call(metadata, IDEMPOTENCY_METADATA_KEY)) throw new MemoryValidationError("Reserved memory metadata field");
@@ -24,6 +25,11 @@ function validate(input: RememberMemoryInput): void {
   if (input.visibility !== undefined && !["private", "workflow", "project", "organization", "shared"].includes(input.visibility)) throw new MemoryValidationError("Invalid memory visibility");
   for (const value of [input.importance, input.confidence]) if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1)) throw new MemoryValidationError("Memory scores must be between zero and one");
   if (input.expiresAt !== undefined && (typeof input.expiresAt !== "string" || !Number.isFinite(Date.parse(input.expiresAt)))) throw new MemoryValidationError("Invalid memory expiration");
+  for (const key of ["validFrom", "validUntil", "observedAt"] as const) if (input[key] !== undefined && (typeof input[key] !== "string" || !Number.isFinite(Date.parse(input[key]!)))) throw new MemoryValidationError(`Invalid memory ${key}`);
+  if (input.validFrom && input.validUntil && Date.parse(input.validFrom) >= Date.parse(input.validUntil)) throw new MemoryValidationError("Memory validFrom must be before validUntil");
+  if (input.temporalScope !== undefined && !["current", "historical", "future", "unknown"].includes(input.temporalScope)) throw new MemoryValidationError("Invalid memory temporal scope");
+  if (input.transition !== undefined && (!input.transition || typeof input.transition.oldValue !== "string" || typeof input.transition.newValue !== "string" || !Number.isFinite(Date.parse(input.transition.effectiveAt)))) throw new MemoryValidationError("Invalid memory transition");
+  if (input.supersedesMemoryId && input.replacesMemoryId) throw new MemoryValidationError("A memory cannot be both a correction and an evolution replacement");
   if (input.idempotencyKey !== undefined && (typeof input.idempotencyKey !== "string" || !input.idempotencyKey || input.idempotencyKey.length > 512)) throw new MemoryValidationError("Invalid memory idempotency key");
   for (const key of ["subject", "situation", "action", "result", "lesson", "title", "procedure", "trigger"] as const) if (input[key] !== undefined && typeof input[key] !== "string") throw new MemoryValidationError("Invalid memory text field");
   for (const value of [input.metadata, input.structuredData]) if (value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))) throw new MemoryValidationError("Invalid memory metadata");
@@ -81,9 +87,13 @@ export class DefaultMemoryService implements MemoryService {
       content: input.content.trim(), importance: input.importance ?? decision.importance ?? .5,
       source: { ...input.source, ...(access.agentId !== undefined ? { agentId: access.agentId } : {}), ...(access.workflowId !== undefined ? { workflowId: access.workflowId } : {}) },
       status: "active", createdAt: timestamp, updatedAt: timestamp, version: 1, contentHash: contentHash(input.content),
-      idempotencyKey: input.idempotencyKey, supersedesMemoryId: input.supersedesMemoryId,
+      idempotencyKey: input.idempotencyKey, supersedesMemoryId: input.supersedesMemoryId, replacesMemoryId: input.replacesMemoryId,
     };
     for (const key of optionalFields) if (input[key] !== undefined) Object.assign(memory, { [key]: structuredClone(input[key]) });
+    if (memory.kind === "semantic") {
+      memory.transition ??= extractTransition(memory.content, now);
+      memory.validFrom ??= memory.transition?.effectiveAt ?? extractEffectiveAt(memory.content, now);
+    }
     if (memory.idempotencyKey) memory.metadata = { ...memory.metadata, [IDEMPOTENCY_METADATA_KEY]: [{ key: retryKey(memory.idempotencyKey), fingerprint: fingerprint(memory) }] };
     if (!memory.expiresAt && this.options.defaultTtlMs) memory.expiresAt = new Date(now + this.options.defaultTtlMs).toISOString();
     if (!canAccessMemory(memory, access, true)) throw new MemoryAccessDeniedError();
@@ -104,7 +114,7 @@ export class DefaultMemoryService implements MemoryService {
         if (canAccessMemory(item, access, true) && isLive(item, now) && item.kind === memory.kind && item.visibility === memory.visibility && item.contentHash === memory.contentHash
           && (memory.visibility !== "private" || item.source.agentId === memory.source.agentId) && (memory.visibility !== "workflow" || item.source.workflowId === memory.source.workflowId)) duplicate = item;
       }
-      if (duplicate && !input.supersedesMemoryId) {
+      if (duplicate && !input.supersedesMemoryId && !input.replacesMemoryId) {
         if (memory.idempotencyKey) {
           const aliases = identities(duplicate);
           if (aliases.length >= 128) throw new MemoryConflictError("Memory retry identity capacity reached");
@@ -117,6 +127,13 @@ export class DefaultMemoryService implements MemoryService {
         const old = await this.authorized(store, input.supersedesMemoryId, access, true);
         if (!sameNamespace(old.namespace, memory.namespace) || old.kind !== memory.kind || !isLive(old, now)) throw new MemoryConflictError("Only active memory in the same namespace and kind can be superseded");
         await store.update({ ...old, status: "superseded", supersededByMemoryId: memory.id, updatedAt: timestamp, version: old.version + 1 }, old.version);
+      }
+      if (input.replacesMemoryId) {
+        if (!memory.validFrom) throw new MemoryValidationError("Evolution replacement requires validFrom or an explicit effective date");
+        const old = await this.authorized(store, input.replacesMemoryId, access, true);
+        if (!sameNamespace(old.namespace, memory.namespace) || old.kind !== "semantic" || memory.kind !== "semantic" || !isLive(old, now)) throw new MemoryConflictError("Only active semantic memory in the same namespace can be historically replaced");
+        if (old.validFrom && Date.parse(old.validFrom) >= Date.parse(memory.validFrom!)) throw new MemoryConflictError("Evolution replacement must start after the prior fact");
+        await store.update({ ...old, validUntil: memory.validFrom, temporalScope: "historical", replacedByMemoryId: memory.id, updatedAt: timestamp, version: old.version + 1 }, old.version);
       }
       await store.insert(memory);
       return { memory: publicMemory(memory), action: "inserted" };

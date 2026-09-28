@@ -76,6 +76,9 @@ export interface MemoryBenchmarkScenarioResult {
   crossTenantLeakage: number;
   crossNamespaceLeakage: number;
   securityViolations: number;
+  temporalMode?: import("@multi-agent/types").MemoryTemporalQuery["mode"];
+  temporalDropped: number;
+  temporalOverlapUnresolved: number;
   assertions: Array<{ assertion: string; passed: boolean }>;
 }
 
@@ -193,6 +196,12 @@ export interface MemoryBenchmarkReport {
     securityViolations: number;
     supersededInjection: number;
     invalidatedInjection: number;
+    currentFactAccuracy: number;
+    historicalFactAccuracy: number;
+    timelineAccuracy: number;
+    futureFactLeakage: number;
+    temporalFalseSuppression: number;
+    temporalConflictRate: number;
   };
   latency: { retrieval: LatencySummary; memoryPreparation: LatencySummary; conflictProcessing: null };
   learning: LearningQualityReport;
@@ -299,11 +308,11 @@ async function runScenario(scenario: MemoryBenchmarkScenario, mode: MemoryBenchm
       maxTokens: scenario.memoryTokenBudget,
       minScore: 0,
     }, access);
-    results = formatter.select(retrieval.results, scenario.memoryTokenBudget);
     diagnostics = retrieval.diagnostics;
+    results = formatter.select(retrieval.results, scenario.memoryTokenBudget, diagnostics.temporalMode);
   }
   // Rendering is included because RuntimeMemory performs both selection and serialization.
-  formatter.render(results);
+  formatter.render(results, diagnostics.temporalMode);
   const memoryPreparationLatencyMs = performance.now() - preparationStarted;
 
   const selectedIds = results.map(result => result.memory.id);
@@ -375,6 +384,9 @@ async function runScenario(scenario: MemoryBenchmarkScenario, mode: MemoryBenchm
     conflictGroups: conflict?.groups ?? 0, conflictSuppressed: conflict?.suppressed ?? 0,
     staleConflictSuppressed: conflict?.staleSuppressed ?? 0, disputedConflictSuppressed: conflict?.disputedSuppressed ?? 0,
     supersededInjection, invalidatedInjection, crossTenantLeakage, crossNamespaceLeakage, securityViolations,
+    temporalMode: diagnostics.temporalMode,
+    temporalDropped: diagnostics.temporal?.dropped ?? 0,
+    temporalOverlapUnresolved: diagnostics.temporal?.overlapUnresolved ?? 0,
     assertions,
   };
 }
@@ -685,6 +697,14 @@ export async function runMemoryBenchmark(options: RunMemoryBenchmarkOptions = {}
   const totalSuccessfulHits = full.filter(result => result.memoryHit).length;
   const allCandidatePrecisions = full.map(r => r.candidatePrecision).filter((p): p is number => p !== null && p !== undefined);
   const avgCandidatePrecision = allCandidatePrecisions.length ? round(allCandidatePrecisions.reduce((a, b) => a + b, 0) / allCandidatePrecisions.length) : 1;
+  const currentFactAccuracy = Number(full.find(result => result.scenario === "temporal-current-query")?.taskOutcome.passed ?? false);
+  const historicalFactAccuracy = Number(full.find(result => result.scenario === "temporal-historical-query")?.taskOutcome.passed ?? false);
+  const timelineAccuracy = Number(full.find(result => result.scenario === "temporal-timeline-query")?.taskOutcome.passed ?? false);
+  const futureFactLeakage = full.find(result => result.scenario === "temporal-future-effective")?.forbiddenRetrieved ?? 0;
+  const temporalPreservationScenarios = full.filter(result => ["temporal-timeline-query", "temporal-overlap", "non-conflict-multivalued"].includes(result.scenario));
+  const temporalFalseSuppression = temporalPreservationScenarios.reduce((sum, result) => sum + Math.max(0, result.expectedMemories.length - result.relevantSelected), 0);
+  const temporalOverlapScenarios = full.filter(result => result.scenario === "temporal-overlap");
+  const temporalConflictRate = temporalOverlapScenarios.length ? round(temporalOverlapScenarios.filter(result => result.temporalOverlapUnresolved > 0).length / temporalOverlapScenarios.length) : 0;
 
   const aggCandidateSources: import("@multi-agent/types").CandidateSourceStats = {
     lexicalCandidates: 0,
@@ -734,6 +754,11 @@ export async function runMemoryBenchmark(options: RunMemoryBenchmarkOptions = {}
   const falselySuppressed = nonConflictScenarios.filter(r => r.recall < 1).length;
   if (falselySuppressed > 0) regressionGateFailures.push(`semantic false suppression gate failed: ${falselySuppressed} > 0`);
 
+  if (currentFactAccuracy !== 1) regressionGateFailures.push("current fact accuracy must equal 1.0");
+  if (historicalFactAccuracy !== 1) regressionGateFailures.push("historical fact accuracy must equal 1.0");
+  if (futureFactLeakage !== 0) regressionGateFailures.push("future fact leakage must equal zero");
+  if (temporalFalseSuppression !== 0) regressionGateFailures.push("temporal false suppression must equal zero");
+
   // 3. Consolidation temporal replacement recognized
   if (!consolidation.replacementCorrect) regressionGateFailures.push("consolidation temporal replacement gate failed");
 
@@ -781,6 +806,12 @@ export async function runMemoryBenchmark(options: RunMemoryBenchmarkOptions = {}
       securityViolations: full.reduce((sum, result) => sum + result.securityViolations, 0),
       supersededInjection: full.reduce((sum, result) => sum + result.supersededInjection, 0),
       invalidatedInjection: full.reduce((sum, result) => sum + result.invalidatedInjection, 0),
+      currentFactAccuracy,
+      historicalFactAccuracy,
+      timelineAccuracy,
+      futureFactLeakage,
+      temporalFalseSuppression,
+      temporalConflictRate,
     },
     latency: {
       retrieval: latencySummary(full.map(result => result.retrievalLatencyMs)),
