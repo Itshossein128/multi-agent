@@ -39,6 +39,9 @@ import { log } from "../logging";
 import type { RequestPrincipal } from "../auth/principal";
 import { ApprovalManager, type PausedContext } from "./approvalManager";
 import { GraphRunner } from "./graphRunner";
+import type { DurableMemoryJob, EnqueueMemoryJob } from "../../../../src/memory/infrastructure";
+
+interface DurableMemoryJobEnqueuer { enqueue(input: EnqueueMemoryJob): Promise<{ job: DurableMemoryJob; duplicate: boolean }>; }
 
 function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
   return mapAgentExecutionEvent(event as Parameters<typeof mapAgentExecutionEvent>[0], runId);
@@ -78,10 +81,12 @@ export class RunExecutor {
     private readonly episodeService?: EpisodeService,
     private readonly proceduralService?: ProceduralService,
     private readonly memoryJobs?: MemoryBackgroundJobs,
+    private readonly durableMemoryJobs?: DurableMemoryJobEnqueuer,
   ) {
     // Wire up the extracted managers with shared state.
     this.graphRunner = new GraphRunner(this.store, this.pausedContext, this.checkpointers, this.episodeService,
-      (runId, input, access, result) => this.scheduleProceduralLearning(runId, input, access, result));
+      (runId, input, access, result) => this.scheduleProceduralLearning(runId, input, access, result),
+      (runId, input, access) => this.scheduleDurableEpisodicExtraction(runId, input, access));
     this.approvalManager = new ApprovalManager({
       store: this.store,
       checkpointers: this.checkpointers,
@@ -104,6 +109,20 @@ export class RunExecutor {
   private scheduleProceduralLearning(runId: string, input: EpisodeExtractionInput, access: import("../../../../src/memory/contracts").MemoryAccessContext, _episode: EpisodeExtractionResult): void {
     if (!this.proceduralService) return;
     this.store.markProceduralMemoryPending?.(runId);
+    if (this.durableMemoryJobs) {
+      void this.durableMemoryJobs.enqueue({
+        kind: "procedural_learning", idempotencyKey: `procedural:${access.tenantId}:${input.namespace.scope}:${input.namespace.id}:${runId}:v1`,
+        tenantId: access.tenantId, namespace: input.namespace, runId,
+      }).then(({ job, duplicate }) => {
+        log.info(duplicate ? "memory.job.idempotent_replay" : "memory.job.enqueued", { jobId: job.id, jobKind: job.kind, tenantId: access.tenantId, namespace: input.namespace.id, runId });
+      }, () => {
+        // The run has already produced its episode. Keep the failure visible;
+        // a durable reconciliation deployment can safely resubmit by run id.
+        this.store.setProceduralMemoryStatus?.(runId, "failed");
+        log.warn("memory.job.failed", { jobKind: "procedural_learning", runId, reason: "durable_enqueue_failed" });
+      });
+      return;
+    }
     const task = async () => {
       try {
         const result = await this.proceduralService!.learnFromAuthorizedEpisodes({ access, namespace: input.namespace, agentId: input.agentId });
@@ -121,6 +140,50 @@ export class RunExecutor {
       this.store.setProceduralMemoryStatus?.(runId, "failed");
       log.warn("memory.procedural.learning_failed", { runId, reason: "queue_unavailable" });
     }
+  }
+
+  private async scheduleDurableEpisodicExtraction(runId: string, input: EpisodeExtractionInput, access: MemoryAccessContext): Promise<boolean> {
+    if (!this.durableMemoryJobs) return false;
+    this.store.markEpisodicMemoryPending?.(runId);
+    try {
+      const { job, duplicate } = await this.durableMemoryJobs.enqueue({
+        kind: "episodic_extraction", idempotencyKey: `episodic:${runId}:v1`, tenantId: access.tenantId, namespace: input.namespace, runId,
+      });
+      log.info(duplicate ? "memory.job.idempotent_replay" : "memory.job.enqueued", { jobId: job.id, jobKind: job.kind, tenantId: access.tenantId, namespace: input.namespace.id, runId });
+      return true;
+    } catch (error) {
+      this.store.setEpisodicMemoryStatus?.(runId, "failed");
+      log.warn("memory.job.failed", { jobKind: "episodic_extraction", runId, reason: "durable_enqueue_failed", error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  }
+
+  private durableScope(job: DurableMemoryJob): MemoryAccessContext | undefined {
+    const entry = job.runId ? this.store.get(job.runId) : undefined;
+    const access = entry?.memoryAccess;
+    if (!entry || !access || access.tenantId !== job.tenantId || !access.writableNamespaces.some(n => n.scope === job.namespace.scope && n.id === job.namespace.id)) return undefined;
+    return { principalId: "memory-maintenance", tenantId: job.tenantId, readableNamespaces: [job.namespace], writableNamespaces: [job.namespace] };
+  }
+
+  /** Durable handler: re-load run state and validate its trusted captured scope. */
+  async processDurableEpisodicJob(job: DurableMemoryJob): Promise<void> {
+    const access = this.durableScope(job);
+    if (!job.runId || !access) throw new Error("access validation failed for durable episodic job");
+    const entry = this.store.get(job.runId)!;
+    if (!this.episodeService || !["completed", "failed", "cancelled"].includes(entry.run.status)) throw new Error("unsupported episodic job state");
+    await this.processTerminalEpisodicMemory(job.runId, { succeeded: entry.run.status === "completed", error: entry.run.error, cancelled: entry.run.status === "cancelled" });
+  }
+
+  /** Durable handler: procedures read authoritative episodes at execution time. */
+  async processDurableProceduralJob(job: DurableMemoryJob): Promise<void> {
+    const access = this.durableScope(job);
+    if (!job.runId || !access || !this.proceduralService) throw new Error("access validation failed for durable procedural job");
+    const entry = this.store.get(job.runId)!;
+    const agentId = entry.agentsSnapshot?.[0]?.id ?? "unknown";
+    const result = await this.proceduralService.learnFromAuthorizedEpisodes({ access, namespace: job.namespace, agentId });
+    const failed = result.failed === true || result.reason === "persistence_failed";
+    this.store.setProceduralMemoryStatus?.(job.runId, failed ? "failed" : "processed");
+    if (failed) throw new Error(result.reason);
   }
 
   private credentialPrincipalForRun(runId: string): TrustedCredentialPrincipal | undefined {

@@ -25,6 +25,7 @@ export class GraphRunner {
     private readonly checkpointers: Map<string, BaseCheckpointSaver>,
     private readonly episodeService?: EpisodeService,
     private readonly onEpisodicMemoryPersisted?: (runId: string, input: EpisodeExtractionInput, access: import("../../../../src/memory/contracts").MemoryAccessContext, result: EpisodeExtractionResult) => void,
+    private readonly onEpisodicMemoryReady?: (runId: string, input: EpisodeExtractionInput, access: import("../../../../src/memory/contracts").MemoryAccessContext) => Promise<boolean>,
   ) {}
 
   /**
@@ -174,6 +175,10 @@ export class GraphRunner {
           approvals: entry?.approvals?.map(a => ({ decision: a.status })),
           namespace: effectiveAccess.writableNamespaces[0],
         };
+
+        // PostgreSQL deployments persist work intent before executing it.  The
+        // run remains successful if the supplementary enqueue cannot be done.
+        if (this.onEpisodicMemoryReady && await this.onEpisodicMemoryReady(runId, extractionInput, effectiveAccess)) return;
 
         const epResult = await this.episodeService.processRun(extractionInput, effectiveAccess);
         this.store.setEpisodicMemoryStatus?.(runId, epResult.reason === "persistence_failed" || epResult.reason === "extraction_failed" ? "failed" : "processed");

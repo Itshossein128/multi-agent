@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Memory, MemoryNamespace, MemoryStore, MemoryStoreQuery } from "../contracts";
 import { MemoryValidationError } from "../contracts";
 import { bounds, MemoryDuplicateError, MemoryVersionConflictError, validateEmbedding, validateMemory, validateScope } from "./storage-utils";
@@ -61,6 +62,13 @@ export class PostgresMemoryStore implements MemoryStore {
   async insert(memory: Memory): Promise<void> {
     validateMemory(memory);
     await this.query(`INSERT INTO studio_memories (${columns.map(c => `"${c}"`).join(", ")}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(", ")})`, values(memory));
+  }
+  /** Inserts work intent through the same client/transaction as a memory mutation. */
+  async scheduleLifecycleJob(input: { kind: "procedural_learning" | "consolidation"; idempotencyKey: string; tenantId: string; namespace: MemoryNamespace; runId?: string; memoryId?: string }): Promise<void> {
+    if (!this.client) throw new MemoryValidationError("Lifecycle jobs require a memory transaction");
+    await this.query(`INSERT INTO studio_memory_jobs (id,job_kind,handler_version,idempotency_key,tenant_id,namespace_scope,namespace_id,run_id,memory_id)
+      VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8)
+      ON CONFLICT (tenant_id,job_kind,handler_version,idempotency_key) DO NOTHING`, [randomUUID(), input.kind, input.idempotencyKey, input.tenantId, input.namespace.scope, input.namespace.id, input.runId ?? null, input.memoryId ?? null]);
   }
   async update(memory: Memory, expectedVersion: number): Promise<void> {
     validateMemory(memory);

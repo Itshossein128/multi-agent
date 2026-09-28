@@ -39,6 +39,8 @@ export interface MemoryStore {
   search(query: MemoryStoreQuery): Promise<Memory[]>;
   /** Optional internal maintenance discovery; never exposed to untrusted callers. */
   listNamespaces?(limit?: number): Promise<Array<{ tenantId: string; namespace: MemoryNamespace }>>;
+  /** Available only inside durable PostgreSQL memory transactions. */
+  scheduleLifecycleJob?(input: { kind: "procedural_learning" | "consolidation"; idempotencyKey: string; tenantId: string; namespace: MemoryNamespace; runId?: string; memoryId?: string }): Promise<void>;
 }
 export interface EmbeddingProvider {
   readonly metadata: MemoryEmbeddingMetadata;

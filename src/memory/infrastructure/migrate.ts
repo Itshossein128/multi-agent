@@ -6,7 +6,7 @@ import type { PgPool } from "./postgres-memory-store";
 /** Explicit operator action only. Never called from a store constructor or server startup. */
 export async function runMemoryMigrations(pool: PgPool, options: { vectorEnabled?: boolean; directory?: string } = {}): Promise<string[]> {
   const directory = options.directory ?? resolve(process.cwd(), "infrastructure/memory/migrations");
-  const names = ["001_memories.sql", ...(options.vectorEnabled ? ["002_pgvector.sql"] : []), "003_temporal_validity.sql", "004_memory_jobs.sql"];
+  const names = ["001_memories.sql", ...(options.vectorEnabled ? ["002_pgvector.sql"] : []), "003_temporal_validity.sql", "004_memory_jobs.sql", "005_memory_jobs_tenant_identity.sql"];
   const migrations = await Promise.all(names.map(async name => { const sql = await readFile(resolve(directory, name), "utf8"); return { name, sql, checksum: createHash("sha256").update(sql).digest("hex") }; }));
   const client = await pool.connect();
   const applied: string[] = [];

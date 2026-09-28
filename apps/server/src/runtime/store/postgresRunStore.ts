@@ -5,6 +5,7 @@ import type { MemoryAccessContext } from "../../../../../src/memory/contracts";
 import type { MemoryOwner, RunEntry, RunListFilters, RunStoreContract } from "./contracts";
 import { InMemoryRunStore } from "./inMemoryRunStore";
 import { asIso } from "./helpers";
+import { randomUUID } from "node:crypto";
 
 type Listener = (event: RunEvent) => void;
 
@@ -17,7 +18,7 @@ export class PostgresRunStore implements RunStoreContract {
   private writeChain: Promise<void> = Promise.resolve();
   private persistenceError?: Error;
 
-  constructor(private readonly pool: PgPool) {}
+  constructor(private readonly pool: PgPool, private readonly options: { durableMemoryJobs?: boolean } = {}) {}
 
   private enqueue(operation: () => Promise<void>): void {
     this.writeChain = this.writeChain.then(async () => {
@@ -183,6 +184,31 @@ export class PostgresRunStore implements RunStoreContract {
     const run = this.memory.update(runId, patch);
     if (run) {
       this.enqueue(async () => {
+        const entry = this.memory.get(runId);
+        const namespace = entry?.memoryAccess?.writableNamespaces[0];
+        const terminal = ["completed", "failed", "cancelled"].includes(run.status);
+        // The server's studio and memory persistence use the same configured
+        // PostgreSQL database. Terminal state and its episodic work intent are
+        // committed together; a failed insert rolls both back.
+        if (this.options.durableMemoryJobs && terminal && namespace && entry?.memoryAccess) {
+          const client = await this.pool.connect();
+          try {
+            await client.query("BEGIN");
+            await client.query(
+              `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
+               result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb, updated_at = now() WHERE id = $1`,
+              [runId, run.status, run.completedAt ?? null, run.input ? JSON.stringify(run.input) : null, run.output ? JSON.stringify(run.output) : null, run.result ? JSON.stringify(run.result) : null, run.error ?? null, run.currentNodeId ?? null, JSON.stringify(run.metadata ?? {})],
+            );
+            await client.query(
+              `INSERT INTO studio_memory_jobs (id,job_kind,handler_version,idempotency_key,tenant_id,namespace_scope,namespace_id,run_id)
+               VALUES ($1,'episodic_extraction',1,$2,$3,$4,$5,$6)
+               ON CONFLICT (tenant_id,job_kind,handler_version,idempotency_key) DO NOTHING`,
+              [randomUUID(), `episodic:${runId}:v1`, entry.memoryAccess.tenantId, namespace.scope, namespace.id, runId],
+            );
+            await client.query("COMMIT");
+          } catch (error) { try { await client.query("ROLLBACK"); } catch {} throw error; } finally { client.release(); }
+          return;
+        }
         await this.pool.query(
           `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
              result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb, updated_at = now()

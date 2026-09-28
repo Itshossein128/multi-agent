@@ -136,6 +136,13 @@ export class DefaultMemoryService implements MemoryService {
         await store.update({ ...old, validUntil: memory.validFrom, temporalScope: "historical", replacedByMemoryId: memory.id, updatedAt: timestamp, version: old.version + 1 }, old.version);
       }
       await store.insert(memory);
+      // These intents share the exact PostgreSQL transaction with the source
+      // memory mutation. A committed memory can therefore not silently miss
+      // consolidation, and a committed episode cannot silently miss learning.
+      await store.scheduleLifecycleJob?.({ kind: "consolidation", idempotencyKey: `namespace:${access.tenantId}:${memory.namespace.scope}:${memory.namespace.id}:v1`, tenantId: access.tenantId, namespace: memory.namespace, memoryId: memory.id });
+      if (memory.kind === "episodic" && memory.source.runId) {
+        await store.scheduleLifecycleJob?.({ kind: "procedural_learning", idempotencyKey: `procedural:${access.tenantId}:${memory.namespace.scope}:${memory.namespace.id}:${memory.source.runId}:v1`, tenantId: access.tenantId, namespace: memory.namespace, runId: memory.source.runId, memoryId: memory.id });
+      }
       return { memory: publicMemory(memory), action: "inserted" };
     });
     // Consolidation is post-commit maintenance. A scheduler failure must never

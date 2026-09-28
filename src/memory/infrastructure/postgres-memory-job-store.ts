@@ -13,9 +13,9 @@ export class PostgresMemoryJobStore {
   constructor(private readonly pool: PgPool) {}
   async enqueue(input: EnqueueMemoryJob): Promise<{ job: DurableMemoryJob; duplicate: boolean }> {
     const version=input.handlerVersion??1, id=randomUUID();
-    const result=await this.pool.query(`INSERT INTO studio_memory_jobs (id,job_kind,handler_version,idempotency_key,tenant_id,namespace_scope,namespace_id,run_id,memory_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (job_kind,handler_version,idempotency_key) DO NOTHING RETURNING *`,[id,input.kind,version,input.idempotencyKey,input.tenantId,input.namespace.scope,input.namespace.id,input.runId??null,input.memoryId??null]);
+    const result=await this.pool.query(`INSERT INTO studio_memory_jobs (id,job_kind,handler_version,idempotency_key,tenant_id,namespace_scope,namespace_id,run_id,memory_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tenant_id,job_kind,handler_version,idempotency_key) DO NOTHING RETURNING *`,[id,input.kind,version,input.idempotencyKey,input.tenantId,input.namespace.scope,input.namespace.id,input.runId??null,input.memoryId??null]);
     if(result.rows.length)return {job:decode(result.rows[0]),duplicate:false};
-    const existing=await this.pool.query(`SELECT * FROM studio_memory_jobs WHERE job_kind=$1 AND handler_version=$2 AND idempotency_key=$3`,[input.kind,version,input.idempotencyKey]);
+    const existing=await this.pool.query(`SELECT * FROM studio_memory_jobs WHERE tenant_id=$1 AND job_kind=$2 AND handler_version=$3 AND idempotency_key=$4`,[input.tenantId,input.kind,version,input.idempotencyKey]);
     return {job:decode(existing.rows[0]),duplicate:true};
   }
   async claim(workerId:string,limit=1,leaseMs=30_000):Promise<DurableMemoryJob[]> {
@@ -25,4 +25,15 @@ export class PostgresMemoryJobStore {
   async fail(id:string,workerId:string,code:string,retryable:boolean,maxAttempts=3):Promise<MemoryJobStatus|null>{const r=await this.pool.query(`UPDATE studio_memory_jobs SET status=CASE WHEN $4 AND attempts<$5 THEN 'failed' ELSE 'dead' END,available_at=CASE WHEN $4 AND attempts<$5 THEN now()+(LEAST(30000,250*(2^attempts))::text||' milliseconds')::interval ELSE available_at END,leased_by=NULL,lease_expires_at=NULL,last_error_code=$3,updated_at=now() WHERE id=$1 AND status='leased' AND leased_by=$2 RETURNING status`,[id,workerId,code,retryable,maxAttempts]);return r.rows[0]?.status??null;}
   async retryDead(id:string):Promise<boolean>{const r=await this.pool.query(`UPDATE studio_memory_jobs SET status='pending',attempts=0,available_at=now(),leased_by=NULL,lease_expires_at=NULL,last_error_code=NULL,updated_at=now() WHERE id=$1 AND status IN ('dead','failed')`,[id]);return !!r.rowCount;}
   async counts():Promise<Record<string,number>>{const r=await this.pool.query(`SELECT status,count(*)::int count FROM studio_memory_jobs GROUP BY status`);return Object.fromEntries(r.rows.map(x=>[x.status,x.count]));}
+  /** Queue health metric, intentionally identifier/content free. */
+  async metrics():Promise<Array<{ kind: MemoryJobKind; status: MemoryJobStatus; count: number }>> { const r=await this.pool.query(`SELECT job_kind,status,count(*)::int count FROM studio_memory_jobs GROUP BY job_kind,status`); return r.rows.map(row=>({kind:row.job_kind,status:row.status,count:Number(row.count)})); }
+  /** Operator/scheduled retention; never removes pending or leased work. */
+  async purgeTerminal(retainCompletedMs:number, retainDeadMs:number):Promise<number>{const r=await this.pool.query(`DELETE FROM studio_memory_jobs WHERE (status='completed' AND completed_at < now()-($1::text||' milliseconds')::interval) OR (status='dead' AND updated_at < now()-($2::text||' milliseconds')::interval)`,[Math.max(0,retainCompletedMs),Math.max(0,retainDeadMs)]);return r.rowCount??0;}
+  /** Bounded legacy recovery: terminal runs with captured scope but no episode intent. */
+  async reconcileTerminalRuns(limit=100):Promise<number>{
+    const rows=await this.pool.query(`SELECT r.id,r.tenant_id,r.memory_access FROM studio_runs r WHERE r.status IN ('completed','failed','cancelled') AND r.memory_access IS NOT NULL AND NOT EXISTS (SELECT 1 FROM studio_memory_jobs j WHERE j.tenant_id=r.tenant_id AND j.job_kind='episodic_extraction' AND j.handler_version=1 AND j.idempotency_key=('episodic:' || r.id || ':v1')) ORDER BY r.updated_at ASC LIMIT $1`,[Math.max(1,Math.min(1000,limit))]);
+    let recovered=0;
+    for(const row of rows.rows){const access=row.memory_access as { writableNamespaces?: MemoryNamespace[] };const namespace=access?.writableNamespaces?.[0];if(!namespace)continue;const result=await this.enqueue({kind:"episodic_extraction",idempotencyKey:`episodic:${row.id}:v1`,tenantId:String(row.tenant_id),namespace,runId:String(row.id)});if(!result.duplicate)recovered++;}
+    return recovered;
+  }
 }

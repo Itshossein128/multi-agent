@@ -1,5 +1,5 @@
 import type { MemoryService, RuntimeMemoryDependencies, MemoryBackgroundJobs, MemoryConsolidationScheduler, MemoryEvaluationRuntime } from "../../../../src/memory/contracts";
-import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs, DefaultEpisodeService, DefaultProceduralService, RealMemoryConsolidator, BoundedMemoryConsolidationScheduler, DurableMemoryJobWorker, InMemoryMemoryEvaluationSink, MemoryEvaluationRecorder, StructuredMemoryEvaluationSink, type EpisodeService, type ProceduralService } from "../../../../src/memory/application";
+import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs, DefaultEpisodeService, DefaultProceduralService, RealMemoryConsolidator, BoundedMemoryConsolidationScheduler, DurableMemoryJobWorker, InMemoryMemoryEvaluationSink, MemoryEvaluationRecorder, StructuredMemoryEvaluationSink, type EpisodeService, type ProceduralService, type DurableMemoryJobHandler } from "../../../../src/memory/application";
 import { PostgresMemoryStore, PostgresMemoryJobStore, InMemoryMemoryStore, type PgPool } from "../../../../src/memory/infrastructure";
 import { createPostgresPool, type ManagedPool } from "../infrastructure/postgresPool";
 import { embeddingProviderFromEnvironment } from "./embeddingProvider";
@@ -7,6 +7,8 @@ import { log } from "../logging";
 
 export interface MemoryComposition {
   service?: MemoryService; runtime?: RuntimeMemoryDependencies; episodeService?: EpisodeService; proceduralService?: ProceduralService; jobs?: MemoryBackgroundJobs; consolidationScheduler?: MemoryConsolidationScheduler; evaluationSink?: InMemoryMemoryEvaluationSink;
+  durableJobs?: PostgresMemoryJobStore;
+  startDurableWorkers(handlers: Partial<Record<"episodic_extraction" | "procedural_learning", DurableMemoryJobHandler>>): void;
   recover(): Promise<number>;
   close(): Promise<void>;
 }
@@ -14,7 +16,7 @@ export interface MemoryComposition {
 export function createMemoryComposition(): MemoryComposition {
   const connectionString = process.env.MEMORY_DATABASE_URL;
   const mode = process.env.MEMORY_STORE ?? (connectionString ? "postgres" : "disabled");
-  if (mode === "disabled") { log.info("memory.store", { mode: "disabled" }); return { recover: async () => 0, close: async () => {} }; }
+  if (mode === "disabled") { log.info("memory.store", { mode: "disabled" }); return { startDurableWorkers: () => {}, recover: async () => 0, close: async () => {} }; }
   if (!["postgres", "in-memory"].includes(mode)) throw new Error("Invalid MEMORY_STORE mode.");
   if (mode === "postgres" && !connectionString) throw new Error("MEMORY_DATABASE_URL is required for PostgreSQL memory.");
   if (mode === "in-memory" && process.env.NODE_ENV === "production") throw new Error("Volatile memory storage is not supported in production.");
@@ -86,8 +88,14 @@ export function createMemoryComposition(): MemoryComposition {
     errorCode: typeof event.errorCode === "string" ? event.errorCode : undefined,
   }) }) : undefined;
   const pollMs = Math.max(100, Math.min(60_000, Number(process.env.MEMORY_JOB_POLL_MS ?? 1000) || 1000));
-  const poller = durableWorker ? setInterval(() => { void durableWorker.pollOnce().catch(() => log.warn("memory.job.poll_failed", { workerId })); }, pollMs) : undefined;
-  if (durableWorker) void durableWorker.pollOnce().catch(() => log.warn("memory.job.initial_poll_failed", { workerId }));
+  let poller: NodeJS.Timeout | undefined;
+  const startDurableWorkers = (handlers: Partial<Record<"episodic_extraction" | "procedural_learning", DurableMemoryJobHandler>>) => {
+    if (!durableWorker || poller) return;
+    durableWorker.setHandlers(handlers);
+    const poll = () => { void durableWorker.pollOnce().catch(() => log.warn("memory.job.poll_failed", { workerId })); };
+    poll();
+    poller = setInterval(poll, pollMs);
+  };
   const consolidationScheduler = new BoundedMemoryConsolidationScheduler(store, consolidator, jobs, {
     onDiagnostic: (event) => log.info("memory.consolidation", event),
     durableEnqueue: durableJobs ? async (access, namespace) => {
@@ -125,5 +133,10 @@ export function createMemoryComposition(): MemoryComposition {
     log.warn("memory.vector.misconfigured", { message: "MEMORY_VECTOR_ENABLED=true but no embedding provider configured; vector retrieval will fail at query time" });
   }
 
-  return { service, runtime, episodeService, proceduralService, jobs, consolidationScheduler, evaluationSink, recover: () => consolidationScheduler.recover(), close: async () => { if (poller) clearInterval(poller); durableWorker?.stop(); try { await jobs.drain(); } finally { await pool?.end(); } } };
+  return { service, runtime, episodeService, proceduralService, jobs, consolidationScheduler, evaluationSink, durableJobs, startDurableWorkers,
+    recover: async () => {
+      const reconciled = durableJobs ? await durableJobs.reconcileTerminalRuns(Number(process.env.MEMORY_JOB_RECONCILE_LIMIT ?? 100)) : 0;
+      if (reconciled) log.info("memory.work_intent.reconciled", { recovered: reconciled });
+      return reconciled + await consolidationScheduler.recover();
+    }, close: async () => { if (poller) clearInterval(poller); durableWorker?.stop(); try { await jobs.drain(); } finally { await pool?.end(); } } };
 }
