@@ -1452,9 +1452,9 @@
     "semantic_hash": ""
   },
   "apps/server/src/memory/embeddingProvider.ts": {
-    "mtime": 1790479184.4344811,
-    "seen": 1790484752.0698895,
-    "ast_hash": "3411ebb7dd355f01243314bc821af8ea",
+    "mtime": 1788966322.0573025,
+    "seen": 1789119423.6129487,
+    "ast_hash": "9fc034bc83f4a33c53d59872a93f585b",
     "semantic_hash": ""
   },
   "apps/server/src/observability/bootstrap.ts": {
@@ -1644,9 +1644,9 @@
     "semantic_hash": ""
   },
   "packages/types/src/memory.ts": {
-    "mtime": 1790478925.4754908,
-    "seen": 1790484752.0772312,
-    "ast_hash": "7b2a36cf32a200100778c02ccd55015f",
+    "mtime": 1790451502.6823714,
+    "seen": 1790452201.5225852,
+    "ast_hash": "cdb21f77dfefd84b61bfc5754123396b",
     "semantic_hash": ""
   },
   "packages/types/src/toolConfiguration.ts": {
@@ -1704,15 +1704,15 @@
     "semantic_hash": ""
   },
   "src/memory/application/hybridMemoryRetriever.ts": {
-    "mtime": 1790482578.169321,
-    "seen": 1790484752.0800238,
-    "ast_hash": "dcfc51bd3d478064eb3c2361a86ac4fa",
+    "mtime": 1790452011.4940562,
+    "seen": 1790452201.5263617,
+    "ast_hash": "f906e98f0011efcb0a831b7662ad6c1e",
     "semantic_hash": ""
   },
   "src/memory/application/index.ts": {
-    "mtime": 1790479714.3180592,
-    "seen": 1790484752.0800254,
-    "ast_hash": "a44ec43946ce968dc534f378facf2cca",
+    "mtime": 1790450095.3715634,
+    "seen": 1790450911.503999,
+    "ast_hash": "db4d2a14b308cc4fc2ab95b26f638b80",
     "semantic_hash": ""
   },
   "src/memory/application/memoryBackgroundJobs.ts": {
@@ -2754,9 +2754,9 @@
     "semantic_hash": ""
   },
   "scripts/memory/memoryBenchmark.ts": {
-    "mtime": 1790481906.686276,
-    "seen": 1790484752.0775375,
-    "ast_hash": "8941f1a9025fd318eb37025aad72011a",
+    "mtime": 1790443791.6150324,
+    "seen": 1790449359.5278647,
+    "ast_hash": "3f0e23b36031dc1f93d53081e0757c48",
     "semantic_hash": ""
   },
   "scripts/memory/memoryEval.ts": {
@@ -3579,30 +3579,6 @@
     "mtime": 1790451982.0541961,
     "seen": 1790452201.529262,
     "ast_hash": "cffedac0de741e8e4b32c9e53f999cd1",
-    "semantic_hash": ""
-  },
-  "src/memory/application/embeddingProvider.ts": {
-    "mtime": 1790479423.0412104,
-    "seen": 1790484752.0799792,
-    "ast_hash": "ee7415c6939b5503cff55f6e091167d1",
-    "semantic_hash": ""
-  },
-  "src/memory/benchmark/memoryLiveEmbeddingRunner.ts": {
-    "mtime": 1790484425.4587038,
-    "seen": 1790484752.0808396,
-    "ast_hash": "bad65d695339e797480718bd131773a5",
-    "semantic_hash": ""
-  },
-  "tests/memoryLiveEmbedding.test.ts": {
-    "mtime": 1790482384.231413,
-    "seen": 1790484752.0833137,
-    "ast_hash": "92210060e71285a2e925fa7a0d860cde",
-    "semantic_hash": ""
-  },
-  "LIVE_EMBEDDING_REPORT.md": {
-    "mtime": 1790483878.0729184,
-    "seen": 1790484752.088234,
-    "ast_hash": "aa4188dc898a0d36514de6f74cfe924e",
     "semantic_hash": ""
   }
 }

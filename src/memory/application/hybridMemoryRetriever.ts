@@ -18,6 +18,8 @@ export interface HybridMemoryRetrieverOptions {
   reliabilityScoring?: boolean; freshnessPolicy?: MemoryFreshnessPolicy;
   /** Phase 7 query expansion & vocabulary normalizer. */
   queryExpander?: MemoryQueryExpander;
+  /** Phase 10: Diagnostic ablation modes for evaluation */
+  ablationMode?: "full_hybrid" | "semantic_only" | "expansion_only" | "embedding_only";
 }
 function words(text: string): Set<string> { return new Set((normalizeContent(text).match(/[\p{L}\p{N}_]+/gu) ?? []).filter(w => !STOP_WORDS.has(w))); }
 function cosine(a: number[], b: number[]): number {
@@ -83,11 +85,35 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     const diagnostics: MemoryRetrievalResult["diagnostics"] = { latencyMs: 0, embeddingLatencyMs: 0, candidateCount: 0, selectedCount: 0, deduplicatedCount: 0, warnings: [], securityViolations: 0, filteredCounts: { unauthorized: 0, expired: 0, superseded: 0, invalidated: 0 }, conflict: { groups: 0, candidates: 0, suppressed: 0, staleSuppressed: 0, disputedSuppressed: 0, unresolved: 0 }, candidates: [] };
     const limit = boundedInteger(query.limit, 8, 100), budget = boundedInteger(query.maxTokens, 2048, 100000);
     if (!query.namespaces.length || !query.text.trim() || !limit || !budget) return { results: [], diagnostics };
-    const expandedQuery = this.queryExpander.expand(query.text);
-    const embeddingStart = Date.now();
-    const embedding = await embedSafely(this.options.embeddingProvider, query.text, this.options.embeddingTimeoutMs ?? 1000);
-    diagnostics.embeddingLatencyMs = Date.now() - embeddingStart;
-    if (this.options.embeddingProvider && !embedding) diagnostics.warnings.push("Embedding unavailable; lexical retrieval used");
+    const ablation = this.options.ablationMode ?? "full_hybrid";
+    const rawExpanded = this.queryExpander.expand(query.text);
+    const expandedQuery = ablation === "embedding_only" || ablation === "semantic_only"
+      ? { ...rawExpanded, searchTerms: [query.text] }
+      : rawExpanded;
+
+    let embedding: number[] | undefined;
+    let embeddingErrorCode: string | undefined;
+    let embeddingCacheHit = false;
+
+    if (this.options.embeddingProvider && ablation !== "expansion_only") {
+      const embeddingStart = Date.now();
+      const initialHits = (this.options.embeddingProvider as any).getStats?.().cacheHits ?? 0;
+      embedding = await embedSafely(this.options.embeddingProvider, query.text, this.options.embeddingTimeoutMs ?? 1000);
+      diagnostics.embeddingLatencyMs = Date.now() - embeddingStart;
+      const postHits = (this.options.embeddingProvider as any).getStats?.().cacheHits ?? 0;
+      embeddingCacheHit = postHits > initialHits;
+      if (!embedding) {
+        diagnostics.warnings.push("Embedding unavailable; lexical retrieval used");
+        embeddingErrorCode = "EMBEDDING_UNAVAILABLE";
+      }
+    }
+
+    diagnostics.embeddingProvider = this.options.embeddingProvider?.metadata.provider;
+    diagnostics.embeddingModel = this.options.embeddingProvider?.metadata.model;
+    diagnostics.embeddingVersion = this.options.embeddingProvider?.metadata.version;
+    diagnostics.embeddingCacheHit = embeddingCacheHit;
+    if (embeddingErrorCode) diagnostics.embeddingErrorCode = embeddingErrorCode;
+
     const candidateLimit = Math.max(1, boundedInteger(this.options.candidateLimit, 200, 500));
     const base = { tenantId: access.tenantId, namespaces: query.namespaces, kinds: query.kinds, filters: query.filters, status: "active" as const, includeExpired: false, limit: candidateLimit };
     const kindCounts: Partial<Record<string, number>> = {};
@@ -99,8 +125,12 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       set.add(src);
     };
 
-    // Bounded lexical search across original query words and top expanded alias/concept terms
-    const terms = expandedQuery.searchTerms.slice(0, 10);
+    let lexical: Memory[] = [];
+    let recent: Memory[] = [];
+
+    if (ablation !== "semantic_only") {
+      // Bounded lexical search across original query words and top expanded alias/concept terms
+      const terms = expandedQuery.searchTerms.slice(0, 10);
     const pools = await Promise.all(terms.map(async text => {
       const pool = await this.store.search({ ...base, text, limit: candidateLimit });
       const src = expandedQuery.queryWords.has(text) ? "lexical"
@@ -109,17 +139,22 @@ export class HybridMemoryRetriever implements MemoryRetriever {
       for (const m of pool) recordSource(m.id, src);
       return pool;
     }));
-    const lexical = pools.flatMap(pool => pool.slice(0, candidateLimit));
-    // A bounded recent pool also supports relevance carried by subject/title metadata.
-    const recent = await this.store.search(base);
-    for (const m of recent) recordSource(m.id, "structured");
+      lexical = pools.flatMap(pool => pool.slice(0, candidateLimit));
+      // A bounded recent pool also supports relevance carried by subject/title metadata.
+      recent = await this.store.search(base);
+      for (const m of recent) recordSource(m.id, "structured");
+    }
     let semantic: Memory[] = [];
     if (embedding) {
+      const vectorSearchStart = Date.now();
       try {
         semantic = await this.store.search({ ...base, embedding, embeddingMetadata: this.options.embeddingProvider!.metadata });
         for (const m of semantic) recordSource(m.id, "semantic");
       }
       catch { diagnostics.warnings.push("Semantic search unavailable; lexical retrieval used"); }
+      finally {
+        diagnostics.vectorSearchMs = Date.now() - vectorSearchStart;
+      }
     }
     const uniqueIds = new Set<string>();
     const scored: MemorySearchResult[] = [];
@@ -327,7 +362,9 @@ export class HybridMemoryRetriever implements MemoryRetriever {
     diagnostics.formattingLatencyMs = Date.now() - formattingStart;
     diagnostics.selectedCount = results.length;
     diagnostics.latencyMs = Date.now() - start;
-    diagnostics.retrievalMode = !this.options.embeddingProvider ? "lexical"
+    diagnostics.retrievalMode = ablation === "semantic_only" ? "vector"
+      : ablation === "expansion_only" ? "lexical"
+      : !this.options.embeddingProvider ? "lexical"
       : embedding && semantic.length ? "hybrid"
       : embedding ? "vector"
       : diagnostics.warnings.length ? "fallback" : "lexical";

@@ -17,4 +17,5 @@ export * from "./memoryReliability";
 export * from "./memoryEvaluation";
 export * from "./queryExpansion";
 export * from "./embedding";
+export * from "./embeddingProvider";
 export * from "./semanticFact";

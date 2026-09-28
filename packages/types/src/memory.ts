@@ -111,6 +111,13 @@ export interface MemoryRetrievalDiagnostics {
   candidatePrecision?: number;
   candidateFalsePositiveRate?: number;
   queryIntent?: QueryIntent;
+  /** Phase 10: Live embedding telemetry */
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  embeddingVersion?: string;
+  vectorSearchMs?: number;
+  embeddingCacheHit?: boolean;
+  embeddingErrorCode?: string;
   candidates: {
     memoryId: string; score: number; reason: string; kind?: MemoryKind; conflictGroupId?: string; suppressedByMemoryId?: string;
     dropReason?: "exact_duplicate" | "explicit_superseded" | "invalidated" | "budget_dropped" | "conflict_suppressed" | "candidate_pruned_low_confidence" | "budget_diversity_drop" | "cross_source_duplicate";
