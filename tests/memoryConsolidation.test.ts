@@ -208,13 +208,14 @@ test("consolidation detects temporal replacement", async () => {
 
   const consolidator = createConsolidatorWithJudge(store, judge);
 
-  await rememberMemory(service, "Repository uses npm.");
-  await rememberMemory(service, "Repository migrated to pnpm.");
+  const old = await rememberMemory(service, "Repository uses npm.", { validFrom: "2025-01-01T00:00:00.000Z" });
+  const current = await rememberMemory(service, "Repository migrated to pnpm.", { validFrom: "2026-03-01T00:00:00.000Z" });
 
   const result = await consolidator.consolidate(access, namespace);
 
   const memories = await service.list({ namespaces: [namespace] }, access);
-  expect(memories).toHaveLength(1);
+  expect(memories).toHaveLength(2);
+  expect(await store.get(access.tenantId, old.id)).toMatchObject({ status: "active", validUntil: "2026-03-01T00:00:00.000Z", replacedByMemoryId: current.id });
   expect(result.diagnostics.superseded).toBeGreaterThan(0);
 });
 

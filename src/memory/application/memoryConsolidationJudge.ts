@@ -1,6 +1,7 @@
 import type { ConsolidationConfig, ConsolidationDecision, MemoryConsolidationJudge, MemoryCandidate, Memory } from "../contracts";
 import { resolveConsolidationConfig } from "./memoryConsolidationConfig";
 import { normalizeContent, contentHash } from "./access";
+import { classifyMemoryRelationship } from "./memoryConflictStrategy";
 
 const STOP_WORDS = new Set("a an and are as at be by for from how i in is it me my of on or our please tell that the this to we what with you about does do uses use".split(" "));
 const STOP_WORDS_SMALL = new Set("a an the is are was were be been being have has had do does did will would shall should may might can could of in on at to for with by from as into through during before after above below between".split(" "));
@@ -41,12 +42,11 @@ export class DeterministicMemoryConsolidationJudge implements MemoryConsolidatio
     const union = new Set([...tokensA, ...tokensB]).size;
     return union > 0 ? intersection / union : 0;
   }
-  private isProcedural(memory: Memory | MemoryCandidate): boolean { return memory.kind === "procedural"; }
-  private isEpisodic(memory: Memory | MemoryCandidate): boolean { return memory.kind === "episodic"; }
   private hasExplicitSupersedes(incoming: MemoryCandidate): boolean {
     return !!incoming.supersedesMemoryId;
   }
   private detectTemporalReplacement(incoming: MemoryCandidate, existing: Memory): boolean {
+    if (incoming.kind !== "semantic") return false;
     const temporalPatterns = /\b(?:migrated|changed|switched|replaced|updated|moved|converted|now uses|no longer uses)\b/i;
     const hasTemporal = temporalPatterns.test(incoming.content);
     const negationPatterns = /\b(?:no longer|not\s|do not|don't|shouldn't|wasn't|isn't)\b/i;
@@ -76,14 +76,12 @@ export class DeterministicMemoryConsolidationJudge implements MemoryConsolidatio
     // Candidates should already be filtered by the engine to be from the same tenant/namespace/kind
     const candidates = existing.filter(m =>
       m.kind === incoming.kind &&
-      m.status === "active" &&
-      m.id !== incoming.supersedesMemoryId
+      m.status === "active"
     );
     if (!candidates.length) {
       return { type: "keep_both", relatedMemoryIds: [], reason: "no_candidates" };
     }
-    const incomingHash = contentHash(incoming.content);
-    const exactMatch = candidates.find(c => c.contentHash === incomingHash);
+    const exactMatch = candidates.find(c => classifyMemoryRelationship(incoming, c) === "duplicate");
     if (exactMatch) {
       return {
         type: "ignore_new",
@@ -100,34 +98,26 @@ export class DeterministicMemoryConsolidationJudge implements MemoryConsolidatio
     }));
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
+    const relationship = classifyMemoryRelationship(incoming, best.memory);
+    if (relationship === "supersede" || this.hasExplicitSupersedes(incoming) || (incoming.kind === "semantic" && this.detectTemporalReplacement(incoming, best.memory))) {
+      return {
+        type: "supersede",
+        canonicalMemoryId: undefined,
+        relatedMemoryIds: [best.memory.id],
+        reason: this.hasExplicitSupersedes(incoming) ? "explicit_supersedes" : "temporal_replacement",
+        confidence: best.score,
+      };
+    }
+
     if (best.score >= this.config.autoMergeThreshold) {
-      if (this.hasExplicitSupersedes(incoming)) {
-        return {
-          type: "supersede",
-          canonicalMemoryId: undefined,
-          relatedMemoryIds: [best.memory.id],
-          reason: "explicit_supersedes",
-          confidence: best.score,
-        };
+      if (incoming.kind === "episodic") {
+        return { type: "keep_both", relatedMemoryIds: [best.memory.id], reason: "episodic_distinct_event", confidence: best.score };
       }
-      if (this.detectTemporalReplacement(incoming, best.memory)) {
-        return {
-          type: "supersede",
-          canonicalMemoryId: undefined,
-          relatedMemoryIds: [best.memory.id],
-          reason: "temporal_replacement",
-          confidence: best.score,
-        };
+      if (incoming.kind === "procedural" && relationship === "independent") {
+        return { type: "keep_both", relatedMemoryIds: [best.memory.id], reason: "procedural_independent", confidence: best.score };
       }
-      if (this.isEpisodic(incoming) || this.isProcedural(incoming)) {
-        if (incoming.procedure !== best.memory.procedure || incoming.trigger !== best.memory.trigger) {
-          return {
-            type: "keep_both",
-            relatedMemoryIds: [best.memory.id],
-            reason: `${incoming.kind}_different_trigger_or_procedure`,
-            confidence: best.score,
-          };
-        }
+      if (incoming.kind === "procedural" && relationship === "conflict") {
+        return { type: "keep_both", relatedMemoryIds: [best.memory.id], reason: "procedural_conflicting_guidance", confidence: best.score };
       }
       return {
         type: "merge",
@@ -139,7 +129,7 @@ export class DeterministicMemoryConsolidationJudge implements MemoryConsolidatio
       };
     }
     if (best.score >= this.config.semanticCandidateThreshold) {
-      if (this.isEpisodic(incoming)) {
+      if (incoming.kind === "episodic") {
         return {
           type: "keep_both",
           relatedMemoryIds: [best.memory.id],
@@ -147,7 +137,7 @@ export class DeterministicMemoryConsolidationJudge implements MemoryConsolidatio
           confidence: best.score,
         };
       }
-      if (this.isProcedural(incoming) && (incoming.procedure !== best.memory.procedure || incoming.trigger !== best.memory.trigger)) {
+      if (incoming.kind === "procedural" && classifyMemoryRelationship(incoming, best.memory) !== "duplicate") {
         return {
           type: "keep_both",
           relatedMemoryIds: [best.memory.id],

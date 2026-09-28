@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Memory, MemoryNamespace, MemoryStore, MemoryStoreQuery } from "../contracts";
 import { MemoryValidationError } from "../contracts";
 import { bounds, MemoryDuplicateError, MemoryVersionConflictError, validateEmbedding, validateMemory, validateScope } from "./storage-utils";
@@ -14,11 +15,13 @@ const fields = {
   structuredData: "structured_data", situation: "situation", action: "action", result: "result", lesson: "lesson", success: "success",
   title: "title", procedure: "procedure", trigger: "trigger", importance: "importance", confidence: "confidence", source: "source",
   status: "status", supersedesMemoryId: "supersedes_memory_id", supersededByMemoryId: "superseded_by_memory_id",
+  replacesMemoryId: "replaces_memory_id", replacedByMemoryId: "replaced_by_memory_id",
+  validFrom: "valid_from", validUntil: "valid_until", observedAt: "observed_at", temporalScope: "temporal_scope", transition: "transition",
   createdAt: "created_at", updatedAt: "updated_at", expiresAt: "expires_at", embedding: "embedding", metadata: "metadata",
   idempotencyKey: "idempotency_key", contentHash: "content_hash", version: "version", lastAccessedAt: "last_accessed_at",
   accessCount: "access_count", reinforcementCount: "reinforcement_count",
 } as const;
-const jsonFields = new Set(["structuredData", "source", "metadata"]);
+const jsonFields = new Set(["structuredData", "source", "metadata", "transition"]);
 const entries = Object.entries(fields) as [keyof typeof fields, string][];
 const columns = [...entries.map(([, column]) => column), "namespace_scope", "namespace_id", "embedding_provider", "embedding_model", "embedding_dimensions", "embedding_version"];
 function values(memory: Memory): unknown[] {
@@ -59,6 +62,13 @@ export class PostgresMemoryStore implements MemoryStore {
   async insert(memory: Memory): Promise<void> {
     validateMemory(memory);
     await this.query(`INSERT INTO studio_memories (${columns.map(c => `"${c}"`).join(", ")}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(", ")})`, values(memory));
+  }
+  /** Inserts work intent through the same client/transaction as a memory mutation. */
+  async scheduleLifecycleJob(input: { kind: "procedural_learning" | "consolidation"; idempotencyKey: string; tenantId: string; namespace: MemoryNamespace; runId?: string; memoryId?: string }): Promise<void> {
+    if (!this.client) throw new MemoryValidationError("Lifecycle jobs require a memory transaction");
+    await this.query(`INSERT INTO studio_memory_jobs (id,job_kind,handler_version,idempotency_key,tenant_id,namespace_scope,namespace_id,run_id,memory_id)
+      VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8)
+      ON CONFLICT (tenant_id,job_kind,handler_version,idempotency_key) DO NOTHING`, [randomUUID(), input.kind, input.idempotencyKey, input.tenantId, input.namespace.scope, input.namespace.id, input.runId ?? null, input.memoryId ?? null]);
   }
   async update(memory: Memory, expectedVersion: number): Promise<void> {
     validateMemory(memory);
@@ -107,6 +117,10 @@ export class PostgresMemoryStore implements MemoryStore {
     } else if (query.text) clauses.push(`strpos(lower(content), lower(${bind(query.text)})) > 0`);
     const sql = `${prefix}SELECT * FROM ${prefix ? "candidates" : `studio_memories WHERE ${clauses.join(" AND ")}`} ORDER BY ${order} LIMIT ${bind(limit)} OFFSET ${bind(offset)}`;
     return (await this.query(sql, parameters)).rows.map(decode);
+  }
+  async listNamespaces(limit = 1000): Promise<Array<{ tenantId: string; namespace: MemoryNamespace }>> {
+    const result = await this.query(`SELECT DISTINCT tenant_id, namespace_scope, namespace_id FROM studio_memories ORDER BY tenant_id, namespace_scope, namespace_id LIMIT $1`, [limit]);
+    return result.rows.map(row => ({ tenantId: String(row.tenant_id), namespace: { scope: row.namespace_scope, id: String(row.namespace_id) } as MemoryNamespace }));
   }
   async deleteNamespace(tenantId: string, namespace: MemoryNamespace): Promise<number> {
     validateScope(tenantId, [namespace]);

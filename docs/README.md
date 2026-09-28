@@ -31,6 +31,7 @@
 - [Tool registry و اجرای ابزار](phase-6-tools.md)
 - [Memory backend و policy](phase-6-memory.md)
 - [Memory Explorer](phase-8-memory-explorer.md)
+- [Production Memory Benchmark](memory-benchmark.md)
 - [Human approval](phase-7-approvals.md)
 - [Persistence، history و recovery](phase-9-persistence.md)
 - [ساخت و اجرای CLI worker image](cli-worker-image.md)

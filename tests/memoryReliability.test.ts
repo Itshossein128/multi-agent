@@ -198,14 +198,14 @@ test("temporal validity windows are respected", () => {
     contentHash: contentHash("test"), version: 1,
     metadata: { [RELIABILITY_KEYS.validFrom]: "2027-01-01T00:00:00Z" },
   };
-  expect(policy.evaluate(future).status).toBe("stale");
+  expect(policy.evaluate(future).status).toBe("future");
 
   // Expired
   const expired: Memory = {
     ...future,
     metadata: { [RELIABILITY_KEYS.validUntil]: "2025-01-01T00:00:00Z" },
   };
-  expect(policy.evaluate(expired).status).toBe("expired");
+  expect(policy.evaluate(expired).status).toBe("historical");
 });
 
 // ─── Test 9: temporal successor detection ──

@@ -53,12 +53,13 @@ async function main() {
   });
 
   const memory = createMemoryComposition();
+  await memory.recover();
   const studio = createStudioComposition();
   const resolveMemoryAccess = memoryAccessResolverFromEnvironment();
 
   const connectionString = process.env.MEMORY_DATABASE_URL ?? process.env.STUDIO_DATABASE_URL;
   const runStore = studio.mode === "postgres" && studio.pool
-    ? new PostgresRunStore(studio.pool)
+    ? new PostgresRunStore(studio.pool, { durableMemoryJobs: !!memory.durableJobs })
     : new InMemoryRunStore();
   if (runStore instanceof PostgresRunStore) await runStore.hydrate();
 
@@ -80,7 +81,17 @@ async function main() {
     ),
     checkpointer,
     observability.telemetry,
+    undefined,
+    undefined,
+    memory.episodeService,
+    memory.proceduralService,
+    memory.jobs,
+    memory.durableJobs,
   );
+  memory.startDurableWorkers({
+    episodic_extraction: async job => executor.processDurableEpisodicJob(job),
+    procedural_learning: async job => executor.processDurableProceduralJob(job),
+  });
   const recovery = recoverInterruptedRuns(executor, runStore, checkpointer);
   if (recovery.restored.length || recovery.failed.length) {
     console.log(`Run recovery: restored=${recovery.restored.length} failed=${recovery.failed.length}`);

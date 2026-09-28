@@ -15,3 +15,21 @@ export async function embedSafely(provider: EmbeddingProvider | undefined, text:
   } catch { return undefined; }
   finally { if (timer) clearTimeout(timer); }
 }
+
+/**
+ * Produces embeddable text for a memory according to the embedding metadata version.
+ * Version 1 (default legacy) embeds raw content.
+ * Version 2+ incorporates structured context fields (subject, trigger, title).
+ */
+export function embeddableMemoryText(
+  memory: { content: string; subject?: string; trigger?: string; title?: string },
+  version = "1"
+): string {
+  if (version === "1" || !version) return memory.content;
+  const parts: string[] = [];
+  if (memory.subject) parts.push(`Subject: ${memory.subject}`);
+  if (memory.trigger) parts.push(`Trigger: ${memory.trigger}`);
+  if (memory.title) parts.push(`Title: ${memory.title}`);
+  parts.push(memory.content);
+  return parts.join("\n");
+}

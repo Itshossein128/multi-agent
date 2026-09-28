@@ -850,3 +850,71 @@ test("39. episodic memories are distinct from procedural memories", async () => 
   expect(procedural[0].kind).toBe("procedural");
   expect(episodic[0].kind).not.toBe(procedural[0].kind);
 });
+
+test("40. authorized persisted episodes learn once and deduplicate same-run evidence", async () => {
+  const store = createStore();
+  const service = createService(store);
+  const learner = new DefaultProceduralService(service);
+  const episodeInput = (runId: string, id: string, success = true): Memory => makeEpisode({
+    id,
+    situation: "authentication middleware modified",
+    action: "run auth tests; run cross-tenant tests",
+    success,
+    content: `auth episode ${runId}`,
+    source: { type: "agent", agentId: "agent-1", runId },
+  });
+  for (const episode of [episodeInput("run-a", "ep-a"), episodeInput("run-b", "ep-b"), episodeInput("run-b", "ep-b-replayed")]) {
+    await service.remember({
+      namespace: projectNS, kind: "episodic", content: episode.content, source: episode.source,
+      situation: episode.situation, action: episode.action, result: "resolved", success: true,
+      idempotencyKey: `episode:${episode.source.runId}:1`,
+    }, access);
+  }
+
+  const result = await learner.learnFromAuthorizedEpisodes({ access, namespace: projectNS, agentId: "agent-1" });
+  expect(result.created).toBe(1);
+  const procedures = await service.list({ namespaces: [projectNS], kinds: ["procedural"] }, access);
+  expect(procedures).toHaveLength(1);
+  expect(procedures[0].kind).toBe("procedural");
+  expect(procedures[0].procedure).toContain("run auth tests");
+
+  const retry = await learner.learnFromAuthorizedEpisodes({ access, namespace: projectNS, agentId: "agent-1" });
+  expect(retry.created).toBe(0);
+  expect(retry.reinforced).toBe(1);
+  expect(await service.list({ namespaces: [projectNS], kinds: ["procedural"] }, access)).toHaveLength(1);
+});
+
+test("41. invalidated evidence and majority failure cannot create a procedure", async () => {
+  const store = createStore();
+  const service = createService(store);
+  const learner = new DefaultProceduralService(service);
+  for (const [runId, success, status] of [["run-a", false, "active"], ["run-b", false, "active"], ["run-c", true, "active"], ["run-d", true, "active"]] as const) {
+    await service.remember({
+      namespace: projectNS, kind: "episodic", content: `migration ${runId}`, source: { type: "agent", agentId: "agent-1", runId },
+      situation: "database migration failed", action: "retry migration", result: success ? "resolved" : "failed", success,
+      metadata: status === "active" && runId === "run-d" ? { __reliability_verification_status: "invalidated" } : undefined,
+      idempotencyKey: `episode:${runId}:1`,
+    }, access);
+  }
+  const result = await learner.learnFromAuthorizedEpisodes({ access, namespace: projectNS, agentId: "agent-1" });
+  expect(result.created).toBe(0);
+  expect(await service.list({ namespaces: [projectNS], kinds: ["procedural"] }, access)).toHaveLength(0);
+});
+
+test("42. concurrent learning passes converge on one equivalent procedure", async () => {
+  const store = createStore();
+  const service = createService(store);
+  const learner = new DefaultProceduralService(service);
+  for (const runId of ["concurrent-a", "concurrent-b"]) {
+    await service.remember({
+      namespace: projectNS, kind: "episodic", content: `deploy ${runId}`, source: { type: "agent", agentId: "agent-1", runId },
+      situation: "deployment verification", action: "run smoke tests", result: "deployment verified", success: true,
+      idempotencyKey: `episode:${runId}:1`,
+    }, access);
+  }
+  await Promise.all([
+    learner.learnFromAuthorizedEpisodes({ access, namespace: projectNS, agentId: "agent-1" }),
+    learner.learnFromAuthorizedEpisodes({ access, namespace: projectNS, agentId: "agent-1" }),
+  ]);
+  expect(await service.list({ namespaces: [projectNS], kinds: ["procedural"] }, access)).toHaveLength(1);
+});

@@ -1,5 +1,5 @@
-import type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult } from "@multi-agent/types";
-export type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult } from "@multi-agent/types";
+import type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent, MemoryTemporalQuery, MemoryTemporalScope, MemoryTransition } from "@multi-agent/types";
+export type { Memory, MemoryNamespace, MemoryKind, MemoryEmbeddingMetadata, RememberMemoryInput, MemoryRetrievalQuery, MemoryRetrievalResult, SemanticFactIdentity, CandidateSource, CandidateSourceStats, QueryIntent, MemoryTemporalQuery, MemoryTemporalScope, MemoryTransition } from "@multi-agent/types";
 
 /** Phase 8 evaluation/telemetry types (observational; never memory content). */
 export type {
@@ -37,6 +37,10 @@ export interface MemoryStore {
   delete(tenantId: string, id: string): Promise<void>;
   get(tenantId: string, id: string): Promise<Memory | null>;
   search(query: MemoryStoreQuery): Promise<Memory[]>;
+  /** Optional internal maintenance discovery; never exposed to untrusted callers. */
+  listNamespaces?(limit?: number): Promise<Array<{ tenantId: string; namespace: MemoryNamespace }>>;
+  /** Available only inside durable PostgreSQL memory transactions. */
+  scheduleLifecycleJob?(input: { kind: "procedural_learning" | "consolidation"; idempotencyKey: string; tenantId: string; namespace: MemoryNamespace; runId?: string; memoryId?: string }): Promise<void>;
 }
 export interface EmbeddingProvider {
   readonly metadata: MemoryEmbeddingMetadata;
@@ -44,7 +48,7 @@ export interface EmbeddingProvider {
   embedBatch?(texts: string[]): Promise<number[][]>;
 }
 export interface MemoryWriteResult { memory: Memory; action: "inserted" | "updated" | "duplicate" }
-export type UpdateMemoryInput = Partial<Pick<Memory, "content" | "importance" | "confidence" | "structuredData" | "metadata" | "expiresAt" | "status" | "subject" | "procedure" | "trigger" | "title" | "situation" | "action" | "result" | "lesson" | "success">> & { expectedVersion?: number };
+export type UpdateMemoryInput = Partial<Pick<Memory, "content" | "importance" | "confidence" | "structuredData" | "metadata" | "expiresAt" | "status" | "subject" | "procedure" | "trigger" | "title" | "situation" | "action" | "result" | "lesson" | "success" | "validFrom" | "validUntil" | "observedAt" | "temporalScope" | "transition">> & { expectedVersion?: number };
 export interface MemoryListQuery { namespaces: MemoryNamespace[]; kinds?: MemoryKind[]; limit?: number; offset?: number; status?: Memory["status"]; filters?: Record<string, unknown> }
 export interface MemoryService {
   remember(input: RememberMemoryInput, access: MemoryAccessContext): Promise<MemoryWriteResult>;
@@ -53,6 +57,10 @@ export interface MemoryService {
   update(id: string, patch: UpdateMemoryInput, access: MemoryAccessContext): Promise<Memory>;
   forget(id: string, access: MemoryAccessContext): Promise<void>;
   list(query: MemoryListQuery, access: MemoryAccessContext): Promise<Memory[]>;
+}
+export interface MemoryConsolidationScheduler {
+  schedule(access: MemoryAccessContext, namespace: MemoryNamespace): boolean;
+  recover(): Promise<number>;
 }
 export interface MemoryRetriever { retrieve(query: MemoryRetrievalQuery, access: MemoryAccessContext): Promise<MemoryRetrievalResult> }
 export interface MemoryCandidate extends RememberMemoryInput { explicit?: boolean; id?: string }

@@ -4,6 +4,7 @@ import { InMemoryRunStore, PostgresRunStore } from "../apps/server/src/runtime/r
 import { recoverInterruptedRuns } from "../apps/server/src/runtime/recovery";
 import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { MemorySaver } from "@langchain/langgraph";
+import type { MemoryAccessContext } from "../src/memory/contracts";
 
 test("studio store round-trips workflows agents tools and tasks", async () => {
   const store = new InMemoryStudioStore();
@@ -105,6 +106,43 @@ test("recovery restores stepBudget from paused context", () => {
   const result = recoverInterruptedRuns(executor as never, store, new MemorySaver());
   expect(result.restored).toContain("wait-budget");
   expect((restored[0] as unknown[])[1]).toMatchObject({ stepBudget: { count: 7 } });
+});
+
+test("restart recovery creates one failure episode with the persisted namespace", async () => {
+  const store = new InMemoryRunStore();
+  const access: MemoryAccessContext = {
+    principalId: "user-a",
+    tenantId: "tenant-a",
+    readableNamespaces: [{ scope: "agent", id: "agent-a" }],
+    writableNamespaces: [{ scope: "agent", id: "agent-a" }],
+  };
+  const episodes: unknown[] = [];
+  const episodeService = {
+    async processRun(input: unknown) {
+      episodes.push(input);
+      return { created: true, reason: "meaningful_failure", memoryId: "memory-1" };
+    },
+  };
+  store.create(
+    { id: "restart-run", workflowId: "wf-restart", status: "running", startedAt: nowIso(), input: { task: "recover" }, metadata: {} },
+    { principalId: access.principalId, tenantId: access.tenantId },
+    undefined,
+    undefined,
+    access,
+  );
+
+  const executor = new RunExecutor(store, { execute: async function* () {} }, undefined, undefined, undefined, undefined, episodeService as never);
+  const result = recoverInterruptedRuns(executor, store, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  expect(result.failed).toContain("restart-run");
+  expect(store.get("restart-run")?.run.status).toBe("failed");
+  expect(store.get("restart-run")?.episodicMemoryStatus).toBe("processed");
+  expect((episodes[0] as { namespace: unknown }).namespace).toEqual(access.writableNamespaces[0]);
+
+  recoverInterruptedRuns(executor, store, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(episodes).toHaveLength(1);
 });
 
 test("durable run store exposes persistence failures instead of silently acknowledging them", async () => {
