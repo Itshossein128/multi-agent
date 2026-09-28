@@ -144,7 +144,7 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
     admin = new Pool({ connectionString: databaseUrl });
     await admin.query(`CREATE SCHEMA "${schema}"`);
     pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${schema},public`, max: 16 });
-    expect(await runMemoryMigrations(pool)).toEqual(["001_memories.sql", "003_temporal_validity.sql"]);
+    expect(await runMemoryMigrations(pool)).toEqual(["001_memories.sql", "003_temporal_validity.sql", "004_memory_jobs.sql"]);
     if (vectorEnabled) expect(await runMemoryMigrations(pool, { vectorEnabled })).toEqual(["002_pgvector.sql"]);
     expect(await runMemoryMigrations(pool, { vectorEnabled })).toEqual([]);
   }, 30000);

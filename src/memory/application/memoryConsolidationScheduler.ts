@@ -14,12 +14,21 @@ export class BoundedMemoryConsolidationScheduler implements MemoryConsolidationS
     private readonly store: MemoryStore,
     private readonly consolidator: MemoryConsolidator,
     private readonly jobs: MemoryBackgroundJobs,
-    private readonly options: { onDiagnostic?: (event: Record<string, string | number | boolean>) => void; recoveryLimit?: number } = {},
+    private readonly options: { onDiagnostic?: (event: Record<string, string | number | boolean>) => void; recoveryLimit?: number; durableEnqueue?: (access: MemoryAccessContext, namespace: MemoryNamespace) => Promise<void> } = {},
   ) {}
 
   private key(access: MemoryAccessContext, namespace: MemoryNamespace): string { return JSON.stringify([access.tenantId, namespace.scope, namespace.id]); }
 
   schedule(access: MemoryAccessContext, namespace: MemoryNamespace): boolean {
+    // PostgreSQL-backed deployments persist the intent first; the local queue is
+    // only retained for in-memory development/test composition.
+    if (this.options.durableEnqueue) {
+      void this.options.durableEnqueue(access, namespace).then(
+        () => this.options.onDiagnostic?.({ event: "memory.job.enqueued", tenantId: access.tenantId, namespace: namespace.id }),
+        () => this.options.onDiagnostic?.({ event: "memory.job.failed", tenantId: access.tenantId, namespace: namespace.id, reason: "durable_enqueue_failed" }),
+      );
+      return true;
+    }
     const key = this.key(access, namespace);
     if (this.pending.has(key)) { this.dirty.add(key); return true; }
     this.pending.add(key);
@@ -48,6 +57,7 @@ export class BoundedMemoryConsolidationScheduler implements MemoryConsolidationS
   }
 
   async recover(): Promise<number> {
+    if (this.options.durableEnqueue) return 0;
     const scopes = await this.store.listNamespaces?.(this.options.recoveryLimit ?? 1000) ?? [];
     let scheduled = 0;
     for (const scope of scopes) {

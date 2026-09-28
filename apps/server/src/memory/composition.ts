@@ -1,6 +1,6 @@
 import type { MemoryService, RuntimeMemoryDependencies, MemoryBackgroundJobs, MemoryConsolidationScheduler, MemoryEvaluationRuntime } from "../../../../src/memory/contracts";
-import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs, DefaultEpisodeService, DefaultProceduralService, RealMemoryConsolidator, BoundedMemoryConsolidationScheduler, InMemoryMemoryEvaluationSink, MemoryEvaluationRecorder, StructuredMemoryEvaluationSink, type EpisodeService, type ProceduralService } from "../../../../src/memory/application";
-import { PostgresMemoryStore, InMemoryMemoryStore, type PgPool } from "../../../../src/memory/infrastructure";
+import { DefaultMemoryService, DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextFormatter, DefaultMemoryBackgroundJobs, DefaultEpisodeService, DefaultProceduralService, RealMemoryConsolidator, BoundedMemoryConsolidationScheduler, DurableMemoryJobWorker, InMemoryMemoryEvaluationSink, MemoryEvaluationRecorder, StructuredMemoryEvaluationSink, type EpisodeService, type ProceduralService } from "../../../../src/memory/application";
+import { PostgresMemoryStore, PostgresMemoryJobStore, InMemoryMemoryStore, type PgPool } from "../../../../src/memory/infrastructure";
 import { createPostgresPool, type ManagedPool } from "../infrastructure/postgresPool";
 import { embeddingProviderFromEnvironment } from "./embeddingProvider";
 import { log } from "../logging";
@@ -71,8 +71,29 @@ export function createMemoryComposition(): MemoryComposition {
     }, evaluationSampleRate)),
   } : undefined;
   const consolidator = new RealMemoryConsolidator({ store, embeddingProvider });
+  const durableJobs = pool ? new PostgresMemoryJobStore(pool) : undefined;
+  const workerId = process.env.MEMORY_JOB_WORKER_ID ?? `memory-${process.pid}`;
+  const durableWorker = durableJobs ? new DurableMemoryJobWorker(durableJobs, {
+    consolidation: async (job, access) => { await consolidator.consolidate(access, job.namespace); },
+  }, { workerId, onEvent: event => log.info(String(event.event), {
+    jobId: typeof event.jobId === "string" ? event.jobId : undefined,
+    jobKind: typeof event.jobKind === "string" ? event.jobKind : undefined,
+    tenantId: typeof event.tenantId === "string" ? event.tenantId : undefined,
+    namespace: typeof event.namespace === "string" ? event.namespace : undefined,
+    attempt: typeof event.attempt === "number" ? event.attempt : undefined,
+    workerId: typeof event.workerId === "string" ? event.workerId : undefined,
+    durationMs: typeof event.durationMs === "number" ? event.durationMs : undefined,
+    errorCode: typeof event.errorCode === "string" ? event.errorCode : undefined,
+  }) }) : undefined;
+  const pollMs = Math.max(100, Math.min(60_000, Number(process.env.MEMORY_JOB_POLL_MS ?? 1000) || 1000));
+  const poller = durableWorker ? setInterval(() => { void durableWorker.pollOnce().catch(() => log.warn("memory.job.poll_failed", { workerId })); }, pollMs) : undefined;
+  if (durableWorker) void durableWorker.pollOnce().catch(() => log.warn("memory.job.initial_poll_failed", { workerId }));
   const consolidationScheduler = new BoundedMemoryConsolidationScheduler(store, consolidator, jobs, {
     onDiagnostic: (event) => log.info("memory.consolidation", event),
+    durableEnqueue: durableJobs ? async (access, namespace) => {
+      const result = await durableJobs.enqueue({ kind: "consolidation", idempotencyKey: `namespace:${access.tenantId}:${namespace.scope}:${namespace.id}:v1`, tenantId: access.tenantId, namespace });
+      if (result.duplicate) log.info("memory.job.idempotent_replay", { jobId: result.job.id, jobKind: result.job.kind, tenantId: access.tenantId, namespace: namespace.id });
+    } : undefined,
   });
   const service = new DefaultMemoryService(store, { embeddingProvider, defaultTtlMs: ttlDays === 0 ? undefined : ttlDays * 86400000, consolidationScheduler });
   const proceduralService = new DefaultProceduralService(service, {
@@ -104,5 +125,5 @@ export function createMemoryComposition(): MemoryComposition {
     log.warn("memory.vector.misconfigured", { message: "MEMORY_VECTOR_ENABLED=true but no embedding provider configured; vector retrieval will fail at query time" });
   }
 
-  return { service, runtime, episodeService, proceduralService, jobs, consolidationScheduler, evaluationSink, recover: () => consolidationScheduler.recover(), close: async () => { try { await jobs.drain(); } finally { await pool?.end(); } } };
+  return { service, runtime, episodeService, proceduralService, jobs, consolidationScheduler, evaluationSink, recover: () => consolidationScheduler.recover(), close: async () => { if (poller) clearInterval(poller); durableWorker?.stop(); try { await jobs.drain(); } finally { await pool?.end(); } } };
 }

@@ -20,3 +20,4 @@ export * from "./embedding";
 export * from "./embeddingProvider";
 export * from "./semanticFact";
 export * from "./memoryTemporal";
+export * from "./durableMemoryJobWorker";
