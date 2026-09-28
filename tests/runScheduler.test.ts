@@ -49,3 +49,40 @@ test("RunExecutor drains queued runs through a bounded scheduler", async () => {
     else process.env.WORKFLOW_MAX_CONCURRENT_RUNS = previous;
   }
 });
+
+test("RunExecutor cancelling a queued run prevents execution and marks it cancelled", async () => {
+  const previous = process.env.WORKFLOW_MAX_CONCURRENT_RUNS;
+  process.env.WORKFLOW_MAX_CONCURRENT_RUNS = "1";
+  try {
+    let executedSecond = false;
+    const runtime = {
+      async *execute(input: { agent: AgentRecord; runId: string; nodeId: string }) {
+        if (input.agent.id === "scheduler-agent-2") executedSecond = true;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        yield { type: "agent.completed" as const, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { content: { ok: true } } };
+      },
+    };
+    const store = new RunStore();
+    const executor = new RunExecutor(store, runtime);
+    const first = workflow("scheduler-agent-1");
+    const second = workflow("scheduler-agent-2");
+
+    const firstId = executor.start({ workflow: first.workflow, agents: [first.agent], input: {} });
+    const secondId = executor.start({ workflow: second.workflow, agents: [second.agent], input: {} });
+
+    expect(store.get(secondId)?.run.status).toBe("queued");
+    const cancelled = executor.cancel(secondId);
+    expect(cancelled).toBe(true);
+    expect(store.get(secondId)?.run.status).toBe("cancelled");
+    expect(store.events(secondId).some((event) => event.type === "run.cancelled")).toBe(true);
+
+    await waitFor(() => store.get(firstId)?.run.status === "completed");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(executedSecond).toBe(false);
+    expect(store.get(secondId)?.run.status).toBe("cancelled");
+  } finally {
+    if (previous === undefined) delete process.env.WORKFLOW_MAX_CONCURRENT_RUNS;
+    else process.env.WORKFLOW_MAX_CONCURRENT_RUNS = previous;
+  }
+});
