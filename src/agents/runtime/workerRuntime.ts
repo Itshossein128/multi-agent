@@ -691,8 +691,11 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
   wait(workerId: string): Promise<WorkerResult> { return this.delegate.wait(workerId); }
 
   async cancel(workerId: string, reason?: string): Promise<void> {
-    await this.delegate.cancel(workerId, reason);
-    await this.finalizeSession(workerId);
+    try {
+      await this.delegate.cancel(workerId, reason);
+    } finally {
+      await this.finalizeSession(workerId);
+    }
   }
 
   async cleanup(workerId: string): Promise<void> {
