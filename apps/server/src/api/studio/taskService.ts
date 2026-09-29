@@ -491,6 +491,10 @@ export class TaskService {
     task.lastError = null;
     task.completedAt = null;
     task.paused = false;
+    // Drop the failed/cancelled run binding before start(). Otherwise get() →
+    // syncTaskWithRun() re-applies the old terminal status and start() 409s with
+    // "must be retried before starting".
+    task.runId = null;
     task.status = "ready";
     task.updatedAt = nowIso();
 

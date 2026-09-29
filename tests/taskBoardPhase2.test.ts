@@ -665,13 +665,20 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       );
       const task = await json(taskRes);
 
-      // Simulate task failed with previous error
+      // Start once so a real failed run is bound; syncTaskWithRun must not
+      // re-apply that terminal status when retry clears the binding.
+      const startRes = await app.fetch(req(`/tasks/${task.id}/start`, "POST", undefined, alice));
+      expect(startRes.status).toBe(200);
+      const { runId: failedRunId } = await json<{ runId: string }>(startRes);
+      runStore.update(failedRunId, { status: "failed", error: "Database connection failed", completedAt: new Date().toISOString() });
       await studioStore.saveTask(
         {
-          ...task,
+          ...(await studioStore.getTask(task.id, alice))!,
           status: "failed",
           lastError: "Database connection failed",
           retryCount: 1,
+          runId: failedRunId,
+          completedAt: new Date().toISOString(),
         },
         alice
       );
@@ -683,6 +690,7 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       const retryBody = await json(retryRes);
       expect(retryBody.success).toBe(true);
       expect(retryBody.runId).toBeDefined();
+      expect(retryBody.runId).not.toBe(failedRunId);
 
       const retriedTask = await studioStore.getTask(task.id, alice);
       expect(retriedTask?.status).toBe("running");
