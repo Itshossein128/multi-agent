@@ -23,6 +23,10 @@ interface TaskFieldsProps {
     setParentTaskId: (value: string) => void;
     description: string;
     setDescription: (value: string) => void;
+    workspaceId: string;
+    setWorkspaceId: (value: string) => void;
+    projectIds: string[];
+    setProjectIds: (value: string[]) => void;
   };
 }
 
@@ -105,6 +109,37 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      {/* Workspace + Projects (read/display ids; full rename selectors via board defaults) */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label className={labelClass}>Workspace *</label>
+          <input
+            value={draft.workspaceId}
+            onChange={(e) => draft.setWorkspaceId(e.target.value)}
+            disabled={isMutating}
+            placeholder="workspace id"
+            className={selectClass}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className={labelClass}>Project ids * (comma-separated)</label>
+          <input
+            value={draft.projectIds.join(",")}
+            onChange={(e) =>
+              draft.setProjectIds(
+                e.target.value
+                  .split(",")
+                  .map((part) => part.trim())
+                  .filter(Boolean),
+              )
+            }
+            disabled={isMutating}
+            placeholder="project-..."
+            className={selectClass}
+          />
         </div>
       </div>
 

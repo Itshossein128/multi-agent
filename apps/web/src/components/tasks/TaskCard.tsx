@@ -124,6 +124,21 @@ export function TaskCard({
         <p className="text-xs text-zinc-500 leading-snug line-clamp-2">{task.description}</p>
       )}
 
+      {(task.workspaceId || (task.projectIds && task.projectIds.length > 0)) && (
+        <div className="flex flex-wrap gap-1 text-[10px] text-zinc-400">
+          {task.workspaceId && (
+            <span className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5">
+              ws:{task.workspaceId.slice(0, 12)}
+            </span>
+          )}
+          {(task.projectIds ?? []).slice(0, 3).map((id) => (
+            <span key={id} className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5">
+              proj:{id.slice(0, 12)}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Workflow Reference */}
       {workflowName && (
         <div className="flex items-center gap-1 text-[11px] text-indigo-400">

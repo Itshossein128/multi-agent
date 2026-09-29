@@ -27,8 +27,8 @@ test-results/
 # Isolated agent provider credentials (never the developer ~/.codex / ~/.claude homes)
 .local/
 
-# Local runtime data
-workspaces/
+# Local runtime data (repo-root agent worktrees only)
+/workspaces/
 .langgraph_api
 .taskboard.json
 

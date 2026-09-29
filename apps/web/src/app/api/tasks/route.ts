@@ -39,6 +39,8 @@ interface TaskActionBody {
   parentTaskId?: string | null;
   dependencies?: string[];
   status?: TaskStatus;
+  workspaceId?: string;
+  projectIds?: string[];
   // move
   toStatus?: TaskStatus;
   // pause / resume
@@ -75,6 +77,8 @@ export async function POST(request: Request) {
           parentTaskId: body.parentTaskId ?? null,
           dependencies: body.dependencies ?? [],
           status: body.status,
+          workspaceId: body.workspaceId,
+          projectIds: body.projectIds,
         }, principal);
         return NextResponse.json({ success: true, task });
       }
@@ -101,6 +105,8 @@ export async function POST(request: Request) {
           workflowId: body.workflowId,
           parentTaskId: body.parentTaskId,
           dependencies: body.dependencies,
+          workspaceId: body.workspaceId,
+          projectIds: body.projectIds,
         };
         const task = await updateTask(taskId, patch, principal);
         return NextResponse.json({ success: true, task });

@@ -49,6 +49,8 @@ export interface Task {
   updatedAt: string;
   startedAt?: string | null;
   completedAt?: string | null;
+  workspaceId?: string;
+  projectIds?: string[];
 }
 
 export interface BoardAgent {

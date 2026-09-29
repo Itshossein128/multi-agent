@@ -13,6 +13,8 @@ export interface CreateTaskInput {
   parentTaskId?: string | null;
   dependencies?: string[];
   status?: TaskStatus;
+  workspaceId?: string;
+  projectIds?: string[];
 }
 
 export interface UpdateTaskInput {
@@ -27,6 +29,8 @@ export interface UpdateTaskInput {
   parentTaskId?: string | null;
   dependencies?: string[];
   output?: string | null;
+  workspaceId?: string;
+  projectIds?: string[];
 }
 
 export interface DependencyBlocker {

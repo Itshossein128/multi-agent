@@ -171,6 +171,13 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
     });
 
     it("preserves backward compatibility with legacy single agent and legacy statuses", async () => {
+      // Ensure tenant defaults exist for direct store writes that bypass TaskService.
+      await app.fetch(req("/projects", "GET", undefined, alice));
+      const projects = await studioStore.listProjects(alice, "active");
+      const workspaces = await studioStore.listWorkspaces(alice, "active");
+      expect(projects.length).toBeGreaterThan(0);
+      expect(workspaces.length).toBeGreaterThan(0);
+
       const legacyTask: StudioTask = {
         id: "task-legacy-001",
         title: "Legacy Todo Task",
@@ -183,6 +190,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
         retryCount: 0,
         paused: false,
         createdAt: "2026-09-01T00:00:00.000Z",
+        workspaceId: workspaces[0]!.id,
+        projectIds: [projects[0]!.id],
       };
 
       await studioStore.saveTask(legacyTask, alice);
@@ -193,6 +202,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       expect(fetched.id).toBe("task-legacy-001");
       expect(fetched.assignedAgents).toEqual(["agent-alpha-1"]);
       expect(toCanonicalStatus(fetched.status)).toBe("backlog");
+      expect(fetched.workspaceId).toBe(workspaces[0]!.id);
+      expect(fetched.projectIds).toEqual([projects[0]!.id]);
     });
 
     it("supports parentTaskId hierarchical relations", async () => {

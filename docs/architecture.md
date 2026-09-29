@@ -76,7 +76,8 @@ Whole-run و conditional branch-level cancellation وجود دارد؛ branch ca
 
 ## Persistence و memory
 
-- PostgreSQL ایزوله منبع durable برای Studio entities، taskها، runها، eventها، approvalها و long-term memory است.
+- PostgreSQL ایزوله منبع durable برای Studio entities (شامل project و workspace)، taskها، runها، eventها، approvalها و long-term memory است.
+- taskها به دقیقاً یک workspace و یک یا چند project پیوند دارند؛ داشبوردهای `/projects` و `/workspaces` ارتباط‌ها را از همین پیوندها استخراج می‌کنند. package import/export همچنان روی `/studio/workspace` است و با entityهای `/studio/workspaces` فرق دارد.
 - migrationها صریح و خارج از startup اجرا می‌شوند.
 - checkpoint و paused context برای recovery approval استفاده می‌شوند؛ state channelهای جدید default امن دارند و proposalهای `needs_human` نیز در paused context نسخه‌پذیر ذخیره می‌شوند. workerهای فعال، SSE listenerها و timerها process-local هستند.
 - runهای queued از snapshotهای durable به scheduler bounded تحویل داده می‌شوند و پس از restart قابل requeue هستند؛ `GET /runs/:runId/replay` timeline persisted را بدون اجرای مجدد workflow بازسازی می‌کند.

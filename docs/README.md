@@ -16,11 +16,12 @@
 
 1. نصب و راه‌اندازی
 2. اولین workflow از Agent تا Run
-3. مفاهیم Organization، Agent، Workflow، Task و Run
+3. مفاهیم Organization، Project، Workspace، Agent، Workflow، Task و Run
 4. ساخت Agent و طراحی Workflow
-5. مدیریت Task و مشاهده‌ی Run
+5. مدیریت Task (پیوند به یک workspace و یک یا چند project) و مشاهده‌ی Run
 6. Tools، Approvals و Memory
 7. Persistence، Worker و Credential Broker
+8. فهرست/داشبورد Project و Workspace در Studio (جدا از package import/export در `/studio/workspace`)
 8. Deployment، Troubleshooting و Limitations
 
 این سایت نقش tutorial و navigation را دارد؛ فایل‌های این پوشه همچنان منبع جزئیات معماری، verification و محدودیت‌های فنی هستند.

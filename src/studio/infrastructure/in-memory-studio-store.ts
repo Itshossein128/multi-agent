@@ -1,11 +1,26 @@
 import type { AgentRecord, ToolRecord, WorkflowDefinition } from "@multi-agent/types";
-import type { StudioPrincipal, StudioStore, StudioTask, StudioWorkspaceImport } from "../contracts";
+import type {
+  StudioEntityStatusFilter,
+  StudioPrincipal,
+  StudioProject,
+  StudioStore,
+  StudioTask,
+  StudioWorkspace,
+  StudioWorkspaceImport,
+} from "../contracts";
+
+function matchesStatus(status: StudioProject["status"], filter: StudioEntityStatusFilter = "active"): boolean {
+  if (filter === "all") return true;
+  return status === filter;
+}
 
 export class InMemoryStudioStore implements StudioStore {
   private workflows = new Map<string, WorkflowDefinition>();
   private agents = new Map<string, AgentRecord>();
   private tools = new Map<string, ToolRecord>();
   private tasks = new Map<string, StudioTask>();
+  private projects = new Map<string, StudioProject>();
+  private workspaces = new Map<string, StudioWorkspace>();
 
   async transaction<T>(operation: (store: StudioStore) => Promise<T>): Promise<T> {
     const snapshot = {
@@ -13,6 +28,8 @@ export class InMemoryStudioStore implements StudioStore {
       agents: new Map(structuredClone([...this.agents])),
       tools: new Map(structuredClone([...this.tools])),
       tasks: new Map(structuredClone([...this.tasks])),
+      projects: new Map(structuredClone([...this.projects])),
+      workspaces: new Map(structuredClone([...this.workspaces])),
     };
     try {
       return await operation(this);
@@ -21,6 +38,8 @@ export class InMemoryStudioStore implements StudioStore {
       this.agents = snapshot.agents;
       this.tools = snapshot.tools;
       this.tasks = snapshot.tasks;
+      this.projects = snapshot.projects;
+      this.workspaces = snapshot.workspaces;
       throw error;
     }
   }
@@ -169,7 +188,8 @@ export class InMemoryStudioStore implements StudioStore {
         if (!principal) return true;
         return Boolean(task.tenantId && task.tenantId === principal.tenantId);
       })
-      .sort((a, b) => ((b.updatedAt ?? b.createdAt) || "").localeCompare((a.updatedAt ?? a.createdAt) || ""));
+      .sort((a, b) => ((b.updatedAt ?? b.createdAt) || "").localeCompare((a.updatedAt ?? a.createdAt) || ""))
+      .map((task) => structuredClone(task));
   }
 
   async getTask(id: string, principal?: StudioPrincipal) {
@@ -181,6 +201,14 @@ export class InMemoryStudioStore implements StudioStore {
     return structuredClone(task);
   }
 
+  async listTasksByWorkspace(workspaceId: string, principal?: StudioPrincipal) {
+    return (await this.listTasks(principal)).filter((task) => task.workspaceId === workspaceId);
+  }
+
+  async listTasksByProject(projectId: string, principal?: StudioPrincipal) {
+    return (await this.listTasks(principal)).filter((task) => (task.projectIds ?? []).includes(projectId));
+  }
+
   async saveTask(task: StudioTask, principal?: StudioPrincipal) {
     const assignedAgents = Array.isArray(task.assignedAgents)
       ? task.assignedAgents
@@ -189,6 +217,10 @@ export class InMemoryStudioStore implements StudioStore {
         : [];
     const assignedAgent = task.assignedAgent ?? (assignedAgents[0] ?? null);
     const updatedAt = task.updatedAt ?? task.createdAt ?? new Date().toISOString();
+    const projectIds = Array.isArray(task.projectIds) ? [...new Set(task.projectIds.filter(Boolean))] : [];
+    const workspaceId = task.workspaceId;
+    if (!workspaceId) throw new Error("Task workspaceId is required");
+    if (!projectIds.length) throw new Error("Task projectIds must include at least one project");
     let record: StudioTask = {
       ...task,
       assignedAgent,
@@ -200,6 +232,8 @@ export class InMemoryStudioStore implements StudioStore {
       runId: task.runId ?? null,
       lastError: task.lastError ?? null,
       metadata: task.metadata ?? {},
+      workspaceId,
+      projectIds,
       updatedAt,
     };
     if (principal) {
@@ -221,6 +255,60 @@ export class InMemoryStudioStore implements StudioStore {
       }
     }
     this.tasks.delete(id);
+  }
+
+  async listProjects(principal?: StudioPrincipal, status: StudioEntityStatusFilter = "active") {
+    return [...this.projects.values()]
+      .filter((project) => {
+        if (principal && project.tenantId !== principal.tenantId) return false;
+        return matchesStatus(project.status, status);
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((project) => structuredClone(project));
+  }
+
+  async getProject(id: string, principal?: StudioPrincipal) {
+    const project = this.projects.get(id);
+    if (!project) return null;
+    if (principal && project.tenantId !== principal.tenantId) return null;
+    return structuredClone(project);
+  }
+
+  async saveProject(project: StudioProject, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.projects.get(project.id);
+      if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to project");
+      project = { ...project, tenantId: principal.tenantId, ownerId: project.ownerId || principal.userId };
+    }
+    this.projects.set(project.id, structuredClone(project));
+    return structuredClone(project);
+  }
+
+  async listWorkspaces(principal?: StudioPrincipal, status: StudioEntityStatusFilter = "active") {
+    return [...this.workspaces.values()]
+      .filter((workspace) => {
+        if (principal && workspace.tenantId !== principal.tenantId) return false;
+        return matchesStatus(workspace.status, status);
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((workspace) => structuredClone(workspace));
+  }
+
+  async getWorkspace(id: string, principal?: StudioPrincipal) {
+    const workspace = this.workspaces.get(id);
+    if (!workspace) return null;
+    if (principal && workspace.tenantId !== principal.tenantId) return null;
+    return structuredClone(workspace);
+  }
+
+  async saveWorkspace(workspace: StudioWorkspace, principal?: StudioPrincipal) {
+    if (principal) {
+      const existing = this.workspaces.get(workspace.id);
+      if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to workspace");
+      workspace = { ...workspace, tenantId: principal.tenantId, ownerId: workspace.ownerId || principal.userId };
+    }
+    this.workspaces.set(workspace.id, structuredClone(workspace));
+    return structuredClone(workspace);
   }
 
   async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal) {

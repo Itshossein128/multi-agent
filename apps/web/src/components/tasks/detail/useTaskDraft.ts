@@ -22,6 +22,10 @@ export interface TaskDraft {
   setWorkflowId: (value: string) => void;
   parentTaskId: string;
   setParentTaskId: (value: string) => void;
+  workspaceId: string;
+  setWorkspaceId: (value: string) => void;
+  projectIds: string[];
+  setProjectIds: (value: string[]) => void;
   dependencies: string[];
   addDependency: (id: string) => void;
   removeDependency: (id: string) => void;
@@ -35,6 +39,8 @@ export function useTaskDraft(task: Task): TaskDraft {
   const [assignedAgent, setAssignedAgent] = useState(task.assignedAgent ?? "");
   const [workflowId, setWorkflowId] = useState(task.workflowId ?? "");
   const [parentTaskId, setParentTaskId] = useState(task.parentTaskId ?? "");
+  const [workspaceId, setWorkspaceId] = useState(task.workspaceId ?? "");
+  const [projectIds, setProjectIds] = useState<string[]>(task.projectIds ?? []);
   const [dependencies, setDependencies] = useState<string[]>(task.dependencies ?? []);
 
   const addDependency = (id: string) => {
@@ -57,6 +63,8 @@ export function useTaskDraft(task: Task): TaskDraft {
     workflowId: workflowId || null,
     parentTaskId: parentTaskId || null,
     dependencies,
+    workspaceId: workspaceId || undefined,
+    projectIds: projectIds.length ? projectIds : undefined,
   });
 
   return {
@@ -72,6 +80,10 @@ export function useTaskDraft(task: Task): TaskDraft {
     setWorkflowId,
     parentTaskId,
     setParentTaskId,
+    workspaceId,
+    setWorkspaceId,
+    projectIds,
+    setProjectIds,
     dependencies,
     addDependency,
     removeDependency,

@@ -8,11 +8,14 @@ import { AgentService } from "./studio/agentService";
 import { StudioToolService } from "./studio/toolService";
 import { TaskService } from "./studio/taskService";
 import { WorkspaceService } from "./studio/workspaceService";
+import { ProjectService, WorkspaceEntityService } from "./studio/projectService";
 import { registerWorkflowRoutes } from "./studio/workflowRoutes";
 import { registerAgentRoutes } from "./studio/agentRoutes";
 import { registerToolRoutes } from "./studio/toolRoutes";
 import { registerTaskRoutes } from "./studio/taskRoutes";
 import { registerWorkspaceRoutes } from "./studio/workspaceRoutes";
+import { registerProjectRoutes } from "./studio/projectRoutes";
+import { registerWorkspaceEntityRoutes } from "./studio/workspaceEntityRoutes";
 
 import type { RunExecutor } from "../runtime/runExecutor";
 
@@ -27,6 +30,8 @@ export function createStudioRouter(
   const tools = new StudioToolService(store);
   const tasks = new TaskService(store, executor);
   const workspace = new WorkspaceService(store);
+  const projects = new ProjectService(store);
+  const workspaceEntities = new WorkspaceEntityService(store);
   app.use("/*", requirePrincipal(resolvePrincipal));
   app.onError(respondWithApiError);
 
@@ -36,6 +41,8 @@ export function createStudioRouter(
   registerToolRoutes(app, tools);
   registerTaskRoutes(app, tasks);
   registerWorkspaceRoutes(app, workspace);
+  registerProjectRoutes(app, projects);
+  registerWorkspaceEntityRoutes(app, workspaceEntities);
 
   return app;
 }

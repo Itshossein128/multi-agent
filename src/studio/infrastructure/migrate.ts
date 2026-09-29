@@ -38,6 +38,12 @@ const LEGACY_SCHEMA_REQUIREMENTS: Record<string, LegacySchemaRequirements> = {
   "007_run_tool_snapshot.sql": {
     studio_runs: ["tools_snapshot"],
   },
+  "011_projects_workspaces.sql": {
+    studio_projects: ["id", "tenant_id", "name", "description", "status", "settings", "created_at", "updated_at", "owner_id"],
+    studio_workspaces: ["id", "tenant_id", "name", "description", "status", "settings", "created_at", "updated_at", "owner_id"],
+    studio_tasks: ["workspace_id"],
+    studio_task_projects: ["tenant_id", "task_id", "project_id"],
+  },
 };
 
 async function reconcileLegacySchema(client: { query(text: string, values?: any[]): Promise<{ rows: any[] }> }, migrationName: string): Promise<boolean> {
@@ -66,7 +72,7 @@ async function reconcileLegacySchema(client: { query(text: string, values?: any[
   if (!complete) {
     // Later migrations are intentionally idempotent and can finish a schema
     // that is still being created in this same transaction.
-    if (["004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql"].includes(migrationName)) return false;
+    if (["004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql", "011_projects_workspaces.sql"].includes(migrationName)) return false;
     throw new Error(`Studio migration ${migrationName} found an existing but incomplete schema; inspect it and create a reviewed migration before retrying`);
   }
   return true;
@@ -75,7 +81,7 @@ async function reconcileLegacySchema(client: { query(text: string, values?: any[
 /** Explicit operator action only. Never called from a store constructor or server startup. */
 export async function runStudioMigrations(pool: PgPool, options: { directory?: string } = {}): Promise<string[]> {
   const directory = options.directory ?? resolve(process.cwd(), "infrastructure/studio/migrations");
-  const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql", "004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql", "008_run_result.sql", "009_run_memory_access.sql", "010_procedural_memory_status.sql"];
+  const names = ["001_studio_entities.sql", "002_runs.sql", "003_tasks.sql", "004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql", "008_run_result.sql", "009_run_memory_access.sql", "010_procedural_memory_status.sql", "011_projects_workspaces.sql"];
   const migrations = await Promise.all(names.map(async (name) => {
     const sql = await readFile(resolve(directory, name), "utf8");
     return { name, sql, checksum: createHash("sha256").update(sql).digest("hex") };
