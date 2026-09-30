@@ -28,7 +28,13 @@ export class SearchToolExecutor implements ToolExecutor {
       body: JSON.stringify({ query, limit: boundedLimit(input.limit), filters: input.filters ?? {} }),
       signal,
     });
-    const body = await response.json().catch(async () => ({ text: await response.text() }));
+    const text = await response.text();
+    let body: unknown;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { text };
+    }
     if (!response.ok) throw new Error(`Search provider "${alias}" returned ${response.status}.`);
     return { provider: alias, results: body };
   }
