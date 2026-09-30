@@ -33,14 +33,6 @@ function authHeaders(principal?: AuthenticatedPrincipal): HeadersInit {
   };
 }
 
-function req(path: string, method = "GET", body?: unknown, principal?: AuthenticatedPrincipal) {
-  return new Request(`http://localhost${path}`, {
-    method,
-    headers: authHeaders(principal),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-}
-
 async function json<T = any>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
@@ -52,6 +44,7 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
   let app: ReturnType<typeof createStudioRouter>;
   let releaseAgentExecutions: Set<() => void>;
   let activeAgentExecutions: number;
+  let taskAssoc: { workspaceId: string; projectIds: string[] };
 
   const sampleAgent: AgentRecord = {
     ...createAgentRecord({ name: "Alpha Dev Agent" }),
@@ -63,6 +56,30 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
     ...createSingleAgentWorkflow(sampleAgent, "Alpha Deployment Workflow"),
     id: "wf-alpha-1",
   };
+
+  function req(path: string, method = "GET", body?: unknown, principal?: AuthenticatedPrincipal) {
+    let payload = body;
+    if (
+      method === "POST" &&
+      path === "/tasks" &&
+      body &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      taskAssoc
+    ) {
+      const record = body as Record<string, unknown>;
+      payload = {
+        workspaceId: taskAssoc.workspaceId,
+        projectIds: taskAssoc.projectIds,
+        ...record,
+      };
+    }
+    return new Request(`http://localhost${path}`, {
+      method,
+      headers: authHeaders(principal),
+      body: payload !== undefined ? JSON.stringify(payload) : undefined,
+    });
+  }
 
   beforeEach(async () => {
     studioStore = new InMemoryStudioStore();
@@ -117,6 +134,11 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       },
       executor
     );
+
+    await app.fetch(req("/projects", "GET", undefined, alice));
+    const projects = await studioStore.listProjects(alice, "active");
+    const workspaces = await studioStore.listWorkspaces(alice, "active");
+    taskAssoc = { workspaceId: workspaces[0]!.id, projectIds: [projects[0]!.id] };
   });
 
   afterEach(async () => {

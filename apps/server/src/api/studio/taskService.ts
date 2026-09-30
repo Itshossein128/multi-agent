@@ -170,7 +170,9 @@ export class TaskService {
     this.validateParentTask(id, parentTaskId, tenantTasks);
     this.checkDependencyGating({ id, title, dependencies }, status, tenantTasks);
     const metadata = validateMetadata(body.metadata);
-    const { workspaceId, projectIds } = await this.resolveAssociations(body, principal);
+    const { workspaceId, projectIds } = await this.resolveAssociations(body, principal, {
+      allowMissingAsDefaults: false,
+    });
 
     const stamp = nowIso();
     const task: StudioTask = {
@@ -248,6 +250,9 @@ export class TaskService {
     };
     const { workspaceId, projectIds } = await this.resolveAssociations(associationSource, principal, {
       allowMissingAsDefaults: body.workspaceId === undefined && body.projectIds === undefined,
+      // Updates may still carry retired project ids from before retire; keep any active
+      // selections and require at least one active project before save.
+      stripRetiredProjects: true,
     });
 
     const updated: StudioTask = {
@@ -339,7 +344,9 @@ export class TaskService {
         if (!keep.has(task.id)) await transactionStore.deleteTask(task.id, principal);
       }
       for (const task of normalizedTasks) {
-        const { workspaceId, projectIds } = await this.resolveAssociations(task, principal);
+        const { workspaceId, projectIds } = await this.resolveAssociations(task, principal, {
+          allowMissingAsDefaults: false,
+        });
         await transactionStore.saveTask(
           {
             ...task,
@@ -646,9 +653,10 @@ export class TaskService {
   private async resolveAssociations(
     body: Partial<StudioTask>,
     principal: RequestPrincipal,
-    options?: { allowMissingAsDefaults?: boolean },
+    options?: { allowMissingAsDefaults?: boolean; stripRetiredProjects?: boolean },
   ): Promise<{ workspaceId: string; projectIds: string[] }> {
     const allowDefaults = options?.allowMissingAsDefaults !== false;
+    const stripRetired = options?.stripRetiredProjects === true;
     const defaults = await ensureTenantProjectWorkspaceDefaults(this.store, principal);
 
     if (body.workspaceId === null) {
@@ -683,13 +691,26 @@ export class TaskService {
     if (!workspace) throw new ApiError(400, `Unknown workspace: ${workspaceId}`);
     if (workspace.status !== "active") throw new ApiError(400, `Workspace "${workspaceId}" is retired and cannot receive tasks`);
 
+    const activeProjectIds: string[] = [];
     for (const projectId of projectIds) {
       const project = await this.store.getProject(projectId, principal);
       if (!project) throw new ApiError(400, `Unknown project: ${projectId}`);
-      if (project.status !== "active") throw new ApiError(400, `Project "${projectId}" is retired and cannot receive tasks`);
+      if (project.status !== "active") {
+        if (stripRetired) continue;
+        throw new ApiError(400, `Project "${projectId}" is retired and cannot receive tasks`);
+      }
+      activeProjectIds.push(projectId);
+    }
+    if (activeProjectIds.length === 0) {
+      throw new ApiError(
+        400,
+        stripRetired
+          ? "All linked projects are retired; select at least one active project before save"
+          : "At least one project is required",
+      );
     }
 
-    return { workspaceId, projectIds };
+    return { workspaceId, projectIds: activeProjectIds };
   }
 
   private async withAssociations(task: StudioTask, principal: RequestPrincipal): Promise<StudioTask> {

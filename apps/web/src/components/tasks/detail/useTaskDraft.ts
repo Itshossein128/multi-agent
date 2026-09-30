@@ -29,6 +29,8 @@ export interface TaskDraft {
   dependencies: string[];
   addDependency: (id: string) => void;
   removeDependency: (id: string) => void;
+  associationsValid: boolean;
+  associationsError: string | null;
   savePayload: () => UpdateTaskInput;
 }
 
@@ -52,6 +54,13 @@ export function useTaskDraft(task: Task): TaskDraft {
     setDependencies((prev) => prev.filter((depId) => depId !== id));
   };
 
+  const associationsValid = Boolean(workspaceId.trim()) && projectIds.length > 0;
+  const associationsError = !workspaceId.trim()
+    ? "Select a workspace before saving."
+    : projectIds.length === 0
+      ? "Select at least one project before saving."
+      : null;
+
   /** Payload for the update mutation; execution output stays read-only. */
   const savePayload = (): UpdateTaskInput => ({
     taskId: task.id,
@@ -63,8 +72,10 @@ export function useTaskDraft(task: Task): TaskDraft {
     workflowId: workflowId || null,
     parentTaskId: parentTaskId || null,
     dependencies,
-    workspaceId: workspaceId || undefined,
-    projectIds: projectIds.length ? projectIds : undefined,
+    // Always include associations so clearing them is rejected server-side
+    // instead of silently preserving prior links.
+    workspaceId,
+    projectIds,
   });
 
   return {
@@ -87,6 +98,8 @@ export function useTaskDraft(task: Task): TaskDraft {
     dependencies,
     addDependency,
     removeDependency,
+    associationsValid,
+    associationsError,
     savePayload,
   };
 }

@@ -271,3 +271,25 @@ Task: "GET /workspaces/:id/dashboard in workspaceEntityService.ts + workspaceEnt
 - Related projectâ†”workspace sets are derived from tasks only (no explicit link table)
 - Commit after each task or logical group; stop at any checkpoint to validate independently
 
+
+---
+
+## Phase 9: Convergence
+
+**Purpose**: Close remaining gaps between implemented code and spec/plan/tasks after `/speckit-implement`
+
+- [x] T045 Require `workspaceId` and non-empty `projectIds` on task create in `apps/server/src/api/studio/taskService.ts` (reject with clear 400; do not silently assign tenant defaults) per FR-007, US2/AC2, SC-003 (contradicts)
+- [x] T046 Replace raw workspace/project id inputs in `apps/web/src/components/tasks/detail/TaskFields.tsx` with active-only workspace select and multi-project checkboxes matching `CreateTaskModal` per FR-019, T024 (partial)
+- [x] T047 Resolve and display workspace and project names (not truncated ids) on task board cards in `apps/web/src/components/tasks/TaskCard.tsx` per FR-019 (partial)
+- [x] T048 Gate Projects/Workspaces list empty states on successful load and add Retry in `apps/web/src/app/(authenticated)/projects/page.tsx` and `apps/web/src/app/(authenticated)/workspaces/page.tsx` per FR-018 (partial)
+- [x] T049 Add rename actions on Projects and Workspaces list pages in `apps/web/src/app/(authenticated)/projects/page.tsx` and `apps/web/src/app/(authenticated)/workspaces/page.tsx` per US5/AC2, T038 (partial)
+- [x] T050 Add dedicated Jest coverage in `tests/studioProjectsWorkspaces.test.ts` for project/workspace CRUD, dashboards, retire blocking task assignment, and tenant isolation per plan: tests touch-point (missing)
+
+---
+
+## Phase 10: Convergence
+
+**Purpose**: Close remaining gaps between implemented code and spec/plan/tasks after Phase 9
+
+- [x] T051 Allow task edit to replace retired project associations: show stuck retired project ids in `TaskFields` (removable) and accept updates that submit at least one active project (strip/replace retired ids) in `taskService` update path per Edge case (all linked projects retired), US2/AC3 (partial)
+- [x] T052 Block task edit Save when workspace is cleared or all projects unchecked in `useTaskDraft` / task detail UI (do not omit empty associations so the server silently keeps prior links) per US2/AC2, T024 (partial)

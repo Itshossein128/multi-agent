@@ -25,6 +25,8 @@ interface TaskCardProps {
   task: Task;
   tasksById: Map<string, Task>;
   workflowName?: string;
+  workspaceName?: string;
+  projectNames?: string[];
   isMutating: boolean;
   isDragging: boolean;
   onOpen: (task: Task) => void;
@@ -41,6 +43,8 @@ export function TaskCard({
   task,
   tasksById,
   workflowName,
+  workspaceName,
+  projectNames,
   isMutating,
   isDragging,
   onOpen,
@@ -124,16 +128,19 @@ export function TaskCard({
         <p className="text-xs text-zinc-500 leading-snug line-clamp-2">{task.description}</p>
       )}
 
-      {(task.workspaceId || (task.projectIds && task.projectIds.length > 0)) && (
+      {(workspaceName || (projectNames && projectNames.length > 0) || task.workspaceId || (task.projectIds && task.projectIds.length > 0)) && (
         <div className="flex flex-wrap gap-1 text-[10px] text-zinc-400">
-          {task.workspaceId && (
-            <span className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5">
-              ws:{task.workspaceId.slice(0, 12)}
+          {(workspaceName || task.workspaceId) && (
+            <span className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem]" title={workspaceName ?? task.workspaceId}>
+              {workspaceName ?? task.workspaceId}
             </span>
           )}
-          {(task.projectIds ?? []).slice(0, 3).map((id) => (
-            <span key={id} className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5">
-              proj:{id.slice(0, 12)}
+          {(projectNames && projectNames.length > 0
+            ? projectNames
+            : (task.projectIds ?? [])
+          ).slice(0, 3).map((label, index) => (
+            <span key={`${label}-${index}`} className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem]" title={label}>
+              {label}
             </span>
           ))}
         </div>
