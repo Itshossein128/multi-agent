@@ -7,6 +7,7 @@ import {
   toCanonicalStatus,
   uid,
   type AgentRecord,
+  type Run,
   type TaskStatus,
   type WorkflowDefinition,
 } from "@multi-agent/types";
@@ -30,6 +31,20 @@ const TASK_STATUSES = new Set([
   "backlog", "ready", "queued", "running", "blocked", "waiting_for_human", "completed", "failed", "cancelled",
   "todo", "planning", "in_progress", "waiting_tool", "review", "done",
 ]);
+
+const LEGACY_BLOCKED_OUTPUT = /(?:clarification\s+required|intake\s+remains\s+in\s+clarification|not[\s_-]*ready|needs[\s_-]*verification|no\s+implementation\s+task(?:\s+has\s+been)?\s+dispatched|\bblocked\b)/i;
+
+function taskStatusForCompletedRun(run: Pick<Run, "result" | "output">): TaskStatus {
+  const resultStatus = run.result?.status;
+  if (resultStatus === "needs_human") return "waiting_for_human";
+  if (resultStatus === "blocked" || resultStatus === "policy_rejected" || resultStatus === "validation_failed" || resultStatus === "unknown") {
+    return "blocked";
+  }
+  if (resultStatus === "failed") return "failed";
+
+  const serializedOutput = typeof run.output === "string" ? run.output : JSON.stringify(run.output ?? "");
+  return serializedOutput && LEGACY_BLOCKED_OUTPUT.test(serializedOutput) ? "blocked" : "completed";
+}
 
 function boundedText(value: unknown, max: number, field: string): string {
   if (typeof value !== "string") throw new ApiError(400, `${field} must be a string`);
@@ -728,10 +743,26 @@ export class TaskService {
     const run = entry.run;
     let changed = false;
 
-    if (run.status === "completed" && task.status !== "completed" && task.status !== "done") {
-      task.status = "completed";
-      task.completedAt = run.completedAt ?? nowIso();
-      changed = true;
+    if (run.status === "completed") {
+      const syncedStatus = taskStatusForCompletedRun(run);
+      if (syncedStatus === "blocked" || syncedStatus === "waiting_for_human") {
+        if (task.status !== syncedStatus || task.completedAt !== null) {
+          task.status = syncedStatus;
+          task.completedAt = null;
+          changed = true;
+        }
+      } else if (syncedStatus === "failed") {
+        if (task.status !== "failed") {
+          task.status = "failed";
+          task.completedAt = run.completedAt ?? nowIso();
+          task.lastError = run.error ?? "Run reported failure";
+          changed = true;
+        }
+      } else if (task.status !== "completed" && task.status !== "done") {
+        task.status = "completed";
+        task.completedAt = run.completedAt ?? nowIso();
+        changed = true;
+      }
     } else if (run.status === "failed" && task.status !== "failed") {
       task.status = "failed";
       task.completedAt = run.completedAt ?? nowIso();

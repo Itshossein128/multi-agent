@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   createAgentRecord,
+  createResultEnvelope,
   type WorkflowDefinition,
   type AgentRecord,
   toCanonicalStatus,
@@ -586,6 +587,81 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       const parsedOutput = typeof finishedTask?.output === "string" ? JSON.parse(finishedTask.output) : finishedTask?.output;
       expect(parsedOutput).toEqual({ result: "All tests green" });
       expect(finishedTask?.completedAt).toBeDefined();
+    });
+
+    it("keeps blocked run outcomes out of Done, including legacy clarification output", async () => {
+      const taskRes = await app.fetch(
+        req(
+          "/tasks",
+          "POST",
+          {
+            title: "Clarification Task",
+            status: "ready",
+            assignedAgents: ["agent-alpha-1"],
+          },
+          alice
+        )
+      );
+      const task = await json(taskRes);
+      const startRes = await app.fetch(req(`/tasks/${task.id}/start`, "POST", undefined, alice));
+      const { runId } = await json<{ runId: string }>(startRes);
+      const clarification = "Clarification required before implementation can be assigned; the intake remains in clarification.";
+
+      runStore.update(runId, {
+        status: "completed",
+        output: { content: clarification },
+        result: createResultEnvelope("success", { value: { content: clarification } }),
+      });
+      runStore.append(runId, {
+        id: randomUUID(),
+        runId,
+        type: "run.completed",
+        timestamp: new Date().toISOString(),
+        sequence: 1,
+        payload: { output: { content: clarification }, resultStatus: "success" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const blockedTask = await studioStore.getTask(task.id, alice);
+      expect(blockedTask?.status).toBe("blocked");
+      expect(blockedTask?.completedAt).toBeNull();
+    });
+
+    it("maps a structured blocked run result to Review / Blocked", async () => {
+      const taskRes = await app.fetch(
+        req(
+          "/tasks",
+          "POST",
+          { title: "Structured Blocked Task", status: "ready", assignedAgents: ["agent-alpha-1"] },
+          alice
+        )
+      );
+      const task = await json(taskRes);
+      const startRes = await app.fetch(req(`/tasks/${task.id}/start`, "POST", undefined, alice));
+      const { runId } = await json<{ runId: string }>(startRes);
+
+      runStore.update(runId, {
+        status: "completed",
+        output: { content: "missing approved revision" },
+        result: createResultEnvelope("blocked", {
+          error: { code: "CLARIFICATION_REQUIRED", message: "Approved revision is missing", retryable: false },
+        }),
+      });
+      runStore.append(runId, {
+        id: randomUUID(),
+        runId,
+        type: "run.completed",
+        timestamp: new Date().toISOString(),
+        sequence: 1,
+        payload: { output: { content: "missing approved revision" }, resultStatus: "blocked" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const blockedTask = await studioStore.getTask(task.id, alice);
+      expect(blockedTask?.status).toBe("blocked");
+      expect(blockedTask?.completedAt).toBeNull();
     });
 
     it("syncs task failure and records lastError when run fails", async () => {
