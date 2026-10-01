@@ -208,6 +208,8 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
     });
 
     test("tasks: tenant-scoped sharing (Alice and Bob in same tenant share tasks, Eve isolated)", async () => {
+      const ws = await json(await app.fetch(req("/workspaces", "GET", undefined, alice)));
+      const pr = await json(await app.fetch(req("/projects", "GET", undefined, alice)));
       const taskRes = await app.fetch(
         req(
           "/tasks",
@@ -223,6 +225,8 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
             retryCount: 0,
             paused: false,
             createdAt: new Date().toISOString(),
+            workspaceId: ws[0].id,
+            projectIds: [pr[0].id],
           },
           alice,
         ),
