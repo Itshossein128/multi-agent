@@ -27,6 +27,8 @@ test("studio store round-trips workflows agents tools and tasks", async () => {
     paused: false,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    workspaceId: "workspace-default",
+    projectIds: ["project-default"],
   });
   expect((await store.listWorkflows())[0].id).toBe(workflow.id);
   expect((await store.listAgents())[0].id).toBe(agent.id);

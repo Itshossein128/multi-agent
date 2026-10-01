@@ -262,6 +262,7 @@ test("whole-run retry updates the linked task and clears stale terminal fields",
     assignedAgent: fixture.agent.id, assignedAgents: [fixture.agent.id], dependencies: [], runId: firstRunId,
     output: "stale", lastError: "first run failed", retryCount: 4, paused: true, createdAt: nowIso(), completedAt: nowIso(),
     ownerId: principal.userId, tenantId: principal.tenantId,
+    workspaceId: "workspace-default", projectIds: ["project-default"],
   }, principal);
   const service = new RunApiService(executor, async () => null, studio, async () => principal);
   const retried = await service.retry(firstRunId, new Request(`http://localhost/runs/${firstRunId}/retry`), principal);

@@ -12,11 +12,10 @@ import {
 } from "../src/memory/application/embeddingProvider";
 import { embeddableMemoryText } from "../src/memory/application/embedding";
 
-const databaseUrl =
-  process.env.MEMORY_TEST_DATABASE_URL ||
-  "postgresql://studio_memory:studio_memory_local@127.0.0.1:55432/studio_memory";
+const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
+const describePostgres = databaseUrl ? describe : describe.skip;
 
-describe("Phase 10: Real Embedding and Provider Validation (PostgreSQL + pgvector)", () => {
+describePostgres("Phase 10: Real Embedding and Provider Validation (PostgreSQL + pgvector)", () => {
   let admin: Pool;
   let pool: Pool;
   const schema = `live_embed_test_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
