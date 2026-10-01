@@ -28,6 +28,8 @@ interface TaskBoardColumnProps {
   tasks: Task[];
   tasksById: Map<string, Task>;
   workflowsById: Map<string, string>;
+  workspaceNamesById: Map<string, string>;
+  projectNamesById: Map<string, string>;
   isMutating: boolean;
   draggingTaskId: string | null;
   onOpenTask: (task: Task) => void;
@@ -46,6 +48,8 @@ export function TaskBoardColumn({
   tasks,
   tasksById,
   workflowsById,
+  workspaceNamesById,
+  projectNamesById,
   isMutating,
   draggingTaskId,
   onOpenTask,
@@ -130,6 +134,8 @@ export function TaskBoardColumn({
             task={task}
             tasksById={tasksById}
             workflowName={task.workflowId ? workflowsById.get(task.workflowId) : undefined}
+            workspaceName={task.workspaceId ? workspaceNamesById.get(task.workspaceId) : undefined}
+            projectNames={(task.projectIds ?? []).map((id) => projectNamesById.get(id) ?? id)}
             isMutating={isMutating}
             isDragging={draggingTaskId === task.id}
             onOpen={onOpenTask}

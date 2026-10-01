@@ -1,6 +1,29 @@
 import type { AgentRecord, ToolCategory, ToolRecord, WorkflowDefinition, WorkflowNode, WorkflowNodeType } from "@multi-agent/types";
-import { agentHasConfiguredModel, validateAgent, validateTool } from "@multi-agent/types";
+import { agentHasConfiguredModel, validateAgent, validateTool, validateRawNodeContract } from "@multi-agent/types";
 import { NODE_VALIDATORS, type ValidationContext } from "./nodeValidators";
+
+/**
+ * Issue codes that make a definition structurally unsafe or policy-violating
+ * to persist: identifier/structure integrity, contract declarations, allowed
+ * branch values, and retry safety. Graph *completeness* issues (missing input
+ * or output nodes, unlinked agents, …) stay saveable drafts and are enforced
+ * authoritatively when a run is created.
+ */
+export const SAVE_BLOCKING_ISSUE_CODES: ReadonlySet<string> = new Set([
+  "INVALID_WORKFLOW", "INVALID_WORKFLOW_MEMBER", "NODE_LIMIT_EXCEEDED", "EDGE_LIMIT_EXCEEDED",
+  "INVALID_NODE_ID", "DUPLICATE_NODE_ID", "UNKNOWN_NODE_TYPE", "INVALID_NODE_POSITION", "INVALID_NODE_CONFIG",
+  "INVALID_RETRY_ATTEMPTS", "INVALID_RETRY_BACKOFF", "INVALID_RETRY_MULTIPLIER", "UNSAFE_NODE_RETRY",
+  "INVALID_EDGE_ID", "DUPLICATE_EDGE_ID", "INVALID_EDGE_KIND", "DUPLICATE_EDGE", "INVALID_EDGE_REFERENCE",
+  "UNSAFE_CYCLE", "MISSING_BRANCH_KEY", "INVALID_CONNECTION", "AMBIGUOUS_BRANCHING", "INVALID_CONDITIONAL_SOURCE",
+  "INVALID_APPROVAL_BRANCH", "INVALID_CONDITION_SOURCE", "INVALID_CONDITION_FIELD", "MISSING_CONDITION_BRANCHES",
+  "BRANCH_LIMIT_EXCEEDED", "INVALID_BRANCH_KEY", "DUPLICATE_BRANCH_KEY", "AMBIGUOUS_BRANCH_KEY",
+  "INVALID_CONDITIONAL_BRANCH", "INVALID_UNKNOWN_ROUTE",
+  "INVALID_INPUT_KEY", "INVALID_INPUT_DESCRIPTION", "INVALID_OUTPUT_KEY", "INVALID_OUTPUT_DESCRIPTION",
+  "INVALID_OUTPUT_INPUT_MODE", "INVALID_MEMORY_MODE", "INVALID_MEMORY_TYPE",
+  "INVALID_APPROVAL_TYPE", "INVALID_APPROVAL_TIMEOUT",
+  "INVALID_CONTRACT_SCHEMA", "INVALID_CONTRACT_VERSION", "UNSUPPORTED_CONTRACT_VERSION",
+  "UNSUPPORTED_SCHEMA_KEYWORD", "INVALID_PAYLOAD_BOUNDS", "INVALID_CONTRACT_EVIDENCE",
+]);
 
 export interface WorkflowIssue {
   id: string;
@@ -104,6 +127,12 @@ export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRe
   if (inputs.length !== 1) add("error", "INVALID_INPUT_COUNT", `Workflow must have exactly one Input node (found ${inputs.length})`);
   if (outputs.length !== 1) add("error", "INVALID_OUTPUT_COUNT", `Workflow must have exactly one Output node (found ${outputs.length})`);
   for (const node of definition.nodes) {
+    // Versioned node contracts are validated against the raw value so
+    // malformed author input surfaces with stable codes instead of being
+    // silently normalized away.
+    for (const contractIssue of validateRawNodeContract(node.contract)) {
+      add("error", contractIssue.code, contractIssue.field ? `${contractIssue.message} (${contractIssue.field})` : contractIssue.message, node.id);
+    }
     // Dispatch to the node-type-specific validator from the registry.
     const validator = NODE_VALIDATORS[node.type];
     if (validator) {

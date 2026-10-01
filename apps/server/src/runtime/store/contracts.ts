@@ -1,4 +1,4 @@
-import type { AgentRecord, ApprovalRequest, Run, RunEvent, RunStatus, WorkflowDefinition } from "@multi-agent/types";
+import type { AgentRecord, ApprovalRequest, NodeResultEnvelope, Run, RunEvent, RunStatus, WorkflowDefinition } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../../../../src/memory/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 
@@ -12,12 +12,16 @@ export interface RunEntry {
   listeners: Set<Listener>;
   abort: AbortController;
   memoryOwner?: MemoryOwner;
+  /** Trusted, server-resolved namespaces captured at run creation. */
+  memoryAccess?: MemoryAccessContext;
+  episodicMemoryStatus?: "pending" | "processed" | "failed";
+  proceduralMemoryStatus?: "pending" | "processed" | "failed";
   approvals: ApprovalRequest[];
   approvalTimers: Map<string, NodeJS.Timeout>;
   workflowSnapshot?: WorkflowDefinition;
   agentsSnapshot?: AgentRecord[];
   toolsSnapshot?: import("@multi-agent/types").ToolRecord[];
-  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[]; memoryAccess?: MemoryAccessContext; stepBudget?: { count: number } };
+  pausedContext?: { workflow: WorkflowDefinition; agents: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[]; memoryAccess?: MemoryAccessContext; stepBudget?: { count: number }; pendingHuman?: { nodeId: string; envelope: NodeResultEnvelope } };
 }
 
 export interface RunListFilters {
@@ -35,6 +39,7 @@ export interface RunStoreContract {
     memoryOwner?: MemoryOwner,
     snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
+    memoryAccess?: MemoryAccessContext,
   ): Run;
   getMemoryOwner(runId: string): MemoryOwner | undefined;
   get(runId: string): RunEntry | undefined;
@@ -56,6 +61,10 @@ export interface RunStoreContract {
   getWorkflowSnapshot?(runId: string): WorkflowDefinition | undefined;
   getAgentSnapshot?(runId: string): AgentRecord[] | undefined;
   getToolSnapshot?(runId: string): import("@multi-agent/types").ToolRecord[] | undefined;
+  markEpisodicMemoryPending?(runId: string): void;
+  setEpisodicMemoryStatus?(runId: string, status: "processed" | "failed"): void;
+  markProceduralMemoryPending?(runId: string): void;
+  setProceduralMemoryStatus?(runId: string, status: "processed" | "failed"): void;
   /** Throws when a durable adapter has entered a persistence-failure state. */
   assertHealthy?(): void;
   hydrate?(): Promise<void>;

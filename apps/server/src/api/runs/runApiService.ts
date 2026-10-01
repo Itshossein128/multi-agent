@@ -4,6 +4,7 @@ import type { MemoryAccessResolver } from "../../memory/access";
 import type { RequestPrincipal } from "../../auth/principal";
 import type { PrincipalResolver } from "../../auth/authorization";
 import type { RunExecutor } from "../../runtime/runExecutor";
+import { replayRunEvents } from "../../runtime/replay";
 import { redact } from "../../adapters/langGraphEventAdapter";
 import { ApiError } from "../shared/http";
 
@@ -103,6 +104,11 @@ export class RunApiService {
     const events = this.store.events(runId);
     const nodes = new Set(events.filter((event) => event.agentId === agentId).map((event) => event.nodeId).filter(Boolean));
     return events.filter((event) => !agentId || event.agentId === agentId || (!event.agentId && event.nodeId && nodes.has(event.nodeId)));
+  }
+
+  replay(runId: string) {
+    this.requireRun(runId);
+    return replayRunEvents(runId, this.store.events(runId));
   }
 
   get(runId: string) { return redact(this.requireRun(runId).run); }

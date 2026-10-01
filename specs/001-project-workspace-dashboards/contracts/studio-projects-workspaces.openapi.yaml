@@ -1,0 +1,362 @@
+openapi: 3.0.3
+info:
+  title: Studio Projects & Workspaces API
+  version: "1.0.0"
+  description: |
+    First-class Project and Workspace entity APIs under `/studio`.
+    Does not replace package import/export at `/studio/workspace` and `/studio/workspace/import`.
+servers:
+  - url: /studio
+security:
+  - principalAssertion: []
+paths:
+  /projects:
+    get:
+      summary: List projects for the current tenant
+      parameters:
+        - $ref: "#/components/parameters/StatusFilter"
+      responses:
+        "200":
+          description: Project list (default active only unless status=all)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StudioProject"
+    post:
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectWrite"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /projects/{id}:
+    get:
+      summary: Get project (dashboard header + configuration)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update project name, description, or settings
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectPatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{id}/retire:
+    post:
+      summary: Retire a project (idempotent)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Retired project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{id}/dashboard:
+    get:
+      summary: Project dashboard aggregate
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDashboard"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspaces:
+    get:
+      summary: List workspaces for the current tenant
+      parameters:
+        - $ref: "#/components/parameters/StatusFilter"
+      responses:
+        "200":
+          description: Workspace list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StudioWorkspace"
+    post:
+      summary: Create a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceWrite"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioWorkspace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /workspaces/{id}:
+    get:
+      summary: Get workspace
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioWorkspace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update workspace name, description, or settings
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspacePatch"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioWorkspace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspaces/{id}/retire:
+    post:
+      summary: Retire a workspace (idempotent)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Retired workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioWorkspace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspaces/{id}/dashboard:
+    get:
+      summary: Workspace dashboard aggregate
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDashboard"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /tasks:
+    post:
+      summary: Create task (extended validation)
+      description: |
+        Existing create endpoint. Request MUST include `workspaceId` and non-empty `projectIds`.
+        References must be active and same-tenant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCreateExtended"
+      responses:
+        "201":
+          description: Created task including workspaceId and projectIds
+        "400":
+          description: Missing/invalid workspace or projects
+components:
+  securitySchemes:
+    principalAssertion:
+      type: apiKey
+      in: header
+      name: X-Multi-Agent-Principal
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [active, retired, all]
+        default: active
+  schemas:
+    StudioProject:
+      type: object
+      required: [id, tenantId, name, description, status, settings, createdAt, updatedAt, ownerId]
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        status: { type: string, enum: [active, retired] }
+        settings: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        ownerId: { type: string }
+    ProjectWrite:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        settings: { type: object, additionalProperties: true }
+    ProjectPatch:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        settings: { type: object, additionalProperties: true }
+    StudioWorkspace:
+      type: object
+      required: [id, tenantId, name, description, status, settings, createdAt, updatedAt, ownerId]
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        status: { type: string, enum: [active, retired] }
+        settings: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        ownerId: { type: string }
+    WorkspaceWrite:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        settings: { type: object, additionalProperties: true }
+    WorkspacePatch:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        settings: { type: object, additionalProperties: true }
+    TaskSummary:
+      type: object
+      required: [id, title, status, priority, workspaceId, projectIds]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        workspaceId: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
+          minItems: 1
+    ProjectDashboard:
+      type: object
+      required: [project, tasks, relatedWorkspaces]
+      properties:
+        project:
+          $ref: "#/components/schemas/StudioProject"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskSummary"
+        relatedWorkspaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioWorkspace"
+    WorkspaceDashboard:
+      type: object
+      required: [workspace, tasks, relatedProjects]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/StudioWorkspace"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskSummary"
+        relatedProjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioProject"
+    TaskCreateExtended:
+      type: object
+      required: [title, workspaceId, projectIds]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        workspaceId: { type: string }
+        projectIds:
+          type: array
+          items: { type: string }
+          minItems: 1
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              message: { type: string }
+    NotFound:
+      description: Not found in tenant
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              message: { type: string }

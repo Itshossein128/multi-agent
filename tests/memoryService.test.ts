@@ -224,6 +224,6 @@ test("background queue bounds outstanding work, drains all jobs and sanitizes fa
 
 test("optional consolidator checks write grants and performs no implicit destructive merge", async () => {
   const consolidator = new NoopMemoryConsolidator();
-  expect(await consolidator.consolidate(access, namespace)).toEqual({ merged: 0 });
+  expect(await consolidator.consolidate(access, namespace)).toMatchObject({ merged: 0 });
   await expect(consolidator.consolidate({ ...access, writableNamespaces: [] }, namespace)).rejects.toBeInstanceOf(MemoryAccessDeniedError);
 });

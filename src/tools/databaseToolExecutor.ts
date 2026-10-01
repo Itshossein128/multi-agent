@@ -22,8 +22,8 @@ export class DatabaseToolExecutor implements ToolExecutor {
     if (!Array.isArray(parameters) || parameters.length > 100 || parameters.some((value) => !isSqlParameter(value))) throw new Error("Database parameters must be at most 100 scalar values.");
     assertReadOnlyQuery(query);
     const maxRows = boundedRows(tool.configuration.maxRows);
-    const lease = await this.gateway.issue({ provider: "database", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId });
-    const connectionString = await this.gateway.consume(lease, { provider: "database", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId });
+    const lease = await this.gateway.issue({ provider: "database", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId, toolId: tool.id, purpose: "database" });
+    const connectionString = await this.gateway.consume(lease, { provider: "database", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId, toolId: tool.id, purpose: "database" });
     if (!connectionString) throw new Error("Database credential gateway returned no connection string.");
     const pool = this.poolFactory(connectionString);
     const client = await pool.connect();

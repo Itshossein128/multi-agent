@@ -1,13 +1,54 @@
 import { nowIso, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import type { PgClient, PgPool } from "../../memory/infrastructure";
-import type { StudioPrincipal, StudioStore, StudioTask, StudioWorkspaceImport } from "../contracts";
+import type {
+  StudioEntityStatusFilter,
+  StudioPrincipal,
+  StudioProject,
+  StudioStore,
+  StudioTask,
+  StudioWorkspace,
+  StudioWorkspaceImport,
+} from "../contracts";
 
 function asIso(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
   return String(value);
 }
 
-function decodeTask(row: Record<string, unknown>): StudioTask {
+function decodeSettings(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  return {};
+}
+
+function decodeProject(row: Record<string, unknown>): StudioProject {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    name: String(row.name),
+    description: String(row.description ?? ""),
+    status: row.status === "retired" ? "retired" : "active",
+    settings: decodeSettings(row.settings),
+    createdAt: asIso(row.created_at),
+    updatedAt: asIso(row.updated_at),
+    ownerId: String(row.owner_id),
+  };
+}
+
+function decodeWorkspace(row: Record<string, unknown>): StudioWorkspace {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    name: String(row.name),
+    description: String(row.description ?? ""),
+    status: row.status === "retired" ? "retired" : "active",
+    settings: decodeSettings(row.settings),
+    createdAt: asIso(row.created_at),
+    updatedAt: asIso(row.updated_at),
+    ownerId: String(row.owner_id),
+  };
+}
+
+function decodeTask(row: Record<string, unknown>, projectIds: string[] = []): StudioTask {
   const assignedAgents = Array.isArray(row.assigned_agents)
     ? (row.assigned_agents as string[])
     : row.assigned_agent
@@ -38,6 +79,8 @@ function decodeTask(row: Record<string, unknown>): StudioTask {
     metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? (row.metadata as Record<string, unknown>) : {},
     ownerId: (row.owner_id as string | null) ?? undefined,
     tenantId: (row.tenant_id as string | null) ?? undefined,
+    workspaceId: row.workspace_id ? String(row.workspace_id) : undefined,
+    projectIds,
   };
 }
 
@@ -230,18 +273,89 @@ export class PostgresStudioStore implements StudioStore {
     }
   }
 
+  private async loadProjectIdsByTask(taskIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>();
+    if (!taskIds.length) return map;
+    const result = await this.query(
+      "SELECT task_id, project_id FROM studio_task_projects WHERE task_id = ANY($1::text[]) ORDER BY project_id",
+      [taskIds],
+    );
+    for (const row of result.rows) {
+      const taskId = String(row.task_id);
+      const list = map.get(taskId) ?? [];
+      list.push(String(row.project_id));
+      map.set(taskId, list);
+    }
+    return map;
+  }
+
+  private async replaceTaskProjects(taskId: string, tenantId: string, projectIds: string[]): Promise<void> {
+    await this.query("DELETE FROM studio_task_projects WHERE task_id = $1", [taskId]);
+    for (const projectId of projectIds) {
+      await this.query(
+        `INSERT INTO studio_task_projects (tenant_id, task_id, project_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (task_id, project_id) DO NOTHING`,
+        [tenantId, taskId, projectId],
+      );
+    }
+  }
+
+  private statusClause(status: StudioEntityStatusFilter | undefined, startIndex: number): { sql: string; values: unknown[] } {
+    if (!status || status === "active") return { sql: ` AND status = $${startIndex}`, values: ["active"] };
+    if (status === "retired") return { sql: ` AND status = $${startIndex}`, values: ["retired"] };
+    return { sql: "", values: [] };
+  }
+
   async listTasks(principal?: StudioPrincipal): Promise<StudioTask[]> {
     const result = principal
       ? await this.query("SELECT * FROM studio_tasks WHERE tenant_id = $1 ORDER BY updated_at DESC, id", [principal.tenantId])
       : await this.query("SELECT * FROM studio_tasks ORDER BY updated_at DESC, id");
-    return result.rows.map(decodeTask);
+    const projectIds = await this.loadProjectIdsByTask(result.rows.map((row) => String(row.id)));
+    return result.rows.map((row) => decodeTask(row, projectIds.get(String(row.id)) ?? []));
   }
 
   async getTask(id: string, principal?: StudioPrincipal): Promise<StudioTask | null> {
     const result = principal
       ? await this.query("SELECT * FROM studio_tasks WHERE id = $1 AND tenant_id = $2", [id, principal.tenantId])
       : await this.query("SELECT * FROM studio_tasks WHERE id = $1", [id]);
-    return result.rows[0] ? decodeTask(result.rows[0]) : null;
+    if (!result.rows[0]) return null;
+    const projectIds = await this.loadProjectIdsByTask([id]);
+    return decodeTask(result.rows[0], projectIds.get(id) ?? []);
+  }
+
+  async listTasksByWorkspace(workspaceId: string, principal?: StudioPrincipal): Promise<StudioTask[]> {
+    const result = principal
+      ? await this.query(
+          "SELECT * FROM studio_tasks WHERE workspace_id = $1 AND tenant_id = $2 ORDER BY updated_at DESC, id",
+          [workspaceId, principal.tenantId],
+        )
+      : await this.query(
+          "SELECT * FROM studio_tasks WHERE workspace_id = $1 ORDER BY updated_at DESC, id",
+          [workspaceId],
+        );
+    const projectIds = await this.loadProjectIdsByTask(result.rows.map((row) => String(row.id)));
+    return result.rows.map((row) => decodeTask(row, projectIds.get(String(row.id)) ?? []));
+  }
+
+  async listTasksByProject(projectId: string, principal?: StudioPrincipal): Promise<StudioTask[]> {
+    const result = principal
+      ? await this.query(
+          `SELECT t.* FROM studio_tasks t
+           INNER JOIN studio_task_projects tp ON tp.task_id = t.id
+           WHERE tp.project_id = $1 AND t.tenant_id = $2
+           ORDER BY t.updated_at DESC, t.id`,
+          [projectId, principal.tenantId],
+        )
+      : await this.query(
+          `SELECT t.* FROM studio_tasks t
+           INNER JOIN studio_task_projects tp ON tp.task_id = t.id
+           WHERE tp.project_id = $1
+           ORDER BY t.updated_at DESC, t.id`,
+          [projectId],
+        );
+    const projectIds = await this.loadProjectIdsByTask(result.rows.map((row) => String(row.id)));
+    return result.rows.map((row) => decodeTask(row, projectIds.get(String(row.id)) ?? []));
   }
 
   async saveTask(task: StudioTask, principal?: StudioPrincipal): Promise<StudioTask> {
@@ -258,6 +372,10 @@ export class PostgresStudioStore implements StudioStore {
     const runId = task.runId ?? null;
     const lastError = task.lastError ?? null;
     const metadata = task.metadata ?? {};
+    const projectIds = Array.isArray(task.projectIds) ? [...new Set(task.projectIds.filter(Boolean))] : [];
+    const workspaceId = task.workspaceId;
+    if (!workspaceId) throw new Error("Task workspaceId is required");
+    if (!projectIds.length) throw new Error("Task projectIds must include at least one project");
 
     if (principal) {
       const existing = await this.query("SELECT tenant_id FROM studio_tasks WHERE id = $1", [task.id]);
@@ -276,6 +394,8 @@ export class PostgresStudioStore implements StudioStore {
         runId,
         lastError,
         metadata,
+        workspaceId,
+        projectIds,
         tenantId: principal.tenantId,
         ownerId: task.ownerId ?? principal.userId,
         updatedAt,
@@ -284,12 +404,14 @@ export class PostgresStudioStore implements StudioStore {
         `INSERT INTO studio_tasks (
            id, title, description, priority, status, assigned_agent, dependencies, output,
            retry_count, paused, created_at, updated_at, owner_id, tenant_id,
-           workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata
+           workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata,
+           workspace_id
          )
          VALUES (
            $1, $2, $3, $4, $5, $6, $7::jsonb, $8,
            $9, $10, $11::timestamptz, $12::timestamptz, $13, $14,
-           $15, $16::jsonb, $17::timestamptz, $18::timestamptz, $19, $20, $21, $22::jsonb
+           $15, $16::jsonb, $17::timestamptz, $18::timestamptz, $19, $20, $21, $22::jsonb,
+           $23
          )
          ON CONFLICT (id) DO UPDATE SET
            title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
@@ -299,17 +421,21 @@ export class PostgresStudioStore implements StudioStore {
            workflow_id = EXCLUDED.workflow_id, assigned_agents = EXCLUDED.assigned_agents,
            started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
            parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
-           last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata`,
+           last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata,
+           workspace_id = EXCLUDED.workspace_id`,
         [
           task.id, task.title, task.description, task.priority, task.status, assignedAgent,
           JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
           task.createdAt, updatedAt, task.ownerId, principal.tenantId,
           workflowId, JSON.stringify(assignedAgents), startedAt, completedAt,
           parentTaskId, runId, lastError, JSON.stringify(metadata),
+          workspaceId,
         ],
       );
+      await this.replaceTaskProjects(task.id, principal.tenantId, projectIds);
     } else {
       const updatedAt = task.updatedAt ?? task.createdAt ?? nowIso();
+      const tenantId = task.tenantId ?? "_orphan";
       task = {
         ...task,
         assignedAgent,
@@ -321,18 +447,22 @@ export class PostgresStudioStore implements StudioStore {
         runId,
         lastError,
         metadata,
+        workspaceId,
+        projectIds,
         updatedAt,
       };
       await this.query(
         `INSERT INTO studio_tasks (
            id, title, description, priority, status, assigned_agent, dependencies, output,
            retry_count, paused, created_at, updated_at,
-           workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata
+           workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata,
+           workspace_id, tenant_id, owner_id
          )
          VALUES (
            $1, $2, $3, $4, $5, $6, $7::jsonb, $8,
            $9, $10, $11::timestamptz, $12::timestamptz,
-           $13, $14::jsonb, $15::timestamptz, $16::timestamptz, $17, $18, $19, $20::jsonb
+           $13, $14::jsonb, $15::timestamptz, $16::timestamptz, $17, $18, $19, $20::jsonb,
+           $21, $22, $23
          )
          ON CONFLICT (id) DO UPDATE SET
            title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
@@ -341,15 +471,18 @@ export class PostgresStudioStore implements StudioStore {
            workflow_id = EXCLUDED.workflow_id, assigned_agents = EXCLUDED.assigned_agents,
            started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
            parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
-           last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata`,
+           last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata,
+           workspace_id = EXCLUDED.workspace_id`,
         [
           task.id, task.title, task.description, task.priority, task.status, assignedAgent,
           JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
           task.createdAt, updatedAt,
           workflowId, JSON.stringify(assignedAgents), startedAt, completedAt,
           parentTaskId, runId, lastError, JSON.stringify(metadata),
+          workspaceId, tenantId, task.ownerId ?? null,
         ],
       );
+      await this.replaceTaskProjects(task.id, tenantId, projectIds);
     }
     return task;
   }
@@ -362,73 +495,158 @@ export class PostgresStudioStore implements StudioStore {
     }
   }
 
+  async listProjects(principal?: StudioPrincipal, status: StudioEntityStatusFilter = "active"): Promise<StudioProject[]> {
+    if (principal) {
+      const filter = this.statusClause(status, 2);
+      const result = await this.query(
+        `SELECT * FROM studio_projects WHERE tenant_id = $1${filter.sql} ORDER BY updated_at DESC, id`,
+        [principal.tenantId, ...filter.values],
+      );
+      return result.rows.map(decodeProject);
+    }
+    const filter = this.statusClause(status, 1);
+    const result = await this.query(
+      `SELECT * FROM studio_projects WHERE TRUE${filter.sql} ORDER BY updated_at DESC, id`,
+      filter.values,
+    );
+    return result.rows.map(decodeProject);
+  }
+
+  async getProject(id: string, principal?: StudioPrincipal): Promise<StudioProject | null> {
+    const result = principal
+      ? await this.query("SELECT * FROM studio_projects WHERE id = $1 AND tenant_id = $2", [id, principal.tenantId])
+      : await this.query("SELECT * FROM studio_projects WHERE id = $1", [id]);
+    return result.rows[0] ? decodeProject(result.rows[0]) : null;
+  }
+
+  async saveProject(project: StudioProject, principal?: StudioPrincipal): Promise<StudioProject> {
+    if (principal) {
+      const existing = await this.query("SELECT tenant_id FROM studio_projects WHERE id = $1", [project.id]);
+      if (existing.rows.length && existing.rows[0].tenant_id !== principal.tenantId) {
+        throw new Error("Access denied to project");
+      }
+      project = { ...project, tenantId: principal.tenantId, ownerId: project.ownerId || principal.userId };
+    }
+    await this.query(
+      `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+         settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id`,
+      [
+        project.id, project.tenantId, project.name, project.description, project.status,
+        JSON.stringify(project.settings ?? {}), project.createdAt, project.updatedAt, project.ownerId,
+      ],
+    );
+    return project;
+  }
+
+  async listWorkspaces(principal?: StudioPrincipal, status: StudioEntityStatusFilter = "active"): Promise<StudioWorkspace[]> {
+    if (principal) {
+      const filter = this.statusClause(status, 2);
+      const result = await this.query(
+        `SELECT * FROM studio_workspaces WHERE tenant_id = $1${filter.sql} ORDER BY updated_at DESC, id`,
+        [principal.tenantId, ...filter.values],
+      );
+      return result.rows.map(decodeWorkspace);
+    }
+    const filter = this.statusClause(status, 1);
+    const result = await this.query(
+      `SELECT * FROM studio_workspaces WHERE TRUE${filter.sql} ORDER BY updated_at DESC, id`,
+      filter.values,
+    );
+    return result.rows.map(decodeWorkspace);
+  }
+
+  async getWorkspace(id: string, principal?: StudioPrincipal): Promise<StudioWorkspace | null> {
+    const result = principal
+      ? await this.query("SELECT * FROM studio_workspaces WHERE id = $1 AND tenant_id = $2", [id, principal.tenantId])
+      : await this.query("SELECT * FROM studio_workspaces WHERE id = $1", [id]);
+    return result.rows[0] ? decodeWorkspace(result.rows[0]) : null;
+  }
+
+  async saveWorkspace(workspace: StudioWorkspace, principal?: StudioPrincipal): Promise<StudioWorkspace> {
+    if (principal) {
+      const existing = await this.query("SELECT tenant_id FROM studio_workspaces WHERE id = $1", [workspace.id]);
+      if (existing.rows.length && existing.rows[0].tenant_id !== principal.tenantId) {
+        throw new Error("Access denied to workspace");
+      }
+      workspace = { ...workspace, tenantId: principal.tenantId, ownerId: workspace.ownerId || principal.userId };
+    }
+    await this.query(
+      `INSERT INTO studio_workspaces (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+         settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id`,
+      [
+        workspace.id, workspace.tenantId, workspace.name, workspace.description, workspace.status,
+        JSON.stringify(workspace.settings ?? {}), workspace.createdAt, workspace.updatedAt, workspace.ownerId,
+      ],
+    );
+    return workspace;
+  }
+
   async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const workflow of workspace.workflows) {
-        if (principal) {
-          const stamped = { ...workflow, ownerId: principal.userId, tenantId: principal.tenantId };
-          await client.query(
-            `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at,
-               owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id`,
-            [stamped.id, stamped.name, JSON.stringify(stamped), stamped.updatedAt, stamped.updatedAt, principal.userId, principal.tenantId],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at`,
-            [workflow.id, workflow.name, JSON.stringify(workflow), workflow.updatedAt, workflow.updatedAt],
-          );
-        }
+    if (!this.client) {
+      return this.transaction((tx) => tx.importWorkspace(workspace, principal));
+    }
+    for (const workflow of workspace.workflows) {
+      if (principal) {
+        const stamped = { ...workflow, ownerId: principal.userId, tenantId: principal.tenantId };
+        await this.query(
+          `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at,
+             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id`,
+          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.updatedAt, stamped.updatedAt, principal.userId, principal.tenantId],
+        );
+      } else {
+        await this.query(
+          `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at`,
+          [workflow.id, workflow.name, JSON.stringify(workflow), workflow.updatedAt, workflow.updatedAt],
+        );
       }
-      for (const agent of workspace.agents) {
-        if (principal) {
-          const stamped = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-          await client.query(
-            `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-               owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
-            [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO studio_agents (id, name, record, created_at, updated_at)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-            [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt],
-          );
-        }
+    }
+    for (const agent of workspace.agents) {
+      if (principal) {
+        const stamped = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+        await this.query(
+          `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
+             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
+          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
+        );
+      } else {
+        await this.query(
+          `INSERT INTO studio_agents (id, name, record, created_at, updated_at)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
+          [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt],
+        );
       }
-      for (const tool of workspace.tools) {
-        if (principal) {
-          const stamped = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-          await client.query(
-            `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-               owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
-            [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO studio_tools (id, name, record, created_at, updated_at)
-             VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-            [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt],
-          );
-        }
+    }
+    for (const tool of workspace.tools) {
+      if (principal) {
+        const stamped = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+        await this.query(
+          `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
+             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
+          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
+        );
+      } else {
+        await this.query(
+          `INSERT INTO studio_tools (id, name, record, created_at, updated_at)
+           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
+           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
+          [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt],
+        );
       }
-      await client.query("COMMIT");
-    } catch (error) {
-      try { await client.query("ROLLBACK"); } catch { /* preserve */ }
-      throw error;
-    } finally {
-      client.release();
     }
   }
 }

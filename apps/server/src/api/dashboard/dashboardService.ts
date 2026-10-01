@@ -4,6 +4,7 @@ import type { RequestPrincipal } from "../../auth/principal";
 import type { RunExecutor } from "../../runtime/runExecutor";
 import type { RunStoreContract } from "../../runtime/runStore";
 import { ApiError } from "../shared/http";
+import { ensureTenantProjectWorkspaceDefaults } from "../studio/tenantDefaults";
 import type { AgentInstance, CompletedTask, DashboardCommand, FailedTask, QueuedTask, StudioDashboardData, TimeFilter, TokenMetrics } from "./models";
 
 const DEFAULT_MODEL = () => process.env.LLM_MODEL || "gemini-3.6-flash";
@@ -199,10 +200,27 @@ export class DashboardService {
   private async enqueue(command: DashboardCommand, principal: RequestPrincipal) {
     if (!command.title?.trim()) throw new ApiError(400, "Title is required");
     const id = uid("task");
-    if (this.studioStore) await this.studioStore.saveTask({
-      id, title: command.title.trim(), description: "", priority: command.priority || "medium", status: "todo",
-      assignedAgent: command.role || null, dependencies: [], output: null, retryCount: 0, paused: false, createdAt: nowIso(), updatedAt: nowIso(), ownerId: principal.userId, tenantId: principal.tenantId
-    }, principal);
+    if (this.studioStore) {
+      const defaults = await ensureTenantProjectWorkspaceDefaults(this.studioStore, principal);
+      await this.studioStore.saveTask({
+        id,
+        title: command.title.trim(),
+        description: "",
+        priority: command.priority || "medium",
+        status: "todo",
+        assignedAgent: command.role || null,
+        dependencies: [],
+        output: null,
+        retryCount: 0,
+        paused: false,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        ownerId: principal.userId,
+        tenantId: principal.tenantId,
+        workspaceId: defaults.workspaceId,
+        projectIds: [defaults.projectId],
+      }, principal);
+    }
     return { success: true, id };
   }
 

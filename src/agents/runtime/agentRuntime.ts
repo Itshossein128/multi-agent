@@ -12,8 +12,11 @@ import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolic
 import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../../runtime/boundedValue";
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver } from "./workerCredentials";
+import { NO_API_CREDENTIALS, type ApiProviderCredentialResolver } from "../../security/providerCredentials";
 import { DefaultContextAssembler, type ContextAssembler } from "./contextAssembler";
 import { splitWorkingMemoryUpdates, visibleWorkingMemoryEntries, type WorkingMemoryEntries } from "./workingMemory";
+import { emptyTokens } from "./runtimeMemory";
+import type { MemoryTokenAccounting } from "../../memory/application/memoryEvaluation";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -25,14 +28,15 @@ export class AgentRuntime {
     readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
     maxExecutionMs = configuredAgentTimeout(),
     workerRuntime?: WorkerRuntime,
-    private readonly maxOutputBytes = boundedBytesFromEnvironment(process.env.AGENT_MAX_OUTPUT_BYTES, 256 * 1024),
+    private readonly    maxOutputBytes = boundedBytesFromEnvironment(process.env.AGENT_MAX_OUTPUT_BYTES, 256 * 1024),
     credentialResolver: WorkerCredentialResolver = NO_WORKER_CREDENTIALS,
+    apiCredentialResolver: ApiProviderCredentialResolver = NO_API_CREDENTIALS,
   ) {
     const cliPolicy = cliRuntimePolicyFromEnvironment();
     const defaultWorker = cliPolicy.workerMode === "container"
       ? new ContainerWorkerRuntime(cliPolicy, containerWorkerPolicyFromEnvironment())
       : new LocalProcessWorkerRuntime(cliPolicy);
-    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker, cliPolicy, credentialResolver);
+    this.executorFactory = executorFactory ?? new AgentExecutorFactory(telemetry, workerRuntime ?? defaultWorker, cliPolicy, credentialResolver, apiCredentialResolver);
     this.maxExecutionMs = maxExecutionMs;
   }
 
@@ -77,12 +81,34 @@ export class AgentRuntime {
     const longTerm = new RuntimeMemory(input, this.memoryDependencies, this.telemetry);    // Caller context cannot smuggle memory into the executor when long-term access is disabled/denied.
     let memoryContext: string | undefined;
     let memoryEvents: unknown[] | undefined;
+    let retrievedMemoryCount = 0;
+    let selectedMemoryCount = 0;
+    let injectedMemoryCount = 0;
+    let injectedTokens = 0;
+    let tokensByKind: MemoryTokenAccounting = emptyTokens();
+    let injectedMemoryIds: string[] = [];
+    let memoryLatencyMs = 0;
+    let retrievalDiagnostics: import("@multi-agent/types").MemoryRetrievalDiagnostics | undefined;
     if (longTerm.enabled) {
+      const memoryStart = Date.now();
       const read = await longTerm.read();
+      memoryLatencyMs = Date.now() - memoryStart;
+      retrievalDiagnostics = read.retrievalDiagnostics;
       for (const event of read.events) yield event;
       longTerm.assertResult(read.events);
       memoryContext = read.context;
       memoryEvents = read.events;
+      // Phase 8: invocation-level memory counts from the completed memory.read event.
+      for (const event of read.events) {
+        if (event.type !== "memory.read") continue;
+        const payload = event.payload as { retrievedCount?: number; selectedCount?: number; memoryIds?: string[] } | undefined;
+        retrievedMemoryCount += payload?.retrievedCount ?? 0;
+        selectedMemoryCount += payload?.selectedCount ?? 0;
+        injectedMemoryIds = payload?.memoryIds ?? [];
+        injectedMemoryCount = injectedMemoryIds.length;
+      }
+      injectedTokens = read.injectedTokens ?? 0;
+      tokensByKind = read.tokensByKind ?? emptyTokens();
     }
 
     // Assemble context through the central ContextAssembler
@@ -98,12 +124,15 @@ export class AgentRuntime {
       history: history as HistoryEntry[],
       longTermMemoryContext: memoryContext,
       longTermMemoryEvents: memoryEvents,
+      longTermMemoryMeta: injectedMemoryIds.length ? { memoryIds: injectedMemoryIds, tokens: injectedTokens, tokensByKind } : undefined,
       handoffs: input.handoffs,
       workingMemory: input.workingMemory,
       previousOutput: input.context?.previousOutput,
       branchState: typeof input.context?.branch === "string" ? input.context.branch : undefined,
-      runtimeState: input.context?.memory && typeof input.context.memory === "object"
-        ? input.context.memory as Record<string, unknown> : undefined,
+      runtimeState: {
+        ...(input.context?.memory && typeof input.context.memory === "object" ? input.context.memory as Record<string, unknown> : {}),
+        ...(input.runtimeState ?? {}),
+      },
       memoryAccess: input.memoryAccess,
       model: input.agent.backend.type === "api"
         ? { provider: input.agent.backend.provider, model: input.agent.backend.model }
@@ -141,6 +170,28 @@ export class AgentRuntime {
       const events = await longTerm.afterSuccess(output);
       for (const event of events) yield event;
       longTerm.assertResult(events);
+    }
+    // Phase 8: record the invocation-level memory evaluation summary. Observational only.
+    const evaluationRuntime = this.memoryDependencies?.evaluation;
+    if (longTerm.enabled && evaluationRuntime) {
+      evaluationRuntime.recorder.recordInvocation(
+        { runId: input.runId, invocationId: `${input.runId}:${input.nodeId}`, agentId: input.agent.id, nodeId: input.nodeId },
+        {
+          retrievedMemoryCount,
+          selectedMemoryCount,
+          injectedMemoryCount,
+          memoryTokens: injectedTokens,
+          tokensByKind,
+          contextTokensBySource: assembled.diagnostics.sources,
+          contextDroppedTokens: assembled.budget.droppedTokens,
+          retrievalCalls: retrievalDiagnostics ? 1 : 0,
+          memoryLatencyMs,
+          conflictGroups: retrievalDiagnostics?.conflict?.groups,
+          conflictSuppressed: retrievalDiagnostics?.conflict?.suppressed,
+          securityViolations: retrievalDiagnostics?.securityViolations,
+          outcome: "success",
+        },
+      );
     }
     yield completion;
     input.signal?.throwIfAborted();

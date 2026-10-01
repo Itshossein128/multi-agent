@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertOctagon,
   RefreshCw,
@@ -55,6 +55,28 @@ export default function TaskBoardPage() {
   const [modalDefaultStatus, setModalDefaultStatus] = useState<TaskStatus>("backlog");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [workspaceNamesById, setWorkspaceNamesById] = useState<Map<string, string>>(new Map());
+  const [projectNamesById, setProjectNamesById] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [wsRes, projRes] = await Promise.all([fetch("/api/workspaces"), fetch("/api/projects")]);
+        if (!wsRes.ok || !projRes.ok) return;
+        const [wsBody, projBody] = await Promise.all([
+          wsRes.json() as Promise<Array<{ id: string; name: string }>>,
+          projRes.json() as Promise<Array<{ id: string; name: string }>>,
+        ]);
+        if (cancelled) return;
+        setWorkspaceNamesById(new Map(wsBody.map((item) => [item.id, item.name])));
+        setProjectNamesById(new Map(projBody.map((item) => [item.id, item.name])));
+      } catch {
+        // Name resolution is best-effort for board chips.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
   const workflowsById = useMemo(() => new Map(workflows.map((w) => [w.id, w.name])), [workflows]);
@@ -289,6 +311,8 @@ export default function TaskBoardPage() {
               tasks={tasksByColumn.get(config.id) ?? []}
               tasksById={tasksById}
               workflowsById={workflowsById}
+              workspaceNamesById={workspaceNamesById}
+              projectNamesById={projectNamesById}
               isMutating={isMutating}
               draggingTaskId={draggingTaskId}
               onOpenTask={(task) => setDetailTaskId(task.id)}

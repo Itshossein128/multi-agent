@@ -9,8 +9,10 @@ import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
 import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
-import { ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
-import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, agyArgs, agyStreamInput, parseAgyStreamOutput, resolveCliSpawnExecutable, cliExecutableAvailable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
+import { ExecutionPolicyError, assertExecutionPolicy } from "../src/agents/runtime/executionPolicy";
+import { defaultCliExecutable } from "../src/agents/runtime/cliProviderDefaults";
+import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, cursorArgs, agyArgs, agyStreamInput, parseAgyStreamOutput, resolveCliSpawnExecutable, cliExecutableAvailable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
+import { ContainerWorkerRuntime } from "../src/agents/runtime/workerRuntime";
 import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
 import path from "node:path";
@@ -541,6 +543,134 @@ describe("CLI and local executors", () => {
       expect.any(String),
       undefined,
     );
+  });
+
+  test("keeps Cursor force disabled for local workers", async () => {
+    expect(cursorArgs([], false)).toEqual(["-p", "--output-format", "text", "--trust"]);
+    expect(cursorArgs(["-p", "--force"], false)).toEqual(["-p", "--force", "--output-format", "text", "--trust"]);
+
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "Cursor answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "cursor", model: "composer-2.5" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "local", allowedExecutables: ["agent"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "edit", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executable: expect.stringContaining("agent"),
+        args: ["-p", "--output-format", "text", "--trust", "--model", "composer-2.5"],
+      }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
+  });
+
+  test("uses Cursor --force only for container workers", async () => {
+    expect(cursorArgs([], true)).toEqual(["-p", "--output-format", "text", "--trust", "--force"]);
+
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "Cursor answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "cursor" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "container", allowedExecutables: ["agent"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "edit", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({ args: ["-p", "--output-format", "text", "--trust", "--force"] }),
+      undefined,
+      expect.any(String),
+      undefined,
+    );
+  });
+
+  test("resolves provider default executables from one shared mapping", () => {
+    expect(defaultCliExecutable("codex")).toBe("codex");
+    expect(defaultCliExecutable("claude-code")).toBe("claude");
+    expect(defaultCliExecutable("cursor")).toBe("agent");
+    expect(defaultCliExecutable("agy")).toBe("agy");
+    // Extensible providers fall back to the provider id itself.
+    expect(defaultCliExecutable("unknown-cli")).toBe("unknown-cli");
+  });
+
+  test("restricted policy validates the provider default executable without an explicit executable", () => {
+    // claude-code maps to claude
+    const claudeAgent = createAgentRecord({ backend: { type: "cli", provider: "claude-code" } });
+    claudeAgent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["claude"] };
+    expect(() => assertExecutionPolicy(claudeAgent)).not.toThrow();
+
+    // cursor maps to agent
+    const cursorAgent = createAgentRecord({ backend: { type: "cli", provider: "cursor" } });
+    cursorAgent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+    expect(() => assertExecutionPolicy(cursorAgent)).not.toThrow();
+
+    // codex and agy map to themselves
+    const codexAgent = createAgentRecord({ backend: { type: "cli", provider: "codex" } });
+    codexAgent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["codex"] };
+    expect(() => assertExecutionPolicy(codexAgent)).not.toThrow();
+
+    const agyAgent = createAgentRecord({ backend: { type: "cli", provider: "agy" } });
+    agyAgent.executionPolicy = { shell: "restricted", filesystem: "read", workspaceRoot: "/workspace", allowedCommands: ["agy"] };
+    expect(() => assertExecutionPolicy(agyAgent)).not.toThrow();
+  });
+
+  test("restricted policy honors an explicit custom executable over provider defaults", () => {
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "cursor", executable: "/opt/cursor/agent" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["/opt/cursor/agent"] };
+    expect(() => assertExecutionPolicy(agent)).not.toThrow();
+
+    // A custom executable is not satisfied by the provider default name.
+    const rejected = createAgentRecord({ backend: { type: "cli", provider: "cursor", executable: "/opt/cursor/agent-cli" } });
+    rejected.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+    expect(() => assertExecutionPolicy(rejected)).toThrow(ExecutionPolicyError);
+  });
+
+  test("rejects Cursor container execution when agent is not server-allowlisted", async () => {
+    const spawnFn = jest.fn();
+    const containerPolicy = {
+      image: `registry.example/agent@sha256:${"a".repeat(64)}`,
+      dockerExecutable: process.execPath,
+      allowNetwork: true,
+      memory: "512m",
+      cpus: "0.5",
+      pidsLimit: 64,
+      user: "65534:65534",
+    };
+    const cliPolicy = {
+      enabled: true, workerMode: "container" as const, allowedExecutables: ["codex", "claude"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    };
+    // Real ContainerWorkerRuntime: the allowlist check must fire before any Docker call.
+    const workerRuntime = new ContainerWorkerRuntime(cliPolicy, containerPolicy, spawnFn as any);
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "cursor" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+
+    await expect(async () => {
+      for await (const _event of new CliAgentExecutor(workerRuntime, cliPolicy).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+    }).rejects.toThrow(/not allowed by the server runtime/i);
+    expect(spawnFn).not.toHaveBeenCalled();
+  });
+
+  test("does not deliver Cursor credentials when environment delivery is disabled", async () => {
+    const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "ok", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+    const resolve = jest.fn(async () => undefined); // CLI_CREDENTIAL_ENVIRONMENT_ENABLED=false
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "cursor" } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "container", allowedExecutables: ["agent"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }, { resolve }).execute({ agent, input: "hi", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    // The resolver is still consulted for the trusted principal, but no secret
+    // material is attached to the worker launch when delivery is disabled.
+    expect(start).toHaveBeenCalledWith(expect.anything(), undefined, expect.any(String), undefined);
   });
 
   test("blocks CLI executables and workspaces outside server-owned allowlists", async () => {

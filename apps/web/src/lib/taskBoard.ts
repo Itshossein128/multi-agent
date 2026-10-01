@@ -126,6 +126,8 @@ export interface CreateTaskInput {
   parentTaskId?: string | null;
   dependencies?: string[];
   status?: TaskStatus;
+  workspaceId?: string;
+  projectIds?: string[];
 }
 
 export async function createTask(input: CreateTaskInput, principal?: AuthenticatedPrincipal | null): Promise<Task> {
@@ -145,6 +147,8 @@ export interface UpdateTaskPatch {
   workflowId?: string | null;
   parentTaskId?: string | null;
   dependencies?: string[];
+  workspaceId?: string;
+  projectIds?: string[];
 }
 
 export async function updateTask(taskId: string, patch: UpdateTaskPatch, principal?: AuthenticatedPrincipal | null): Promise<Task> {

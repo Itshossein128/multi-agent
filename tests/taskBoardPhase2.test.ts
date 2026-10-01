@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   createAgentRecord,
+  createResultEnvelope,
   type WorkflowDefinition,
   type AgentRecord,
   toCanonicalStatus,
@@ -33,14 +34,6 @@ function authHeaders(principal?: AuthenticatedPrincipal): HeadersInit {
   };
 }
 
-function req(path: string, method = "GET", body?: unknown, principal?: AuthenticatedPrincipal) {
-  return new Request(`http://localhost${path}`, {
-    method,
-    headers: authHeaders(principal),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-}
-
 async function json<T = any>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
@@ -52,6 +45,7 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
   let app: ReturnType<typeof createStudioRouter>;
   let releaseAgentExecutions: Set<() => void>;
   let activeAgentExecutions: number;
+  let taskAssoc: { workspaceId: string; projectIds: string[] };
 
   const sampleAgent: AgentRecord = {
     ...createAgentRecord({ name: "Alpha Dev Agent" }),
@@ -63,6 +57,30 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
     ...createSingleAgentWorkflow(sampleAgent, "Alpha Deployment Workflow"),
     id: "wf-alpha-1",
   };
+
+  function req(path: string, method = "GET", body?: unknown, principal?: AuthenticatedPrincipal) {
+    let payload = body;
+    if (
+      method === "POST" &&
+      path === "/tasks" &&
+      body &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      taskAssoc
+    ) {
+      const record = body as Record<string, unknown>;
+      payload = {
+        workspaceId: taskAssoc.workspaceId,
+        projectIds: taskAssoc.projectIds,
+        ...record,
+      };
+    }
+    return new Request(`http://localhost${path}`, {
+      method,
+      headers: authHeaders(principal),
+      body: payload !== undefined ? JSON.stringify(payload) : undefined,
+    });
+  }
 
   beforeEach(async () => {
     studioStore = new InMemoryStudioStore();
@@ -117,12 +135,17 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       },
       executor
     );
+
+    await app.fetch(req("/projects", "GET", undefined, alice));
+    const projects = await studioStore.listProjects(alice, "active");
+    const workspaces = await studioStore.listWorkspaces(alice, "active");
+    taskAssoc = { workspaceId: workspaces[0]!.id, projectIds: [projects[0]!.id] };
   });
 
   afterEach(async () => {
-    for (const release of [...releaseAgentExecutions]) release();
     const deadline = Date.now() + 2_000;
-    while (activeAgentExecutions > 0 && Date.now() < deadline) {
+    while ((activeAgentExecutions > 0 || releaseAgentExecutions.size > 0) && Date.now() < deadline) {
+      for (const release of [...releaseAgentExecutions]) release();
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     expect(activeAgentExecutions).toBe(0);
@@ -171,6 +194,13 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
     });
 
     it("preserves backward compatibility with legacy single agent and legacy statuses", async () => {
+      // Ensure tenant defaults exist for direct store writes that bypass TaskService.
+      await app.fetch(req("/projects", "GET", undefined, alice));
+      const projects = await studioStore.listProjects(alice, "active");
+      const workspaces = await studioStore.listWorkspaces(alice, "active");
+      expect(projects.length).toBeGreaterThan(0);
+      expect(workspaces.length).toBeGreaterThan(0);
+
       const legacyTask: StudioTask = {
         id: "task-legacy-001",
         title: "Legacy Todo Task",
@@ -183,6 +213,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
         retryCount: 0,
         paused: false,
         createdAt: "2026-09-01T00:00:00.000Z",
+        workspaceId: workspaces[0]!.id,
+        projectIds: [projects[0]!.id],
       };
 
       await studioStore.saveTask(legacyTask, alice);
@@ -193,6 +225,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       expect(fetched.id).toBe("task-legacy-001");
       expect(fetched.assignedAgents).toEqual(["agent-alpha-1"]);
       expect(toCanonicalStatus(fetched.status)).toBe("backlog");
+      expect(fetched.workspaceId).toBe(workspaces[0]!.id);
+      expect(fetched.projectIds).toEqual([projects[0]!.id]);
     });
 
     it("supports parentTaskId hierarchical relations", async () => {
@@ -555,6 +589,81 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       expect(finishedTask?.completedAt).toBeDefined();
     });
 
+    it("keeps blocked run outcomes out of Done, including legacy clarification output", async () => {
+      const taskRes = await app.fetch(
+        req(
+          "/tasks",
+          "POST",
+          {
+            title: "Clarification Task",
+            status: "ready",
+            assignedAgents: ["agent-alpha-1"],
+          },
+          alice
+        )
+      );
+      const task = await json(taskRes);
+      const startRes = await app.fetch(req(`/tasks/${task.id}/start`, "POST", undefined, alice));
+      const { runId } = await json<{ runId: string }>(startRes);
+      const clarification = "Clarification required before implementation can be assigned; the intake remains in clarification.";
+
+      runStore.update(runId, {
+        status: "completed",
+        output: { content: clarification },
+        result: createResultEnvelope("success", { value: { content: clarification } }),
+      });
+      runStore.append(runId, {
+        id: randomUUID(),
+        runId,
+        type: "run.completed",
+        timestamp: new Date().toISOString(),
+        sequence: 1,
+        payload: { output: { content: clarification }, resultStatus: "success" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const blockedTask = await studioStore.getTask(task.id, alice);
+      expect(blockedTask?.status).toBe("blocked");
+      expect(blockedTask?.completedAt).toBeNull();
+    });
+
+    it("maps a structured blocked run result to Review / Blocked", async () => {
+      const taskRes = await app.fetch(
+        req(
+          "/tasks",
+          "POST",
+          { title: "Structured Blocked Task", status: "ready", assignedAgents: ["agent-alpha-1"] },
+          alice
+        )
+      );
+      const task = await json(taskRes);
+      const startRes = await app.fetch(req(`/tasks/${task.id}/start`, "POST", undefined, alice));
+      const { runId } = await json<{ runId: string }>(startRes);
+
+      runStore.update(runId, {
+        status: "completed",
+        output: { content: "missing approved revision" },
+        result: createResultEnvelope("blocked", {
+          error: { code: "CLARIFICATION_REQUIRED", message: "Approved revision is missing", retryable: false },
+        }),
+      });
+      runStore.append(runId, {
+        id: randomUUID(),
+        runId,
+        type: "run.completed",
+        timestamp: new Date().toISOString(),
+        sequence: 1,
+        payload: { output: { content: "missing approved revision" }, resultStatus: "blocked" },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const blockedTask = await studioStore.getTask(task.id, alice);
+      expect(blockedTask?.status).toBe("blocked");
+      expect(blockedTask?.completedAt).toBeNull();
+    });
+
     it("syncs task failure and records lastError when run fails", async () => {
       const taskRes = await app.fetch(
         req(
@@ -665,13 +774,20 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       );
       const task = await json(taskRes);
 
-      // Simulate task failed with previous error
+      // Start once so a real failed run is bound; syncTaskWithRun must not
+      // re-apply that terminal status when retry clears the binding.
+      const startRes = await app.fetch(req(`/tasks/${task.id}/start`, "POST", undefined, alice));
+      expect(startRes.status).toBe(200);
+      const { runId: failedRunId } = await json<{ runId: string }>(startRes);
+      runStore.update(failedRunId, { status: "failed", error: "Database connection failed", completedAt: new Date().toISOString() });
       await studioStore.saveTask(
         {
-          ...task,
+          ...(await studioStore.getTask(task.id, alice))!,
           status: "failed",
           lastError: "Database connection failed",
           retryCount: 1,
+          runId: failedRunId,
+          completedAt: new Date().toISOString(),
         },
         alice
       );
@@ -683,6 +799,7 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       const retryBody = await json(retryRes);
       expect(retryBody.success).toBe(true);
       expect(retryBody.runId).toBeDefined();
+      expect(retryBody.runId).not.toBe(failedRunId);
 
       const retriedTask = await studioStore.getTask(task.id, alice);
       expect(retriedTask?.status).toBe("running");

@@ -20,15 +20,21 @@ export class SearchToolExecutor implements ToolExecutor {
     const query = String(input.query ?? "").trim();
     if (!query || query.length > 4_000) throw new Error("Search input.query must contain 1-4000 characters.");
     if (!credentialPrincipal || !runId) throw new Error("Search tool requires an authenticated run context.");
-    const lease = await this.gateway.issue({ provider: "search", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId });
-    const apiKey = await this.gateway.consume(lease, { provider: "search", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId });
+    const lease = await this.gateway.issue({ provider: "search", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId, toolId: tool.id, purpose: "search" });
+    const apiKey = await this.gateway.consume(lease, { provider: "search", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId, toolId: tool.id, purpose: "search" });
     const response = await this.fetchImpl(endpoint, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json", ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
       body: JSON.stringify({ query, limit: boundedLimit(input.limit), filters: input.filters ?? {} }),
       signal,
     });
-    const body = await response.json().catch(async () => ({ text: await response.text() }));
+    const text = await response.text();
+    let body: unknown;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { text };
+    }
     if (!response.ok) throw new Error(`Search provider "${alias}" returned ${response.status}.`);
     return { provider: alias, results: body };
   }

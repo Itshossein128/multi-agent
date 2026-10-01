@@ -4,6 +4,9 @@ import type { MemoryContextFormatter, RuntimeMemoryDependencies } from "../../me
 import type { AgentExecutionEvent, AgentExecutionInput } from "./types";
 import { boundedInteger, boundText } from "./shortTermMemory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
+import type { MemoryEvaluationRecorder, MemoryTokenAccounting } from "../../memory/application/memoryEvaluation";
+
+export const emptyTokens = (): MemoryTokenAccounting => ({ semantic: 0, episodic: 0, procedural: 0 });
 
 const sameNamespace = (a: MemoryNamespace, b: MemoryNamespace) => a.scope === b.scope && a.id === b.id;
 export function memoryEvent(input: AgentExecutionInput, type: "memory.read" | "memory.write", payload: Record<string, unknown>): AgentExecutionEvent {
@@ -48,8 +51,11 @@ export class RuntimeMemory {
       throw new Error("Required memory operation failed");
     }
   }
-  async read(): Promise<{ context?: string; events: AgentExecutionEvent[] }> {
+  async read(): Promise<{ context?: string; events: AgentExecutionEvent[]; injectedTokens?: number; tokensByKind?: MemoryTokenAccounting; retrievalDiagnostics?: import("@multi-agent/types").MemoryRetrievalDiagnostics }> {
     let context: string | undefined;
+    let injectedTokens: number | undefined;
+    let tokensByKind: MemoryTokenAccounting | undefined;
+    let retrievalDiagnostics: import("@multi-agent/types").MemoryRetrievalDiagnostics | undefined;
     const events = await this.guard("memory.read", async () => {
       const access = this.requireAccess();
       const config = this.config!;
@@ -72,16 +78,25 @@ export class RuntimeMemory {
         namespaces, kinds: config.kinds, maxTokens: contextBudget, limit, minScore: config.retrieval?.minScore,
       };
       const result = await this.telemetry.withMemory("memory.retrieve", { runId: this.input.runId, workflowId: this.input.workflowId, nodeId: this.input.nodeId, agentId: this.input.agent.id, namespaceCount: namespaces.length, input: recallInput }, () => this.deps!.service.recall(recallInput, access));
+      retrievalDiagnostics = result.diagnostics;
       this.input.signal?.throwIfAborted();
+      // Phase 8: record the retrieval trace from diagnostics. Observational only.
+      this.deps!.evaluation?.recorder.recordRetrieval({
+        runId: this.input.runId,
+        invocationId: `${this.input.runId}:${this.input.nodeId}`,
+        agentId: this.input.agent.id,
+        nodeId: this.input.nodeId,
+        namespaceCount: namespaces.length,
+      }, result);
       // Defense in depth: never format a result outside the requested, granted namespaces.
       const selected = { ...result, results: result.results.filter(r => r.memory.tenantId === access.tenantId && namespaces.some(ns => sameNamespace(ns, r.memory.namespace))).slice(0, limit) };
       // Optional selection is already implemented by the default formatter. Keep format-only
       // injected implementations compatible while the coordinator extends the shared contract.
       const formatter = this.deps!.formatter as MemoryContextFormatter & {
-        select?: (results: MemorySearchResult[], maxTokens: number) => MemorySearchResult[];
+        select?: (results: MemorySearchResult[], maxTokens: number, temporalMode?: import("@multi-agent/types").MemoryTemporalQuery["mode"]) => MemorySearchResult[];
       };
       const retrievedCount = selected.results.length;
-      if (formatter.select) selected.results = formatter.select(selected.results, contextBudget);
+      if (formatter.select) selected.results = formatter.select(selected.results, contextBudget, selected.diagnostics.temporalMode);
       const formatted = contextBudget > 0 && selected.results.length
         ? formatter.format(selected, contextBudget) : "";
       // Formatting owns whole-record budgeting; never cut its serialized records or delimiters.
@@ -89,14 +104,25 @@ export class RuntimeMemory {
       // A format-only implementation cannot report which records it omitted. Do not claim
       // an exact injected count/ID list for it; retrievedCount remains available.
       const injected = !context ? [] : formatter.select ? selected.results : undefined;
+      // Phase 8: distinguish retrieved from actually injected, with token accounting.
+      if (injected && this.deps!.evaluation) {
+        const evaluation = this.deps!.evaluation;
+        const recorded = evaluation.recorder.recordInjection(
+          { runId: this.input.runId, invocationId: `${this.input.runId}:${this.input.nodeId}`, agentId: this.input.agent.id, nodeId: this.input.nodeId, relevanceRules: evaluation.relevanceRules },
+          injected.map(r => ({ memory: r.memory, tokenCount: r.tokenCount || 0 })),
+        );
+        injectedTokens = recorded.tokensByKind.semantic + recorded.tokensByKind.episodic + recorded.tokensByKind.procedural || injected.reduce((sum, r) => sum + (r.tokenCount || 0), 0);
+        tokensByKind = recorded.tokensByKind;
+      }
       events.push(memoryEvent(this.input, "memory.read", {
         status: "completed", retrievedCount,
+        ...(result.diagnostics.securityViolations ? { securityViolations: result.diagnostics.securityViolations } : {}),
         ...(injected ? { count: injected.length, selectedCount: injected.length, memoryIds: injected.map(r => r.memory.id) } : {}),
         latencyMs: Date.now() - start, deniedCount,
       }));
       return events;
     });
-    return { context, events };
+    return { context, events, injectedTokens, tokensByKind, retrievalDiagnostics };
   }
   private async write(output: unknown): Promise<AgentExecutionEvent[]> {
     const events: AgentExecutionEvent[] = [];

@@ -7,6 +7,7 @@ import {
   toCanonicalStatus,
   uid,
   type AgentRecord,
+  type Run,
   type TaskStatus,
   type WorkflowDefinition,
 } from "@multi-agent/types";
@@ -15,6 +16,7 @@ import type { RequestPrincipal } from "../../auth/principal";
 import type { RunExecutor } from "../../runtime/runExecutor";
 import { ApiError } from "../shared/http";
 import { requireResource } from "./resource";
+import { ensureTenantProjectWorkspaceDefaults } from "./tenantDefaults";
 
 const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 2000;
@@ -29,6 +31,20 @@ const TASK_STATUSES = new Set([
   "backlog", "ready", "queued", "running", "blocked", "waiting_for_human", "completed", "failed", "cancelled",
   "todo", "planning", "in_progress", "waiting_tool", "review", "done",
 ]);
+
+const LEGACY_BLOCKED_OUTPUT = /(?:clarification\s+required|intake\s+remains\s+in\s+clarification|not[\s_-]*ready|needs[\s_-]*verification|no\s+implementation\s+task(?:\s+has\s+been)?\s+dispatched|\bblocked\b)/i;
+
+function taskStatusForCompletedRun(run: Pick<Run, "result" | "output">): TaskStatus {
+  const resultStatus = run.result?.status;
+  if (resultStatus === "needs_human") return "waiting_for_human";
+  if (resultStatus === "blocked" || resultStatus === "policy_rejected" || resultStatus === "validation_failed" || resultStatus === "unknown") {
+    return "blocked";
+  }
+  if (resultStatus === "failed") return "failed";
+
+  const serializedOutput = typeof run.output === "string" ? run.output : JSON.stringify(run.output ?? "");
+  return serializedOutput && LEGACY_BLOCKED_OUTPUT.test(serializedOutput) ? "blocked" : "completed";
+}
 
 function boundedText(value: unknown, max: number, field: string): string {
   if (typeof value !== "string") throw new ApiError(400, `${field} must be a string`);
@@ -115,7 +131,7 @@ export class TaskService {
     let changed = false;
     for (const task of tasks) {
       if (this.syncTaskWithRun(task)) {
-        await this.store.saveTask(task, principal);
+        await this.store.saveTask(await this.withAssociations(task, principal), principal);
         changed = true;
       }
     }
@@ -125,7 +141,7 @@ export class TaskService {
   async get(id: string, principal: RequestPrincipal): Promise<StudioTask> {
     const task = requireResource(await this.store.getTask(id, principal), "Task");
     if (this.syncTaskWithRun(task)) {
-      return this.store.saveTask(task, principal);
+      return this.store.saveTask(await this.withAssociations(task, principal), principal);
     }
     return task;
   }
@@ -169,6 +185,9 @@ export class TaskService {
     this.validateParentTask(id, parentTaskId, tenantTasks);
     this.checkDependencyGating({ id, title, dependencies }, status, tenantTasks);
     const metadata = validateMetadata(body.metadata);
+    const { workspaceId, projectIds } = await this.resolveAssociations(body, principal, {
+      allowMissingAsDefaults: false,
+    });
 
     const stamp = nowIso();
     const task: StudioTask = {
@@ -192,6 +211,8 @@ export class TaskService {
       metadata,
       tenantId: principal.tenantId,
       ownerId: principal.userId,
+      workspaceId,
+      projectIds,
     };
 
     return this.store.saveTask(task, principal);
@@ -238,6 +259,17 @@ export class TaskService {
       this.checkDependencyGating({ id, title, dependencies }, targetStatus, tenantTasks);
     }
 
+    const associationSource: Partial<StudioTask> = {
+      workspaceId: body.workspaceId !== undefined ? body.workspaceId : existing.workspaceId,
+      projectIds: body.projectIds !== undefined ? body.projectIds : existing.projectIds,
+    };
+    const { workspaceId, projectIds } = await this.resolveAssociations(associationSource, principal, {
+      allowMissingAsDefaults: body.workspaceId === undefined && body.projectIds === undefined,
+      // Updates may still carry retired project ids from before retire; keep any active
+      // selections and require at least one active project before save.
+      stripRetiredProjects: true,
+    });
+
     const updated: StudioTask = {
       ...existing,
       ...body,
@@ -260,6 +292,8 @@ export class TaskService {
       retryCount: existing.retryCount ?? 0,
       createdAt: existing.createdAt,
       metadata,
+      workspaceId,
+      projectIds,
       updatedAt: nowIso(),
       tenantId: principal.tenantId,
       ownerId: existing.ownerId ?? principal.userId,
@@ -290,7 +324,7 @@ export class TaskService {
         if (other.dependencies && other.dependencies.includes(id)) {
           other.dependencies = other.dependencies.filter((d) => d !== id);
           other.updatedAt = nowIso();
-          await transactionStore.saveTask(other, principal);
+          await transactionStore.saveTask(await this.withAssociations(other, principal), principal);
         }
       }
     });
@@ -325,8 +359,18 @@ export class TaskService {
         if (!keep.has(task.id)) await transactionStore.deleteTask(task.id, principal);
       }
       for (const task of normalizedTasks) {
+        const { workspaceId, projectIds } = await this.resolveAssociations(task, principal, {
+          allowMissingAsDefaults: false,
+        });
         await transactionStore.saveTask(
-          { ...task, dependencies: this.validateDependencies(task.id, task.dependencies, normalizedTasks), tenantId: principal.tenantId, ownerId: task.ownerId ?? principal.userId },
+          {
+            ...task,
+            dependencies: this.validateDependencies(task.id, task.dependencies, normalizedTasks),
+            tenantId: principal.tenantId,
+            ownerId: task.ownerId ?? principal.userId,
+            workspaceId,
+            projectIds,
+          },
           principal,
         );
       }
@@ -422,7 +466,7 @@ export class TaskService {
 
     let saved: StudioTask;
     try {
-      saved = await this.store.saveTask(task, principal);
+      saved = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     } catch (error) {
       this.executor.cancel(runId);
       throw error;
@@ -435,7 +479,7 @@ export class TaskService {
           const fresh = await this.store.getTask(task.id, principal);
           if (fresh && fresh.runId === runId) {
             if (this.syncTaskWithRun(fresh)) {
-              await this.store.saveTask(fresh, principal);
+              await this.store.saveTask(await this.withAssociations(fresh, principal), principal);
             }
           }
         } catch {
@@ -473,7 +517,7 @@ export class TaskService {
     task.completedAt = nowIso();
     task.paused = false;
     task.updatedAt = nowIso();
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
   }
 
@@ -491,16 +535,20 @@ export class TaskService {
     task.lastError = null;
     task.completedAt = null;
     task.paused = false;
+    // Drop the failed/cancelled run binding before start(). Otherwise get() →
+    // syncTaskWithRun() re-applies the old terminal status and start() 409s with
+    // "must be retried before starting".
+    task.runId = null;
     task.status = "ready";
     task.updatedAt = nowIso();
 
     const hasExecutableTarget = task.workflowId || (task.assignedAgents && task.assignedAgents.length > 0) || task.assignedAgent;
     if (this.executor && hasExecutableTarget) {
-      await this.store.saveTask(task, principal);
+      await this.store.saveTask(await this.withAssociations(task, principal), principal);
       return this.start(id, principal);
     }
 
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
   }
 
@@ -518,7 +566,7 @@ export class TaskService {
     }
     task.paused = true;
     task.updatedAt = nowIso();
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
   }
 
@@ -533,7 +581,7 @@ export class TaskService {
     }
     task.paused = false;
     task.updatedAt = nowIso();
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
   }
 
@@ -617,6 +665,77 @@ export class TaskService {
     }
   }
 
+  private async resolveAssociations(
+    body: Partial<StudioTask>,
+    principal: RequestPrincipal,
+    options?: { allowMissingAsDefaults?: boolean; stripRetiredProjects?: boolean },
+  ): Promise<{ workspaceId: string; projectIds: string[] }> {
+    const allowDefaults = options?.allowMissingAsDefaults !== false;
+    const stripRetired = options?.stripRetiredProjects === true;
+    const defaults = await ensureTenantProjectWorkspaceDefaults(this.store, principal);
+
+    if (body.workspaceId === null) {
+      throw new ApiError(400, "workspaceId is required");
+    }
+    if (body.projectIds !== undefined && !Array.isArray(body.projectIds)) {
+      throw new ApiError(400, "projectIds must be an array");
+    }
+    if (Array.isArray(body.projectIds) && body.projectIds.length === 0) {
+      throw new ApiError(400, "At least one project is required");
+    }
+
+    let workspaceId =
+      body.workspaceId === undefined
+        ? undefined
+        : normalizeId(body.workspaceId, "workspaceId");
+    let projectIds =
+      body.projectIds === undefined
+        ? undefined
+        : [...new Set(body.projectIds.map((id) => normalizeId(id, "projectIds item")))];
+
+    if (!workspaceId) {
+      if (!allowDefaults) throw new ApiError(400, "workspaceId is required");
+      workspaceId = defaults.workspaceId;
+    }
+    if (!projectIds?.length) {
+      if (!allowDefaults) throw new ApiError(400, "At least one project is required");
+      projectIds = [defaults.projectId];
+    }
+
+    const workspace = await this.store.getWorkspace(workspaceId, principal);
+    if (!workspace) throw new ApiError(400, `Unknown workspace: ${workspaceId}`);
+    if (workspace.status !== "active") throw new ApiError(400, `Workspace "${workspaceId}" is retired and cannot receive tasks`);
+
+    const activeProjectIds: string[] = [];
+    for (const projectId of projectIds) {
+      const project = await this.store.getProject(projectId, principal);
+      if (!project) throw new ApiError(400, `Unknown project: ${projectId}`);
+      if (project.status !== "active") {
+        if (stripRetired) continue;
+        throw new ApiError(400, `Project "${projectId}" is retired and cannot receive tasks`);
+      }
+      activeProjectIds.push(projectId);
+    }
+    if (activeProjectIds.length === 0) {
+      throw new ApiError(
+        400,
+        stripRetired
+          ? "All linked projects are retired; select at least one active project before save"
+          : "At least one project is required",
+      );
+    }
+
+    return { workspaceId, projectIds: activeProjectIds };
+  }
+
+  private async withAssociations(task: StudioTask, principal: RequestPrincipal): Promise<StudioTask> {
+    if (task.workspaceId && Array.isArray(task.projectIds) && task.projectIds.length > 0) {
+      return task;
+    }
+    const { workspaceId, projectIds } = await this.resolveAssociations(task, principal);
+    return { ...task, workspaceId, projectIds };
+  }
+
   private syncTaskWithRun(task: StudioTask): boolean {
     if (!task.runId || !this.executor) return false;
     const entry = this.executor.getStore().get(task.runId);
@@ -624,10 +743,26 @@ export class TaskService {
     const run = entry.run;
     let changed = false;
 
-    if (run.status === "completed" && task.status !== "completed" && task.status !== "done") {
-      task.status = "completed";
-      task.completedAt = run.completedAt ?? nowIso();
-      changed = true;
+    if (run.status === "completed") {
+      const syncedStatus = taskStatusForCompletedRun(run);
+      if (syncedStatus === "blocked" || syncedStatus === "waiting_for_human") {
+        if (task.status !== syncedStatus || task.completedAt !== null) {
+          task.status = syncedStatus;
+          task.completedAt = null;
+          changed = true;
+        }
+      } else if (syncedStatus === "failed") {
+        if (task.status !== "failed") {
+          task.status = "failed";
+          task.completedAt = run.completedAt ?? nowIso();
+          task.lastError = run.error ?? "Run reported failure";
+          changed = true;
+        }
+      } else if (task.status !== "completed" && task.status !== "done") {
+        task.status = "completed";
+        task.completedAt = run.completedAt ?? nowIso();
+        changed = true;
+      }
     } else if (run.status === "failed" && task.status !== "failed") {
       task.status = "failed";
       task.completedAt = run.completedAt ?? nowIso();

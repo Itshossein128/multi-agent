@@ -91,11 +91,13 @@ export { UnsupportedBackendError, AgentExecutionFailedError } from "./errors";
 export { mapAgentExecutionEvent } from "./mapAgentExecutionEvent";
 export type { MemoryAccessContext, RuntimeMemoryDependencies } from "../../memory/contracts";
 export {
+  BrokerWorkerCredentialResolver,
   ClaudeCredentialsFileCredentialResolver,
   CodexAuthFileCredentialResolver,
   CompositeWorkerCredentialResolver,
   EnvironmentWorkerCredentialResolver,
   NO_WORKER_CREDENTIALS,
+  brokerWorkerCredentialResolverFromEnvironment,
   CLAUDE_CONTAINER_CREDENTIALS_PATH,
   CODEX_CONTAINER_AUTH_PATH,
   assertClaudeCredentialsFileUsable,

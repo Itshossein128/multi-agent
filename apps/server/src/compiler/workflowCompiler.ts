@@ -1,5 +1,27 @@
 import { Annotation, END, START, StateGraph, MemorySaver, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { nowIso, validateAgent, type AgentRecord, type ApprovalNodeConfig, type NodeRetryPolicy, type ToolRecord, type WorkflowDefinition, type WorkflowNode } from "@multi-agent/types";
+import {
+  nowIso,
+  validateAgent,
+  BRANCH_ROUTING_ERROR_CODE,
+  ContractViolationError,
+  createResultEnvelope,
+  diagnosticsFromValidation,
+  enforcePayloadBound,
+  enforceSchema,
+  migrateNodeContract,
+  parseResultEnvelope,
+  resolveBranchRoute,
+  validateAgainstSchema,
+  type AgentRecord,
+  type ApprovalNodeConfig,
+  type BranchRouteReason,
+  type NodeContract,
+  type NodeResultEnvelope,
+  type NodeRetryPolicy,
+  type ToolRecord,
+  type WorkflowDefinition,
+  type WorkflowNode,
+} from "@multi-agent/types";
 import { AgentRuntime, AgentExecutionFailedError, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import { mergeHistories, type ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
@@ -14,7 +36,7 @@ import {
 import { validateWorkflow } from "./validation";
 import { ToolRuntime } from "../../../../src/tools";
 import { AbortableSemaphore } from "../runtime/semaphore";
-import { abortableDelay, abortError, branchValue, coerceBranchCarrier, combineSignals, isGraphInterrupt, retryDelay, asToolInput } from "../runtime/execUtils";
+import { abortableDelay, abortError, coerceBranchCarrier, combineSignals, isGraphInterrupt, retryDelay, asToolInput } from "../runtime/execUtils";
 
 export class UnsupportedPhase4NodeError extends Error {
   constructor(public readonly nodeId: string, node: WorkflowNode) {
@@ -33,6 +55,10 @@ export interface RuntimeState {
   workingMemory?: WorkingMemoryEntries;
   branch?: string;
   lastValue?: unknown;
+  /** Structured result envelope produced by the most recently executed node. */
+  lastOutcome?: NodeResultEnvelope;
+  /** Structured result envelope per executed node, keyed by node id. */
+  nodeOutcomes?: Record<string, NodeResultEnvelope>;
   nodeResults?: Record<string, unknown>;
 }
 
@@ -46,6 +72,11 @@ const State = Annotation.Root({
   }),
   branch: Annotation<string | undefined>({ reducer: (_, next) => next, default: () => undefined }),
   lastValue: Annotation<unknown>({ reducer: (_, next) => next, default: () => undefined }),
+  lastOutcome: Annotation<NodeResultEnvelope | undefined>({ reducer: (_, next) => next, default: () => undefined }),
+  nodeOutcomes: Annotation<Record<string, NodeResultEnvelope>>({
+    reducer: (current, next) => ({ ...current, ...next }),
+    default: () => ({}),
+  }),
   nodeResults: Annotation<Record<string, unknown>>({
     reducer: (current, next) => ({ ...current, ...next }),
     default: () => ({}),
@@ -107,6 +138,8 @@ export interface CompileOptions {
    * can never widen its own scope; the runtime decides here.
    */
   workingMemoryScopePolicy?: WorkingMemoryScopePolicy;
+  /** Durable proposal retained while a structured agent result awaits approval. */
+  pendingHuman?: { nodeId: string; envelope: NodeResultEnvelope };
 }
 
 export function compileWorkflow(
@@ -135,6 +168,8 @@ export function compileWorkflow(
   const stepBudget = options.stepBudget ?? { count: 0 };
 
   for (const node of definition.nodes) {
+    // Author-declared contract for this node; legacy nodes carry none.
+    const contract: NodeContract | undefined = migrateNodeContract(node.contract);
     graph.addNode(node.id, async (state: RuntimeState) => {
       const emit = (type: string, payload: unknown = {}) => options.onAgentEvent?.({ type, timestamp: nowIso(), runId, nodeId: node.id, payload });
       const retry = resolveRetryPolicy(node, agentById, toolsById, guardrails);
@@ -158,17 +193,30 @@ export function compileWorkflow(
         }
         emit("node.started", { nodeType: node.type, attempt, maxAttempts: retry.maxAttempts, step });
         try {
+          // Boundary 1: validate the node's input before it executes.
+          enforceNodeInput(node, contract, node.type === "input" ? state.input : nodeInput);
           let result: Partial<RuntimeState>;
+          let outcome: NodeResultEnvelope | undefined;
           if (node.type === "tool") {
             const tool = toolsById.get((node.config as { toolId?: string | null }).toolId ?? "");
             if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
             emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
             try {
-              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), signal, { runId, credentialPrincipal: options.credentialPrincipal });
+              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), signal, { runId, credentialPrincipal: options.credentialPrincipal, idempotencyKey: `${runId}:${node.id}` });
+              // Boundary 2: validate and bound the tool's output before it
+              // enters workflow state or any event stream.
+              if (contract?.outputSchema) {
+                enforceSchema(contract.outputSchema, value, { code: "TOOL_OUTPUT_INVALID", phase: "node output", nodeId: node.id });
+              }
+              enforcePayloadBound(value, contract?.maxPayloadBytes, { nodeId: node.id, phase: "tool output" });
               emit("tool.completed", { toolId: tool.id, output: value });
               result = { lastValue: value };
+              outcome = createResultEnvelope("success", {
+                value,
+                ...(contract?.captureEvidence ? { evidence: { source: "tool", producedAt: nowIso(), detail: tool.name, runId, nodeId: node.id, producerId: tool.id } } : {}),
+              });
             } catch (error) {
-              emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message : String(error) });
+              emit("tool.failed", { toolId: tool.id, error: error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000), ...(error instanceof ContractViolationError ? { code: error.code } : {}) });
               throw error;
             }
           } else if (node.type === "approval") {
@@ -197,31 +245,52 @@ export function compileWorkflow(
                   : nodeInput === undefined ? state.input : { content: nodeInput },
             };
           } else if (node.type === "memory") {
-            const config = node.config as { mode: string; key: string };
+            const config = node.config as { mode: string; key: string; writeSource?: "last_value" | "node_results" | "handoffs" | "run_report" };
             if (config.mode === "read") result = { lastValue: state.memory[config.key] };
             else {
-              const value = nodeInput ?? state.input;
+              const value = config.writeSource === "node_results"
+                ? { nodeResults: state.nodeResults ?? {}, handoffs: state.handoffs ?? {} }
+                : config.writeSource === "handoffs"
+                  ? { handoffs: state.handoffs ?? {} }
+                  : config.writeSource === "run_report"
+                    ? { input: state.input, nodeResults: state.nodeResults ?? {}, handoffs: state.handoffs ?? {}, memory: state.memory }
+                    : nodeInput ?? state.input;
               result = { memory: { [config.key]: value }, lastValue: value };
             }
             emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
           } else if (node.type === "condition") {
-            const config = node.config as { branches: { key: string }[]; valueSource?: "input" | "last_value"; valueField?: string };
+            const config = node.config as { branches: { key: string }[]; valueSource?: "input" | "last_value"; valueField?: string; unknownRoute?: string; errorRoute?: string };
             // CLI agents often return JSON text; coerce so branch keys transfer through workflow state.
             const routedValue = coerceBranchCarrier(state.lastValue);
-            const lastValueBranch = routedValue && typeof routedValue === "object"
-              ? branchValue(routedValue as Record<string, unknown>, config.valueField)
+            const carrier = routedValue && typeof routedValue === "object" && !Array.isArray(routedValue)
+              ? routedValue as Record<string, unknown>
               : undefined;
+            // The producing node's declared envelope branch is the most
+            // structured carrier signal; raw carrier fields remain supported
+            // for legacy input-based routing.
+            const outcomeBranch = typeof state.lastOutcome?.branch === "string" && state.lastOutcome.branch.trim()
+              ? state.lastOutcome.branch
+              : undefined;
+            const fieldOrOutcome = (field?: string): unknown => {
+              if (field) return carrier ? carrier[field] : undefined;
+              if (outcomeBranch !== undefined) return outcomeBranch;
+              return carrier ? branchCarrierField(carrier) : undefined;
+            };
             const requested = config.valueSource === "last_value"
-              ? lastValueBranch
-              : state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? lastValueBranch;
-            const branch =
-              typeof requested === "string" && config.branches.some((item) => item.key === requested)
-                ? requested
-                : typeof requested === "string" && config.branches.some((item) => item.key === requested.toLowerCase())
-                  ? requested.toLowerCase()
-                : config.branches[0]?.key;
-            result = { branch, lastValue: routedValue ?? state.lastValue };
-            emit("state.updated", { branch });
+              ? fieldOrOutcome(config.valueField)
+              : state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? fieldOrOutcome(config.valueField);
+            // Boundary 3: resolve the branch carrier fail-closed. An
+            // unresolved route never falls through to the first branch.
+            const resolution = resolveBranchRoute(config, requested);
+            if (resolution.status === "unknown") {
+              throw new BranchRoutingError(node.id, resolution);
+            }
+            result = { branch: resolution.branch, lastValue: routedValue ?? state.lastValue };
+            emit("state.updated", {
+              branch: resolution.branch,
+              routeReason: resolution.reason,
+              ...(resolution.viaUnknownRoute ? { viaUnknownRoute: true } : {}),
+            });
           } else {
             const config = node.config as { agentId?: string | null };
             const agent = config.agentId ? agentById.get(config.agentId) : undefined;
@@ -234,21 +303,103 @@ export function compileWorkflow(
             let workingMemoryCandidates: unknown[] = [];
             let agentFailed = false;
             let agentError: string | undefined;
-            const value = options.agentRunner
-              ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id, signal })
-              : await runAgentThroughRuntime(agent, executionState, {
-                runId,
+            let value: unknown;
+            const pendingHuman = options.pendingHuman?.nodeId === node.id ? options.pendingHuman : undefined;
+            if (pendingHuman) {
+              // LangGraph re-enters the node after resume. Replaying the provider
+              // call would duplicate an external side effect, so replay the same
+              // interrupt and consume only the human decision.
+              const decision = interrupt({
                 nodeId: node.id,
-                workflowId: options.workflowId ?? definition.id,
-                onAgentEvent: options.onAgentEvent,
-                runtime,
-                memoryAccess: options.memoryAccess,
-                credentialPrincipal: options.credentialPrincipal,
-                onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
-                onWorkingMemoryUpdate: updates => { workingMemoryCandidates = updates; },
-                signal,
-                onError: (err) => { agentFailed = true; agentError = err; },
+                message: pendingHuman.envelope.needsHuman?.reason ?? "Human approval required",
+                approvalType: "manual",
+                timeoutSeconds: 0,
+                context: { kind: "agent_needs_human", envelope: pendingHuman.envelope },
+              }) as { decision?: string } | string;
+              const approved = typeof decision === "string" ? decision === "approved" : decision?.decision === "approved";
+              if (!approved) {
+                throw new NodeOutcomeError(createResultEnvelope("blocked", {
+                  error: { code: "HUMAN_REJECTED", message: "Human rejected the agent proposal.", retryable: false },
+                }), node.id);
+              }
+              value = "value" in pendingHuman.envelope ? pendingHuman.envelope.value : pendingHuman.envelope;
+              outcome = createResultEnvelope("success", {
+                value,
+                ...(pendingHuman.envelope.branch ? { branch: pendingHuman.envelope.branch } : {}),
+                ...(contract?.captureEvidence && !pendingHuman.envelope.evidence
+                  ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } }
+                  : pendingHuman.envelope.evidence ? { evidence: pendingHuman.envelope.evidence } : {}),
               });
+              options.pendingHuman = undefined;
+            } else {
+              value = options.agentRunner
+                ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id, signal })
+                : await runAgentThroughRuntime(agent, executionState, {
+                  runId,
+                  nodeId: node.id,
+                  workflowId: options.workflowId ?? definition.id,
+                  onAgentEvent: options.onAgentEvent,
+                  runtime,
+                  memoryAccess: options.memoryAccess,
+                  credentialPrincipal: options.credentialPrincipal,
+                  onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
+                  onWorkingMemoryUpdate: updates => { workingMemoryCandidates = updates; },
+                  signal,
+                  onError: (err) => { agentFailed = true; agentError = err; },
+                });
+            }
+
+            // Deterministic result model: parse a structured result envelope
+            // instead of inferring decisions from free-form model text.
+            const parsedResult = parseResultEnvelope(value);
+            if (parsedResult.kind === "malformed") {
+              throw new ContractViolationError("AGENT_RESULT_MALFORMED", "Agent produced a malformed structured result", {
+                nodeId: node.id,
+                diagnostics: parsedResult.diagnostics,
+              });
+            }
+            let agentValue = value;
+            if (parsedResult.kind === "valid") {
+              const envelope = parsedResult.envelope;
+              if (contract?.outputSchema && "value" in envelope) {
+                enforceSchema(contract.outputSchema, envelope.value, { code: "AGENT_OUTPUT_INVALID", phase: "node output", nodeId: node.id });
+              }
+              enforcePayloadBound("value" in envelope ? envelope.value : envelope, contract?.maxPayloadBytes, { nodeId: node.id, phase: "agent result" });
+              // Invalid, policy-rejected, unknown, and blocked outcomes are
+              // terminal. A needs-human result pauses here and resumes with
+              // the exact bounded proposal, without replaying the agent call.
+              if (envelope.status === "needs_human") {
+                options.pendingHuman = { nodeId: node.id, envelope };
+                interrupt({
+                  nodeId: node.id,
+                  message: envelope.needsHuman?.reason ?? "Human approval required",
+                  approvalType: "manual",
+                  timeoutSeconds: 0,
+                  context: { kind: "agent_needs_human", envelope },
+                });
+                throw new NodeOutcomeError(envelope, node.id);
+              }
+              // A typed `failed` result must carry an explicit branch to route.
+              if (envelope.status !== "success" && envelope.status !== "failed") {
+                throw new NodeOutcomeError(envelope, node.id);
+              }
+              if (envelope.status === "failed" && !(typeof envelope.branch === "string" && envelope.branch.trim())) {
+                throw new NodeOutcomeError(envelope, node.id);
+              }
+              outcome = contract?.captureEvidence && !envelope.evidence
+                ? { ...envelope, evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } }
+                : envelope;
+              agentValue = "value" in envelope ? envelope.value : envelope;
+            } else {
+              if (contract?.outputSchema) {
+                enforceSchema(contract.outputSchema, value, { code: "AGENT_OUTPUT_INVALID", phase: "node output", nodeId: node.id });
+              }
+              enforcePayloadBound(value, contract?.maxPayloadBytes, { nodeId: node.id, phase: "agent result" });
+              outcome = createResultEnvelope("success", {
+                value,
+                ...(contract?.captureEvidence ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } } : {}),
+              });
+            }
 
             const workflowId = options.workflowId ?? definition.id;
             // Build structured handoff from agent output
@@ -281,7 +432,7 @@ export function compileWorkflow(
             }
             const handoffs = { [node.id]: handoff };
             result = {
-              lastValue: value,
+              lastValue: agentValue,
               shortTermHistories,
               handoffs,
               workingMemory: workingMemoryWrite.entries,
@@ -292,6 +443,22 @@ export function compileWorkflow(
             return { lastValue: state.lastValue, nodeResults: { [node.id]: state.lastValue } };
           }
           const nodeValue = result.output ?? result.lastValue;
+          // Boundary 4: validate and bound the node's structured result before
+          // it enters workflow state, events, or persistence. Tool and agent
+          // nodes validated their outputs with their own stable codes above.
+          if (node.type !== "agent" && node.type !== "tool") {
+            if (contract?.outputSchema) {
+              enforceSchema(contract.outputSchema, nodeValue, { code: "NODE_OUTPUT_INVALID", phase: "node output", nodeId: node.id });
+            }
+            enforcePayloadBound(nodeValue, contract?.maxPayloadBytes, { nodeId: node.id, phase: "node output" });
+          }
+          outcome ??= createResultEnvelope("success", {
+            value: nodeValue,
+            ...(result.branch ? { branch: result.branch } : {}),
+            ...(contract?.captureEvidence ? { evidence: { source: node.type, producedAt: nowIso(), runId, nodeId: node.id } } : {}),
+          });
+          result.lastOutcome = outcome;
+          result.nodeOutcomes = { [node.id]: outcome };
           result.nodeResults = { [node.id]: nodeValue };
           emit("node.completed", { nodeType: node.type, attempt, maxAttempts: retry.maxAttempts, step });
           const branch = result.branch;
@@ -306,9 +473,22 @@ export function compileWorkflow(
             emit("branch.skipped", { branchKey, nodeType: node.type, reason: "branch_cancelled" });
             return { lastValue: state.lastValue, nodeResults: { [node.id]: state.lastValue } };
           }
-          const terminal = attempt >= retry.maxAttempts || Boolean(signal?.aborted);
-          const message = error instanceof Error ? error.message : String(error);
-          emit("node.failed", { nodeType: node.type, error: message, attempt, maxAttempts: retry.maxAttempts, terminal, step });
+          const terminalContractFailure = error instanceof ContractViolationError || error instanceof BranchRoutingError || error instanceof NodeOutcomeError;
+          const terminal = terminalContractFailure || attempt >= retry.maxAttempts || Boolean(signal?.aborted);
+          // Diagnostics stay machine-readable, bounded, and value-free.
+          const message = (error instanceof Error ? error.message : String(error)).slice(0, 2_000);
+          const failureCode = terminalContractFailure ? (error as { code?: string }).code : undefined;
+          const failureDiagnostics = terminalContractFailure ? (error as { diagnostics?: unknown[] }).diagnostics : undefined;
+          emit("node.failed", {
+            nodeType: node.type,
+            error: message,
+            attempt,
+            maxAttempts: retry.maxAttempts,
+            terminal,
+            step,
+            ...(failureCode ? { code: failureCode } : {}),
+            ...(Array.isArray(failureDiagnostics) && failureDiagnostics.length ? { diagnostics: failureDiagnostics } : {}),
+          });
           if (terminal) throw error;
           const delayMs = retryDelay(retry, attempt, guardrails.maxNodeRetryBackoffMs);
           emit("node.retrying", { nodeType: node.type, attempt, nextAttempt: attempt + 1, maxAttempts: retry.maxAttempts, delayMs, reason: message });
@@ -361,6 +541,82 @@ export class WorkflowStepLimitError extends Error {
     super(`Workflow exceeded the server-owned ${limit}-step execution limit`);
     this.name = "WorkflowStepLimitError";
   }
+}
+
+/**
+ * Fail-closed condition routing failure. Raised whenever the requested branch
+ * is missing, malformed, not declared, incorrectly typed, ambiguous, or
+ * otherwise unresolvable and no unknown/error route was declared. The runtime
+ * never substitutes the first configured branch.
+ */
+export class BranchRoutingError extends Error {
+  readonly code = BRANCH_ROUTING_ERROR_CODE;
+  readonly nodeId: string;
+  readonly reason: BranchRouteReason;
+  readonly diagnostics: { code: string; message: string; path?: string }[];
+  readonly envelope: NodeResultEnvelope;
+
+  constructor(nodeId: string, resolution: { reason: BranchRouteReason }) {
+    // Never include the requested value: it may carry model output or secrets.
+    super(`${BRANCH_ROUTING_ERROR_CODE}: node "${nodeId}" could not resolve a declared branch (reason: ${resolution.reason})`);
+    this.name = "BranchRoutingError";
+    this.nodeId = nodeId;
+    this.reason = resolution.reason;
+    this.diagnostics = [{ code: BRANCH_ROUTING_ERROR_CODE, message: `branch resolution failed: ${resolution.reason}`, path: "$.branch" }];
+    this.envelope = createResultEnvelope("unknown", {
+      error: { code: BRANCH_ROUTING_ERROR_CODE, message: `Branch resolution failed (${resolution.reason})`, retryable: false },
+      diagnostics: this.diagnostics,
+    });
+  }
+}
+
+/**
+ * A node produced a deterministic structured outcome that terminates the run:
+ * blocked execution, needs-human approval without an approval node, a typed
+ * failure with no explicit route, or an invalid/policy/unknown envelope.
+ * The envelope is preserved as the run's structured result.
+ */
+export class NodeOutcomeError extends Error {
+  readonly code: string;
+  readonly nodeId: string;
+  readonly envelope: NodeResultEnvelope;
+  readonly diagnostics: { code: string; message: string; path?: string }[];
+
+  constructor(envelope: NodeResultEnvelope, nodeId: string) {
+    const fallbackByStatus: Record<string, string> = {
+      blocked: "NODE_BLOCKED",
+      needs_human: "NEEDS_HUMAN",
+      failed: "NODE_FAILED",
+      validation_failed: "RESULT_VALIDATION_FAILED",
+      policy_rejected: "RESULT_POLICY_REJECTED",
+      unknown: "RESULT_UNKNOWN",
+    };
+    const code = envelope.error?.code ?? fallbackByStatus[envelope.status] ?? "NODE_FAILED";
+    const message = envelope.error?.message ?? envelope.needsHuman?.reason ?? `Node "${nodeId}" produced a ${envelope.status} structured result`;
+    super(`${code}: ${message}`.slice(0, 1_000));
+    this.name = "NodeOutcomeError";
+    this.code = code;
+    this.nodeId = nodeId;
+    // Preserve the producer's envelope; only attach a machine-readable error
+    // code when the producer did not declare one.
+    this.envelope = envelope.error ? envelope : { ...envelope, error: { code, message, retryable: false } };
+    this.diagnostics = envelope.diagnostics ?? [{ code, message: `structured result status: ${envelope.status}`, path: "$.status" }];
+  }
+}
+
+/** Enforce a node's declared input contract before execution. */
+function enforceNodeInput(node: WorkflowNode, contract: NodeContract | undefined, carrier: unknown): void {
+  if (!contract) return;
+  if (contract.inputSchema) {
+    const code = node.type === "tool" ? "TOOL_INPUT_INVALID" : node.type === "agent" ? "AGENT_INPUT_INVALID" : "NODE_INPUT_INVALID";
+    enforceSchema(contract.inputSchema, carrier, { code, phase: "node input", nodeId: node.id });
+  }
+  enforcePayloadBound(carrier, contract.maxPayloadBytes, { nodeId: node.id, phase: "node input" });
+}
+
+/** Raw branch-carrier field lookup (no prose inference; strings only upstream). */
+function branchCarrierField(value: Record<string, unknown>): unknown {
+  return value.branch ?? value.branchKey ?? value.verdict ?? value.status;
 }
 
 export { coerceBranchCarrier } from "../runtime/execUtils";
@@ -439,7 +695,20 @@ async function runAgentThroughRuntime(
     onShortTermUpdate: meta.onShortTermUpdate,
     onWorkingMemoryUpdate: meta.onWorkingMemoryUpdate,
     onBackgroundEvent: meta.onAgentEvent,
-    context: { memory: state.memory, branch: state.branch, previousOutput: state.lastValue },
+    context: {
+      memory: state.memory,
+      branch: state.branch,
+      previousOutput: state.lastValue,
+      workflowInput: state.input,
+      nodeResults: state.nodeResults ?? {},
+    },
+    // Preserve the immutable workflow input as first-class context. Node
+    // handoffs intentionally use lastValue, but that value may be replaced by
+    // a memory read, condition, or another agent's output.
+    runtimeState: {
+      workflowInput: state.input,
+      nodeResults: state.nodeResults ?? {},
+    },
     handoffs: state.handoffs,
     workingMemory: state.workingMemory ?? {},
   })) {

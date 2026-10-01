@@ -58,6 +58,14 @@ ADD --checksum=sha256:e27c83a49e6031685ee7f956c12aad5f16484d3a80181dd3fea930fb96
 ADD --checksum=sha256:ee37736066e3349c977db70bdfaf4f3cf7c398a06e2a051fe8e00728e1f6e932 https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.270.tgz /tmp/claude-code.tgz
 ADD --checksum=sha256:a2c0b69773f9da730b0616c19771094de51ffd23f0dfaa7c34ccead34eb76dd0 https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.270.tgz /tmp/claude-code-linux-x64.tgz
 
+# Cursor Agent CLI. Cursor does not publish checksums, so the digest below was
+# recorded from the exact versioned artifact the official installer downloads
+# (https://downloads.cursor.com/lab/<version>/linux/x64/agent-cli-package.tar.gz
+# per https://cursor.com/install). BuildKit re-verifies it on every build; bump
+# the version and refresh the checksum together after inspecting the new
+# artifact. The package ships its own Node runtime, so it needs none from here.
+ADD --checksum=sha256:b1308f5a2fc05458b9d8966752986bb23a971bbcc67c842c1df94c4b8132bad9 https://downloads.cursor.com/lab/2026.09.18-9a7762b/linux/x64/agent-cli-package.tar.gz /tmp/cursor-agent.tgz
+
 RUN npm install --global --offline --omit=optional --ignore-scripts --no-audit --no-fund \
       /tmp/codex.tgz /tmp/claude-code.tgz \
     && mkdir -p \
@@ -67,7 +75,12 @@ RUN npm install --global --offline --omit=optional --ignore-scripts --no-audit -
       --directory=/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64 \
     && tar --extract --gzip --file=/tmp/claude-code-linux-x64.tgz --strip-components=1 \
       --directory=/usr/local/lib/node_modules/@anthropic-ai/claude-code/node_modules/@anthropic-ai/claude-code-linux-x64 \
-    && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs
+    && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs \
+    && mkdir -p /opt/cursor-agent \
+    && tar --extract --gzip --file=/tmp/cursor-agent.tgz --strip-components=1 \
+      --directory=/opt/cursor-agent \
+    && test -x /opt/cursor-agent/cursor-agent \
+    && test -x /opt/cursor-agent/node
 
 # Keep the readable tag and immutable upstream manifest digest together.
 FROM runtime-base
@@ -81,9 +94,9 @@ ENV HTTP_PROXY= \
     https_proxy=
 
 LABEL org.opencontainers.image.title="Multi-Agent CLI Worker" \
-      org.opencontainers.image.description="Immutable non-root Codex and Claude Code execution image" \
+      org.opencontainers.image.description="Immutable non-root Codex, Claude Code, and Cursor Agent execution image" \
       org.opencontainers.image.base.name="docker.io/library/node:22.23.2-bookworm-slim" \
-      org.opencontainers.image.version="codex-0.154.0_claude-2.1.270"
+      org.opencontainers.image.version="codex-0.154.0_claude-2.1.270_cursor-2026.09.18-9a7762b"
 
 ENV HOME=/home/worker \
     XDG_CONFIG_HOME=/home/worker/.config \
@@ -102,6 +115,7 @@ ENV HOME=/home/worker \
 
 COPY --from=cli-source /usr/local/lib/node_modules/@openai/codex /usr/local/lib/node_modules/@openai/codex
 COPY --from=cli-source /usr/local/lib/node_modules/@anthropic-ai/claude-code /usr/local/lib/node_modules/@anthropic-ai/claude-code
+COPY --from=cli-source /opt/cursor-agent /opt/cursor-agent
 
 COPY --from=git-source /opt/git-root/ /
 
@@ -109,8 +123,9 @@ COPY --from=git-source /opt/git-root/ /
 # mode option, so the empty /home/worker mountpoint is created sticky-writable.
 RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
     && ln -s ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe /usr/local/bin/claude \
+    && ln -s /opt/cursor-agent/cursor-agent /usr/local/bin/agent \
     && npm install --global --no-audit --no-fund pnpm@10.17.0 \
-    && mkdir -p /tmp/cli-build-check/.codex \
+    && mkdir -p /tmp/cli-build-check/.codex /tmp/cli-build-check/.cache \
     && test "$(node --version)" = "v22.23.2" \
     && test "$(git --version)" = "git version 2.39.5" \
     && ! ldd /usr/lib/git-core/git-remote-https | grep --quiet 'not found' \
@@ -120,6 +135,8 @@ RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
     && HOME=/tmp/cli-build-check CODEX_HOME=/tmp/cli-build-check/.codex codex exec --help >/dev/null \
     && test "$(HOME=/tmp/cli-build-check claude --version)" = "2.1.270 (Claude Code)" \
     && HOME=/tmp/cli-build-check claude --help | grep --quiet -- "--print" \
+    && test "$(HOME=/tmp/cli-build-check XDG_CACHE_HOME=/tmp/cli-build-check/.cache agent --version)" = "2026.09.18-9a7762b" \
+    && HOME=/tmp/cli-build-check XDG_CACHE_HOME=/tmp/cli-build-check/.cache agent --help | grep --quiet -- "--print" \
     && rm -rf /tmp/cli-build-check \
     && install --directory --owner=65534 --group=65534 --mode=1777 /home/worker \
     && install --directory --owner=65534 --group=65534 --mode=0755 /workspace

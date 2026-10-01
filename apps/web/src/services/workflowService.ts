@@ -1,7 +1,7 @@
 /** Studio persistence client. Entities live on the execution server; activeWorkflowId stays local. */
 import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, deserializeWorkflowDefinition, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, serializeWorkflowDefinition, uid, type AgentDiagnostics, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
-import { requestJson } from "./requestJson";
+import { ApiRequestError, requestJson } from "./requestJson";
 
 const API_URL = "/api/execution";
 const ACTIVE_WORKFLOW_KEY = "agent-studio.active-workflow.v1";
@@ -55,6 +55,15 @@ function readLegacyWorkspace(storage: BrowserStorage | undefined): Workspace | n
   return { version: 3, activeWorkflowId: migratedWorkflow?.definition.id ?? null, workflows: migratedWorkflow ? [migratedWorkflow.definition] : [], agents, tools };
 }
 
+/**
+ * Only a genuine server 404 means "this resource does not exist". Transport,
+ * authentication, and server failures must surface to the caller so the UI can
+ * offer a retry instead of presenting a missing resource.
+ */
+function isNotFound(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 404;
+}
+
 export interface CreateAgentInput { name?: string; model?: string; provider?: string; backend?: AgentRecord["backend"] }
 
 /**
@@ -105,8 +114,9 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       try {
         const agent = await request<AgentRecord>(`/agents/${encodeURIComponent(agentId)}`);
         return publicAgent(agent);
-      } catch {
-        return null;
+      } catch (error) {
+        if (isNotFound(error)) return null;
+        throw error;
       }
     },
     async listAgents(): Promise<AgentRecord[]> {
@@ -131,8 +141,9 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       }
       try {
         return deserializeWorkflowDefinition(await request(`/workflows/${encodeURIComponent(id)}`));
-      } catch {
-        return null;
+      } catch (error) {
+        if (isNotFound(error)) return null;
+        throw error;
       }
     },
     async saveWorkflow(definition: WorkflowDefinition): Promise<WorkflowDefinition> {
@@ -171,7 +182,11 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
 
     async getTool(toolId: string): Promise<ToolRecord | null> {
       await ensureImported();
-      try { return await request(`/tools/${encodeURIComponent(toolId)}`); } catch { return null; }
+      try { return await request(`/tools/${encodeURIComponent(toolId)}`); }
+      catch (error) {
+        if (isNotFound(error)) return null;
+        throw error;
+      }
     },
     async listTools(): Promise<ToolRecord[]> {
       await ensureImported();

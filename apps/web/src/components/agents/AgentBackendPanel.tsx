@@ -16,9 +16,9 @@ export function AgentBackendPanel({ backend, onChange }: { backend: AgentBackend
       <Field label={`Model${backend.type === "cli" ? " (optional)" : ""}`}><input className={fieldClass} value={backend.model ?? ""} onChange={(event) => onChange({ ...backend, model: event.target.value })} /></Field>
     </div>
     {backend.type === "cli" && <>
-      <Field label="Executable (optional)"><input className={fieldClass} placeholder="Provider default: codex, claude, or agy" value={backend.executable ?? ""} onChange={(event) => onChange({ ...backend, executable: event.target.value || undefined })} /></Field>
+      <Field label="Executable (optional)"><input className={fieldClass} placeholder="Provider default: codex, claude, agent, or agy" value={backend.executable ?? ""} onChange={(event) => onChange({ ...backend, executable: event.target.value || undefined })} /></Field>
       <Field label="Arguments (one argument per line)"><textarea className={fieldClass} rows={5} value={(backend.args ?? []).join("\n")} onChange={(event) => onChange({ ...backend, args: event.target.value.split("\n") })} /></Field>
-      <p className="text-sm text-zinc-400">Leave executable blank to use the provider default (`codex`, `claude`, or `agy`). On Windows, put the real `.exe` path in `CLI_AGENT_ALLOWED_EXECUTABLES` — npm `.cmd` shims cannot be spawned. Leave arguments blank for non-interactive mode.</p>
+      <p className="text-sm text-zinc-400">Leave executable blank to use the provider default (`codex`, `claude`, `agent` for cursor, or `agy`). On Windows, put the real `.exe` path in `CLI_AGENT_ALLOWED_EXECUTABLES` — npm `.cmd` shims cannot be spawned. Leave arguments blank for non-interactive mode.</p>
     </>}
     {backend.type === "local" && <Field label="Base URL (optional)"><input className={fieldClass} type="url" placeholder={backend.provider === "lmstudio" ? "http://127.0.0.1:1234" : "http://127.0.0.1:11434"} value={backend.baseUrl ?? ""} onChange={(event) => onChange({ ...backend, baseUrl: event.target.value || undefined })} /></Field>}
     {(backend.type === "api" || backend.type === "local") && <div className="grid gap-4 md:grid-cols-3">

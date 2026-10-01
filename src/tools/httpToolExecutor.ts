@@ -20,7 +20,13 @@ export class HttpToolExecutor implements ToolExecutor {
       body: method === "GET" ? undefined : JSON.stringify(input),
       signal,
     });
-    const body = await response.json().catch(async () => await response.text());
+    const text = await response.text();
+    let body: unknown;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = text;
+    }
     if (!response.ok) throw new Error(`HTTP tool "${tool.name}" returned ${response.status}.`);
     return { status: response.status, body };
   }

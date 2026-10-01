@@ -1,4 +1,5 @@
-import type { ApprovalRequest, Run, RunEvent } from "@multi-agent/types";
+import type { ApprovalRequest, NodeResultEnvelope, Run, RunEvent } from "@multi-agent/types";
+import { MAX_CONTRACT_DIAGNOSTICS, payloadByteSize } from "@multi-agent/types";
 import { redact } from "../../adapters/langGraphEventAdapter";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../../../../../src/runtime/boundedValue";
 import type { RunEntry, RunListFilters } from "./contracts";
@@ -42,7 +43,34 @@ export function createBoundedRun(run: import("@multi-agent/types").Run, maxEvent
     ...run,
     ...(run.input !== undefined ? { input: asRecord(input) ?? { value: input } } : {}),
     ...(run.output !== undefined ? { output: asRecord(output) ?? { value: output } } : {}),
+    ...(run.result !== undefined ? { result: boundRunResult(run.result, maxRunPayloadBytes) } : {}),
     metadata: asRecord(metadata) ?? {},
     ...(run.error !== undefined ? { error: String(redact(run.error)).slice(0, 12_000) } : {}),
   };
+}
+
+/**
+ * Keep the structured result redacted and bounded: taxonomy and error codes
+ * always survive; an oversized value payload is replaced by a truncation
+ * marker so persisted run data never carries unbounded model output.
+ */
+export function boundRunResult(result: NodeResultEnvelope, maxBytes: number): NodeResultEnvelope {
+  const bounded: NodeResultEnvelope = {
+    ...result,
+    ...(result.error ? { error: { ...result.error, message: String(redact(result.error.message)).slice(0, 300) } } : {}),
+    ...(result.needsHuman ? { needsHuman: { reason: String(redact(result.needsHuman.reason)).slice(0, 500) } } : {}),
+    ...(result.diagnostics ? { diagnostics: result.diagnostics.slice(0, MAX_CONTRACT_DIAGNOSTICS).map((item) => ({ ...item, message: String(redact(item.message)).slice(0, 300) })) } : {}),
+  };
+  if (bounded.value !== undefined) bounded.value = redact(bounded.value);
+  if (payloadByteSize(bounded) > maxBytes) {
+    return {
+      ...bounded,
+      value: { truncated: true, reason: "result value exceeded the run payload bound" },
+      diagnostics: [
+        ...(bounded.diagnostics ?? []),
+        { code: "RESULT_VALUE_TRUNCATED", message: "Result value exceeded the run payload bound." },
+      ].slice(0, MAX_CONTRACT_DIAGNOSTICS),
+    };
+  }
+  return bounded;
 }
