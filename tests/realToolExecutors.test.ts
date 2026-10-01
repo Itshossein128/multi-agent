@@ -1,6 +1,7 @@
 import { DatabaseToolExecutor } from "../src/tools/databaseToolExecutor";
 import { SearchToolExecutor } from "../src/tools/searchToolExecutor";
 import { McpToolExecutor } from "../src/tools/mcpToolExecutor";
+import { HttpToolExecutor } from "../src/tools/httpToolExecutor";
 import { EnvironmentCredentialGateway, HttpCredentialGateway, type CredentialGateway } from "../src/security/credentialGateway";
 import { createToolRecord } from "@multi-agent/types";
 
@@ -80,4 +81,46 @@ test("MCP executor performs initialize, initialized notification, and tools/call
   expect(methods).toEqual(["initialize", "notifications/initialized", "tools/call"]);
   expect(result.server).toBe("local");
   expect(JSON.stringify(result)).not.toContain("mcp-secret");
+});
+
+test("tool executors safely parse non-JSON text responses without stream errors", async () => {
+  const plainTextHtml = "<html><body>502 Bad Gateway</body></html>";
+
+  // 1. HttpToolExecutor
+  const httpFetch = jest.fn(async () => new Response(plainTextHtml, { status: 200, headers: { "content-type": "text/html" } }));
+  const httpTool = createToolRecord({ category: "http" });
+  httpTool.configuration = { url: "https://service.internal/endpoint", method: "GET" };
+  const httpResult = await new HttpToolExecutor(httpFetch).execute({ tool: httpTool, input: {} });
+  expect(httpResult).toEqual({ status: 200, body: plainTextHtml });
+
+  // 2. SearchToolExecutor
+  const searchFetch = jest.fn(async () => new Response(plainTextHtml, { status: 200, headers: { "content-type": "text/html" } }));
+  const searchTool = createToolRecord({ category: "search" });
+  searchTool.configuration = { provider: "web" };
+  const searchResult = await new SearchToolExecutor(gateway("secret"), searchFetch, { TOOL_SEARCH_WEB_URL: "https://search.internal/query" }).execute({
+    tool: searchTool,
+    input: { query: "test" },
+    ...context,
+  });
+  expect(searchResult).toEqual({ provider: "web", results: { text: plainTextHtml } });
+
+  // 3. McpToolExecutor
+  const mcpFetch = jest.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    if (body.method === "initialize") {
+      return new Response(JSON.stringify({ result: { protocolVersion: "2025-06-18" } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (body.method === "notifications/initialized") {
+      return new Response("", { status: 200, headers: { "content-type": "text/plain" } });
+    }
+    return new Response(plainTextHtml, { status: 200, headers: { "content-type": "text/html" } });
+  });
+  const mcpTool = createToolRecord({ category: "mcp" });
+  mcpTool.configuration = { server: "local", tool: "search" };
+  const mcpResult = await new McpToolExecutor(gateway("secret"), mcpFetch, { TOOL_MCP_LOCAL_URL: "http://mcp.internal" }).execute({
+    tool: mcpTool,
+    input: { arguments: { query: "hello" } },
+    ...context,
+  });
+  expect(mcpResult).toEqual({ server: "local", tool: "search", result: undefined });
 });

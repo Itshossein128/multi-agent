@@ -45,9 +45,19 @@ async function parseResponse(response: Response): Promise<any> {
   if (type.includes("text/event-stream")) {
     const text = await response.text();
     const data = text.split(/\r?\n/).filter(line => line.startsWith("data:")).at(-1)?.slice(5).trim();
-    return data ? JSON.parse(data) : {};
+    if (!data) return {};
+    try {
+      return JSON.parse(data);
+    } catch {
+      return { text: data };
+    }
   }
-  return response.json().catch(async () => ({ text: await response.text() }));
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { text };
+  }
 }
 
 function serverAlias(value: string | number | boolean | undefined) { const alias = String(value ?? "").trim(); if (!/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(alias)) throw new Error("MCP tool requires a safe server-owned configuration.server alias."); return alias; }
