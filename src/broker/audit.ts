@@ -75,7 +75,7 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /** Belt-and-braces patterns that must never appear in audit field values. */
-const FORBIDDEN_VALUE = /(?:sk-|pk-|rk-|AKIA|-----BEGIN)|bearer\s+[a-z0-9._-]+|postgres(ql)?:\/\/|https?:\/\/[^\s]*@[^\s]/i;
+const FORBIDDEN_VALUE = /(?:\b(?:sk|pk|rk)-(?:proj|or|svcacct|admin|ant|live|test)-[a-z0-9_-]{12,}|\b(?:sk|pk|rk)_[a-z0-9_]{12,}|\bsk-[a-z0-9]{32,}|\bAKIA[0-9A-Z]{16}\b|-----BEGIN\s+[A-Z\s]+-----)|bearer\s+[a-z0-9._-]+|postgres(ql)?:\/\/|https?:\/\/[^\s]*@[^\s]/i;
 
 export function auditEvent(input: AuditInput, sequence: number, previousHash: string, now: number): AuditRecord {
   const record: AuditRecord = {
