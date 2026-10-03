@@ -1,4 +1,5 @@
 import { InMemoryStudioStore } from "../src/studio/infrastructure/in-memory-studio-store";
+import { PostgresStudioStore } from "../src/studio/infrastructure/postgres-studio-store";
 import { createEmptyDefinition, createAgentRecord, createToolRecord, nowIso } from "@multi-agent/types";
 import { InMemoryRunStore, PostgresRunStore } from "../apps/server/src/runtime/runStore";
 import { recoverInterruptedRuns } from "../apps/server/src/runtime/recovery";
@@ -158,4 +159,43 @@ test("durable run store exposes persistence failures instead of silently acknowl
     id: "event-1", runId: "durability-1", type: "run.started", timestamp: nowIso(), sequence: 0, payload: {},
   })).toThrow(/persistence is unavailable/i);
   expect(pool.query).toHaveBeenCalledTimes(1);
+});
+
+test("PostgresStudioStore updates tenant_id on conflict for projects and workspaces", async () => {
+  const queries: { text: string; values: unknown[] }[] = [];
+  const fakePool = {
+    query: async (text: string, values?: unknown[]) => {
+      queries.push({ text, values: values ?? [] });
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const store = new PostgresStudioStore(fakePool as never);
+  await store.saveProject({
+    id: "proj-1",
+    tenantId: "tenant-updated",
+    name: "Project 1",
+    description: "Desc",
+    status: "active",
+    settings: {},
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    ownerId: "user-1",
+  });
+  await store.saveWorkspace({
+    id: "ws-1",
+    tenantId: "tenant-updated",
+    name: "Workspace 1",
+    description: "Desc",
+    status: "active",
+    settings: {},
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    ownerId: "user-1",
+  });
+
+  const projectQuery = queries.find((q) => q.text.includes("INSERT INTO studio_projects"));
+  expect(projectQuery?.text).toContain("tenant_id = EXCLUDED.tenant_id");
+
+  const workspaceQuery = queries.find((q) => q.text.includes("INSERT INTO studio_workspaces"));
+  expect(workspaceQuery?.text).toContain("tenant_id = EXCLUDED.tenant_id");
 });
