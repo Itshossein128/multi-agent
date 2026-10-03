@@ -458,4 +458,74 @@ describe("Production Episodic Memory Wiring Tests", () => {
     // Raw working memory structure shouldn't be dumped as a raw JSON blob
     expect(memory?.content).not.toContain('"wm-1"');
   });
+
+  test("Scenario J — processDurableEpisodicJob executes episode extraction directly without infinite re-enqueue", async () => {
+    const { service: memService, episodeService } = createMemoryComponents();
+    const runStore = new InMemoryRunStore();
+
+    const enqueued: any[] = [];
+    const mockDurableEnqueuer = {
+      async enqueue(input: any) {
+        enqueued.push(input);
+        return { job: { id: "job-1", kind: input.kind, tenantId: input.tenantId, namespace: input.namespace, attempts: 1, maxAttempts: 3 }, duplicate: false };
+      },
+    };
+
+    const executor = new RunExecutor(
+      runStore,
+      { async *execute() {} } as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      episodeService,
+      undefined,
+      undefined,
+      mockDurableEnqueuer as any,
+    );
+
+    const workflow = makeWorkflow("wf-durable-job", "Durable Job Workflow");
+    const runId = "durable-run-101";
+
+    runStore.create(
+      {
+        id: runId,
+        workflowId: workflow.id,
+        status: "failed",
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        error: "Database migration connection timeout.",
+        input: { task: "Run durable extraction" },
+        output: { content: "Failed migration." },
+        metadata: {},
+      },
+      { principalId: accessA.principalId, tenantId: accessA.tenantId },
+      { workflow, agents: [mockAgent] },
+      undefined,
+      accessA,
+    );
+
+    await executor.processDurableEpisodicJob({
+      id: "job-101",
+      kind: "episodic_extraction",
+      handlerVersion: 1,
+      idempotencyKey: `episodic:${runId}:v1`,
+      tenantId: tenantA,
+      namespace: namespaceA,
+      runId,
+      status: "leased",
+      attempts: 1,
+      availableAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Expect no new enqueue calls during worker execution of processDurableEpisodicJob
+    expect(enqueued).toHaveLength(0);
+
+    // Expect episode service to have extracted the memory
+    const memories = await memService.list({ namespaces: [namespaceA], kinds: ["episodic"] }, accessA);
+    expect(memories.length).toBe(1);
+    expect(memories[0].source.runId).toBe(runId);
+  });
 });
