@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: Studio Delete Workflow
+  version: 1.0.0
+  description: |
+    Contract for permanently deleting a studio workflow definition.
+    Documents the existing execution-server studio route used by the Delete Workflow Button feature.
+    Base path is the studio API mount already used by the web app (e.g. `/api/execution/studio`).
+servers:
+  - url: /api/execution/studio
+    description: Next.js proxied studio API (local/dev shape may vary by deployment)
+paths:
+  /workflows/{id}:
+    delete:
+      operationId: deleteWorkflow
+      summary: Permanently delete an owned workflow
+      description: |
+        Removes the workflow definition for the authenticated principal when they own it
+        within the current tenant. Unauthorized or missing targets fail closed without
+        confirming existence to other principals.
+      tags: [workflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Workflow id
+      responses:
+        "200":
+          description: Workflow deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+              example:
+                ok: true
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "404":
+          description: |
+            Workflow not found for this principal (missing, other owner, or other tenant).
+            Successful delete must not occur.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "500":
+          description: Unexpected server failure; workflow may still exist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+  /workflows:
+    get:
+      operationId: listWorkflowsAfterDelete
+      summary: List workflows visible to the principal
+      description: |
+        Used by the UI after delete to refresh the switcher. A successfully deleted id
+        MUST NOT appear in the returned array for that principal.
+      tags: [workflows]
+      responses:
+        "200":
+          description: Workflows owned/visible to the principal
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkflowSummary"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+components:
+  schemas:
+    WorkflowSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        ownerId:
+          type: string
+        tenantId:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string

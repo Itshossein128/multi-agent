@@ -154,3 +154,38 @@ test("workflow create/edit/validate persists and a local deterministic failure i
   await expect(page).toHaveURL(/\/runs\/run-/);
   await expect(page.locator("header").getByText("failed", { exact: true })).toBeVisible();
 });
+
+test("workflow delete removes the open workflow from the switcher", async ({ page }) => {
+  await register(page, "workflow-delete");
+  await page.goto("/org");
+
+  page.once("dialog", (dialog) => dialog.accept("Keep After Delete"));
+  await page.getByRole("button", { name: "New workflow" }).click();
+  await expect(page).toHaveURL(/\/org\?workflowId=wf-/);
+  const keepId = new URL(page.url()).searchParams.get("workflowId");
+  expect(keepId).toBeTruthy();
+
+  page.once("dialog", (dialog) => dialog.accept("Delete Target"));
+  await page.getByRole("button", { name: "New workflow" }).click();
+  await expect(page).toHaveURL(/\/org\?workflowId=wf-/);
+  const deleteId = new URL(page.url()).searchParams.get("workflowId");
+  expect(deleteId).toBeTruthy();
+  expect(deleteId).not.toBe(keepId);
+
+  page.once("dialog", (dialog) => {
+    expect(dialog.message()).toContain("Delete Target");
+    expect(dialog.message()).toMatch(/cannot be undone/i);
+    return dialog.accept();
+  });
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+
+  await expect(page).toHaveURL(new RegExp(`/org\\?workflowId=${keepId}`));
+  await expect(page.getByLabel("Saved workflow")).toContainText("Keep After Delete");
+  await expect(page.getByLabel("Saved workflow")).not.toContainText("Delete Target");
+
+  const gone = await page.evaluate(async (workflowId) => {
+    const response = await fetch(`/api/execution/studio/workflows/${workflowId}`);
+    return response.status;
+  }, deleteId);
+  expect(gone).toBe(404);
+});

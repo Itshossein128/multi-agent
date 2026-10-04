@@ -6,6 +6,7 @@ import type { AgentRecord, ToolRecord, WorkflowDefinition } from "@multi-agent/t
 import { workflowService } from "@/services/workflowService";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { Button } from "@/components/ui/button";
+import { deleteWorkflowConfirmMessage } from "@/lib/workflow/deleteConfirmMessage";
 
 type WorkspacePackage = {
   version?: number;
@@ -40,6 +41,30 @@ export function WorkflowSwitcher() {
     if (workflowId) router.push(`/org?workflowId=${encodeURIComponent(workflowId)}`);
   }
 
+  async function deleteCurrentWorkflow() {
+    // Authorization is server-enforced (owner/tenant); UI only lists principal-visible workflows.
+    // See specs/003-delete-workflow-button/contracts/delete-workflow.openapi.yaml.
+    if (!window.confirm(deleteWorkflowConfirmMessage(definition.name, dirty))) return;
+    const deletedId = definition.id;
+    setBusy(true);
+    setError("");
+    try {
+      await workflowService.deleteWorkflow(deletedId);
+      await queryClient.invalidateQueries({ queryKey: ["workflows"] });
+      const remaining = (await workflowService.listWorkflows()).filter((item) => item.id !== deletedId);
+      if (remaining[0]) {
+        router.push(`/org?workflowId=${encodeURIComponent(remaining[0].id)}`);
+      } else {
+        const created = await workflowService.createWorkflow();
+        router.push(`/org?workflowId=${encodeURIComponent(created.id)}`);
+      }
+      setBusy(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setBusy(false);
+    }
+  }
+
   return <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200">
     <label className="flex items-center gap-2">Workflow<select aria-label="Saved workflow" className="max-w-64 rounded border border-zinc-700 bg-zinc-900 p-2" value={definition.id} disabled={busy} onChange={(event) => {
       if (canLeave()) router.push(`/org?workflowId=${encodeURIComponent(event.target.value)}`);
@@ -55,6 +80,7 @@ export function WorkflowSwitcher() {
       try { const created = await workflowService.createWorkflow(name.trim()); router.push(`/org?workflowId=${encodeURIComponent(created.id)}`); setBusy(false); }
       catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setBusy(false); }
     }}>New workflow</Button>
+    <Button variant="destructive" disabled={busy} onClick={() => { void deleteCurrentWorkflow(); }}>Delete</Button>
     <input
       ref={fileInputRef}
       type="file"

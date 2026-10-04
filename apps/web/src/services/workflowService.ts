@@ -160,6 +160,11 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
       setActiveWorkflowId(created.id);
       return created;
     },
+    async deleteWorkflow(id: string): Promise<void> {
+      await ensureImported();
+      await request(`/workflows/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (getActiveWorkflowId() === id) setActiveWorkflowId(null);
+    },
     async createAgent(input?: CreateAgentInput): Promise<AgentRecord> {
       await ensureImported();
       assertNoCredentials(input);
