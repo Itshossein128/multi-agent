@@ -18,4 +18,6 @@ export interface ApprovalRequest {
 export interface ApprovalDecisionRequest {
   decision: ApprovalDecision;
   response?: string;
+  /** Structured clarification answers; used by /clarification submit, not Approve/Reject UI. */
+  clarificationAnswers?: Array<{ questionId: string; value: string }>;
 }

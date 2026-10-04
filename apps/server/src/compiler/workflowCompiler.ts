@@ -314,15 +314,28 @@ export function compileWorkflow(
                 message: pendingHuman.envelope.needsHuman?.reason ?? "Human approval required",
                 approvalType: "manual",
                 timeoutSeconds: 0,
-                context: { kind: "agent_needs_human", envelope: pendingHuman.envelope },
-              }) as { decision?: string } | string;
+                context: {
+                  kind: "agent_needs_human",
+                  purpose: pendingHuman.envelope.needsHuman?.purpose
+                    ?? (pendingHuman.envelope.needsHuman?.questions?.length ? "clarification" : "approval"),
+                  envelope: pendingHuman.envelope,
+                },
+              }) as { decision?: string; clarificationAnswers?: Array<{ questionId: string; value: string }> } | string;
               const approved = typeof decision === "string" ? decision === "approved" : decision?.decision === "approved";
               if (!approved) {
                 throw new NodeOutcomeError(createResultEnvelope("blocked", {
                   error: { code: "HUMAN_REJECTED", message: "Human rejected the agent proposal.", retryable: false },
                 }), node.id);
               }
-              value = "value" in pendingHuman.envelope ? pendingHuman.envelope.value : pendingHuman.envelope;
+              const clarificationAnswers = typeof decision === "object" && Array.isArray(decision.clarificationAnswers)
+                ? decision.clarificationAnswers
+                : undefined;
+              const priorValue = "value" in pendingHuman.envelope ? pendingHuman.envelope.value : undefined;
+              value = clarificationAnswers?.length
+                ? { clarificationAnswers, ...(priorValue !== undefined ? { priorValue } : {}) }
+                : priorValue !== undefined
+                  ? priorValue
+                  : pendingHuman.envelope;
               outcome = createResultEnvelope("success", {
                 value,
                 ...(pendingHuman.envelope.branch ? { branch: pendingHuman.envelope.branch } : {}),
@@ -375,7 +388,12 @@ export function compileWorkflow(
                   message: envelope.needsHuman?.reason ?? "Human approval required",
                   approvalType: "manual",
                   timeoutSeconds: 0,
-                  context: { kind: "agent_needs_human", envelope },
+                  context: {
+                    kind: "agent_needs_human",
+                    purpose: envelope.needsHuman?.purpose
+                      ?? (envelope.needsHuman?.questions?.length ? "clarification" : "approval"),
+                    envelope,
+                  },
                 });
                 throw new NodeOutcomeError(envelope, node.id);
               }

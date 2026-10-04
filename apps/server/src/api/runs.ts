@@ -41,6 +41,15 @@ export function createRunsRouter(
   app.get("/:runId/definition", (c) => c.json(service.definition(c.req.param("runId"))));
   app.get("/:runId/approvals", (c) => c.json(service.approvals(c.req.param("runId"))));
   app.post("/:runId/approvals/:approvalId/resolve", async (c) => { service.resolveApproval(c.req.param("runId"), c.req.param("approvalId"), await c.req.json().catch(() => ({}))); return c.json({ ok: true }, 202); });
+  app.get("/:runId/clarification", (c) => c.json(service.getClarification(c.req.param("runId"))));
+  app.post("/:runId/clarification", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const result = service.submitClarification(c.req.param("runId"), body, {
+      principal: c.get("principal"),
+      idempotencyKey: c.req.header("Idempotency-Key") ?? undefined,
+    });
+    return c.json(result, result.ok ? (result.idempotentReplay ? 200 : 202) : 409);
+  });
   app.get("/:runId/history", (c) => c.json(service.history(c.req.param("runId"), c.req.query("agentId"))));
   app.get("/:runId/replay", (c) => c.json(service.replay(c.req.param("runId"))));
   app.get("/:runId", (c) => c.json(service.get(c.req.param("runId"))));

@@ -58,7 +58,25 @@ export function boundRunResult(result: NodeResultEnvelope, maxBytes: number): No
   const bounded: NodeResultEnvelope = {
     ...result,
     ...(result.error ? { error: { ...result.error, message: String(redact(result.error.message)).slice(0, 300) } } : {}),
-    ...(result.needsHuman ? { needsHuman: { reason: String(redact(result.needsHuman.reason)).slice(0, 500) } } : {}),
+    ...(result.needsHuman ? {
+      needsHuman: {
+        reason: String(redact(result.needsHuman.reason)).slice(0, 500),
+        ...(result.needsHuman.purpose ? { purpose: result.needsHuman.purpose } : {}),
+        ...(result.needsHuman.questions?.length
+          ? {
+              questions: result.needsHuman.questions.slice(0, 20).map((q) => ({
+                id: String(redact(q.id)).slice(0, 64),
+                prompt: String(redact(q.prompt)).slice(0, 2000),
+                ...(typeof q.required === "boolean" ? { required: q.required } : {}),
+                ...(q.missingField ? { missingField: String(redact(q.missingField)).slice(0, 128) } : {}),
+              })),
+            }
+          : {}),
+        ...(result.needsHuman.missingFields?.length
+          ? { missingFields: result.needsHuman.missingFields.slice(0, 32).map((f) => String(redact(f)).slice(0, 128)) }
+          : {}),
+      },
+    } : {}),
     ...(result.diagnostics ? { diagnostics: result.diagnostics.slice(0, MAX_CONTRACT_DIAGNOSTICS).map((item) => ({ ...item, message: String(redact(item.message)).slice(0, 300) })) } : {}),
   };
   if (bounded.value !== undefined) bounded.value = redact(bounded.value);

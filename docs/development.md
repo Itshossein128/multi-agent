@@ -37,6 +37,15 @@ pnpm --filter web test:e2e
 
 E2E به سرویس‌های web/server و PostgreSQL نیاز دارد؛ نتیجه‌ی آن را جدا از unit/integration tests گزارش کنید.
 
+## Clarification answers
+
+When a run pauses with structured `needs_human` questions (or a legacy clarification-text completed run), operators answer via:
+
+- `GET/POST /runs/:runId/clarification`
+- `GET/POST /studio/tasks/:id/clarification` (task board UI)
+
+These are distinct from Approve/Reject at `POST /runs/:runId/approvals/:approvalId/resolve`. Focused regression: `tests/clarificationResponse.test.ts`, `tests/workflowRuntimeContracts.test.ts`, `tests/taskBoardPhase2.test.ts`.
+
 ## Credential Broker
 
 کد broker در `src/broker/` است و هر دو سمت را دارد: سرویس مستقل (سرور) و client سرور اجرایی (`HttpCredentialGateway` در `src/security/credentialGateway.ts`).

@@ -11,6 +11,7 @@ import { TaskFields } from "./detail/TaskFields";
 import { DependencyEditor } from "./detail/DependencyEditor";
 import { LinkedRunCard } from "./detail/LinkedRunCard";
 import { LastErrorCard } from "./detail/LastErrorCard";
+import { ClarificationPanel } from "./detail/ClarificationPanel";
 import { useTaskDraft } from "./detail/useTaskDraft";
 
 interface TaskDetailPanelProps {
@@ -107,6 +108,7 @@ export function TaskDetailPanel({
 
           <LinkedRunCard runId={task.runId} />
           <LastErrorCard lastError={task.lastError} />
+          <ClarificationPanel task={task} />
 
           <TaskFields
             task={task}

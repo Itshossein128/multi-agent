@@ -443,9 +443,20 @@ export class RunExecutor {
     return true;
   }
 
+  /** Whether pause maps still allow a safe in-process resume for this run. */
+  isRunResumable(runId: string): boolean {
+    return this.pausedContext.has(runId) && this.checkpointers.has(runId);
+  }
+
+  /** Test/ops helper: drop in-memory pause maps so resume is no longer safe. */
+  dropPausedState(runId: string): void {
+    this.pausedContext.delete(runId);
+    this.checkpointers.delete(runId);
+  }
+
   /** Delegate approval resolution to ApprovalManager. */
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
-    this.approvalManager.resolveApproval(runId, approvalId, decision);
+    return this.approvalManager.resolveApproval(runId, approvalId, decision);
   }
 
   /** Delegate approval timer rearming to ApprovalManager. */

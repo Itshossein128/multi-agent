@@ -1,10 +1,15 @@
-import type { AgentRecord, ApprovalDecision, ApprovalRequest, Run, RunEvent, RunCreateRequest, RunCreateResponse, RunStatus, WorkflowDefinition } from "@multi-agent/types";
+import type { AgentRecord, ApprovalDecision, ApprovalRequest, ClarificationPackage, ClarificationSubmitResponse, Run, RunEvent, RunCreateRequest, RunCreateResponse, RunStatus, WorkflowDefinition } from "@multi-agent/types";
 import { requestJson } from "./requestJson";
 
 const API_URL = "/api/execution";
+const TASKS_API_URL = "/api/tasks";
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
   return requestJson<T>(path, init, { apiUrl: API_URL });
+}
+
+function tasksAction<T>(body: Record<string, unknown>): Promise<T> {
+  return requestJson<T>("", { method: "POST", body: JSON.stringify(body) }, { apiUrl: TASKS_API_URL });
 }
 
 export interface RunListQuery {
@@ -51,5 +56,26 @@ export const runService = {
   getApprovals(runId: string) { return request<ApprovalRequest[]>(`/runs/${encodeURIComponent(runId)}/approvals`); },
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecision, response?: string) {
     return request<{ ok: true }>(`/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}/resolve`, { method: "POST", body: JSON.stringify({ decision, response }) });
+  },
+  getRunClarification(runId: string) {
+    return request<ClarificationPackage>(`/runs/${encodeURIComponent(runId)}/clarification`);
+  },
+  submitRunClarification(runId: string, answers: Array<{ questionId: string; value: string }>, idempotencyKey?: string) {
+    return request<ClarificationSubmitResponse>(`/runs/${encodeURIComponent(runId)}/clarification`, {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify({ answers }),
+    });
+  },
+  getTaskClarification(taskId: string) {
+    return tasksAction<ClarificationPackage>({ action: "getClarification", taskId });
+  },
+  submitTaskClarification(taskId: string, answers: Array<{ questionId: string; value: string }>, idempotencyKey?: string) {
+    return tasksAction<ClarificationSubmitResponse>({
+      action: "submitClarification",
+      taskId,
+      answers,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+    });
   },
 };

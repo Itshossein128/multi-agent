@@ -6,9 +6,19 @@ import { runService } from "@/services/runService";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/formatDateTime";
 
-/** Pending human-approval requests for a run, with Approve/Reject actions. */
+/** Pending human-approval requests for a run, with Approve/Reject actions.
+ * Clarification Q&A uses ClarificationPanel / /clarification endpoints instead.
+ */
 export function ApprovalPanel({ runId, approvals, onResolved }: { runId: string; approvals: ApprovalRequest[]; onResolved?: () => void }) {
-  const pending = approvals.filter((approval) => approval.status === "requested");
+  const pending = approvals.filter((approval) => {
+    if (approval.status !== "requested") return false;
+    const ctx = approval.context as { purpose?: string; envelope?: { needsHuman?: { purpose?: string; questions?: unknown[] } } } | undefined;
+    const purpose = ctx?.purpose ?? ctx?.envelope?.needsHuman?.purpose;
+    const hasQuestions = Boolean(ctx?.envelope?.needsHuman?.questions?.length);
+    // Clarification waits are answered via the clarification form, not Approve/Reject.
+    if (purpose === "clarification" || hasQuestions) return false;
+    return true;
+  });
   if (!pending.length) return null;
   return <section className="space-y-3 rounded-xl border border-amber-700/60 bg-amber-950/20 p-4" aria-label="Pending approvals">
     <h2 className="text-xs font-semibold uppercase tracking-wider text-amber-300">Waiting for your decision</h2>

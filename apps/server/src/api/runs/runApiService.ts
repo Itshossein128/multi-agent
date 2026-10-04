@@ -7,6 +7,7 @@ import type { RunExecutor } from "../../runtime/runExecutor";
 import { replayRunEvents } from "../../runtime/replay";
 import { redact } from "../../adapters/langGraphEventAdapter";
 import { ApiError } from "../shared/http";
+import { buildClarificationPackage, fingerprintAnswers, validateClarificationAnswers } from "../clarification";
 
 export interface RunListQuery {
   agentId?: string;
@@ -168,6 +169,140 @@ export class RunApiService {
     } catch (error) {
       throw new ApiError(409, error instanceof Error ? error.message : "Unable to retry run");
     }
+  }
+
+  getClarification(runId: string) {
+    const entry = this.requireRun(runId);
+    return buildClarificationPackage({
+      run: entry.run,
+      approvals: this.store.listApprovals(runId),
+      taskId: entry.run.taskId,
+    });
+  }
+
+  submitClarification(
+    runId: string,
+    body: { answers?: unknown },
+    options: { principal?: RequestPrincipal; idempotencyKey?: string } = {},
+  ) {
+    const entry = this.requireRun(runId);
+    const pkg = buildClarificationPackage({
+      run: entry.run,
+      approvals: this.store.listApprovals(runId),
+      taskId: entry.run.taskId,
+    });
+
+    if (!pkg.canSubmit) {
+      // Idempotent replay when already answered with same fingerprint.
+      if (pkg.answers?.length && Array.isArray(body.answers)) {
+        try {
+          const normalized = validateClarificationAnswers(pkg.questions.length ? pkg.questions : pkg.answers.map((a) => ({
+            id: a.questionId,
+            prompt: a.questionId,
+            required: true,
+          })), body.answers);
+          const fp = fingerprintAnswers(normalized);
+          const prior = this.store.listApprovals(runId)
+            .map((a) => (a.metadata as { answerFingerprint?: string } | undefined)?.answerFingerprint)
+            .find(Boolean);
+          if (prior && prior === fp) {
+            return {
+              ok: true,
+              package: buildClarificationPackage({
+                run: this.requireRun(runId).run,
+                approvals: this.store.listApprovals(runId),
+                taskId: entry.run.taskId,
+              }),
+              idempotentReplay: true,
+              followUpRunId: null,
+            };
+          }
+        } catch {
+          // fall through to conflict
+        }
+      }
+      throw new ApiError(409, "Clarification is not currently submittable for this run");
+    }
+
+    if (pkg.continuation === "follow_up") {
+      throw new ApiError(
+        409,
+        "This completed clarification run requires a task-scoped follow-up submit. Use POST /studio/tasks/:taskId/clarification.",
+      );
+    }
+
+    if (!pkg.approvalId) throw new ApiError(409, "No pending clarification approval found");
+    const answers = validateClarificationAnswers(pkg.questions, body.answers);
+    const actorId = options.principal?.userId;
+    const stamped = answers.map((a) => ({
+      ...a,
+      answeredAt: nowIso(),
+      ...(actorId ? { actorId } : {}),
+    }));
+
+    if (!this.executor.isRunResumable(runId)) {
+      const approval = this.store.getApproval(runId, pkg.approvalId);
+      if (approval) {
+        this.store.updateApproval(runId, pkg.approvalId, {
+          metadata: {
+            ...(approval.metadata ?? {}),
+            clarificationAnswers: stamped,
+            answerFingerprint: fingerprintAnswers(stamped),
+            resumeError: "Run is not resumable; answers were stored without continuing execution.",
+          },
+          response: `Clarification answers submitted (${stamped.length}) — resume unavailable`,
+        });
+      }
+      return {
+        ok: false,
+        package: buildClarificationPackage({
+          run: this.requireRun(runId).run,
+          approvals: this.store.listApprovals(runId),
+          taskId: entry.run.taskId,
+        }),
+        idempotentReplay: false,
+        followUpRunId: null,
+        errorVisible: true,
+      };
+    }
+
+    let idempotentReplay = false;
+    try {
+      const result = this.executor.resolveApproval(runId, pkg.approvalId, {
+        decision: "approved",
+        clarificationAnswers: stamped,
+        response: options.idempotencyKey ? `idempotency:${options.idempotencyKey}` : undefined,
+      });
+      idempotentReplay = Boolean(result?.idempotentReplay);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to resume after clarification";
+      if (/already been resolved/i.test(message)) {
+        throw new ApiError(409, message);
+      }
+      // Answers may have been partially stored; surface failure without marking Done.
+      return {
+        ok: false,
+        package: buildClarificationPackage({
+          run: this.requireRun(runId).run,
+          approvals: this.store.listApprovals(runId),
+          taskId: entry.run.taskId,
+        }),
+        idempotentReplay: false,
+        followUpRunId: null,
+        errorVisible: true,
+      };
+    }
+
+    return {
+      ok: true,
+      package: buildClarificationPackage({
+        run: this.requireRun(runId).run,
+        approvals: this.store.listApprovals(runId),
+        taskId: entry.run.taskId,
+      }),
+      idempotentReplay,
+      followUpRunId: null,
+    };
   }
 
   private requireRun(runId: string) {

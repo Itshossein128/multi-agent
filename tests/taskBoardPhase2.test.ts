@@ -664,6 +664,43 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       expect(blockedTask?.completedAt).toBeNull();
     });
 
+    it("corrects a prematurely completed task when linked run outcome is adverse", async () => {
+      const taskRes = await app.fetch(
+        req(
+          "/tasks",
+          "POST",
+          { title: "Premature Done Task", status: "ready", assignedAgents: ["agent-alpha-1"] },
+          alice
+        )
+      );
+      const task = await json(taskRes);
+      const startRes = await app.fetch(req(`/tasks/${task.id}/start`, "POST", undefined, alice));
+      const { runId } = await json<{ runId: string }>(startRes);
+
+      // Simulate an incorrect Done marking while the run is still linked.
+      await studioStore.saveTask({
+        ...task,
+        runId,
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }, alice);
+
+      runStore.update(runId, {
+        status: "completed",
+        output: { content: "Clarification required before implementation; the intake remains in clarification." },
+        result: createResultEnvelope("success", {
+          value: { content: "Clarification required before implementation; the intake remains in clarification." },
+        }),
+      });
+
+      const corrected = await json<{ status: string; completedAt: string | null }>(
+        await app.fetch(req(`/tasks/${task.id}`, "GET", undefined, alice))
+      );
+      expect(corrected.status).toBe("blocked");
+      expect(corrected.completedAt).toBeNull();
+    });
+
     it("syncs task failure and records lastError when run fails", async () => {
       const taskRes = await app.fetch(
         req(

@@ -131,6 +131,35 @@ describe("runtime boundary validation", () => {
     expect(providerCalls).toBe(1);
   });
 
+  test("clarification-purpose needs_human resumes with answers and does not re-call the provider", async () => {
+    const store = new RunStore();
+    let providerCalls = 0;
+    const executor = new RunExecutor(store, fakeRuntime(() => {
+      providerCalls += 1;
+      return createResultEnvelope("needs_human", {
+        value: { draft: true },
+        needsHuman: {
+          reason: "Need details",
+          purpose: "clarification",
+          questions: [{ id: "q1", prompt: "Scope?", required: true }],
+        },
+      });
+    }));
+    const { workflow, agent } = linearAgentWorkflow();
+    const runId = executor.start({ workflow, agents: [agent], input: {} }, undefined, await principal());
+    await waitFor(() => store.get(runId)?.run.status === "waiting_for_human");
+    const [request] = store.listApprovals(runId);
+    executor.resolveApproval(runId, request.id, {
+      decision: "approved",
+      clarificationAnswers: [{ questionId: "q1", value: "MVP only" }],
+    });
+    await waitFor(() => store.get(runId)?.run.status === "completed");
+    expect(providerCalls).toBe(1);
+    expect(store.get(runId)!.run.result?.status).toBe("success");
+    const approval = store.getApproval(runId, request.id);
+    expect((approval?.metadata as { clarificationAnswers?: unknown[] })?.clarificationAnswers).toHaveLength(1);
+  });
+
   test("a typed failure without an explicit route fails the run with its own error code", async () => {
     const store = new RunStore();
     const executor = new RunExecutor(

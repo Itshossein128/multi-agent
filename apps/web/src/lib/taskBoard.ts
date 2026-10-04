@@ -193,3 +193,22 @@ export async function deleteTask(taskId: string, principal?: AuthenticatedPrinci
   await studioRequest(`/tasks/${taskId}`, { method: "DELETE" }, principal);
   return { id: taskId };
 }
+
+export async function getTaskClarification(taskId: string, principal?: AuthenticatedPrincipal | null) {
+  return studioRequest(`/tasks/${taskId}/clarification`, { method: "GET" }, principal);
+}
+
+export async function submitTaskClarification(
+  taskId: string,
+  answers: Array<{ questionId: string; value: string }>,
+  principal?: AuthenticatedPrincipal | null,
+  idempotencyKey?: string,
+) {
+  const headers: HeadersInit = {};
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  return studioRequest(`/tasks/${taskId}/clarification`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ answers }),
+  }, principal);
+}

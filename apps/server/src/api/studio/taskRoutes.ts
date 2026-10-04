@@ -19,4 +19,12 @@ export function registerTaskRoutes(app: Hono<{ Variables: PrincipalVariables }>,
   app.post("/tasks/:id/retry", async (c) => c.json(await tasks.retry(c.req.param("id"), c.get("principal")), 200));
   app.post("/tasks/:id/pause", async (c) => c.json(await tasks.pause(c.req.param("id"), c.get("principal")), 200));
   app.post("/tasks/:id/resume", async (c) => c.json(await tasks.resume(c.req.param("id"), c.get("principal")), 200));
+  app.get("/tasks/:id/clarification", async (c) => c.json(await tasks.getClarification(c.req.param("id"), c.get("principal"))));
+  app.post("/tasks/:id/clarification", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const result = await tasks.submitClarification(c.req.param("id"), body, c.get("principal"), {
+      idempotencyKey: c.req.header("Idempotency-Key") ?? undefined,
+    });
+    return c.json(result, result.ok ? (result.idempotentReplay ? 200 : 202) : 409);
+  });
 }

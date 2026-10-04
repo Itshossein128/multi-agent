@@ -17,6 +17,11 @@ import type { RunExecutor } from "../../runtime/runExecutor";
 import { ApiError } from "../shared/http";
 import { requireResource } from "./resource";
 import { ensureTenantProjectWorkspaceDefaults } from "./tenantDefaults";
+import {
+  buildClarificationPackage,
+  fingerprintAnswers,
+  validateClarificationAnswers,
+} from "../clarification";
 
 const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 2000;
@@ -583,6 +588,320 @@ export class TaskService {
     task.updatedAt = nowIso();
     const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
+  }
+
+  async getClarification(id: string, principal: RequestPrincipal) {
+    if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
+    const task = await this.get(id, principal);
+    if (!task.runId) throw new ApiError(404, "Task has no linked run");
+    const entry = this.executor.getStore().get(task.runId);
+    if (!entry) throw new ApiError(404, "Linked run not found");
+    return buildClarificationPackage({
+      run: entry.run,
+      approvals: this.executor.getStore().listApprovals(task.runId),
+      taskId: task.id,
+    });
+  }
+
+  async submitClarification(
+    id: string,
+    body: { answers?: unknown },
+    principal: RequestPrincipal,
+    options: { idempotencyKey?: string } = {},
+  ) {
+    if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
+    const task = await this.get(id, principal);
+    if (!task.runId) throw new ApiError(404, "Task has no linked run");
+    const runId = task.runId;
+    const entry = this.executor.getStore().get(runId);
+    if (!entry) throw new ApiError(404, "Linked run not found");
+
+    const pkg = buildClarificationPackage({
+      run: entry.run,
+      approvals: this.executor.getStore().listApprovals(runId),
+      taskId: task.id,
+    });
+
+    if (!pkg.canSubmit) {
+      const existingMeta = (task.metadata ?? {}) as {
+        clarificationOfRunId?: string;
+        clarificationAnswerFingerprint?: string;
+        followUpRunId?: string;
+      };
+      if (
+        Array.isArray(body.answers)
+        && existingMeta.clarificationAnswerFingerprint
+        && existingMeta.followUpRunId
+        && task.runId === existingMeta.followUpRunId
+      ) {
+        try {
+          const questions = pkg.questions.length
+            ? pkg.questions
+            : (Array.isArray(task.metadata?.clarificationAnswers)
+              ? (task.metadata!.clarificationAnswers as Array<{ questionId: string }>).map((a) => ({
+                  id: a.questionId,
+                  prompt: a.questionId,
+                  required: true,
+                }))
+              : []);
+          if (questions.length) {
+            const normalized = validateClarificationAnswers(questions, body.answers);
+            const fp = fingerprintAnswers(normalized);
+            if (fp === existingMeta.clarificationAnswerFingerprint) {
+              const followUpEntry = this.executor.getStore().get(existingMeta.followUpRunId);
+              return {
+                ok: true,
+                package: followUpEntry
+                  ? buildClarificationPackage({
+                      run: followUpEntry.run,
+                      approvals: this.executor.getStore().listApprovals(existingMeta.followUpRunId),
+                      taskId: task.id,
+                    })
+                  : pkg,
+                idempotentReplay: true,
+                followUpRunId: existingMeta.followUpRunId,
+              };
+            }
+          }
+        } catch {
+          // fall through
+        }
+      }
+      if (pkg.answers?.length && Array.isArray(body.answers) && pkg.questions.length) {
+        try {
+          const normalized = validateClarificationAnswers(pkg.questions, body.answers);
+          const fp = fingerprintAnswers(normalized);
+          const prior = this.executor.getStore().listApprovals(runId)
+            .map((a) => (a.metadata as { answerFingerprint?: string } | undefined)?.answerFingerprint)
+            .find(Boolean);
+          if (prior && prior === fp) {
+            return {
+              ok: true,
+              package: await this.getClarification(id, principal),
+              idempotentReplay: true,
+              followUpRunId: null as string | null,
+            };
+          }
+        } catch {
+          // fall through
+        }
+      }
+      throw new ApiError(409, "Clarification is not currently submittable for this task");
+    }
+
+    const answers = validateClarificationAnswers(pkg.questions, body.answers);
+    const stamped = answers.map((a) => ({
+      ...a,
+      answeredAt: nowIso(),
+      actorId: principal.userId,
+    }));
+
+    if (pkg.continuation === "resume") {
+      if (!pkg.approvalId) throw new ApiError(409, "No pending clarification approval found");
+      if (!this.executor.isRunResumable(runId)) {
+        const approval = this.executor.getStore().getApproval(runId, pkg.approvalId);
+        if (approval) {
+          this.executor.getStore().updateApproval(runId, pkg.approvalId, {
+            metadata: {
+              ...(approval.metadata ?? {}),
+              clarificationAnswers: stamped,
+              answerFingerprint: fingerprintAnswers(stamped),
+              resumeError: "Run is not resumable; answers were stored without continuing execution.",
+            },
+            response: `Clarification answers submitted (${stamped.length}) — resume unavailable`,
+          });
+        }
+        return {
+          ok: false,
+          package: await this.getClarification(id, principal),
+          idempotentReplay: false,
+          followUpRunId: null as string | null,
+          errorVisible: true,
+        };
+      }
+      try {
+        const result = this.executor.resolveApproval(runId, pkg.approvalId, {
+          decision: "approved",
+          clarificationAnswers: stamped,
+          response: options.idempotencyKey ? `idempotency:${options.idempotencyKey}` : undefined,
+        });
+        return {
+          ok: true,
+          package: await this.getClarification(id, principal),
+          idempotentReplay: Boolean(result?.idempotentReplay),
+          followUpRunId: null as string | null,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to resume after clarification";
+        if (/already been resolved/i.test(message)) throw new ApiError(409, message);
+        return {
+          ok: false,
+          package: await this.getClarification(id, principal),
+          idempotentReplay: false,
+          followUpRunId: null as string | null,
+          errorVisible: true,
+        };
+      }
+    }
+
+    return this.startClarificationFollowUp(task, principal, stamped, runId);
+  }
+
+  private async startClarificationFollowUp(
+    task: StudioTask,
+    principal: RequestPrincipal,
+    answers: Array<{ questionId: string; value: string; answeredAt: string; actorId: string }>,
+    parentRunId: string,
+  ) {
+    if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
+
+    const existingMeta = (task.metadata ?? {}) as {
+      clarificationOfRunId?: string;
+      clarificationAnswerFingerprint?: string;
+      followUpRunId?: string;
+    };
+    const fp = fingerprintAnswers(answers);
+    if (
+      existingMeta.clarificationOfRunId === parentRunId
+      && existingMeta.clarificationAnswerFingerprint === fp
+      && existingMeta.followUpRunId
+      && task.runId === existingMeta.followUpRunId
+    ) {
+      const followUpEntry = this.executor.getStore().get(existingMeta.followUpRunId);
+      return {
+        ok: true,
+        package: followUpEntry
+          ? buildClarificationPackage({
+              run: followUpEntry.run,
+              approvals: this.executor.getStore().listApprovals(existingMeta.followUpRunId),
+              taskId: task.id,
+            })
+          : await this.getClarification(task.id, principal),
+        idempotentReplay: true,
+        followUpRunId: existingMeta.followUpRunId,
+      };
+    }
+
+    const tenantTasks = await this.store.listTasks(principal);
+    this.checkDependencyGating(task, "running", tenantTasks);
+
+    let workflowToRun: WorkflowDefinition;
+    let agentsToRun: AgentRecord[];
+    const toolsToRun = await this.store.listTools(principal);
+    const workspaceAgents = await this.store.listAgents(principal);
+
+    if (task.workflowId) {
+      const wf = await this.store.getWorkflow(task.workflowId, principal);
+      if (!wf) throw new ApiError(400, `Workflow "${task.workflowId}" not found`);
+      workflowToRun = wf;
+      const referencedAgentIds = new Set(
+        workflowToRun.nodes
+          .filter((node) => node.type === "agent")
+          .map((node) => (node.config as { agentId?: string | null }).agentId)
+          .filter((agentId): agentId is string => Boolean(agentId)),
+      );
+      agentsToRun = workspaceAgents.filter((agent) => referencedAgentIds.has(agent.id));
+    } else {
+      const agentIdentifier = task.assignedAgents?.[0] ?? task.assignedAgent;
+      if (!agentIdentifier) {
+        throw new ApiError(400, "Task must have an assigned agent or workflow to execute");
+      }
+      const agent = workspaceAgents.find((a) => a.id === agentIdentifier || a.name === agentIdentifier);
+      if (!agent) throw new ApiError(400, `Assigned agent "${agentIdentifier}" not found in workspace`);
+      workflowToRun = createSingleAgentWorkflow(agent, task.title);
+      agentsToRun = [agent];
+    }
+
+    let followUpRunId: string;
+    try {
+      followUpRunId = this.executor.start(
+        {
+          workflow: workflowToRun,
+          agents: agentsToRun,
+          tools: toolsToRun,
+          input: {
+            title: task.title,
+            description: task.description,
+            taskId: task.id,
+            clarificationAnswers: answers,
+            parentRunId,
+          },
+          metadata: {
+            ...task.metadata,
+            taskId: task.id,
+            taskTitle: task.title,
+            parentRunId,
+            clarificationOfRunId: parentRunId,
+            clarificationAnswerFingerprint: fp,
+          },
+          taskId: task.id,
+        },
+        undefined,
+        principal,
+      );
+    } catch (error) {
+      throw new ApiError(400, error instanceof Error ? error.message : "Unable to start clarification follow-up run");
+    }
+
+    task.metadata = {
+      ...(task.metadata ?? {}),
+      parentRunId,
+      clarificationOfRunId: parentRunId,
+      clarificationAnswerFingerprint: fp,
+      followUpRunId,
+      clarificationAnswers: answers,
+    };
+    task.runId = followUpRunId;
+    task.status = "running";
+    task.startedAt = nowIso();
+    task.completedAt = null;
+    task.lastError = null;
+    task.paused = false;
+    task.updatedAt = nowIso();
+
+    try {
+      await this.store.saveTask(await this.withAssociations(task, principal), principal);
+    } catch (error) {
+      this.executor.cancel(followUpRunId);
+      throw error;
+    }
+
+    const unsubscribe = this.executor.getStore().subscribe(followUpRunId, async (event) => {
+      if (event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled") {
+        unsubscribe();
+        try {
+          const fresh = await this.store.getTask(task.id, principal);
+          if (fresh && fresh.runId === followUpRunId) {
+            if (this.syncTaskWithRun(fresh)) {
+              await this.store.saveTask(await this.withAssociations(fresh, principal), principal);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    const followUpEntry = this.executor.getStore().get(followUpRunId);
+    return {
+      ok: true,
+      package: followUpEntry
+        ? {
+            ...buildClarificationPackage({
+              run: followUpEntry.run,
+              approvals: this.executor.getStore().listApprovals(followUpRunId),
+              taskId: task.id,
+            }),
+            status: "follow_up_started" as const,
+            parentRunId,
+            canSubmit: false,
+            continuation: "none" as const,
+            answers,
+          }
+        : await this.getClarification(task.id, principal),
+      idempotentReplay: false,
+      followUpRunId,
+    };
   }
 
   private validateDependencies(

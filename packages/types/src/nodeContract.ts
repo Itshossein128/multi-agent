@@ -76,8 +76,37 @@ export interface ContractErrorInfo {
   retryable?: boolean;
 }
 
+/** Ordered clarification question attached to a needs_human pause. */
+export interface ClarificationQuestion {
+  /** Stable within the request; max 64 chars after trim. */
+  id: string;
+  /** Operator-facing prompt; max 2000 chars after trim. */
+  prompt: string;
+  /** Defaults to true when omitted. */
+  required?: boolean;
+  /** Optional field name this question fills; max 128 chars. */
+  missingField?: string;
+}
+
 export interface NeedsHumanInfo {
   reason: string;
+  /** Defaults to "clarification" when questions are present, otherwise "approval". */
+  purpose?: "approval" | "clarification";
+  /** 1–20 questions when purpose is clarification. */
+  questions?: ClarificationQuestion[];
+  /** Optional missing field names; max 32 × 128 chars. */
+  missingFields?: string[];
+}
+
+/** Operator answer keyed to a ClarificationQuestion.id. */
+export interface ClarificationAnswerInput {
+  questionId: string;
+  value: string;
+}
+
+export interface ClarificationAnswer extends ClarificationAnswerInput {
+  answeredAt?: string;
+  actorId?: string;
 }
 
 export interface EvidenceInfo {
@@ -255,8 +284,13 @@ export function parseResultEnvelope(raw: unknown): ResultEnvelopeParse {
       diagnostics.push({ code: "ENVELOPE_ERROR_INVALID", message: "error must be an object with string code and message.", path: "$.error" });
     }
   }
-  if (raw.needsHuman !== undefined && (!isPlainObject(raw.needsHuman) || typeof raw.needsHuman.reason !== "string")) {
-    diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_INVALID", message: "needsHuman must be an object with a string reason.", path: "$.needsHuman" });
+  if (raw.needsHuman !== undefined) {
+    if (!isPlainObject(raw.needsHuman) || typeof raw.needsHuman.reason !== "string") {
+      diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_INVALID", message: "needsHuman must be an object with a string reason.", path: "$.needsHuman" });
+    } else {
+      const needsHumanDiagnostics = validateNeedsHumanFields(raw.needsHuman);
+      diagnostics.push(...needsHumanDiagnostics);
+    }
   }
   if (raw.diagnostics !== undefined && !Array.isArray(raw.diagnostics)) {
     diagnostics.push({ code: "ENVELOPE_DIAGNOSTICS_INVALID", message: "diagnostics must be an array.", path: "$.diagnostics" });
@@ -277,8 +311,8 @@ export function parseResultEnvelope(raw: unknown): ResultEnvelopeParse {
       ...(typeof errorInfo.retryable === "boolean" ? { retryable: errorInfo.retryable } : {}),
     };
   }
-  if (isPlainObject(raw.needsHuman)) {
-    envelope.needsHuman = { reason: (raw.needsHuman as unknown as NeedsHumanInfo).reason };
+  if (isPlainObject(raw.needsHuman) && typeof raw.needsHuman.reason === "string") {
+    envelope.needsHuman = normalizeNeedsHuman(raw.needsHuman);
   }
   if (isPlainObject(raw.evidence)) {
     const evidence = raw.evidence as unknown as EvidenceInfo;
@@ -301,6 +335,81 @@ export function parseResultEnvelope(raw: unknown): ResultEnvelopeParse {
       }));
   }
   return { kind: "valid", envelope };
+}
+
+function validateNeedsHumanFields(raw: Record<string, unknown>): ContractDiagnostic[] {
+  const diagnostics: ContractDiagnostic[] = [];
+  if (raw.purpose !== undefined && raw.purpose !== "approval" && raw.purpose !== "clarification") {
+    diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_PURPOSE_INVALID", message: "needsHuman.purpose must be approval or clarification.", path: "$.needsHuman.purpose" });
+  }
+  if (raw.questions !== undefined) {
+    if (!Array.isArray(raw.questions)) {
+      diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_QUESTIONS_INVALID", message: "needsHuman.questions must be an array.", path: "$.needsHuman.questions" });
+    } else if (raw.questions.length > 20) {
+      diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_QUESTIONS_INVALID", message: "needsHuman.questions must contain at most 20 items.", path: "$.needsHuman.questions" });
+    } else {
+      const seen = new Set<string>();
+      for (let i = 0; i < raw.questions.length; i += 1) {
+        const item = raw.questions[i];
+        if (!isPlainObject(item) || typeof item.id !== "string" || !item.id.trim() || typeof item.prompt !== "string" || !item.prompt.trim()) {
+          diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_QUESTION_INVALID", message: "Each clarification question needs non-empty id and prompt.", path: `$.needsHuman.questions[${i}]` });
+          continue;
+        }
+        const id = item.id.trim();
+        if (id.length > 64 || item.prompt.trim().length > 2000) {
+          diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_QUESTION_INVALID", message: "Clarification question id/prompt exceeds length bounds.", path: `$.needsHuman.questions[${i}]` });
+        }
+        if (seen.has(id)) {
+          diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_QUESTION_DUPLICATE", message: `Duplicate clarification question id "${id}".`, path: `$.needsHuman.questions[${i}].id` });
+        }
+        seen.add(id);
+      }
+    }
+  }
+  if (raw.missingFields !== undefined) {
+    if (!Array.isArray(raw.missingFields) || raw.missingFields.length > 32 || raw.missingFields.some((f) => typeof f !== "string" || !f.trim() || f.length > 128)) {
+      diagnostics.push({ code: "ENVELOPE_NEEDS_HUMAN_MISSING_FIELDS_INVALID", message: "needsHuman.missingFields must be ≤32 non-empty strings (max 128 chars).", path: "$.needsHuman.missingFields" });
+    }
+  }
+  return diagnostics;
+}
+
+/** Normalize needsHuman while preserving backward-compatible `{ reason }` envelopes. */
+export function normalizeNeedsHuman(raw: Record<string, unknown>): NeedsHumanInfo {
+  const reason = String(raw.reason).slice(0, 500);
+  const questions = Array.isArray(raw.questions)
+    ? raw.questions
+        .filter((item): item is Record<string, unknown> => isPlainObject(item))
+        .map((item) => {
+          const question: ClarificationQuestion = {
+            id: String(item.id).trim().slice(0, 64),
+            prompt: String(item.prompt).trim().slice(0, 2000),
+          };
+          if (typeof item.required === "boolean") question.required = item.required;
+          if (typeof item.missingField === "string" && item.missingField.trim()) {
+            question.missingField = item.missingField.trim().slice(0, 128);
+          }
+          return question;
+        })
+        .filter((q) => q.id && q.prompt)
+        .slice(0, 20)
+    : undefined;
+  const missingFields = Array.isArray(raw.missingFields)
+    ? raw.missingFields
+        .filter((f): f is string => typeof f === "string" && Boolean(f.trim()))
+        .map((f) => f.trim().slice(0, 128))
+        .slice(0, 32)
+    : undefined;
+  const purpose: NeedsHumanInfo["purpose"] =
+    raw.purpose === "approval" || raw.purpose === "clarification"
+      ? raw.purpose
+      : questions && questions.length > 0
+        ? "clarification"
+        : "approval";
+  const info: NeedsHumanInfo = { reason, purpose };
+  if (questions?.length) info.questions = questions;
+  if (missingFields?.length) info.missingFields = missingFields;
+  return info;
 }
 
 /** Build a structured result envelope with bounded diagnostics. */

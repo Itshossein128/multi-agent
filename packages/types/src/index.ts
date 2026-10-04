@@ -10,6 +10,7 @@ export * from "./toolConfiguration";
 export * from "./approval";
 export * from "./schemaValidation";
 export * from "./nodeContract";
+export * from "./clarification";
 export * from "./branching";
 import type { ToolRecord } from "./toolConfiguration";
 import type { NodeContract, NodeResultEnvelope } from "./nodeContract";
