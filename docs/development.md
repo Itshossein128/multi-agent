@@ -89,6 +89,7 @@ CREDENTIAL_BROKER_DATABASE_URL=postgresql://... node infrastructure/broker/migra
 - secretهای provider از Vault خوانده می‌شوند (`CREDENTIAL_BROKER_VAULT_URL` و `CREDENTIAL_BROKER_VAULT_TOKEN`)؛ مسیر هر secret `secret/<tenant>/<provider>/<alias>` است و ورودی مشترک فقط با policy صریح مجاز است.
 - سرویس standalone بدون directory پیش‌فرض deny-all است؛ deployment باید `AuthorizationSource` و `QuotaUsageSource` خود را از طریق `startBroker(..., overrides)` وصل کند.
 - فهرست کامل متغیرها در بلوک `CREDENTIAL_BROKER_*` فایل `.env.example` آمده است (اولویت `CREDENTIAL_BROKER_*` بر `TOOL_CREDENTIAL_GATEWAY_*`).
+- برای اتصال BookStack MCP به workflow، مراحل و مرز دسترسی در [bookstack-mcp-workflow.md](bookstack-mcp-workflow.md) آمده است. اتصال stdio در Codex به‌صورت خودکار به Agent Studio منتقل نمی‌شود.
 - تست‌های broker:
 
 ```bash
