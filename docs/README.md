@@ -15,14 +15,15 @@
 برای کاربری که پروژه را تازه می‌شناسد، سایت مستندات در `apps/docs` مسیر زیر را ارائه می‌کند:
 
 1. نصب و راه‌اندازی
-2. اولین workflow از Agent تا Run
-3. مفاهیم Organization، Project، Workspace، Agent، Workflow، Task و Run
-4. ساخت Agent و طراحی Workflow
-5. مدیریت Task (پیوند به یک workspace و یک یا چند project) و مشاهده‌ی Run
-6. Tools، Approvals و Memory
-7. Persistence، Worker و Credential Broker
-8. فهرست/داشبورد Project و Workspace در Studio (جدا از package import/export در `/studio/workspace`)
-8. Deployment، Troubleshooting و Limitations
+2. راه‌های اجرا (Studio، CLI، broker، worker، build تولیدی)
+3. اولین workflow از Agent تا Run
+4. مفاهیم Organization، Project، Workspace، Agent، Workflow، Task و Run
+5. ساخت Agent و طراحی Workflow
+6. مدیریت Task (پیوند به یک workspace و یک یا چند project) و مشاهده‌ی Run
+7. Tools، Approvals و Memory
+8. Persistence، Worker و Credential Broker
+9. فهرست/داشبورد Project و Workspace در Studio (جدا از package import/export در `/studio/workspace`)
+10. Deployment، Troubleshooting و Limitations
 
 این سایت نقش tutorial و navigation را دارد؛ فایل‌های این پوشه همچنان منبع جزئیات معماری، verification و محدودیت‌های فنی هستند.
 

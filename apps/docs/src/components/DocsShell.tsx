@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { docPages, groups } from "@/lib/docs";
 
 const faLabels: Record<string, { title: string; group: string }> = {
-  "getting-started": { title: "شروع کار", group: "شروع کنید" }, "first-workflow": { title: "اولین Workflow شما", group: "شروع کنید" },
+  "getting-started": { title: "شروع کار", group: "شروع کنید" }, "running-the-platform": { title: "راه‌های اجرا", group: "شروع کنید" }, "first-workflow": { title: "اولین Workflow شما", group: "شروع کنید" },
   concepts: { title: "مفاهیم اصلی", group: "مدل سیستم" }, architecture: { title: "معماری", group: "مدل سیستم" }, security: { title: "مدل امنیتی", group: "مدل سیستم" },
   "account-and-workspace": { title: "حساب و Workspace", group: "ساخت با Studio" }, agents: { title: "ساخت Agent", group: "ساخت با Studio" }, workflows: { title: "طراحی Workflow", group: "ساخت با Studio" }, tasks: { title: "مدیریت Taskها", group: "ساخت با Studio" }, "tools-and-approvals": { title: "Toolها و Approvalها", group: "ساخت با Studio" }, memory: { title: "Memory Explorer", group: "ساخت با Studio" },
   runs: { title: "نظارت بر Runها", group: "عملیات Studio" }, persistence: { title: "Persistence و Recovery", group: "عملیات Studio" }, workers: { title: "CLI Workerها", group: "عملیات Studio" }, credentials: { title: "Credential Broker", group: "عملیات Studio" },

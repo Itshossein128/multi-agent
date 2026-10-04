@@ -3,11 +3,11 @@ import { ArrowLeft, CheckCircle2, LockKeyhole, Network, Terminal } from "lucide-
 
 const cards = [
   ["getting-started", "شروع کار", "نصب، اجرای محیط محلی و ساخت حساب."],
+  ["running-the-platform", "راه‌های اجرا", "Studio، CLI، broker، worker و build تولیدی."],
   ["first-workflow", "اولین Workflow", "از Agent تا Task و نتیجه‌ی نهایی."],
   ["concepts", "مفاهیم اصلی", "رابطه‌ی Organization، Agent، Workflow و Run."],
   ["agents", "ساخت Agent", "تنظیم backend و استفاده‌ی مجدد از Agent."],
   ["workflows", "طراحی Workflow", "ساخت graph، شرط‌ها و approvalها."],
-  ["runs", "نظارت بر Runها", "خواندن timeline و عیب‌یابی اجرا."],
 ];
 
 export default function PersianHomePage() {
@@ -18,6 +18,6 @@ export default function PersianHomePage() {
     </section>
     <section className="signal-row"><div><strong>Self-hosted</strong><span>زیرساخت و داده در اختیار شما</span></div><div><strong>قراردادهای Typed</strong><span>Nodeها و نتیجه‌های قابل پیش‌بینی</span></div><div><strong>Fail-closed</strong><span>امنیت در تمام مرزها</span></div></section>
     <section className="content-section"><div className="section-heading"><div><span className="eyebrow">نقشه‌ی مستندات</span><h2>مسیر خود را در پلتفرم پیدا کنید.</h2></div><Link href="/fa/docs/concepts" className="text-link">مفاهیم اصلی <ArrowLeft size={15} /></Link></div><div className="doc-grid">{cards.map(([slug, title, description], index) => <Link className="doc-card" href={`/fa/docs/${slug}`} key={slug}><span className="card-index">0{index + 1}</span><div><h3>{title}</h3><p>{description}</p></div><ArrowLeft size={17} className="card-arrow" /></Link>)}</div></section>
-    <section className="content-section tutorial-section"><div className="section-heading"><div><span className="eyebrow">مسیر یادگیری</span><h2>از نصب تا یک Run قابل اعتماد.</h2></div></div><div className="tutorial-steps">{[["۰۱", "نصب", "محیط محلی را اجرا و حساب بسازید.", "getting-started"], ["۰۲", "ساخت", "Agent و graph خود را بسازید.", "first-workflow"], ["۰۳", "اجرا", "Task را اجرا و timeline را بخوانید.", "runs"], ["۰۴", "سخت‌سازی", "امنیت، recovery و deployment را بررسی کنید.", "deployment"]].map(([number, title, text, slug]) => <Link className="tutorial-step" href={`/fa/docs/${slug}`} key={number}><span>{number}</span><div><h3>{title}</h3><p>{text}</p></div><ArrowLeft size={16} /></Link>)}</div></section>
+    <section className="content-section tutorial-section"><div className="section-heading"><div><span className="eyebrow">مسیر یادگیری</span><h2>از نصب تا یک Run قابل اعتماد.</h2></div></div><div className="tutorial-steps">{[["۰۱", "نصب", "محیط محلی را اجرا و حساب بسازید.", "getting-started"], ["۰۲", "راه‌های اجرا", "مسیر Studio، CLI، broker یا worker را انتخاب کنید.", "running-the-platform"], ["۰۳", "ساخت", "Agent و graph خود را بسازید.", "first-workflow"], ["۰۴", "عملیات", "Task را اجرا و timeline را بخوانید.", "runs"]].map(([number, title, text, slug]) => <Link className="tutorial-step" href={`/fa/docs/${slug}`} key={number}><span>{number}</span><div><h3>{title}</h3><p>{text}</p></div><ArrowLeft size={16} /></Link>)}</div></section>
   </>;
 }

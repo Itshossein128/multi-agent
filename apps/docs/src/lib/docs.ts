@@ -9,6 +9,7 @@ export type DocPage = {
 
 export const docPages: DocPage[] = [
   { slug: "getting-started", title: "Getting started", description: "Install the platform, create an account and complete your first run.", group: "Start here", source: "README.md", status: "Current" },
+  { slug: "running-the-platform", title: "Ways to run", description: "Every supported way to start Studio, the CLI, workers, the broker and supporting services.", group: "Start here", source: "docs/development.md", status: "Current" },
   { slug: "first-workflow", title: "Your first workflow", description: "A guided, end-to-end tutorial: agent, graph, task, run and result.", group: "Start here", source: "apps/web/src/app/(authenticated)/org/page.tsx", status: "Current" },
   { slug: "concepts", title: "Core concepts", description: "Learn how organizations, agents, workflows, tasks and runs fit together.", group: "Learn the model", source: "docs/architecture.md", status: "Current" },
   { slug: "architecture", title: "Architecture", description: "The control plane, execution server, LangGraph runtime and persistence boundaries.", group: "Learn the model", source: "docs/architecture.md", status: "Current" },

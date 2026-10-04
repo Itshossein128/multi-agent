@@ -35,4 +35,4 @@ pnpm --filter web build
 pnpm --filter docs dev
 ```
 
-سپس به `http://localhost:3070` بروید. کد سایت در [`apps/docs`](apps/docs) قرار دارد و محتوای canonical این repository همچنان در `docs/` نگه‌داری می‌شود.
+سپس به `http://localhost:3070` بروید. فهرست کامل مسیرهای اجرا (Studio، CLI، broker، worker و build تولیدی) در [`/docs/running-the-platform`](http://localhost:3070/docs/running-the-platform) است. کد سایت در [`apps/docs`](apps/docs) قرار دارد و محتوای canonical این repository همچنان در `docs/` نگه‌داری می‌شود.

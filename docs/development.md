@@ -8,7 +8,25 @@
 
 وابستگی‌های سرور از `apps/server/.env` و وابستگی‌های وب از `apps/web/.env.local` خوانده می‌شوند. secretهای واقعی را commit نکنید.
 
-## اجرای معمول
+## راه‌های اجرا
+
+سایت مستندات در `apps/docs` صفحه‌ی **Ways to run / راه‌های اجرا** (`/docs/running-the-platform` و `/fa/docs/running-the-platform`) را به‌عنوان فهرست کامل مسیرهای start نگه می‌دارد. خلاصه‌ی عملیاتی:
+
+| مسیر | فرمان | پورت / خروجی |
+| --- | --- | --- |
+| استک کامل Studio + docs | `pnpm dev` | web `3060`, server `4000`, docs `3070` |
+| Studio بدون docs | `pnpm dev:all` | web `3060`, server `4000` |
+| فقط web / server / docs | `pnpm dev:web` / `dev:server` / `dev:docs` | همان پورت‌ها به‌تنهایی |
+| شبیه production | `pnpm --filter web\|server build` سپس `start`؛ `pnpm build:docs && pnpm start:docs` | همان پورت‌های پکیج |
+| Postgres محلی | `pnpm db:dev:up` → `db:migrate` → `db:dev:down` | `127.0.0.1:55432` |
+| Credential Broker مستقل | `npx ts-node src/broker/server.ts` | پیش‌فرض `8484` |
+| CLI ریشه‌ی workflow | `pnpm dev:cli -- start "..."` یا `pnpm start -- start "..."` | CLI (نه UI استودیو) |
+| Compose قدیمی CLI+Langfuse+LangFlow | `docker compose -f infrastructure/docker/docker-compose.yml up` | app `3000`, Langfuse `3001`, LangFlow `7860` |
+| Worker image | `pnpm worker:image:build` سپس smoke/e2e | Docker `linux/amd64` |
+| ایمیج Docker CLI ریشه | `infrastructure/docker/Dockerfile` → `node dist/cli/index.js` | entrypoint CLI |
+| jobهای memory / verification | `pnpm memory:*`, `pnpm verification:*`, `pnpm test --runInBand` | بدون UI محصول |
+
+پیش از هر مسیر Studio:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -22,9 +40,10 @@ pnpm dev
 ```bash
 pnpm dev:web
 pnpm dev:server
+pnpm dev:docs
 ```
 
-`MEMORY_DATABASE_URL` به دیتابیس ایزوله‌ی Studio اشاره می‌کند و `STUDIO_STORE=postgres` persistence را فعال می‌کند. migrationها با `pnpm db:migrate` و خارج از startup اجرا می‌شوند. در production، storage volatile نباید فعال باشد.
+`MEMORY_DATABASE_URL` به دیتابیس ایزوله‌ی Studio اشاره می‌کند و `STUDIO_STORE=postgres` persistence را فعال می‌کند. migrationها با `pnpm db:migrate` و خارج از startup اجرا می‌شوند. در production، storage volatile نباید فعال باشد. تنظیمات سرور از `apps/server/.env` و وب از `apps/web/.env.local` خوانده می‌شوند؛ کاتالوگ متغیرها در `.env.example` است.
 
 ## Verification
 
