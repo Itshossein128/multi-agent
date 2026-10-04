@@ -6,6 +6,7 @@ import {
 } from "@multi-agent/types";
 import { AgentExecutorFactory } from "../src/agents/runtime/agentExecutorFactory";
 import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
+import { configuredAgentTimeout } from "../src/agents/runtime/agentTimeout";
 import { ApiAgentExecutor } from "../src/agents/runtime/apiAgentExecutor";
 import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionEvent";
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
@@ -79,6 +80,13 @@ describe("AgentExecutorFactory", () => {
 });
 
 describe("AgentRuntime", () => {
+  test("uses one bounded timeout for agents and CLI workers", () => {
+    expect(configuredAgentTimeout({})).toBe(1_200_000);
+    expect(configuredAgentTimeout({ AGENT_MAX_DURATION_MS: "600000" })).toBe(600_000);
+    expect(configuredAgentTimeout({ AGENT_MAX_DURATION_MS: "invalid" })).toBe(1_200_000);
+    expect(configuredAgentTimeout({ AGENT_MAX_DURATION_MS: "3600001" })).toBe(1_200_000);
+  });
+
   test("delegates to the factory-selected executor", async () => {
     const calls: string[] = [];
     const stub: AgentExecutor = {
@@ -146,6 +154,8 @@ describe("AgentRuntime", () => {
 
 describe("CLI and local executors", () => {
   test("runs a permitted CLI command directly with stdin and an approved workspace", async () => {
+    const previousTimeout = process.env.AGENT_MAX_DURATION_MS;
+    delete process.env.AGENT_MAX_DURATION_MS;
     const start = jest.fn(async () => ({ workerId: "w1", runId: "r" }));
     const wait = jest.fn(async () => ({ code: 0, stdout: "CLI answer", stderr: "", reason: "completed" }));
     const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
@@ -155,10 +165,15 @@ describe("CLI and local executors", () => {
     const events: AgentExecutionEvent[] = [];
     const serverPolicy = { enabled: true, workerMode: "local" as const, allowedExecutables: ["codex"], workspaceRoots: ["/workspace"], maxOutputBytes: 1024 };
 
-    for await (const event of new CliAgentExecutor(workerRuntime, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
+    try {
+      for await (const event of new CliAgentExecutor(workerRuntime, serverPolicy).execute({ agent, input: "summarize", runId: "r", nodeId: "n" })) events.push(event);
+    } finally {
+      if (previousTimeout === undefined) delete process.env.AGENT_MAX_DURATION_MS;
+      else process.env.AGENT_MAX_DURATION_MS = previousTimeout;
+    }
 
     expect(start).toHaveBeenCalledWith(
-      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"], cwd: "/workspace" }),
+      expect.objectContaining({ executable: expect.stringContaining("codex"), args: ["exec", "--skip-git-repo-check", "--json", "-"], cwd: "/workspace", timeoutMs: 1_200_000 }),
       undefined,
       expect.stringContaining("USER INPUT:\nsummarize"),
       undefined,

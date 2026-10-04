@@ -16,6 +16,7 @@ import { NO_API_CREDENTIALS, type ApiProviderCredentialResolver } from "../../se
 import { DefaultContextAssembler, type ContextAssembler } from "./contextAssembler";
 import { splitWorkingMemoryUpdates, visibleWorkingMemoryEntries, type WorkingMemoryEntries } from "./workingMemory";
 import { emptyTokens } from "./runtimeMemory";
+import { configuredAgentTimeout } from "./agentTimeout";
 import type { MemoryTokenAccounting } from "../../memory/application/memoryEvaluation";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
@@ -211,9 +212,4 @@ export class AgentRuntime {
       yield { type: "memory.write", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: Math.min(prior.length + 1, maxEntries), scope: memory?.scope, tier: "short_term" } };
     }
   }
-}
-
-function configuredAgentTimeout() {
-  const value = Number(process.env.AGENT_MAX_DURATION_MS ?? 120_000);
-  return Number.isInteger(value) && value >= 1_000 && value <= 60 * 60_000 ? value : 120_000;
 }

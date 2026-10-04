@@ -7,6 +7,7 @@ import type { WorkerRuntime, WorkerSpec } from "./workerRuntime";
 import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver, type WorkerLaunchSecrets } from "./workerCredentials";
 import { defaultCliExecutable } from "./cliProviderDefaults";
+import { configuredAgentTimeout } from "./agentTimeout";
 
 export interface CliRuntimePolicy {
   enabled: boolean;
@@ -158,7 +159,7 @@ export class CliAgentExecutor implements AgentExecutor {
         executable: spawnExecutable,
         args,
         cwd: policy.workspaceRoot!,
-        timeoutMs: Number(process.env.AGENT_MAX_DURATION_MS ?? 120_000),
+        timeoutMs: configuredAgentTimeout(),
         maxOutputBytes: this.runtimePolicy.maxOutputBytes,
         workspaceAccess: policy.filesystem === "read-write" ? "read-write" : "read-only",
         network: policy.network === true,
