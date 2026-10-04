@@ -504,6 +504,29 @@ describe("LocalProcessWorkerRuntime", () => {
     expect(spawnFn).not.toHaveBeenCalled();
   });
 
+  test("clears timeout timer on cleanup to prevent dangling timeout callbacks", async () => {
+    const spawnFn = mockSpawnFn("running", "", 0, 10000);
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+
+    const spec = createSpec("node", ["-e", "setTimeout(() => {}, 10000)"]);
+    spec.timeoutMs = 50000;
+    const handle = await runtime.start(spec);
+
+    const state = (runtime as any).workers.get(handle.workerId);
+    expect(state.timeoutTimer).toBeDefined();
+
+    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
+    try {
+      await runtime.cleanup(handle.workerId);
+
+      // Verify clearTimeout was called on state.timeoutTimer and worker state removed
+      expect(clearTimeoutSpy).toHaveBeenCalledWith(state.timeoutTimer);
+      expect((runtime as any).workers.has(handle.workerId)).toBe(false);
+    } finally {
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
   test("finalizeSession is executed when delegate.cancel throws an error during cancel", async () => {
     const spawnedCommands: string[] = [];
     const spawnFn = ((command: string, args: string[], options: any) => {
