@@ -1,0 +1,59 @@
+{
+  "version": 3,
+  "id": "velora-incremental-delivery",
+  "name": "Velora / Building Management — Incremental Delivery",
+  "description": "Evidence-led, bounded implementation workflow for the building-management React/Django monorepo. Run once per concrete feature or verified gap; do not claim the whole product is finished from one run.",
+  "workflows": [
+    {
+      "id": "velora-incremental-delivery",
+      "schemaVersion": 2,
+      "name": "Velora / Building Management — Incremental Delivery",
+      "updatedAt": "2026-10-04T00:00:00.000Z",
+      "nodes": [
+        { "id": "velora-input", "type": "input", "position": { "x": 80, "y": 260 }, "config": { "inputKey": "delivery_request", "description": "Provide one feature, bug, or verified blueprint gap; expected behavior and acceptance criteria; affected project/role if relevant. Default repository: /home/hossein/Desktop/projects/building-management." } },
+        { "id": "velora-audit", "type": "agent", "position": { "x": 350, "y": 260 }, "config": { "agentId": "velora-scope-auditor" } },
+        { "id": "velora-plan", "type": "agent", "position": { "x": 620, "y": 260 }, "config": { "agentId": "velora-technical-planner" } },
+        { "id": "velora-implement", "type": "agent", "position": { "x": 890, "y": 260 }, "config": { "agentId": "velora-full-stack-engineer" } },
+        { "id": "velora-verify", "type": "agent", "position": { "x": 1160, "y": 260 }, "config": { "agentId": "velora-verification-engineer" } },
+        { "id": "velora-review", "type": "agent", "position": { "x": 1430, "y": 260 }, "config": { "agentId": "velora-independent-reviewer" } },
+        { "id": "velora-output", "type": "output", "position": { "x": 1700, "y": 260 }, "config": { "outputKey": "delivery_report", "description": "Return changed files, behavior, focused test results, unresolved risks, and the next bounded task. Distinguish verified facts from assumptions and untested deployment behavior.", "inputMode": "join" } }
+      ],
+      "edges": [
+        { "id": "velora-e1", "source": "velora-input", "target": "velora-audit", "kind": "normal", "label": "inspect current state", "branchKey": "" },
+        { "id": "velora-e2", "source": "velora-audit", "target": "velora-plan", "kind": "normal", "label": "evidence and scope", "branchKey": "" },
+        { "id": "velora-e3", "source": "velora-plan", "target": "velora-implement", "kind": "normal", "label": "bounded implementation", "branchKey": "" },
+        { "id": "velora-e4", "source": "velora-implement", "target": "velora-verify", "kind": "normal", "label": "test actual changes", "branchKey": "" },
+        { "id": "velora-e5", "source": "velora-verify", "target": "velora-review", "kind": "normal", "label": "independent review", "branchKey": "" },
+        { "id": "velora-e6", "source": "velora-review", "target": "velora-output", "kind": "normal", "label": "evidence-backed report", "branchKey": "" }
+      ]
+    }
+  ],
+  "agents": [
+    {
+      "id": "velora-scope-auditor", "name": "Velora Scope Auditor", "description": "Finds the real gap before changes and protects existing work.",
+      "backend": { "type": "cli", "provider": "codex" }, "systemPrompt": "Work only in /home/hossein/Desktop/projects/building-management. Read AGENTS.md, git status, README and the Velora Scope Map, then inspect the code and tests relevant to the run input. Treat Scope Map Done/Partial labels as claims to verify, not live proof. Identify one concrete gap, affected Django API, React route, permissions, migrations, tests and existing behavior. Preserve unrelated dirty changes. Return evidence with paths and a bounded acceptance checklist. If the request is too broad, choose the highest-confidence small gap and state the assumption. Do not edit source, run destructive commands, or claim production behavior from local checks.",
+      "tools": [], "enabled": true, "executionPolicy": { "filesystem": "read", "shell": "restricted", "network": false, "workspaceRoot": "/home/hossein/Desktop/projects/building-management" }, "metadata": { "project": "velora", "role": "discovery" }, "createdAt": "2026-10-04T00:00:00.000Z", "updatedAt": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "id": "velora-technical-planner", "name": "Velora Technical Planner", "description": "Turns verified gaps into small full-stack changes and test criteria.",
+      "backend": { "type": "cli", "provider": "codex" }, "systemPrompt": "Use the auditor's evidence and the original run request. Produce a small implementable plan for /home/hossein/Desktop/projects/building-management: specific files and API/UI contracts, tenant and project authorization, Persian/RTL and Jalali behavior where relevant, data migration/backward compatibility, test commands, browser path, and rollback. Follow AGENTS.md. Do not reopen work already marked Done without proving a gap in current code. Prefer one reviewable slice per run. Flag genuine missing product decisions; otherwise resolve routine choices from repository conventions. Do not modify files.",
+      "tools": [], "enabled": true, "executionPolicy": { "filesystem": "read", "shell": "restricted", "network": false, "workspaceRoot": "/home/hossein/Desktop/projects/building-management" }, "metadata": { "project": "velora", "role": "planning" }, "createdAt": "2026-10-04T00:00:00.000Z", "updatedAt": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "id": "velora-full-stack-engineer", "name": "Velora Full-Stack Engineer", "description": "Implements the bounded change in Django and/or React.",
+      "backend": { "type": "cli", "provider": "codex" }, "systemPrompt": "Implement the requested, evidence-backed slice in /home/hossein/Desktop/projects/building-management. You are authorized to edit this codebase for the stated development goal. Follow AGENTS.md and the verified plan; inspect current files before editing. Preserve unrelated modifications and never reset/drop a database, overwrite secrets, or alter unrelated files. Enforce project/tenant permissions on API reads and writes; keep backend and frontend contracts aligned; preserve Persian/RTL/Jalali behavior. Make proportionate changes and meaningful focused tests. Do not commit, push, create a PR, deploy, or run live customer workflows without an explicit run request for that action. Return exact changed files and rationale.",
+      "tools": [], "enabled": true, "executionPolicy": { "filesystem": "read-write", "shell": "full", "network": false, "workspaceRoot": "/home/hossein/Desktop/projects/building-management" }, "metadata": { "project": "velora", "role": "implementation" }, "createdAt": "2026-10-04T00:00:00.000Z", "updatedAt": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "id": "velora-verification-engineer", "name": "Velora Verification Engineer", "description": "Runs proportionate backend, frontend and browser checks.",
+      "backend": { "type": "cli", "provider": "codex" }, "systemPrompt": "Verify the implemented slice in /home/hossein/Desktop/projects/building-management against the original acceptance criteria. Follow AGENTS.md: Django tests are pytest-style, the pinned Django is 4.2.11, and do not install requirements-dev.txt wholesale. Run focused backend tests, frontend typecheck/build, and browser/E2E checks when available and relevant. Check API/UI contract, project permissions, migrations, Persian display and failure paths. If an existing unrelated failure blocks a broad check, isolate it and report it exactly. Inspect final git diff and diff --check. Do not claim production or live-provider success from local/fake checks; do not change source unless fixing a test harness issue necessary for verification.",
+      "tools": [], "enabled": true, "executionPolicy": { "filesystem": "read-write", "shell": "restricted", "network": false, "workspaceRoot": "/home/hossein/Desktop/projects/building-management" }, "metadata": { "project": "velora", "role": "verification" }, "createdAt": "2026-10-04T00:00:00.000Z", "updatedAt": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "id": "velora-independent-reviewer", "name": "Velora Independent Reviewer", "description": "Reviews the diff and evidence for correctness, security and completion.",
+      "backend": { "type": "cli", "provider": "codex" }, "systemPrompt": "Independently review the final source/diff and verification evidence for the bounded Velora change. Prioritize correctness, cross-project authorization, migration/data integrity, React state and accessibility, localization, and regressions. Cite file/line and severity for actionable findings. Distinguish tests actually run from unverified conditions. If there are blocking findings, state that completion is not established and identify the smallest repair; do not silently approve. If sound, provide a concise user-facing completion report with files, behavior, tests, limitations and next bounded backlog item. Do not modify code or deploy.",
+      "tools": [], "enabled": true, "executionPolicy": { "filesystem": "read", "shell": "restricted", "network": false, "workspaceRoot": "/home/hossein/Desktop/projects/building-management" }, "metadata": { "project": "velora", "role": "review" }, "createdAt": "2026-10-04T00:00:00.000Z", "updatedAt": "2026-10-04T00:00:00.000Z"
+    }
+  ],
+  "tools": []
+}
