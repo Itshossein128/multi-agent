@@ -171,7 +171,11 @@ export class RunExecutor {
     if (!job.runId || !access) throw new Error("access validation failed for durable episodic job");
     const entry = this.store.get(job.runId)!;
     if (!this.episodeService || !["completed", "failed", "cancelled"].includes(entry.run.status)) throw new Error("unsupported episodic job state");
-    await this.processTerminalEpisodicMemory(job.runId, { succeeded: entry.run.status === "completed", error: entry.run.error, cancelled: entry.run.status === "cancelled" });
+    await this.processTerminalEpisodicMemory(
+      job.runId,
+      { succeeded: entry.run.status === "completed", error: entry.run.error, cancelled: entry.run.status === "cancelled" },
+      { skipDurableEnqueue: true },
+    );
   }
 
   /** Durable handler: procedures read authoritative episodes at execution time. */
@@ -334,11 +338,15 @@ export class RunExecutor {
   retryPendingEpisodicMemory(runId: string) {
     const entry = this.store.get(runId);
     if (!entry || !entry.memoryAccess || !["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
-    void this.processTerminalEpisodicMemory(runId, {
-      succeeded: entry.run.status === "completed",
-      error: entry.run.error,
-      cancelled: entry.run.status === "cancelled",
-    });
+    void this.processTerminalEpisodicMemory(
+      runId,
+      {
+        succeeded: entry.run.status === "completed",
+        error: entry.run.error,
+        cancelled: entry.run.status === "cancelled",
+      },
+      { skipDurableEnqueue: true },
+    );
     return true;
   }
 
@@ -554,7 +562,11 @@ export class RunExecutor {
    * validated in the browser.
    */
 
-  private async processTerminalEpisodicMemory(runId: string, opts: { succeeded: boolean; error?: string; cancelled?: boolean }) {
+  private async processTerminalEpisodicMemory(
+    runId: string,
+    opts: { succeeded: boolean; error?: string; cancelled?: boolean },
+    executionOpts?: { skipDurableEnqueue?: boolean },
+  ) {
     if (!this.episodeService) return;
     try {
       const entry = this.store.get(runId);
@@ -596,6 +608,11 @@ export class RunExecutor {
         approvals: entry.approvals?.map(a => ({ decision: a.status })),
         namespace: memoryAccess.writableNamespaces[0],
       };
+
+      if (this.durableMemoryJobs && !executionOpts?.skipDurableEnqueue) {
+        await this.scheduleDurableEpisodicExtraction(runId, input, memoryAccess);
+        return;
+      }
 
       const result = await this.episodeService.processRun(input, memoryAccess);
       this.store.setEpisodicMemoryStatus?.(runId, result.reason === "persistence_failed" || result.reason === "extraction_failed" ? "failed" : "processed");

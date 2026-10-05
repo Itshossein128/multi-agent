@@ -671,7 +671,7 @@ export class PostgresStudioStore implements StudioStore {
       `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9)
        ON CONFLICT (id) DO UPDATE SET
-         name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+         tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
          settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id`,
       [
         project.id, project.tenantId, project.name, project.description, project.status,
@@ -717,7 +717,7 @@ export class PostgresStudioStore implements StudioStore {
       `INSERT INTO studio_workspaces (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9)
        ON CONFLICT (id) DO UPDATE SET
-         name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+         tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
          settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id`,
       [
         workspace.id, workspace.tenantId, workspace.name, workspace.description, workspace.status,
