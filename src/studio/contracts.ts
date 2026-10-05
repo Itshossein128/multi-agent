@@ -4,6 +4,20 @@ import type {
   WorkflowDefinition,
   TaskPriority,
   TaskStatus,
+  TaskComment,
+  TriggerEvent,
+  TriggerEventType,
+  TriggerTargetType,
+  TriggerEventStatus,
+  RoutineRecord,
+  RoutineScheduleType,
+  RoutineMisfirePolicy,
+  RoutineHistoryRecord,
+  RoutineHistoryStatus,
+  WebhookTriggerRecord,
+  WebhookDeliveryRecord,
+  WebhookDeliveryStatus,
+  AgentHeartbeatSettings,
 } from "@multi-agent/types";
 
 export type {
@@ -12,6 +26,21 @@ export type {
   Phase2TaskStatus,
   LegacyTaskStatus,
   TaskRecord,
+  TaskComment,
+  TaskCommentAuthorType,
+  TriggerEvent,
+  TriggerEventType,
+  TriggerTargetType,
+  TriggerEventStatus,
+  RoutineRecord,
+  RoutineScheduleType,
+  RoutineMisfirePolicy,
+  RoutineHistoryRecord,
+  RoutineHistoryStatus,
+  WebhookTriggerRecord,
+  WebhookDeliveryRecord,
+  WebhookDeliveryStatus,
+  AgentHeartbeatSettings,
 } from "@multi-agent/types";
 
 export type StudioEntityStatus = "active" | "retired";
@@ -124,4 +153,42 @@ export interface StudioStore {
 
   /** Upsert entire workspace package (used by one-shot browser import). */
   importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal): Promise<void>;
+
+  // --- Task Comments ---
+  listComments(taskId: string, principal?: StudioPrincipal): Promise<TaskComment[]>;
+  getComment(id: string, principal?: StudioPrincipal): Promise<TaskComment | null>;
+  saveComment(comment: TaskComment, principal?: StudioPrincipal): Promise<TaskComment>;
+  deleteComment(id: string, principal?: StudioPrincipal): Promise<void>;
+
+  // --- Trigger Events (Outbox) ---
+  enqueueTriggerEvent(
+    event: Omit<TriggerEvent, "id" | "createdAt" | "updatedAt" | "retryCount" | "status" | "maxRetries"> &
+      Partial<Pick<TriggerEvent, "id" | "retryCount" | "status" | "maxRetries">>
+  ): Promise<TriggerEvent>;
+  claimNextTriggerEvent(workerId: string, leaseDurationSeconds?: number): Promise<TriggerEvent | null>;
+  updateTriggerEvent(id: string, patch: Partial<TriggerEvent>, expectedLockedBy?: string): Promise<TriggerEvent | null>;
+  listTriggerEvents(filters?: { status?: TriggerEventStatus; tenantId?: string; limit?: number; idempotencyKey?: string }): Promise<TriggerEvent[]>;
+
+  // --- Recurring Routines ---
+  listRoutines(principal?: StudioPrincipal): Promise<RoutineRecord[]>;
+  getRoutine(id: string, principal?: StudioPrincipal): Promise<RoutineRecord | null>;
+  saveRoutine(routine: RoutineRecord, principal?: StudioPrincipal): Promise<RoutineRecord>;
+  deleteRoutine(id: string, principal?: StudioPrincipal): Promise<void>;
+  claimDueRoutines(workerId: string, limit?: number): Promise<RoutineRecord[]>;
+  recordRoutineHistory(history: RoutineHistoryRecord): Promise<RoutineHistoryRecord>;
+  listRoutineHistory(routineId: string, principal?: StudioPrincipal, limit?: number): Promise<RoutineHistoryRecord[]>;
+
+  // --- Webhook Triggers ---
+  listWebhookTriggers(principal?: StudioPrincipal): Promise<WebhookTriggerRecord[]>;
+  getWebhookTrigger(id: string, principal?: StudioPrincipal): Promise<WebhookTriggerRecord | null>;
+  saveWebhookTrigger(trigger: WebhookTriggerRecord, principal?: StudioPrincipal): Promise<WebhookTriggerRecord>;
+  deleteWebhookTrigger(id: string, principal?: StudioPrincipal): Promise<void>;
+  recordWebhookDelivery(delivery: WebhookDeliveryRecord): Promise<WebhookDeliveryRecord>;
+  listWebhookDeliveries(triggerId: string, principal?: StudioPrincipal, limit?: number): Promise<WebhookDeliveryRecord[]>;
+  countRecentWebhookDeliveries(triggerId: string, windowSeconds: number): Promise<number>;
+
+  // --- Agent Heartbeats ---
+  getAgentHeartbeat(agentId: string, principal?: StudioPrincipal): Promise<AgentHeartbeatSettings | null>;
+  saveAgentHeartbeat(settings: AgentHeartbeatSettings, principal?: StudioPrincipal): Promise<AgentHeartbeatSettings>;
+  claimDueHeartbeats(workerId: string, limit?: number): Promise<AgentHeartbeatSettings[]>;
 }

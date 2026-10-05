@@ -36,4 +36,26 @@ program
     console.log('==================================================\n');
   });
 
+program
+  .command('onboard')
+  .description('Guided local first-run onboarding: check prerequisites, migrations, and run an offline self-test')
+  .option('--database-url <url>', 'PostgreSQL database connection URL')
+  .option('--migrate', 'Automatically apply pending database migrations')
+  .option('--no-self-test', 'Skip offline self-test agent run')
+  .option('--json', 'Output report as JSON')
+  .action(async (opts: { databaseUrl?: string; migrate?: boolean; selfTest?: boolean; json?: boolean }) => {
+    const { runOnboarding, printOnboardingReport } = await import('./onboard');
+    const report = await runOnboarding({
+      databaseUrl: opts.databaseUrl,
+      applyMigrations: opts.migrate,
+      runSelfTest: opts.selfTest,
+      json: opts.json,
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      printOnboardingReport(report);
+    }
+  });
+
 program.parse(process.argv);

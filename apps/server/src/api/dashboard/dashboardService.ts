@@ -76,7 +76,12 @@ export class DashboardService {
     const activeRuns = runs.filter((run) => run.status === "running");
     const activeTasks = tasks.filter((task) => (task.status === "in_progress" || task.status === "running") && !task.paused);
     const base = records.length
-      ? records.map((agent) => ({ id: agent.id, name: agent.name, role: agent.description || agent.name, model: agent.backend?.model || DEFAULT_MODEL() }))
+      ? records.map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          role: agent.description || agent.name,
+          model: (agent.backend && "model" in agent.backend && agent.backend.model) || (agent.backend?.type === "process" ? agent.backend.command : agent.backend?.type === "webhook" ? "webhook" : DEFAULT_MODEL()),
+        }))
       : DEFAULT_AGENTS();
     return base.map((agent) => {
       const activeRun = activeRuns.find((run) => belongsToAgent(run, agent));

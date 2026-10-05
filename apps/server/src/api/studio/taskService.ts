@@ -220,7 +220,12 @@ export class TaskService {
       projectIds,
     };
 
-    return this.store.saveTask(task, principal);
+    const saved = await this.store.transaction(async (tx) => {
+      const savedTask = await tx.saveTask(task, principal);
+      await this.enqueueAssignmentTrigger(savedTask, principal, undefined, tx);
+      return savedTask;
+    });
+    return saved;
   }
 
   async save(id: string, body: StudioTask, principal: RequestPrincipal): Promise<StudioTask> {
@@ -304,7 +309,12 @@ export class TaskService {
       ownerId: existing.ownerId ?? principal.userId,
     };
 
-    return this.store.saveTask(updated, principal);
+    const saved = await this.store.transaction(async (tx) => {
+      const savedTask = await tx.saveTask(updated, principal);
+      await this.enqueueAssignmentTrigger(savedTask, principal, existing.assignedAgent ?? existing.assignedAgents?.[0], tx);
+      return savedTask;
+    });
+    return saved;
   }
 
   async patch(id: string, patch: Partial<StudioTask>, principal: RequestPrincipal): Promise<StudioTask> {
@@ -725,6 +735,20 @@ export class TaskService {
           clarificationAnswers: stamped,
           response: options.idempotencyKey ? `idempotency:${options.idempotencyKey}` : undefined,
         });
+        await this.store.enqueueTriggerEvent({
+          tenantId: principal.tenantId,
+          eventType: "approval_resolved",
+          targetType: "task",
+          targetId: id,
+          idempotencyKey: `approval:${runId}:${pkg.approvalId}:${options.idempotencyKey ?? "direct"}`,
+          status: "processed",
+          payload: {
+            runId,
+            approvalId: pkg.approvalId,
+            decision: "approved",
+            taskId: id,
+          },
+        }).catch(() => {});
         return {
           ok: true,
           package: await this.getClarification(id, principal),
@@ -1113,6 +1137,34 @@ export class TaskService {
     if (changed) task.updatedAt = nowIso();
 
     return changed;
+  }
+
+  private async enqueueAssignmentTrigger(
+    task: StudioTask,
+    principal: RequestPrincipal,
+    previousAgent?: string | null,
+    store: StudioStore = this.store,
+  ): Promise<void> {
+    const currentAgent = task.assignedAgent ?? task.assignedAgents?.[0];
+    if (!currentAgent) return;
+    const canonical = toCanonicalStatus(task.status);
+    if (!["backlog", "ready", "todo"].includes(canonical)) return;
+    if (previousAgent && previousAgent === currentAgent) return;
+
+    await store.enqueueTriggerEvent({
+      tenantId: principal.tenantId,
+      eventType: "task_assignment",
+      targetType: "task",
+      targetId: task.id,
+      idempotencyKey: `assign:${task.id}:${currentAgent}:${task.updatedAt ?? task.createdAt}`,
+      maxRetries: 3,
+      payload: {
+        taskId: task.id,
+        assignedAgent: currentAgent,
+        assignedAgents: task.assignedAgents,
+        status: task.status,
+      },
+    }).catch(() => {});
   }
 }
 

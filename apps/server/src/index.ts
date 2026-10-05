@@ -17,6 +17,10 @@ import { recoverInterruptedRuns } from "./runtime/recovery";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { createObservabilityRuntime } from "./observability/bootstrap";
 import { resolveRequestPrincipal } from "./auth/principal";
+import { createInboundWebhookRouter } from "./api/studio/webhookTriggerRoutes";
+import { TriggerOutboxProcessor } from "./triggers/triggerOutboxProcessor";
+import { HeartbeatScheduler } from "./triggers/heartbeatScheduler";
+import { RoutineScheduler } from "./triggers/routineScheduler";
 
 async function createDurableCheckpointer(connectionString: string): Promise<(BaseCheckpointSaver & { end?: () => Promise<void> }) | undefined> {
   try {
@@ -48,6 +52,9 @@ async function main() {
   app.options("/*", (c) => c.body(null, 204));
   app.get("/health", (c) => c.json({ ok: true }));
   app.use("/*", async (c, next) => {
+    if (c.req.path.startsWith("/api/webhooks/") || c.req.path === "/health") {
+      return next();
+    }
     if (!resolveRequestPrincipal(c.req.raw)) return c.json({ error: "Authentication required." }, 401);
     await next();
   });
@@ -97,7 +104,24 @@ async function main() {
     console.log(`Run recovery: restored=${recovery.restored.length} failed=${recovery.failed.length}`);
   }
 
-  if (studio.store) app.route("/studio", createStudioRouter(studio.store, undefined, executor));
+  let outboxProcessor: TriggerOutboxProcessor | undefined;
+  let heartbeatScheduler: HeartbeatScheduler | undefined;
+  let routineScheduler: RoutineScheduler | undefined;
+
+  if (studio.store) {
+    app.route("/studio", createStudioRouter(studio.store, undefined, executor));
+    app.route("/api/webhooks", createInboundWebhookRouter(studio.store));
+
+    outboxProcessor = new TriggerOutboxProcessor(studio.store, executor);
+    outboxProcessor.start();
+
+    heartbeatScheduler = new HeartbeatScheduler(studio.store, executor);
+    heartbeatScheduler.start();
+
+    routineScheduler = new RoutineScheduler(studio.store);
+    routineScheduler.start();
+  }
+
   app.route("/dashboard", createDashboardRouter(runStore, studio.store, executor));
   app.route("/memories", createMemoriesRouter(memory.service, resolveMemoryAccess));
   app.route("/runs", createRunsRouter(executor, resolveMemoryAccess, studio.store).app);
@@ -106,6 +130,9 @@ async function main() {
   const port = Number(process.env.PORT ?? 4000);
   const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));
   const shutdown = () => {
+    outboxProcessor?.stop();
+    heartbeatScheduler?.stop();
+    routineScheduler?.stop();
     server.close(() => {
       credentials.close();
       const persistenceFlush = "flush" in runStore ? runStore.flush() : Promise.resolve();

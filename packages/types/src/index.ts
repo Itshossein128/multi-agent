@@ -53,6 +53,22 @@ export type AgentBackend =
     model: string;
     baseUrl?: string;
     settings?: AgentModelSettings;
+  }
+  | {
+    type: "process";
+    provider?: "process" | (string & {});
+    command: string;
+    args?: string[];
+    workspaceRoot?: string;
+  }
+  | {
+    type: "webhook";
+    provider?: "webhook" | (string & {});
+    url: string;
+    method?: "POST" | "PUT";
+    credentialAlias?: string;
+    timeoutMs?: number;
+    headers?: Record<string, string>;
   };
 
 export type AgentBackendType = AgentBackend["type"];
@@ -107,7 +123,7 @@ export type AgentDiagnosticStatus = "ready" | "unavailable" | "not_authenticated
 export interface AgentDiagnostics {
   status: AgentDiagnosticStatus;
   checkedAt: string;
-  backend: { type: AgentBackendType; provider: string; model?: string };
+  backend: { type: AgentBackendType; provider?: string; model?: string; command?: string; url?: string };
   message: string;
 }
 
@@ -141,6 +157,12 @@ export function agentBackendLabel(backend: AgentBackend): string {
   if (backend.type === "local") {
     return `${backend.provider}/${backend.model}`;
   }
+  if (backend.type === "process") {
+    return `process:${backend.command}`;
+  }
+  if (backend.type === "webhook") {
+    return `webhook:${backend.url}`;
+  }
   return backend.model || backend.provider;
 }
 
@@ -151,6 +173,12 @@ export function agentRequiresModel(backend: AgentBackend): boolean {
 export function agentHasConfiguredModel(agent: AgentRecord): boolean {
   if (agent.backend.type === "cli") {
     return Boolean(agent.backend.provider.trim());
+  }
+  if (agent.backend.type === "process") {
+    return Boolean(agent.backend.command.trim());
+  }
+  if (agent.backend.type === "webhook") {
+    return Boolean(agent.backend.url.trim());
   }
   return Boolean(agent.backend.model.trim());
 }
@@ -180,13 +208,17 @@ export function migrateAgentRecord(raw: unknown): AgentRecord {
     const metaProvider =
       typeof record.metadata?.provider === "string" ? String(record.metadata.provider) : undefined;
     backend = createApiBackend(inferApiProvider(model, record.provider ?? metaProvider), model);
+  } else if (backend.type === "process" && !(backend as any).provider) {
+    backend = { ...backend, provider: "process" } as any;
+  } else if (backend.type === "webhook" && !(backend as any).provider) {
+    backend = { ...backend, provider: "webhook" } as any;
   }
 
   return {
     id: typeof record.id === "string" && record.id ? record.id : uid("agent"),
     name: typeof record.name === "string" && record.name.trim() ? record.name : "New Agent",
     description: typeof record.description === "string" ? record.description : "",
-    backend,
+    backend: backend as AgentBackend,
     systemPrompt: typeof record.systemPrompt === "string" ? record.systemPrompt : "",
     tools: Array.isArray(record.tools) ? record.tools.filter((t): t is string => typeof t === "string") : [],
     executionPolicy: record.executionPolicy,
@@ -866,4 +898,135 @@ export function isStatusDependencyGated(status: TaskStatus): boolean {
 
 export function isCompletedStatus(status: TaskStatus): boolean {
   return toCanonicalStatus(status) === "completed";
+}
+
+// ============================================================================
+// Feature 005: Event Routines, Triggers, Comments, Webhooks & Heartbeats
+// ============================================================================
+
+export type TaskCommentAuthorType = "user" | "agent" | "system";
+
+export interface TaskComment {
+  id: string;
+  tenantId: string;
+  taskId: string;
+  authorId: string;
+  authorType: TaskCommentAuthorType;
+  content: string;
+  mentions: string[];
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TriggerEventType =
+  | "task_assignment"
+  | "task_comment"
+  | "task_mention"
+  | "routine_tick"
+  | "webhook_inbound"
+  | "approval_resolved";
+
+export type TriggerTargetType = "agent" | "workflow" | "task";
+
+export type TriggerEventStatus = "pending" | "processing" | "processed" | "failed" | "dead_letter";
+
+export interface TriggerEvent {
+  id: string;
+  tenantId: string;
+  eventType: TriggerEventType;
+  targetType: TriggerTargetType;
+  targetId: string;
+  idempotencyKey: string;
+  payload: Record<string, unknown>;
+  status: TriggerEventStatus;
+  retryCount: number;
+  maxRetries: number;
+  nextRetryAt?: string | null;
+  lockedBy?: string | null;
+  lockedUntil?: string | null;
+  lastError?: string | null;
+  dispatchedRunId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RoutineScheduleType = "cron" | "interval";
+export type RoutineMisfirePolicy = "skip" | "coalesce" | "enqueue";
+
+export interface RoutineRecord {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  scheduleType: RoutineScheduleType;
+  scheduleExpr: string;
+  timezone: string;
+  targetType: "workflow" | "agent" | "task";
+  targetId: string;
+  inputPayload: Record<string, unknown>;
+  misfirePolicy: RoutineMisfirePolicy;
+  enabled: boolean;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastStatus?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  ownerId: string;
+}
+
+export type RoutineHistoryStatus = "success" | "failed" | "skipped";
+
+export interface RoutineHistoryRecord {
+  id: string;
+  tenantId: string;
+  routineId: string;
+  scheduledAt: string;
+  executedAt: string;
+  status: RoutineHistoryStatus;
+  runId?: string | null;
+  error?: string | null;
+  createdAt: string;
+}
+
+export interface WebhookTriggerRecord {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  secretHash: string;
+  targetType: "workflow" | "agent";
+  targetId: string;
+  enabled: boolean;
+  rateLimitPerMinute: number;
+  createdAt: string;
+  updatedAt: string;
+  ownerId: string;
+}
+
+export type WebhookDeliveryStatus = "accepted" | "rejected" | "failed";
+
+export interface WebhookDeliveryRecord {
+  id: string;
+  tenantId: string;
+  triggerId: string;
+  deliveredAt: string;
+  status: WebhookDeliveryStatus;
+  httpStatus: number;
+  errorReason?: string | null;
+  runId?: string | null;
+  payloadSummary: Record<string, unknown>;
+  durationMs: number;
+}
+
+export interface AgentHeartbeatSettings {
+  agentId: string;
+  tenantId: string;
+  enabled: boolean;
+  intervalSeconds: number;
+  lastHeartbeatAt?: string | null;
+  nextHeartbeatAt?: string | null;
+  lockedBy?: string | null;
+  lockedUntil?: string | null;
 }

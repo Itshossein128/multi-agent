@@ -9,12 +9,26 @@ export function AgentBackendPanel({ backend, onChange }: { backend: AgentBackend
     <Field label="Backend type"><select className={fieldClass} value={backend.type} onChange={(event) => {
       const type = event.target.value as AgentBackend["type"];
       if (type !== backend.type && window.confirm("Changing backend type removes the current backend-specific configuration. Execution permissions will stay unchanged. Continue?")) onChange(emptyBackend(type));
-    }}><option value="api">API</option><option value="cli">CLI</option><option value="local">Local</option></select></Field>
-    <div className="grid gap-4 md:grid-cols-2">
+    }}><option value="api">API</option><option value="cli">CLI</option><option value="local">Local</option><option value="process">Process</option><option value="webhook">Webhook</option></select></Field>
+    {(backend.type === "api" || backend.type === "cli" || backend.type === "local") && <div className="grid gap-4 md:grid-cols-2">
       <Field label="Provider"><input className={fieldClass} list="agent-backend-providers" value={backend.provider} onChange={(event) => onChange({ ...backend, provider: event.target.value })} /></Field>
-      <datalist id="agent-backend-providers">{BACKEND_PROVIDERS[backend.type].map((provider) => <option key={provider} value={provider} />)}</datalist>
+      <datalist id="agent-backend-providers">{BACKEND_PROVIDERS[backend.type].map((provider: string) => <option key={provider} value={provider} />)}</datalist>
       <Field label={`Model${backend.type === "cli" ? " (optional)" : ""}`}><input className={fieldClass} value={backend.model ?? ""} onChange={(event) => onChange({ ...backend, model: event.target.value })} /></Field>
-    </div>
+    </div>}
+    {backend.type === "process" && <>
+      <Field label="Command"><input className={fieldClass} placeholder="Allowlisted command or binary name (e.g. my-script)" value={backend.command} onChange={(event) => onChange({ ...backend, command: event.target.value })} /></Field>
+      <Field label="Arguments (one argument per line)"><textarea className={fieldClass} rows={4} value={(backend.args ?? []).join("\n")} onChange={(event) => onChange({ ...backend, args: event.target.value.split("\n").filter(Boolean) })} /></Field>
+      <Field label="Workspace root (optional)"><input className={fieldClass} placeholder="Absolute workspace directory path" value={backend.workspaceRoot ?? ""} onChange={(event) => onChange({ ...backend, workspaceRoot: event.target.value || undefined })} /></Field>
+      <p className="text-sm text-zinc-400">Process commands must be approved by server allowlists. Arbitrary commands outside allowlists are rejected.</p>
+    </>}
+    {backend.type === "webhook" && <>
+      <Field label="Destination URL"><input className={fieldClass} type="url" placeholder="https://api.example.com/agent" value={backend.url} onChange={(event) => onChange({ ...backend, url: event.target.value })} /></Field>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field label="Method"><select className={fieldClass} value={backend.method ?? "POST"} onChange={(event) => onChange({ ...backend, method: event.target.value as "POST" | "PUT" })}><option value="POST">POST</option><option value="PUT">PUT</option></select></Field>
+        <Field label="Credential alias (optional)"><input className={fieldClass} placeholder="Credential broker alias" value={backend.credentialAlias ?? ""} onChange={(event) => onChange({ ...backend, credentialAlias: event.target.value || undefined })} /></Field>
+      </div>
+      <p className="text-sm text-zinc-400">Webhook destinations are protected by server anti-SSRF allowlists. Secrets belong in the credential broker, never in URL parameters.</p>
+    </>}
     {backend.type === "cli" && <>
       <Field label="Executable (optional)"><input className={fieldClass} placeholder="Provider default: codex, claude, agent, or agy" value={backend.executable ?? ""} onChange={(event) => onChange({ ...backend, executable: event.target.value || undefined })} /></Field>
       <Field label="Arguments (one argument per line)"><textarea className={fieldClass} rows={5} value={(backend.args ?? []).join("\n")} onChange={(event) => onChange({ ...backend, args: event.target.value.split("\n") })} /></Field>

@@ -48,9 +48,42 @@ export function validateAgent(agent: AgentRecord): string[] {
   const errors = credentialIssues(agent);
   const backend = agent?.backend;
   if (typeof agent?.name !== "string" || !agent.name.trim()) errors.push("Name is required.");
-  if (!backend || !["api", "cli", "local"].includes(backend.type)) return [...errors, "A valid backend type is required."];
-  if (typeof backend.provider !== "string" || !backend.provider.trim()) errors.push("Backend provider is required.");
-  if (backend.type !== "cli" && (typeof backend.model !== "string" || !backend.model.trim())) errors.push("Model is required for API and local backends.");
+  if (!backend || !["api", "cli", "local", "process", "webhook"].includes(backend.type)) return [...errors, "A valid backend type is required."];
+  if (["api", "cli", "local"].includes(backend.type) && (typeof backend.provider !== "string" || !backend.provider.trim())) errors.push("Backend provider is required.");
+  if ((backend.type === "api" || backend.type === "local") && (typeof backend.model !== "string" || !backend.model.trim())) errors.push("Model is required for API and local backends.");
+  if (backend.type === "process") {
+    if (typeof backend.command !== "string" || !backend.command.trim() || /[\r\n\0]/.test(backend.command)) errors.push("Process backend requires a valid command.");
+    if (backend.args && (!Array.isArray(backend.args) || backend.args.some((arg) => typeof arg !== "string" || arg.includes("\0")))) errors.push("Process arguments must be an array of strings.");
+    if (backend.workspaceRoot && (!/^(?:\/|[a-z]:[\\/]|\\\\)/i.test(backend.workspaceRoot) || /[\r\n\0]/.test(backend.workspaceRoot))) errors.push("Workspace root must be an absolute path.");
+  }
+  if (backend.type === "webhook") {
+    if (typeof backend.url !== "string" || !backend.url.trim()) {
+      errors.push("Webhook backend requires a URL.");
+    } else {
+      try {
+        const parsed = new URL(backend.url);
+        if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash) {
+          errors.push("Webhook URL must be HTTP(S) without embedded credentials or a fragment.");
+        }
+      } catch {
+        errors.push("Webhook URL is invalid.");
+      }
+    }
+    if (backend.method && !["POST", "PUT"].includes(backend.method)) errors.push("Webhook method must be POST or PUT.");
+    if (backend.credentialAlias && (typeof backend.credentialAlias !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(backend.credentialAlias))) {
+      errors.push("Webhook credential alias must be 1-64 characters matching [A-Za-z0-9._-].");
+    }
+    if (backend.timeoutMs !== undefined && (!Number.isInteger(backend.timeoutMs) || backend.timeoutMs < 500 || backend.timeoutMs > 300000)) {
+      errors.push("Webhook timeout must be an integer between 500ms and 300000ms.");
+    }
+    if (backend.headers && typeof backend.headers === "object") {
+      for (const [key] of Object.entries(backend.headers)) {
+        if (/^authorization$/i.test(key)) {
+          errors.push("Authorization headers belong in server runtime configuration or credential broker, not agent definition.");
+        }
+      }
+    }
+  }
   if (agent.enabled !== undefined && typeof agent.enabled !== "boolean") errors.push("Enabled must be a boolean.");
   if (typeof agent.systemPrompt !== "string" || typeof agent.description !== "string") errors.push("Prompt and description must be strings.");
   if (!Array.isArray(agent.tools) || agent.tools.some((id) => typeof id !== "string" || !id.trim())) errors.push("Tool IDs must be nonempty strings.");

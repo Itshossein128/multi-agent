@@ -16,6 +16,9 @@ import { registerTaskRoutes } from "./studio/taskRoutes";
 import { registerWorkspaceRoutes } from "./studio/workspaceRoutes";
 import { registerProjectRoutes } from "./studio/projectRoutes";
 import { registerWorkspaceEntityRoutes } from "./studio/workspaceEntityRoutes";
+import { registerTaskCommentRoutes } from "./studio/taskCommentRoutes";
+import { registerRoutineRoutes } from "./studio/routineRoutes";
+import { registerWebhookTriggerRoutes } from "./studio/webhookTriggerRoutes";
 
 import type { RunExecutor } from "../runtime/runExecutor";
 
@@ -43,6 +46,9 @@ export function createStudioRouter(
   registerWorkspaceRoutes(app, workspace);
   registerProjectRoutes(app, projects);
   registerWorkspaceEntityRoutes(app, workspaceEntities);
+  registerTaskCommentRoutes(app, store);
+  registerRoutineRoutes(app, store);
+  registerWebhookTriggerRoutes(app, store);
 
   return app;
 }

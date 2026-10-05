@@ -24,7 +24,8 @@ export type CredentialProvider =
   | "agy"
   | "database"
   | "search"
-  | "mcp";
+  | "mcp"
+  | "webhook";
 
 /** Every built-in provider. Deployments narrow this with an enabled-providers allowlist. */
 export const CREDENTIAL_PROVIDERS: ReadonlySet<string> = new Set<CredentialProvider>([
@@ -38,6 +39,7 @@ export const CREDENTIAL_PROVIDERS: ReadonlySet<string> = new Set<CredentialProvi
   "database",
   "search",
   "mcp",
+  "webhook",
 ]);
 
 export type CredentialPurpose = "tool" | "agent" | "embedding" | "database" | "search" | "mcp";
@@ -63,6 +65,7 @@ const PURPOSES_BY_PROVIDER: Readonly<Record<string, ReadonlySet<CredentialPurpos
   "claude-code": new Set<CredentialPurpose>(["agent"]),
   cursor: new Set<CredentialPurpose>(["agent"]),
   agy: new Set<CredentialPurpose>(["agent"]),
+  webhook: new Set<CredentialPurpose>(["agent", "tool"]),
 };
 
 export interface CredentialLeaseRequest {

@@ -5,12 +5,16 @@ export const BACKEND_PROVIDERS = {
   api: ["openai", "anthropic", "google", "gemini"],
   cli: ["codex", "claude-code", "agy", "cursor"],
   local: ["ollama", "lmstudio"],
+  process: ["process"],
+  webhook: ["webhook"],
 } satisfies Record<AgentBackend["type"], string[]>;
 
 export function emptyBackend(type: AgentBackend["type"]): AgentBackend {
   if (type === "cli") return { type, provider: "codex" };
   if (type === "local") return { type, provider: "ollama", model: "" };
-  return { type, provider: "openai", model: "" };
+  if (type === "process") return { type, provider: "process", command: "" };
+  if (type === "webhook") return { type, provider: "webhook", url: "" };
+  return { type: "api", provider: "openai", model: "" };
 }
 
 export function validateAgentConfiguration(agent: AgentRecord): string[] {

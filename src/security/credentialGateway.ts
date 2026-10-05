@@ -13,7 +13,7 @@ import {
 import { BrokerError, CREDENTIAL_BROKER_CONTRACT_VERSION, type BrokerErrorCode } from "../broker/contract";
 
 export interface CredentialGatewayRequest {
-  provider: "database" | "search" | "mcp" | "codex" | "claude-code" | "cursor" | "agy" | "openai" | "anthropic" | "gemini";
+  provider: "database" | "search" | "mcp" | "codex" | "claude-code" | "cursor" | "agy" | "openai" | "anthropic" | "gemini" | "webhook";
   alias: string;
   tenantId: string;
   principalId: string;

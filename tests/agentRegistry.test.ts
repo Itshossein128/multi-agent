@@ -36,7 +36,7 @@ describe("Phase 5 browser workspace", () => {
   });
   test("duplicates configuration deeply, preserving model limits and permissions", async () => {
     const agent = await workflowService.createAgent();
-    await workflowService.updateAgent(agent.id, { backend: { ...agent.backend, type: "api", model: "gpt-4o", settings: { maxTokens: 512, temperature: 0.3 } }, executionPolicy: { shell: "disabled" }, tools: ["tool-a"] });
+    await workflowService.updateAgent(agent.id, { backend: { type: "api", provider: "openai", model: "gpt-4o", settings: { maxTokens: 512, temperature: 0.3 } }, executionPolicy: { shell: "disabled" }, tools: ["tool-a"] });
     const copy = await workflowService.duplicateAgent(agent.id);
     expect(copy.id).not.toBe(agent.id);
     expect(copy.name).toContain("(copy)");

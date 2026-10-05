@@ -14,8 +14,9 @@ import { AgentToolsPanel, AgentWorkflowUsage } from "./AgentResources";
 import { AgentExecutionHistory } from "./AgentExecutionHistory";
 import { Field, fieldClass, Section } from "./AgentFields";
 import { formatDateTime } from "@/lib/formatDateTime";
+import { AgentHeartbeatPanel } from "./AgentHeartbeatPanel";
 
-const sections = ["Overview", "Configuration", "Backend", "Tools", "Memory", "Workflows", "Executions", "Test"] as const;
+const sections = ["Overview", "Configuration", "Backend", "Heartbeat", "Tools", "Memory", "Workflows", "Executions", "Test"] as const;
 
 export function AgentDetail({ agentId }: { agentId: string }) {
   const router = useRouter();
@@ -95,7 +96,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
               }}>Delete</Button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-300"><span>Last observed agent status: {runtimeStatus}</span><span>Backend: {agent.backend.type} / {agent.backend.provider}</span><span>Model: {agent.backend.model || "Runtime default"}</span><span>Updated: {formatDateTime(agent.updatedAt)}</span><span>Last execution: {latestRun?.startedAt ? formatDateTime(latestRun.startedAt) : (detail.runs.isError ? "Unavailable" : detail.runs.isPending ? "Loading…" : "None recorded")}</span></div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-300"><span>Last observed agent status: {runtimeStatus}</span><span>Backend: {agent.backend.type} / {agent.backend.provider}</span><span>Model: {("model" in agent.backend && agent.backend.model) || (agent.backend.type === "process" ? agent.backend.command : agent.backend.type === "webhook" ? agent.backend.url : "Runtime default")}</span><span>Updated: {formatDateTime(agent.updatedAt)}</span><span>Last execution: {latestRun?.startedAt ? formatDateTime(latestRun.startedAt) : (detail.runs.isError ? "Unavailable" : detail.runs.isPending ? "Loading…" : "None recorded")}</span></div>
         </header>
         {dirty && <p role="status" className="text-sm text-amber-200">Unsaved changes</p>}
         {notice && <p role="status" className="text-sm text-emerald-300">{notice}</p>}
@@ -104,7 +105,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
         {section === "Overview" && <div className="grid gap-5 lg:grid-cols-2">
           <Section title="Agent overview"><dl className="grid grid-cols-2 gap-4 text-sm">
             {Object.entries({
-              Purpose: agent.description || "Not specified", Backend: `${agent.backend.type} / ${agent.backend.provider}`, Model: agent.backend.model || "Runtime default", "Assigned tools": agent.tools.length,
+              Purpose: agent.description || "Not specified", Backend: `${agent.backend.type} / ${agent.backend.provider}`, Model: ("model" in agent.backend && agent.backend.model) || (agent.backend.type === "process" ? agent.backend.command : agent.backend.type === "webhook" ? agent.backend.url : "Runtime default"), "Assigned tools": agent.tools.length,
               "Saved workflows": detail.workflows.data ? detail.workflows.data.filter((workflow) => workflow.nodes.some((node) => node.type === "agent" && (node.config as { agentId?: string }).agentId === agentId)).length : "Unavailable",
               "Last run status": detail.runs.isError ? "Unavailable" : detail.runs.data?.[0]?.status ?? "No executions", "Last run duration": detail.runs.data?.[0] ? runDuration(detail.runs.data[0].startedAt, detail.runs.data[0].completedAt) : "Not available", Memory: agent.memory?.enabled ? `Run / ${agent.memory.scope} / ${agent.memory.mode}` : "Disabled", Lifecycle: agent.enabled === false ? "Disabled" : "Enabled"
             }).map(([label, value]) => <div key={label}><dt className="text-zinc-400">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
@@ -123,6 +124,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
           </fieldset>
         </Section>}
         {section === "Backend" && <fieldset disabled={!editing || busy} className="space-y-5"><AgentBackendPanel backend={agent.backend} onChange={(backend) => update({ backend })} /><ExecutionPolicyPanel policy={agent.executionPolicy} onChange={(executionPolicy) => update({ executionPolicy })} /></fieldset>}
+        {section === "Heartbeat" && <AgentHeartbeatPanel agentId={agentId} />}
         {section === "Test" && <AgentTestPanel agent={detail.agent.data ?? agent} dirty={dirty} />}
         {(section === "Tools" || section === "Workflows") && detail.workflows.isPending && <p role="status">Loading saved workflows…</p>}
         {(section === "Tools" || section === "Workflows") && detail.workflows.isError && <Section title="Workflow data unavailable"><p role="alert">{detail.workflows.error.message}</p><Button onClick={() => void detail.workflows.refetch()}>Retry</Button></Section>}

@@ -506,6 +506,10 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
       const wf = createEmptyDefinition("Postgres Alice Flow");
       const agent = createAgentRecord({ name: "Postgres Alice Agent" });
       const tool = createToolRecord({ name: "Postgres Alice Tool" });
+      const now = new Date().toISOString();
+      await store.saveWorkspace({ id: "ws-1", tenantId: "tenant-alpha", ownerId: "user-alice", name: "Workspace 1", description: "", status: "active", settings: {}, createdAt: now, updatedAt: now }, alice);
+      await store.saveProject({ id: "proj-1", tenantId: "tenant-alpha", ownerId: "user-alice", name: "Project 1", description: "", status: "active", settings: {}, createdAt: now, updatedAt: now }, alice);
+
       const task: StudioTask = {
         id: "pg-task-1",
         title: "Postgres Task",
@@ -513,11 +517,13 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
         priority: "high",
         status: "todo",
         assignedAgent: null,
+        workspaceId: "ws-1",
+        projectIds: ["proj-1"],
         dependencies: [],
         output: null,
         retryCount: 0,
         paused: false,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
       };
 
       await store.saveWorkflow(wf, alice);

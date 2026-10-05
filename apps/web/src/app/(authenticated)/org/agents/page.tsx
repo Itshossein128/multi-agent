@@ -25,7 +25,7 @@ export default function AgentRegistry() {
     {agents.data?.length === 0 && <p>No agents yet. Create one to configure it.</p>}
     <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{agents.data?.map((agent) => <li key={agent.id} className="space-y-2 rounded-xl border border-zinc-800 p-4">
       <Link className="text-lg font-medium text-indigo-300 underline" href={`/org/agents/${agent.id}`}>{agent.name}</Link>
-      <p className="text-sm text-zinc-400">{agent.backend.type} / {agent.backend.provider} / {agent.backend.model || "Runtime default"}</p>
+      <p className="text-sm text-zinc-400">{agent.backend.type} / {agent.backend.provider} / {("model" in agent.backend && agent.backend.model) || (agent.backend.type === "process" ? agent.backend.command : agent.backend.type === "webhook" ? agent.backend.url : "Runtime default")}</p>
       <p className="text-sm">{agent.enabled === false ? "Disabled" : "Enabled"}</p>
       <p className="break-words text-sm text-zinc-300">{agent.description || "No description."}</p>
     </li>)}</ul>
