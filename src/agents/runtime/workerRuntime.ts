@@ -135,6 +135,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     bytes: number;
     reason: WorkerTerminationReason;
     killTimer?: NodeJS.Timeout;
+    timeoutTimer?: NodeJS.Timeout;
     errorMsg?: string;
     completed: boolean;
     terminationRequested: boolean;
@@ -223,6 +224,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       bytes: number;
       reason: WorkerTerminationReason;
       killTimer?: NodeJS.Timeout;
+      timeoutTimer?: NodeJS.Timeout;
       errorMsg?: string;
       completed: boolean;
       terminationRequested: boolean;
@@ -285,9 +287,8 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       this.log("worker.error", { workerId, runId: spec.runId, error: safeError.message, durationMs: Date.now() - startMs });
     });
 
-    let timer: NodeJS.Timeout | undefined;
     if (spec.timeoutMs > 0) {
-      timer = setTimeout(() => {
+      state.timeoutTimer = setTimeout(() => {
         if (!state.completed) {
           state.reason = "timeout";
           state.errorMsg = `Worker timed out after ${spec.timeoutMs}ms`;
@@ -316,7 +317,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       const finish = () => {
         if (!childClosed || !stdoutClosed || !stderrClosed) return;
         state.completed = true;
-        clearTimeout(timer);
+        clearTimeout(state.timeoutTimer);
         clearTimeout(state.killTimer);
         signal?.removeEventListener("abort", abort);
 
@@ -346,6 +347,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     const state = this.workers.get(workerId);
     if (!state || state.completed || state.terminationRequested) return;
     state.terminationRequested = true;
+    clearTimeout(state.timeoutTimer);
 
     try {
       state.child.kill("SIGTERM");
@@ -398,6 +400,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
         this.terminateChild(workerId);
         await state.waitPromise;
       }
+      clearTimeout(state.timeoutTimer);
       clearTimeout(state.killTimer);
       this.workers.delete(workerId);
     }
