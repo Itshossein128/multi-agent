@@ -769,6 +769,9 @@ export interface Run {
   metadata: Record<string, unknown>;
   ownerId?: string;
   tenantId?: string;
+  executionOwnerId?: string;
+  executionLeaseExpiresAt?: string;
+  executionHeartbeatAt?: string;
 }
 
 export interface RunCreateRequest {
@@ -1011,6 +1014,7 @@ export interface WebhookDeliveryRecord {
   id: string;
   tenantId: string;
   triggerId: string;
+  idempotencyKey?: string | null;
   deliveredAt: string;
   status: WebhookDeliveryStatus;
   httpStatus: number;

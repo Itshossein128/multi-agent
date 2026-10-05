@@ -45,6 +45,10 @@ As an operator, I can configure an optional heartbeat interval on specific agent
 2. **Given** an agent with heartbeat interval set to 300s, **When** the interval elapses and no active run is in flight, **Then** exactly one worker claims the heartbeat lease, dispatches the heartbeat run, and updates `lastHeartbeatAt` and `nextHeartbeatAt`.
 3. **Given** a server crash while a heartbeat lease is held, **When** the lease expiration elapses, **Then** the lease is recovered safely on the next cycle without running missed historical ticks multiple times (honest coalesce/skip policy).
 
+> [!NOTE] Scoped Team Heartbeat Architectural Blocker
+> In the current platform data model (migrations 001-013), agents are provisioned as individual entities in `studio_agents` with heartbeats keyed by `(tenant_id, agent_id)` in `studio_agent_heartbeats`. While migration 014 introduces managerial reporting edges (`studio_agent_reporting`), there is no first-class `studio_teams` entity or team membership mapping table in the core schema. Team-level heartbeat configuration is therefore architecturally blocked on the introduction of a canonical team entity and membership resolver; heartbeat scheduling currently operates per-agent.
+
+
 ---
 
 ### User Story 3 - Recurring Routines Tied to Agents, Tasks, or Workflows (Priority: P2)

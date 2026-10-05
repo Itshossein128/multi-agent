@@ -186,9 +186,28 @@ export interface StudioStore {
   recordWebhookDelivery(delivery: WebhookDeliveryRecord): Promise<WebhookDeliveryRecord>;
   listWebhookDeliveries(triggerId: string, principal?: StudioPrincipal, limit?: number): Promise<WebhookDeliveryRecord[]>;
   countRecentWebhookDeliveries(triggerId: string, windowSeconds: number): Promise<number>;
+  acceptWebhookDelivery(params: AcceptWebhookDeliveryParams): Promise<AcceptWebhookDeliveryResult>;
 
   // --- Agent Heartbeats ---
   getAgentHeartbeat(agentId: string, principal?: StudioPrincipal): Promise<AgentHeartbeatSettings | null>;
   saveAgentHeartbeat(settings: AgentHeartbeatSettings, principal?: StudioPrincipal): Promise<AgentHeartbeatSettings>;
   claimDueHeartbeats(workerId: string, limit?: number): Promise<AgentHeartbeatSettings[]>;
+  isAgentBusy(agentId: string, tenantId: string): Promise<boolean>;
+}
+
+export interface AcceptWebhookDeliveryParams {
+  triggerId: string;
+  deliveryId?: string;
+  idempotencyKey?: string | null;
+  payload: Record<string, unknown>;
+  payloadSummary?: Record<string, unknown>;
+  durationMs?: number;
+}
+
+export interface AcceptWebhookDeliveryResult {
+  decision: "accepted" | "rejected" | "replay";
+  httpStatus: number;
+  delivery: WebhookDeliveryRecord;
+  error?: string;
+  outboxEvent?: TriggerEvent;
 }

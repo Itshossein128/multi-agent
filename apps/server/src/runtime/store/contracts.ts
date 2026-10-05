@@ -69,4 +69,14 @@ export interface RunStoreContract {
   assertHealthy?(): void;
   hydrate?(): Promise<void>;
   flush?(): Promise<void>;
+  findByTriggerDispatchKey?(key: string, tenantId?: string): RunEntry | undefined;
+  findDurableRunIdByTriggerDispatchKey?(key: string, tenantId?: string): Promise<string | null>;
+  waitForPersistence?(runId: string): Promise<{ success: boolean; duplicate?: boolean }>;
+  claimOrphanedRuns?(options?: {
+    ownerId?: string;
+    leaseDurationMs?: number;
+    statuses?: RunStatus[];
+  }): Promise<Array<{ id: string; status: RunStatus }>>;
+  renewActiveLeases?(): Promise<string[]>;
+  close?(): void;
 }

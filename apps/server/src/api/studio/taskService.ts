@@ -393,7 +393,11 @@ export class TaskService {
     });
   }
 
-  async start(id: string, principal: RequestPrincipal): Promise<{ success: boolean; task: StudioTask; runId: string }> {
+  async start(
+    id: string,
+    principal: RequestPrincipal,
+    options?: { triggerDispatchKey?: string },
+  ): Promise<{ success: boolean; task: StudioTask; runId: string }> {
     if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
     const task = await this.get(id, principal);
     const canonical = toCanonicalStatus(task.status);
@@ -461,7 +465,13 @@ export class TaskService {
           agents: agentsToRun,
           tools: toolsToRun,
           input: { title: task.title, description: task.description, taskId: task.id },
-          metadata: { ...task.metadata, taskId: task.id, taskTitle: task.title },
+          metadata: {
+            ...task.metadata,
+            taskId: task.id,
+            taskTitle: task.title,
+            projectIds: task.projectIds ?? [],
+            ...(options?.triggerDispatchKey ? { triggerDispatchKey: options.triggerDispatchKey } : {}),
+          },
           taskId: task.id,
         },
         undefined,
@@ -854,6 +864,7 @@ export class TaskService {
             ...task.metadata,
             taskId: task.id,
             taskTitle: task.title,
+            projectIds: task.projectIds ?? [],
             parentRunId,
             clarificationOfRunId: parentRunId,
             clarificationAnswerFingerprint: fp,

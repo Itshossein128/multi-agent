@@ -7,6 +7,7 @@ import type { PrincipalResolver } from "../auth/authorization";
 import { DashboardService } from "./dashboard/dashboardService";
 import type { DashboardCommand } from "./dashboard/models";
 import { requirePrincipal, respondWithApiError, type PrincipalVariables } from "./shared/http";
+import type { BudgetStore } from "../budgets/budgetStore";
 
 export * from "./dashboard/models";
 
@@ -15,9 +16,10 @@ export function createDashboardRouter(
   studioStore?: StudioStore,
   executor?: RunExecutor,
   resolvePrincipal: PrincipalResolver = resolveRequestPrincipal,
+  budgetStore?: BudgetStore,
 ) {
   const app = new Hono<{ Variables: PrincipalVariables }>();
-  const service = new DashboardService(runStore, studioStore, executor);
+  const service = new DashboardService(runStore, studioStore, executor, budgetStore);
 
   app.use("/*", requirePrincipal(resolvePrincipal));
   app.onError(respondWithApiError);

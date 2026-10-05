@@ -51,6 +51,8 @@ function asCredentialPrincipal(principal?: RequestPrincipal): TrustedCredentialP
   return principal ? { tenantId: principal.tenantId, principalId: principal.userId } : undefined;
 }
 
+import { randomUUID } from "node:crypto";
+
 function configuredRunConcurrency(): number {
   const value = Number(process.env.WORKFLOW_MAX_CONCURRENT_RUNS ?? 4);
   return Number.isInteger(value) && value >= 1 && value <= 256 ? value : 4;
@@ -62,6 +64,7 @@ function configuredRunConcurrency(): number {
  * graph streaming to GraphRunner.
  */
 export class RunExecutor {
+  public readonly instanceId: string;
   private checkpointers = new Map<string, BaseCheckpointSaver>();
   private pausedContext = new Map<string, PausedContext>();
   private branchControllers = new Map<string, Map<string, AbortController>>();
@@ -83,6 +86,7 @@ export class RunExecutor {
     private readonly memoryJobs?: MemoryBackgroundJobs,
     private readonly durableMemoryJobs?: DurableMemoryJobEnqueuer,
   ) {
+    this.instanceId = (this.store as any).instanceId ?? randomUUID();
     // Wire up the extracted managers with shared state.
     this.graphRunner = new GraphRunner(this.store, this.pausedContext, this.checkpointers, this.episodeService,
       (runId, input, access, result) => this.scheduleProceduralLearning(runId, input, access, result),
@@ -235,6 +239,13 @@ export class RunExecutor {
 
   private async executeAgentTest(runId: string, request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     try {
+      await this.store.waitForPersistence?.(runId);
+    } catch (error) {
+      this.store.cancel(runId);
+      log.error("run.persistence_unavailable_before_agent_test", { runId, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    try {
       let output: Record<string, unknown> = {};
       for await (const event of this.agentRuntime.execute({ agent: request.agent, input: request.input, runId, nodeId: `test:${request.agent.id}`, signal: this.store.signal(runId), memoryStore: new Map(), memoryAccess, credentialPrincipal: asCredentialPrincipal(principal), onBackgroundEvent: event => { this.appendAgentEvent(runId, event); } })) {
         this.appendAgentEvent(runId, event);
@@ -260,9 +271,18 @@ export class RunExecutor {
     const errors = issues.filter(issue => issue.level === "error");
     if (errors.length) throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
     this.assertRunInputContract(request);
-    const id = uid("run"); const stamp = nowIso();
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
+    const triggerDispatchKey = typeof request.metadata?.triggerDispatchKey === "string" ? request.metadata.triggerDispatchKey : undefined;
+    if (triggerDispatchKey) {
+      const existing = this.store.findByTriggerDispatchKey?.(triggerDispatchKey, tenantId);
+      if (existing) {
+        log.info("run.deduplicated_trigger_dispatch", { runId: existing.run.id, triggerDispatchKey });
+        return existing.run.id;
+      }
+    }
+
+    const id = uid("run"); const stamp = nowIso();
     const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
     const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
     const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId };
@@ -494,6 +514,37 @@ export class RunExecutor {
   }
 
   private async executeWorkflow(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
+    const triggerDispatchKey = typeof request.metadata?.triggerDispatchKey === "string" ? request.metadata.triggerDispatchKey : undefined;
+    if (triggerDispatchKey) {
+      if (typeof this.store.findDurableRunIdByTriggerDispatchKey === "function") {
+        const durableRunId = await this.store.findDurableRunIdByTriggerDispatchKey(triggerDispatchKey, principal?.tenantId);
+        if (durableRunId && durableRunId !== runId) {
+          log.info("run.suppressed_duplicate_execution_durable_found", { runId, durableRunId, triggerDispatchKey });
+          this.store.cancel(runId);
+          return;
+        }
+      }
+    }
+
+    try {
+      const persistenceResult = await this.store.waitForPersistence?.(runId);
+      if (persistenceResult?.duplicate) {
+        log.info("run.suppressed_duplicate_execution", { runId, triggerDispatchKey });
+        this.store.cancel(runId);
+        return;
+      }
+    } catch (error) {
+      this.store.cancel(runId);
+      log.error("run.persistence_unavailable_before_execution", { runId, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+
+    const entry = this.store.get(runId);
+    if (!entry || entry.run.status === "failed" || entry.run.status === "cancelled" || this.store.signal(runId)?.aborted) {
+      log.info("run.execution_skipped", { runId, status: entry?.run?.status });
+      return;
+    }
+
     this.store.update(runId, { status: "running" });
     const timeout = setTimeout(() => this.store.cancel(runId), this.guardrails.maxRunDurationMs);
     const checkpointer = typeof this.checkpointer === "object" ? this.checkpointer : new MemorySaver();

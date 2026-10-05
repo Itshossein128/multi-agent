@@ -56,7 +56,8 @@ export interface TokenMetrics {
   promptTokens: number;
   completionTokens: number;
   totalCostUsd: number;
-  budgetUsd: number;
+  costEstimated: boolean;
+  budgetUsd: number | null;
   providerBreakdown: { provider: string; model: string; tokens: number; cost: number }[];
 }
 

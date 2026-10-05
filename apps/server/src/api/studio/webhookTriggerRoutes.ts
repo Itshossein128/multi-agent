@@ -253,24 +253,7 @@ export function createInboundWebhookRouter(store: StudioStore): Hono {
       return c.json({ error: "Webhook trigger is disabled" }, 400);
     }
 
-    // 2. Multi-instance & restart safe rate limiting using durable DB counts
-    const recentDeliveriesCount = await store.countRecentWebhookDeliveries(trigger.id, 60);
-    if (recentDeliveriesCount >= trigger.rateLimitPerMinute) {
-      await store.recordWebhookDelivery({
-        id: deliveryId,
-        tenantId: trigger.tenantId,
-        triggerId: trigger.id,
-        deliveredAt: nowIso(),
-        status: "rejected",
-        httpStatus: 429,
-        errorReason: `Rate limit of ${trigger.rateLimitPerMinute}/min exceeded (${recentDeliveriesCount} deliveries in last 60s)`,
-        payloadSummary: {},
-        durationMs: Date.now() - startTime,
-      });
-      return c.json({ error: "Rate limit exceeded" }, 429);
-    }
-
-    // 3. Stream & bound request body before buffering (1MB limit)
+    // 2. Stream & bound request body before buffering (1MB limit)
     let rawBuffer: Buffer;
     try {
       rawBuffer = await readBoundedRequestBody(c.req.raw, MAX_WEBHOOK_PAYLOAD_BYTES);
@@ -282,7 +265,7 @@ export function createInboundWebhookRouter(store: StudioStore): Hono {
     }
     const rawBody = rawBuffer.toString("utf8");
 
-    // 4. Verify HMAC signature & required timestamp
+    // 3. Verify HMAC signature & required timestamp
     const signatureHeader =
       c.req.header("x-webhook-signature") ||
       c.req.header("x-signature-256") ||
@@ -324,50 +307,13 @@ export function createInboundWebhookRouter(store: StudioStore): Hono {
       return c.json({ error: verification.reason || "Unauthorized signature" }, 401);
     }
 
-    // 5. Durable Replay & Idempotency check across restarts & instances
+    // 4. Extract idempotency key
     const clientProvidedIdempotencyKey =
       c.req.header("idempotency-key") ||
       c.req.header("x-idempotency-key");
-    const deterministicKey = clientProvidedIdempotencyKey || `${signatureHeader}:${timestampHeader || ""}`;
-    const outboxIdempotencyKey = `wh:${trigger.id}:${deterministicKey}`;
+    const deterministicKey = clientProvidedIdempotencyKey || (signatureHeader ? `${signatureHeader}:${timestampHeader || ""}` : null);
 
-    // Fast-path in-memory replay check
-    if (!defaultReplayProtector.checkAndRecord(`${trigger.id}:${deterministicKey}`)) {
-      await store.recordWebhookDelivery({
-        id: deliveryId,
-        tenantId: trigger.tenantId,
-        triggerId: trigger.id,
-        deliveredAt: nowIso(),
-        status: "rejected",
-        httpStatus: 409,
-        errorReason: "Replay detected (in-memory cache)",
-        payloadSummary: {},
-        durationMs: Date.now() - startTime,
-      });
-      return c.json({ error: "Duplicate delivery or replay detected" }, 409);
-    }
-
-    // Durable DB check to prevent replays across restarts
-    const existingEvents = await store.listTriggerEvents({
-      tenantId: trigger.tenantId,
-      idempotencyKey: outboxIdempotencyKey,
-    });
-    if (existingEvents.length > 0) {
-      await store.recordWebhookDelivery({
-        id: deliveryId,
-        tenantId: trigger.tenantId,
-        triggerId: trigger.id,
-        deliveredAt: nowIso(),
-        status: "rejected",
-        httpStatus: 409,
-        errorReason: "Replay detected (persisted record)",
-        payloadSummary: {},
-        durationMs: Date.now() - startTime,
-      });
-      return c.json({ error: "Duplicate delivery or replay detected" }, 409);
-    }
-
-    // 6. Parse JSON body
+    // 5. Parse JSON body
     let parsedPayload: Record<string, unknown> = {};
     if (rawBody.trim()) {
       try {
@@ -377,6 +323,7 @@ export function createInboundWebhookRouter(store: StudioStore): Hono {
           id: deliveryId,
           tenantId: trigger.tenantId,
           triggerId: trigger.id,
+          idempotencyKey: deterministicKey,
           deliveredAt: nowIso(),
           status: "rejected",
           httpStatus: 400,
@@ -388,38 +335,28 @@ export function createInboundWebhookRouter(store: StudioStore): Hono {
       }
     }
 
-    // 7. Coordinate accepted delivery and outbox event atomically
-    await store.transaction(async (tx) => {
-      await tx.enqueueTriggerEvent({
-        tenantId: trigger.tenantId,
-        eventType: "webhook_inbound",
-        targetType: trigger.targetType,
-        targetId: trigger.targetId,
-        idempotencyKey: outboxIdempotencyKey,
-        payload: {
-          triggerId: trigger.id,
-          triggerName: trigger.name,
-          deliveryId,
-          payload: parsedPayload,
-        },
-      });
-
-      await tx.recordWebhookDelivery({
-        id: deliveryId,
-        tenantId: trigger.tenantId,
-        triggerId: trigger.id,
-        deliveredAt: nowIso(),
-        status: "accepted",
-        httpStatus: 202,
-        payloadSummary: {
-          keys: Object.keys(parsedPayload).slice(0, 20),
-          sizeBytes: rawBuffer.length,
-        },
-        durationMs: Date.now() - startTime,
-      });
+    // 6. Coordinate rate-limiting, replay prevention, and outbox enqueue atomically
+    const result = await store.acceptWebhookDelivery({
+      triggerId: trigger.id,
+      deliveryId,
+      idempotencyKey: deterministicKey,
+      payload: parsedPayload,
+      payloadSummary: {
+        keys: Object.keys(parsedPayload).slice(0, 20),
+        sizeBytes: rawBuffer.length,
+      },
+      durationMs: Date.now() - startTime,
     });
 
-    return c.json({ accepted: true, deliveryId }, 202);
+    if (result.decision === "accepted") {
+      return c.json({ accepted: true, deliveryId }, 202);
+    }
+
+    if (result.decision === "replay") {
+      return c.json({ error: result.error || "Duplicate delivery or replay detected" }, 409);
+    }
+
+    return c.json({ error: result.error || "Webhook delivery rejected" }, result.httpStatus as any);
   });
 
   return router;

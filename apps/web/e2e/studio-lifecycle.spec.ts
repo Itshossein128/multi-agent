@@ -167,7 +167,7 @@ test("workflow delete removes the open workflow from the switcher", async ({ pag
 
   page.once("dialog", (dialog) => dialog.accept("Delete Target"));
   await page.getByRole("button", { name: "New workflow" }).click();
-  await expect(page).toHaveURL(/\/org\?workflowId=wf-/);
+  await expect.poll(() => new URL(page.url()).searchParams.get("workflowId")).not.toBe(keepId);
   const deleteId = new URL(page.url()).searchParams.get("workflowId");
   expect(deleteId).toBeTruthy();
   expect(deleteId).not.toBe(keepId);

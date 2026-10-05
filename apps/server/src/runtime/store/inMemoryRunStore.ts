@@ -37,6 +37,17 @@ export class InMemoryRunStore implements RunStoreContract {
       ? { principalId: run.ownerId, tenantId: run.tenantId }
       : undefined;
 
+    const triggerDispatchKey = typeof run.metadata?.triggerDispatchKey === "string" ? run.metadata.triggerDispatchKey : undefined;
+    if (triggerDispatchKey) {
+      const existing = this.findByTriggerDispatchKey(triggerDispatchKey, run.tenantId);
+      if (existing) {
+        const err: any = new Error(`duplicate key value violates unique constraint "studio_runs_trigger_dispatch_key"`);
+        err.code = "23505";
+        err.constraint = "studio_runs_trigger_dispatch_key";
+        throw err;
+      }
+    }
+
     run = this.sanitizeRun(run);
     this.entries.set(run.id, {
       run,
@@ -61,6 +72,25 @@ export class InMemoryRunStore implements RunStoreContract {
 
   get(runId: string) {
     return this.entries.get(runId);
+  }
+
+  findByTriggerDispatchKey(key: string, tenantId?: string): RunEntry | undefined {
+    for (const entry of this.entries.values()) {
+      if (entry.run.metadata?.triggerDispatchKey === key) {
+        if (!tenantId || entry.run.tenantId === tenantId) {
+          return entry;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  async findDurableRunIdByTriggerDispatchKey(key: string, tenantId?: string): Promise<string | null> {
+    return this.findByTriggerDispatchKey(key, tenantId)?.run.id ?? null;
+  }
+
+  async waitForPersistence(_runId: string): Promise<{ success: boolean; duplicate?: boolean }> {
+    return { success: true };
   }
 
   list(filters?: string | RunListFilters, principal?: RequestPrincipal): Run[] {
@@ -217,4 +247,6 @@ export class InMemoryRunStore implements RunStoreContract {
     const entry = this.entries.get(runId);
     if (entry) entry.proceduralMemoryStatus = status;
   }
+
+  close(): void {}
 }

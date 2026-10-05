@@ -14,6 +14,8 @@ import {
   type AgentHeartbeatSettings,
 } from "@multi-agent/types";
 import type {
+  AcceptWebhookDeliveryParams,
+  AcceptWebhookDeliveryResult,
   StudioEntityStatusFilter,
   StudioPrincipal,
   StudioProject,
@@ -44,6 +46,7 @@ export class InMemoryStudioStore implements StudioStore {
   private webhookTriggers = new Map<string, WebhookTriggerRecord>();
   private webhookDeliveries = new Map<string, WebhookDeliveryRecord>();
   private heartbeats = new Map<string, AgentHeartbeatSettings>(); // key: `${tenantId}:${agentId}`
+  private busyAgents = new Set<string>(); // key: `${tenantId}:${agentId}`
 
   async transaction<T>(operation: (store: StudioStore) => Promise<T>): Promise<T> {
     const snapshot = {
@@ -60,6 +63,7 @@ export class InMemoryStudioStore implements StudioStore {
       webhookTriggers: new Map(structuredClone([...this.webhookTriggers])),
       webhookDeliveries: new Map(structuredClone([...this.webhookDeliveries])),
       heartbeats: new Map(structuredClone([...this.heartbeats])),
+      busyAgents: new Set(this.busyAgents),
     };
     try {
       return await operation(this);
@@ -77,6 +81,7 @@ export class InMemoryStudioStore implements StudioStore {
       this.webhookTriggers = snapshot.webhookTriggers;
       this.webhookDeliveries = snapshot.webhookDeliveries;
       this.heartbeats = snapshot.heartbeats;
+      this.busyAgents = snapshot.busyAgents;
       throw error;
     }
   }
@@ -448,7 +453,11 @@ export class InMemoryStudioStore implements StudioStore {
     const now = Date.now();
     const candidates = [...this.triggerEvents.values()]
       .filter((e) => {
-        if (e.status !== "pending" && e.status !== "failed") return false;
+        const isDueStatus =
+          e.status === "pending" ||
+          e.status === "failed" ||
+          (e.status === "processing" && Boolean(e.lockedUntil && Date.parse(e.lockedUntil) <= now));
+        if (!isDueStatus) return false;
         if (e.retryCount >= e.maxRetries) return false;
         if (e.nextRetryAt && Date.parse(e.nextRetryAt) > now) return false;
         if (e.lockedUntil && Date.parse(e.lockedUntil) > now) return false;
@@ -595,11 +604,122 @@ export class InMemoryStudioStore implements StudioStore {
     const threshold = Date.now() - windowSeconds * 1000;
     let count = 0;
     for (const d of this.webhookDeliveries.values()) {
-      if (d.triggerId === triggerId && Date.parse(d.deliveredAt) >= threshold) {
+      if (d.triggerId === triggerId && d.status === "accepted" && Date.parse(d.deliveredAt) >= threshold) {
         count++;
       }
     }
     return count;
+  }
+
+  async acceptWebhookDelivery(params: AcceptWebhookDeliveryParams): Promise<AcceptWebhookDeliveryResult> {
+    const trigger = this.webhookTriggers.get(params.triggerId);
+    const deliveryId = params.deliveryId ?? uid("deliv");
+    const stamp = nowIso();
+
+    if (!trigger) {
+      const dummyDelivery: WebhookDeliveryRecord = {
+        id: deliveryId,
+        tenantId: "unknown",
+        triggerId: params.triggerId,
+        deliveredAt: stamp,
+        status: "rejected",
+        httpStatus: 404,
+        errorReason: `Webhook trigger "${params.triggerId}" not found`,
+        payloadSummary: params.payloadSummary ?? {},
+        durationMs: params.durationMs ?? 0,
+      };
+      return { decision: "rejected", httpStatus: 404, delivery: dummyDelivery, error: dummyDelivery.errorReason ?? undefined };
+    }
+
+    if (!trigger.enabled) {
+      const delivery: WebhookDeliveryRecord = {
+        id: deliveryId,
+        tenantId: trigger.tenantId,
+        triggerId: trigger.id,
+        idempotencyKey: params.idempotencyKey ?? null,
+        deliveredAt: stamp,
+        status: "rejected",
+        httpStatus: 400,
+        errorReason: "Webhook trigger is disabled",
+        payloadSummary: params.payloadSummary ?? {},
+        durationMs: params.durationMs ?? 0,
+      };
+      await this.recordWebhookDelivery(delivery);
+      return { decision: "rejected", httpStatus: 400, delivery, error: delivery.errorReason ?? undefined };
+    }
+
+    // Replay check (must precede rate-limiting so replay returns 409)
+    if (params.idempotencyKey) {
+      const existingAccepted = [...this.webhookDeliveries.values()].find(
+        (d) => d.triggerId === trigger.id && d.idempotencyKey === params.idempotencyKey && d.status === "accepted"
+      );
+      if (existingAccepted) {
+        return {
+          decision: "replay",
+          httpStatus: 409,
+          delivery: existingAccepted,
+          error: "Duplicate delivery or replay detected",
+        };
+      }
+    }
+
+    // Rate limit check (rejected 429s must not extend lockout)
+    const recentCount = await this.countRecentWebhookDeliveries(trigger.id, 60);
+    if (recentCount >= trigger.rateLimitPerMinute) {
+      const delivery: WebhookDeliveryRecord = {
+        id: deliveryId,
+        tenantId: trigger.tenantId,
+        triggerId: trigger.id,
+        idempotencyKey: params.idempotencyKey ?? null,
+        deliveredAt: stamp,
+        status: "rejected",
+        httpStatus: 429,
+        errorReason: `Rate limit of ${trigger.rateLimitPerMinute}/min exceeded (${recentCount} deliveries in last 60s)`,
+        payloadSummary: params.payloadSummary ?? {},
+        durationMs: params.durationMs ?? 0,
+      };
+      await this.recordWebhookDelivery(delivery);
+      return { decision: "rejected", httpStatus: 429, delivery, error: delivery.errorReason ?? undefined };
+    }
+
+    // Accept delivery and enqueue outbox event atomically
+    const acceptedDelivery: WebhookDeliveryRecord = {
+      id: deliveryId,
+      tenantId: trigger.tenantId,
+      triggerId: trigger.id,
+      idempotencyKey: params.idempotencyKey ?? null,
+      deliveredAt: stamp,
+      status: "accepted",
+      httpStatus: 202,
+      payloadSummary: params.payloadSummary ?? {},
+      durationMs: params.durationMs ?? 0,
+    };
+    await this.recordWebhookDelivery(acceptedDelivery);
+
+    const outboxKey = params.idempotencyKey
+      ? `wh:${trigger.id}:${params.idempotencyKey}`
+      : `wh:${trigger.id}:${deliveryId}`;
+
+    const outboxEvent = await this.enqueueTriggerEvent({
+      tenantId: trigger.tenantId,
+      eventType: "webhook_inbound",
+      targetType: trigger.targetType,
+      targetId: trigger.targetId,
+      idempotencyKey: outboxKey,
+      payload: {
+        triggerId: trigger.id,
+        triggerName: trigger.name,
+        deliveryId,
+        payload: params.payload,
+      },
+    });
+
+    return {
+      decision: "accepted",
+      httpStatus: 202,
+      delivery: acceptedDelivery,
+      outboxEvent,
+    };
   }
 
   // --- Agent Heartbeats ---
@@ -641,5 +761,15 @@ export class InMemoryStudioStore implements StudioStore {
       }
     }
     return due;
+  }
+
+  setAgentBusy(agentId: string, tenantId: string, busy: boolean): void {
+    const key = `${tenantId}:${agentId}`;
+    if (busy) this.busyAgents.add(key);
+    else this.busyAgents.delete(key);
+  }
+
+  async isAgentBusy(agentId: string, tenantId: string): Promise<boolean> {
+    return this.busyAgents.has(`${tenantId}:${agentId}`);
   }
 }

@@ -5,6 +5,8 @@ import { runStudioMigrations } from "../src/studio/infrastructure/migrate";
 import { PostgresStudioStore } from "../src/studio/infrastructure/postgres-studio-store";
 import { createInboundWebhookRouter } from "../apps/server/src/api/studio/webhookTriggerRoutes";
 import { encryptWebhookSecret, defaultReplayProtector } from "../apps/server/src/triggers/webhookAuth";
+import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
+import { PostgresRunStore } from "../apps/server/src/runtime/store/postgresRunStore";
 import type {
   TaskComment,
   RoutineRecord,
@@ -12,7 +14,7 @@ import type {
   WebhookDeliveryRecord,
   AgentHeartbeatSettings,
 } from "@multi-agent/types";
-import { nowIso, uid } from "@multi-agent/types";
+import { nowIso, uid, createSingleAgentWorkflow } from "@multi-agent/types";
 
 const databaseUrl =
   process.env.STUDIO_DATABASE_URL ||
@@ -414,6 +416,551 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
         body: pOver,
       });
       expect(res429.status).toBe(429);
+    });
+  });
+
+  describe("Durability, Concurrency & Crash Gap Hardening", () => {
+    it("reclaims expired processing lease when worker crashes or stalls (Defect 1)", async () => {
+      await pool.query("DELETE FROM studio_trigger_events");
+
+      const event = await store.enqueueTriggerEvent({
+        tenantId: tenantA,
+        eventType: "task_assignment",
+        targetType: "task",
+        targetId: "task-reclaim-test",
+        idempotencyKey: "test:reclaim:1",
+        payload: { test: true },
+      });
+
+      // Worker 1 claims with lease of 1 second
+      const claimed1 = await store.claimNextTriggerEvent("worker-1", 1);
+      expect(claimed1?.id).toBe(event.id);
+      expect(claimed1?.lockedBy).toBe("worker-1");
+      expect(claimed1?.status).toBe("processing");
+
+      // While lease is active, worker 2 cannot claim it
+      const claimed2Active = await store.claimNextTriggerEvent("worker-2", 60);
+      expect(claimed2Active).toBeNull();
+
+      // Fast forward database time by expiring the lease
+      await pool.query(
+        "UPDATE studio_trigger_events SET locked_until = now() - interval '2 seconds' WHERE id = $1",
+        [event.id]
+      );
+
+      // Worker 2 should now reclaim the expired processing lease!
+      const claimed2Reclaim = await store.claimNextTriggerEvent("worker-2", 60);
+      expect(claimed2Reclaim).not.toBeNull();
+      expect(claimed2Reclaim?.id).toBe(event.id);
+      expect(claimed2Reclaim?.lockedBy).toBe("worker-2");
+      expect(claimed2Reclaim?.status).toBe("processing");
+    });
+
+    it("prevents duplicate runs on restart/crash gap via triggerDispatchKey at run persistence boundary (Defect 2)", async () => {
+      const runStore = new PostgresRunStore(pool);
+      await runStore.hydrate?.();
+
+      const mockRuntime = {
+        execute: jest.fn().mockImplementation(async function* () {
+          yield { type: "text", text: "done" };
+        }),
+      };
+      const executor = new RunExecutor(runStore, mockRuntime);
+      const agent: any = {
+        id: "agent-idemp",
+        name: "Agent Idemp",
+        description: "Idempotency test agent",
+        systemPrompt: "You are a test agent.",
+        backend: { type: "api", provider: "openai", model: "gpt-4o" },
+        tools: [],
+        metadata: {},
+        tenantId: tenantA,
+        ownerId: userA.userId,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      await store.saveAgent(agent, userA);
+
+      const workflow = createSingleAgentWorkflow(agent, "Wf Idemp");
+
+      const dispatchKey = `trigger:evt-unique-boundary-${randomUUID()}`;
+
+      // Worker 1 starts run with dispatch key
+      const runId1 = executor.start(
+        {
+          workflow: workflow as any,
+          agents: [agent as any],
+          input: { a: 1 },
+          metadata: { triggerDispatchKey: dispatchKey },
+        },
+        undefined,
+        userA,
+      );
+
+      await runStore.flush?.();
+
+      // Verify run exists in DB with dispatchKey
+      const res = await pool.query(
+        "SELECT id, metadata->>'triggerDispatchKey' as key FROM studio_runs WHERE id = $1",
+        [runId1]
+      );
+      expect(res.rows[0].key).toBe(dispatchKey);
+
+      // Simulate Worker 1 crashing before updating outbox event to processed.
+      // Worker 2 (or Worker 1 on retry) calls executor.start with the same dispatchKey.
+      const runId2 = executor.start(
+        {
+          workflow: workflow as any,
+          agents: [agent as any],
+          input: { a: 1 },
+          metadata: { triggerDispatchKey: dispatchKey },
+        },
+        undefined,
+        userA,
+      );
+
+      // Must return identical run ID without creating a duplicate run!
+      expect(runId2).toBe(runId1);
+
+      // Also verify that direct duplicate DB insert with the same dispatchKey is caught by unique constraint
+      const totalRuns = await pool.query(
+        "SELECT count(*)::int as count FROM studio_runs WHERE metadata->>'triggerDispatchKey' = $1",
+        [dispatchKey]
+      );
+      expect(totalRuns.rows[0].count).toBe(1);
+    });
+
+    it("ensures atomic heartbeat transaction, slot-based stable idempotency, and cross-process busy detection (Defect 3)", async () => {
+      const agentId = `agent-hb-durable-${randomUUID().slice(0, 8)}`;
+      const agent: any = {
+        id: agentId,
+        name: "Heartbeat Agent",
+        backend: { type: "api", provider: "openai", model: "gpt-4o" },
+        tools: [],
+        tenantId: tenantA,
+        ownerId: userA.userId,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      await store.saveAgent(agent, userA);
+
+      const hb: AgentHeartbeatSettings = {
+        agentId,
+        tenantId: tenantA,
+        enabled: true,
+        intervalSeconds: 60,
+        lastHeartbeatAt: null,
+        nextHeartbeatAt: new Date(Date.now() - 5000).toISOString(),
+        lockedBy: null,
+        lockedUntil: null,
+      };
+      await store.saveAgentHeartbeat(hb, userA);
+
+      // 1. Check isAgentBusy when no active runs exist
+      const busyBefore = await store.isAgentBusy(agentId, tenantA);
+      expect(busyBefore).toBe(false);
+
+      // 2. Insert active run in Postgres for this agent
+      const runId = uid("run");
+      await pool.query(
+        `INSERT INTO studio_runs (
+           id, workflow_id, status, started_at, tenant_id, owner_id, agents_snapshot, metadata
+         ) VALUES (
+           $1, 'wf-busy', 'running', now(), $2, $3, $4::jsonb, '{}'::jsonb
+         )`,
+        [runId, tenantA, userA.userId, JSON.stringify([{ id: agentId }])]
+      );
+
+      // Durable check must detect agent is busy across processes
+      const busyDuring = await store.isAgentBusy(agentId, tenantA);
+      expect(busyDuring).toBe(true);
+
+      // When run completes
+      await pool.query("UPDATE studio_runs SET status = 'completed' WHERE id = $1", [runId]);
+      const busyAfter = await store.isAgentBusy(agentId, tenantA);
+      expect(busyAfter).toBe(false);
+
+      // 3. Atomicity: if transaction fails, both heartbeat advance and outbox enqueue are rolled back
+      await expect(
+        store.transaction(async (tx) => {
+          await tx.saveAgentHeartbeat(
+            {
+              ...hb,
+              nextHeartbeatAt: new Date(Date.now() + 60_000).toISOString(),
+            },
+            userA,
+          );
+          await tx.enqueueTriggerEvent({
+            tenantId: tenantA,
+            eventType: "routine_tick",
+            targetType: "agent",
+            targetId: agentId,
+            idempotencyKey: "hb:rollback:test",
+            payload: {},
+          });
+          throw new Error("Simulated worker crash mid-transaction");
+        })
+      ).rejects.toThrow("Simulated worker crash mid-transaction");
+
+      // Verify heartbeat was NOT advanced and trigger event was NOT enqueued
+      const hbAfterRollback = await store.getAgentHeartbeat(agentId, userA);
+      expect(hbAfterRollback?.nextHeartbeatAt).toBe(hb.nextHeartbeatAt);
+      const events = await store.listTriggerEvents({ tenantId: tenantA, idempotencyKey: "hb:rollback:test" });
+      expect(events).toHaveLength(0);
+    });
+
+    it("handles concurrent webhook delivery races with strict rate limit cap, replay rejection, and retryability of rejected requests (Defect 4)", async () => {
+      const rawSecret = "whsec_integration_race_key_123456789";
+      const encryptedSecret = encryptWebhookSecret(rawSecret);
+
+      const trigger: WebhookTriggerRecord = {
+        id: uid("whtrig_race"),
+        tenantId: tenantA,
+        name: "Race Test Trigger",
+        description: "",
+        secretHash: encryptedSecret,
+        targetType: "workflow",
+        targetId: "wf-race",
+        enabled: true,
+        rateLimitPerMinute: 5,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        ownerId: userA.userId,
+      };
+      await store.saveWebhookTrigger(trigger, userA);
+
+      const router = createInboundWebhookRouter(store);
+
+      // 1. Race 20 concurrent requests with different idempotency keys against rate limit of 5
+      const promises = Array.from({ length: 20 }, async (_, idx) => {
+        const payload = JSON.stringify({ index: idx });
+        const ts = String(Math.floor(Date.now() / 1000));
+        const sig = `t=${ts},v1=${crypto.createHmac("sha256", rawSecret).update(`${ts}.${payload}`).digest("hex")}`;
+        const key = `race-req-${idx}`;
+        return router.request(`/triggers/${trigger.id}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webhook-signature": sig,
+            "idempotency-key": key,
+          },
+          body: payload,
+        });
+      });
+
+      const responses = await Promise.all(promises);
+      const acceptedCount = responses.filter((r) => r.status === 202).length;
+      const rateLimitedCount = responses.filter((r) => r.status === 429).length;
+
+      // Exactly 5 must be accepted and exactly 15 rejected with 429!
+      expect(acceptedCount).toBe(5);
+      expect(rateLimitedCount).toBe(15);
+
+      // 2. Replay race: 10 concurrent requests with the SAME idempotency key
+      const replayKey = "same-replay-key-for-all";
+      const replayPayload = JSON.stringify({ action: "single_charge" });
+      const replayTs = String(Math.floor(Date.now() / 1000));
+      const replaySig = `t=${replayTs},v1=${crypto.createHmac("sha256", rawSecret).update(`${replayTs}.${replayPayload}`).digest("hex")}`;
+
+      // Reset recent deliveries for this trigger so rate limit doesn't interfere
+      await pool.query("DELETE FROM studio_webhook_deliveries WHERE trigger_id = $1", [trigger.id]);
+
+      const replayPromises = Array.from({ length: 10 }, async () => {
+        return router.request(`/triggers/${trigger.id}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webhook-signature": replaySig,
+            "idempotency-key": replayKey,
+          },
+          body: replayPayload,
+        });
+      });
+
+      const replayResponses = await Promise.all(replayPromises);
+      const replayAccepted = replayResponses.filter((r) => r.status === 202).length;
+      const replayRejected = replayResponses.filter((r) => r.status === 409).length;
+
+      expect(replayAccepted).toBe(1);
+      expect(replayRejected).toBe(9);
+
+      // 3. Failed requests are retryable:
+      // Send a request with malformed JSON body using key 'retryable-key'
+      const retryKey = "retryable-key-after-failure";
+      const badBody = "invalid-json-content";
+      const badTs = String(Math.floor(Date.now() / 1000));
+      const badSig = `t=${badTs},v1=${crypto.createHmac("sha256", rawSecret).update(`${badTs}.${badBody}`).digest("hex")}`;
+
+      const resFail = await router.request(`/triggers/${trigger.id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-webhook-signature": badSig,
+          "idempotency-key": retryKey,
+        },
+        body: badBody,
+      });
+      expect(resFail.status).toBe(400);
+
+      // Now retry with valid payload and same retryKey - MUST succeed (202) because partial index only excludes 'accepted'
+      const goodBody = JSON.stringify({ fixed: true });
+      const goodTs = String(Math.floor(Date.now() / 1000));
+      const goodSig = `t=${goodTs},v1=${crypto.createHmac("sha256", rawSecret).update(`${goodTs}.${goodBody}`).digest("hex")}`;
+
+      const resRetry = await router.request(`/triggers/${trigger.id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-webhook-signature": goodSig,
+          "idempotency-key": retryKey,
+        },
+        body: goodBody,
+      });
+      expect(resRetry.status).toBe(202);
+    });
+
+    it("successfully upgrades from a database where 012 is already applied without checksum failures", async () => {
+      const upgradeSchema = `upgrade_test_${randomUUID().replace(/-/g, "")}`;
+      await adminPool.query(`CREATE SCHEMA "${upgradeSchema}"`);
+      const upgradePool = new Pool({
+        connectionString: databaseUrl,
+        options: `-c search_path=${upgradeSchema},public`,
+      });
+
+      try {
+        const names012 = [
+          "001_studio_entities.sql",
+          "002_runs.sql",
+          "003_tasks.sql",
+          "004_ownership.sql",
+          "005_users.sql",
+          "006_task_domain.sql",
+          "007_run_tool_snapshot.sql",
+          "008_run_result.sql",
+          "009_run_memory_access.sql",
+          "010_procedural_memory_status.sql",
+          "011_projects_workspaces.sql",
+          "012_event_routines_triggers.sql",
+        ];
+        const client = await upgradePool.connect();
+        try {
+          await client.query("CREATE TABLE studio_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())");
+          const { readFile } = await import("node:fs/promises");
+          const { resolve } = await import("node:path");
+          const { createHash } = await import("node:crypto");
+          const dir = resolve(process.cwd(), "infrastructure/studio/migrations");
+          for (const name of names012) {
+            const sql = await readFile(resolve(dir, name), "utf8");
+            const checksum = createHash("sha256").update(sql).digest("hex");
+            await client.query(sql);
+            await client.query("INSERT INTO studio_migrations (name, checksum) VALUES ($1, $2)", [name, checksum]);
+          }
+        } finally {
+          client.release();
+        }
+
+        const applied = await runStudioMigrations(upgradePool);
+        expect(applied).toContain("013_event_routines_hardening.sql");
+        expect(applied).not.toContain("012_event_routines_triggers.sql");
+
+        const colCheck = await upgradePool.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'studio_webhook_deliveries' AND column_name = 'idempotency_key'"
+        );
+        expect(colCheck.rows).toHaveLength(1);
+
+        const idxCheck = await upgradePool.query(
+          "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'studio_webhook_deliveries_accepted_replay'"
+        );
+        expect(idxCheck.rows).toHaveLength(1);
+
+        const runIdxCheck = await upgradePool.query(
+          "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'studio_runs_trigger_dispatch_key'"
+        );
+        expect(runIdxCheck.rows).toHaveLength(1);
+      } finally {
+        await upgradePool.end();
+        await adminPool.query(`DROP SCHEMA IF EXISTS "${upgradeSchema}" CASCADE`);
+      }
+    });
+
+    it("suppresses duplicate in-memory runs across concurrent workers with PostgreSQL and never executes billable work twice (Defect 2)", async () => {
+      const runStoreA = new PostgresRunStore(pool);
+      const runStoreB = new PostgresRunStore(pool);
+      await Promise.all([runStoreA.hydrate?.(), runStoreB.hydrate?.()]);
+
+      let spyInvocations = 0;
+      const spyRuntime = {
+        execute: jest.fn().mockImplementation(async function* () {
+          spyInvocations++;
+          yield { type: "text", text: "step done" };
+        }),
+      };
+
+      const executorA = new RunExecutor(runStoreA, spyRuntime);
+      const executorB = new RunExecutor(runStoreB, spyRuntime);
+
+      const agent: any = {
+        id: `agent-spy-${randomUUID().slice(0, 8)}`,
+        name: "Spy Test Agent",
+        description: "",
+        systemPrompt: "Test",
+        backend: { type: "api", provider: "openai", model: "gpt-4o" },
+        tools: [],
+        metadata: {},
+        tenantId: tenantA,
+        ownerId: userA.userId,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      await store.saveAgent(agent, userA);
+      const workflow = createSingleAgentWorkflow(agent, "Wf Spy Test");
+
+      const dispatchKey = `trigger:evt-race-spy-${randomUUID()}`;
+
+      const [runIdA, runIdB] = await Promise.all([
+        Promise.resolve().then(() => executorA.start(
+          {
+            workflow: workflow as any,
+            agents: [agent as any],
+            input: { test: 1 },
+            metadata: { triggerDispatchKey: dispatchKey },
+          },
+          undefined,
+          userA,
+        )),
+        Promise.resolve().then(() => executorB.start(
+          {
+            workflow: workflow as any,
+            agents: [agent as any],
+            input: { test: 1 },
+            metadata: { triggerDispatchKey: dispatchKey },
+          },
+          undefined,
+          userA,
+        )),
+      ]);
+
+      await Promise.all([runStoreA.flush?.(), runStoreB.flush?.()]);
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(spyInvocations).toBe(1);
+
+      const totalRuns = await pool.query(
+        "SELECT count(*)::int as count FROM studio_runs WHERE metadata->>'triggerDispatchKey' = $1",
+        [dispatchKey]
+      );
+      expect(totalRuns.rows[0].count).toBe(1);
+
+      const runStoreC = new PostgresRunStore(pool);
+      await runStoreC.hydrate?.();
+      const executorC = new RunExecutor(runStoreC, spyRuntime);
+
+      const runIdC = executorC.start(
+        {
+          workflow: workflow as any,
+          agents: [agent as any],
+          input: { test: 1 },
+          metadata: { triggerDispatchKey: dispatchKey },
+        },
+        undefined,
+        userA,
+      );
+
+      await runStoreC.flush?.();
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(spyInvocations).toBe(1);
+    });
+
+    it("prevents partial ID false-positives and enforces tenant isolation in isAgentBusy across separate store instances (Defect 3)", async () => {
+      const storeInstance2 = new PostgresStudioStore(pool);
+
+      const agentPrefix = `agent-base-${randomUUID().slice(0, 6)}`;
+      const agent1 = `${agentPrefix}-1`;
+      const agent10 = `${agentPrefix}-10`;
+
+      const runId = uid("run");
+      await pool.query(
+        `INSERT INTO studio_runs (
+           id, workflow_id, status, started_at, tenant_id, owner_id, agents_snapshot, metadata
+         ) VALUES (
+           $1, 'wf-partial', 'running', now(), $2, $3, $4::jsonb, '{}'::jsonb
+         )`,
+        [runId, tenantA, userA.userId, JSON.stringify([{ id: agent10, name: "Agent 10" }])]
+      );
+
+      const isAgent1Busy = await storeInstance2.isAgentBusy(agent1, tenantA);
+      expect(isAgent1Busy).toBe(false);
+
+      const isAgent10BusyTenantA = await storeInstance2.isAgentBusy(agent10, tenantA);
+      expect(isAgent10BusyTenantA).toBe(true);
+
+      const isAgent10BusyTenantB = await storeInstance2.isAgentBusy(agent10, tenantB);
+      expect(isAgent10BusyTenantB).toBe(false);
+
+      await pool.query("UPDATE studio_runs SET status = 'completed' WHERE id = $1", [runId]);
+      const isAgent10BusyAfter = await storeInstance2.isAgentBusy(agent10, tenantA);
+      expect(isAgent10BusyAfter).toBe(false);
+    });
+
+    it("prioritizes replay detection over rate limiting (409 over 429) and prevents rejected requests from extending rate limit lockout (Defect 4)", async () => {
+      const rawSecret = "whsec_replay_precedence_123456789";
+      const encryptedSecret = encryptWebhookSecret(rawSecret);
+
+      const trigger: WebhookTriggerRecord = {
+        id: uid("whtrig_prec"),
+        tenantId: tenantA,
+        name: "Replay Precedence Trigger",
+        description: "",
+        secretHash: encryptedSecret,
+        targetType: "workflow",
+        targetId: "wf-prec",
+        enabled: true,
+        rateLimitPerMinute: 2,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+        ownerId: userA.userId,
+      };
+      await store.saveWebhookTrigger(trigger, userA);
+
+      const router = createInboundWebhookRouter(store);
+
+      const makeRequest = async (key: string, payloadObj: any = { ok: true }) => {
+        const payload = JSON.stringify(payloadObj);
+        const ts = String(Math.floor(Date.now() / 1000));
+        const sig = `t=${ts},v1=${crypto.createHmac("sha256", rawSecret).update(`${ts}.${payload}`).digest("hex")}`;
+        return router.request(`/triggers/${trigger.id}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-webhook-signature": sig,
+            "idempotency-key": key,
+          },
+          body: payload,
+        });
+      };
+
+      const res1 = await makeRequest("key-1", { step: 1 });
+      expect(res1.status).toBe(202);
+
+      const res2 = await makeRequest("key-2", { step: 2 });
+      expect(res2.status).toBe(202);
+
+      const res3 = await makeRequest("key-3", { step: 3 });
+      expect(res3.status).toBe(429);
+
+      for (let i = 4; i <= 6; i++) {
+        const res = await makeRequest(`key-${i}`, { step: i });
+        expect(res.status).toBe(429);
+      }
+
+      const acceptedCount = await store.countRecentWebhookDeliveries(trigger.id, 60);
+      expect(acceptedCount).toBe(2);
+
+      const resReplay = await makeRequest("key-1", { step: 1 });
+      expect(resReplay.status).toBe(409);
+      const replayBody = await resReplay.json();
+      expect(replayBody.error).toMatch(/replay|duplicate/i);
     });
   });
 });

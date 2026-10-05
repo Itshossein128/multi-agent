@@ -88,13 +88,19 @@ export class HeartbeatScheduler {
             continue;
           }
 
-          // Concurrency guard: Check if agent is actively executing a run
-          const activeRuns = this.executor.getStore().list({ status: "running" });
-          const isAgentBusy = activeRuns.some((r) => {
-            const entry = this.executor.getStore().get(r.id);
-            const agentIds = (entry?.agentsSnapshot ?? []).map((a) => a.id);
-            return agentIds.includes(hb.agentId);
-          });
+          // Concurrency guard: Check durable cross-process run state and process-local active runs
+          let isAgentBusy = false;
+          if (typeof this.store.isAgentBusy === "function") {
+            isAgentBusy = await this.store.isAgentBusy(hb.agentId, hb.tenantId);
+          }
+          if (!isAgentBusy) {
+            const activeRuns = this.executor.getStore().list({ status: "running" });
+            isAgentBusy = activeRuns.some((r) => {
+              const entry = this.executor.getStore().get(r.id);
+              const agentIds = (entry?.agentsSnapshot ?? []).map((a) => a.id);
+              return agentIds.includes(hb.agentId);
+            });
+          }
 
           if (isAgentBusy) {
             // Defer heartbeat tick to next cycle rather than stacking concurrent executions
@@ -115,6 +121,12 @@ export class HeartbeatScheduler {
             continue;
           }
 
+          // Interval-based stable idempotency key
+          const intervalMs = Math.max(1, hb.intervalSeconds) * 1000;
+          const baseTime = hb.nextHeartbeatAt ? Date.parse(hb.nextHeartbeatAt) : now;
+          const slot = Math.floor(baseTime / intervalMs);
+          const idempotencyKey = `heartbeat:${hb.tenantId}:${hb.agentId}:${slot}`;
+
           // Update heartbeat schedule
           const updated: AgentHeartbeatSettings = {
             ...hb,
@@ -123,26 +135,30 @@ export class HeartbeatScheduler {
             lockedBy: null,
             lockedUntil: null,
           };
-          await this.store.saveAgentHeartbeat(updated, principal);
 
-          // Enqueue trigger event
-          await this.store.enqueueTriggerEvent({
-            tenantId: hb.tenantId,
-            eventType: "routine_tick",
-            targetType: "agent",
-            targetId: hb.agentId,
-            idempotencyKey: `heartbeat:${hb.tenantId}:${hb.agentId}:${now}`,
-            payload: {
-              heartbeat: true,
-              agentId: hb.agentId,
-              intervalSeconds: hb.intervalSeconds,
-            },
+          // Wrap schedule update and outbox enqueue in one atomic transaction
+          await this.store.transaction(async (tx) => {
+            await tx.saveAgentHeartbeat(updated, principal);
+            await tx.enqueueTriggerEvent({
+              tenantId: hb.tenantId,
+              eventType: "routine_tick",
+              targetType: "agent",
+              targetId: hb.agentId,
+              idempotencyKey,
+              payload: {
+                heartbeat: true,
+                agentId: hb.agentId,
+                intervalSeconds: hb.intervalSeconds,
+                slot,
+              },
+            });
           });
 
           log.info("heartbeat.dispatched", {
             agentId: hb.agentId,
             tenantId: hb.tenantId,
             nextHeartbeatAt: nextTimestamp,
+            slot,
           });
 
           processed.push(updated);

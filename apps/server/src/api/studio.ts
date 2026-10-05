@@ -19,6 +19,12 @@ import { registerWorkspaceEntityRoutes } from "./studio/workspaceEntityRoutes";
 import { registerTaskCommentRoutes } from "./studio/taskCommentRoutes";
 import { registerRoutineRoutes } from "./studio/routineRoutes";
 import { registerWebhookTriggerRoutes } from "./studio/webhookTriggerRoutes";
+import { InMemoryOrganizationStore, type OrganizationStore } from "../organization/organizationStore";
+import { OrganizationService } from "../organization/organizationService";
+import { registerOrganizationRoutes } from "../organization/organizationRoutes";
+import { InMemoryBudgetStore, type BudgetStore } from "../budgets/budgetStore";
+import { BudgetService } from "../budgets/budgetService";
+import { registerBudgetRoutes } from "../budgets/budgetRoutes";
 
 import type { RunExecutor } from "../runtime/runExecutor";
 
@@ -26,6 +32,8 @@ export function createStudioRouter(
   store: StudioStore,
   resolvePrincipal: PrincipalResolver = resolveRequestPrincipal,
   executor?: RunExecutor,
+  organizationStore: OrganizationStore = new InMemoryOrganizationStore(),
+  budgetStore: BudgetStore = new InMemoryBudgetStore(),
 ) {
   const app = new Hono<{ Variables: PrincipalVariables }>();
   const workflows = new WorkflowService(store);
@@ -49,6 +57,8 @@ export function createStudioRouter(
   registerTaskCommentRoutes(app, store);
   registerRoutineRoutes(app, store);
   registerWebhookTriggerRoutes(app, store);
+  registerOrganizationRoutes(app, new OrganizationService(organizationStore, store, executor));
+  registerBudgetRoutes(app, new BudgetService(budgetStore, store));
 
   return app;
 }

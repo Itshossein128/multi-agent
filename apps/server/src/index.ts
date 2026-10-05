@@ -15,12 +15,17 @@ import { RunExecutor } from "./runtime/runExecutor";
 import { InMemoryRunStore, PostgresRunStore } from "./runtime/runStore";
 import { recoverInterruptedRuns } from "./runtime/recovery";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
+import { randomUUID } from "node:crypto";
 import { createObservabilityRuntime } from "./observability/bootstrap";
 import { resolveRequestPrincipal } from "./auth/principal";
 import { createInboundWebhookRouter } from "./api/studio/webhookTriggerRoutes";
 import { TriggerOutboxProcessor } from "./triggers/triggerOutboxProcessor";
 import { HeartbeatScheduler } from "./triggers/heartbeatScheduler";
 import { RoutineScheduler } from "./triggers/routineScheduler";
+import { InMemoryOrganizationStore, PostgresOrganizationStore } from "./organization/organizationStore";
+import { InMemoryBudgetStore, PostgresBudgetStore } from "./budgets/budgetStore";
+import { RunBudgetController } from "./budgets/runBudgetController";
+import { BudgetedAgentRuntime } from "./budgets/budgetedAgentRuntime";
 
 async function createDurableCheckpointer(connectionString: string): Promise<(BaseCheckpointSaver & { end?: () => Promise<void> }) | undefined> {
   try {
@@ -65,10 +70,16 @@ async function main() {
   const resolveMemoryAccess = memoryAccessResolverFromEnvironment();
 
   const connectionString = process.env.MEMORY_DATABASE_URL ?? process.env.STUDIO_DATABASE_URL;
+  const instanceId = process.env.RUN_EXECUTOR_INSTANCE_ID ?? randomUUID();
   const runStore = studio.mode === "postgres" && studio.pool
-    ? new PostgresRunStore(studio.pool, { durableMemoryJobs: !!memory.durableJobs })
+    ? new PostgresRunStore(studio.pool, { durableMemoryJobs: !!memory.durableJobs, instanceId })
     : new InMemoryRunStore();
-  if (runStore instanceof PostgresRunStore) await runStore.hydrate();
+  if (runStore instanceof PostgresRunStore) {
+    await runStore.assertLeaseSchema();
+    await runStore.hydrate();
+  }
+  const budgetStore = studio.pool ? new PostgresBudgetStore(studio.pool) : new InMemoryBudgetStore();
+  const budgetController = new RunBudgetController(budgetStore);
 
   const checkpointer = studio.mode === "postgres" && connectionString
     ? await createDurableCheckpointer(connectionString)
@@ -76,7 +87,7 @@ async function main() {
 
   const executor = new RunExecutor(
     runStore,
-    new AgentRuntime(
+    new BudgetedAgentRuntime(new AgentRuntime(
       undefined,
       memory.runtime,
       observability.telemetry,
@@ -85,7 +96,7 @@ async function main() {
       undefined,
       credentials.workerCredentials,
       credentials.apiCredentials,
-    ),
+    ), budgetController, runStore, studio.store),
     checkpointer,
     observability.telemetry,
     undefined,
@@ -99,7 +110,13 @@ async function main() {
     episodic_extraction: async job => executor.processDurableEpisodicJob(job),
     procedural_learning: async job => executor.processDurableProceduralJob(job),
   });
-  const recovery = recoverInterruptedRuns(executor, runStore, checkpointer);
+  const recovery = await recoverInterruptedRuns(executor, runStore, checkpointer, { instanceId });
+  await budgetController.recover(await budgetStore.openReservations(), async runId => {
+    const status = runStore instanceof PostgresRunStore
+      ? await runStore.getDurableStatus(runId)
+      : runStore.get(runId)?.run.status;
+    return !status || status === "completed" || status === "failed" || status === "cancelled";
+  });
   if (recovery.restored.length || recovery.failed.length) {
     console.log(`Run recovery: restored=${recovery.restored.length} failed=${recovery.failed.length}`);
   }
@@ -109,7 +126,8 @@ async function main() {
   let routineScheduler: RoutineScheduler | undefined;
 
   if (studio.store) {
-    app.route("/studio", createStudioRouter(studio.store, undefined, executor));
+    const organizationStore = studio.pool ? new PostgresOrganizationStore(studio.pool) : new InMemoryOrganizationStore();
+    app.route("/studio", createStudioRouter(studio.store, undefined, executor, organizationStore, budgetStore));
     app.route("/api/webhooks", createInboundWebhookRouter(studio.store));
 
     outboxProcessor = new TriggerOutboxProcessor(studio.store, executor);
@@ -122,7 +140,7 @@ async function main() {
     routineScheduler.start();
   }
 
-  app.route("/dashboard", createDashboardRouter(runStore, studio.store, executor));
+  app.route("/dashboard", createDashboardRouter(runStore, studio.store, executor, undefined, budgetStore));
   app.route("/memories", createMemoriesRouter(memory.service, resolveMemoryAccess));
   app.route("/runs", createRunsRouter(executor, resolveMemoryAccess, studio.store).app);
   app.route("/tools", createToolsRouter(undefined, studio.store));
@@ -133,6 +151,7 @@ async function main() {
     outboxProcessor?.stop();
     heartbeatScheduler?.stop();
     routineScheduler?.stop();
+    runStore.close();
     server.close(() => {
       credentials.close();
       const persistenceFlush = "flush" in runStore ? runStore.flush() : Promise.resolve();

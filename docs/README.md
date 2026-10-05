@@ -38,6 +38,7 @@
 - [Persistence، history و recovery](phase-9-persistence.md)
 - [ساخت و اجرای CLI worker image](cli-worker-image.md)
 - [معماری deferred برای Credential Gateway](deferred-credential-gateway.md)
+- [هدف‌های سازمانی، تفویض و سقف هزینه](organization-and-cost-budgets.md)
 
 ## قرارداد مستندات
 

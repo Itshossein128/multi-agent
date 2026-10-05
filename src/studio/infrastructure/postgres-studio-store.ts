@@ -15,6 +15,8 @@ import {
 } from "@multi-agent/types";
 import type { PgClient, PgPool } from "../../memory/infrastructure";
 import type {
+  AcceptWebhookDeliveryParams,
+  AcceptWebhookDeliveryResult,
   StudioEntityStatusFilter,
   StudioPrincipal,
   StudioProject,
@@ -131,6 +133,7 @@ function decodeWebhookDelivery(row: Record<string, unknown>): WebhookDeliveryRec
     id: String(row.id),
     tenantId: String(row.tenant_id),
     triggerId: String(row.trigger_id),
+    idempotencyKey: (row.idempotency_key as string | null) ?? null,
     deliveredAt: asIso(row.delivered_at),
     status: row.status as WebhookDeliveryRecord["status"],
     httpStatus: Number(row.http_status),
@@ -897,7 +900,10 @@ export class PostgresStudioStore implements StudioStore {
            updated_at = now()
        WHERE id = (
          SELECT id FROM studio_trigger_events
-         WHERE status IN ('pending', 'failed')
+         WHERE (
+           status IN ('pending', 'failed')
+           OR (status = 'processing' AND locked_until IS NOT NULL AND locked_until <= now())
+         )
            AND retry_count < max_retries
            AND (next_retry_at IS NULL OR next_retry_at <= now())
            AND (locked_until IS NULL OR locked_until <= now())
@@ -1173,13 +1179,14 @@ export class PostgresStudioStore implements StudioStore {
   async recordWebhookDelivery(delivery: WebhookDeliveryRecord): Promise<WebhookDeliveryRecord> {
     const result = await this.query(
       `INSERT INTO studio_webhook_deliveries (
-        id, tenant_id, trigger_id, delivered_at, status, http_status, error_reason, run_id, payload_summary, duration_ms
-      ) VALUES ($1, $2, $3, $4::timestamptz, $5, $6, $7, $8, $9::jsonb, $10)
+        id, tenant_id, trigger_id, idempotency_key, delivered_at, status, http_status, error_reason, run_id, payload_summary, duration_ms
+      ) VALUES ($1, $2, $3, $4, $5::timestamptz, $6, $7, $8, $9, $10::jsonb, $11)
       RETURNING *`,
       [
         delivery.id,
         delivery.tenantId,
         delivery.triggerId,
+        delivery.idempotencyKey ?? null,
         delivery.deliveredAt,
         delivery.status,
         delivery.httpStatus,
@@ -1208,10 +1215,171 @@ export class PostgresStudioStore implements StudioStore {
   async countRecentWebhookDeliveries(triggerId: string, windowSeconds: number): Promise<number> {
     const result = await this.query(
       `SELECT count(*)::int AS count FROM studio_webhook_deliveries
-       WHERE trigger_id = $1 AND delivered_at >= now() - ($2 || ' seconds')::interval`,
+       WHERE trigger_id = $1 AND status = 'accepted' AND delivered_at >= now() - ($2 || ' seconds')::interval`,
       [triggerId, String(windowSeconds)],
     );
     return result.rows[0]?.count ?? 0;
+  }
+
+  async acceptWebhookDelivery(params: AcceptWebhookDeliveryParams): Promise<AcceptWebhookDeliveryResult> {
+    return this.transaction(async (txStore) => {
+      const tx = txStore as PostgresStudioStore;
+      const deliveryId = params.deliveryId ?? uid("deliv");
+      const stamp = nowIso();
+
+      // 1. Lock the trigger row FOR UPDATE
+      const triggerRes = await tx.query(
+        "SELECT * FROM studio_webhook_triggers WHERE id = $1 FOR UPDATE",
+        [params.triggerId]
+      );
+      if (triggerRes.rows.length === 0) {
+        const dummyDelivery: WebhookDeliveryRecord = {
+          id: deliveryId,
+          tenantId: "unknown",
+          triggerId: params.triggerId,
+          deliveredAt: stamp,
+          status: "rejected",
+          httpStatus: 404,
+          errorReason: `Webhook trigger "${params.triggerId}" not found`,
+          payloadSummary: params.payloadSummary ?? {},
+          durationMs: params.durationMs ?? 0,
+        };
+        return {
+          decision: "rejected",
+          httpStatus: 404,
+          delivery: dummyDelivery,
+          error: dummyDelivery.errorReason ?? undefined,
+        };
+      }
+
+      const trigger = decodeWebhookTrigger(triggerRes.rows[0]);
+      if (!trigger.enabled) {
+        const delivery: WebhookDeliveryRecord = {
+          id: deliveryId,
+          tenantId: trigger.tenantId,
+          triggerId: trigger.id,
+          idempotencyKey: params.idempotencyKey ?? null,
+          deliveredAt: stamp,
+          status: "rejected",
+          httpStatus: 400,
+          errorReason: "Webhook trigger is disabled",
+          payloadSummary: params.payloadSummary ?? {},
+          durationMs: params.durationMs ?? 0,
+        };
+        await tx.recordWebhookDelivery(delivery);
+        return {
+          decision: "rejected",
+          httpStatus: 400,
+          delivery,
+          error: delivery.errorReason ?? undefined,
+        };
+      }
+
+      // 2. Replay check under row lock (must precede rate-limiting so replay returns 409)
+      if (params.idempotencyKey) {
+        const existingAcceptedRes = await tx.query(
+          "SELECT * FROM studio_webhook_deliveries WHERE trigger_id = $1 AND idempotency_key = $2 AND status = 'accepted' LIMIT 1",
+          [trigger.id, params.idempotencyKey]
+        );
+        if (existingAcceptedRes.rows.length > 0) {
+          const existingDelivery = decodeWebhookDelivery(existingAcceptedRes.rows[0]);
+          return {
+            decision: "replay",
+            httpStatus: 409,
+            delivery: existingDelivery,
+            error: "Duplicate delivery or replay detected",
+          };
+        }
+      }
+
+      // 3. Count recent accepted deliveries under row lock (rejected 429s must not extend lockout)
+      const countRes = await tx.query(
+        "SELECT count(*)::int AS count FROM studio_webhook_deliveries WHERE trigger_id = $1 AND status = 'accepted' AND delivered_at >= now() - interval '60 seconds'",
+        [trigger.id]
+      );
+      const recentCount = countRes.rows[0]?.count ?? 0;
+      if (recentCount >= trigger.rateLimitPerMinute) {
+        const delivery: WebhookDeliveryRecord = {
+          id: deliveryId,
+          tenantId: trigger.tenantId,
+          triggerId: trigger.id,
+          idempotencyKey: params.idempotencyKey ?? null,
+          deliveredAt: stamp,
+          status: "rejected",
+          httpStatus: 429,
+          errorReason: `Rate limit of ${trigger.rateLimitPerMinute}/min exceeded (${recentCount} deliveries in last 60s)`,
+          payloadSummary: params.payloadSummary ?? {},
+          durationMs: params.durationMs ?? 0,
+        };
+        await tx.recordWebhookDelivery(delivery);
+        return {
+          decision: "rejected",
+          httpStatus: 429,
+          delivery,
+          error: delivery.errorReason ?? undefined,
+        };
+      }
+
+      // 4. Accept delivery and enqueue outbox event atomically
+      const acceptedDelivery: WebhookDeliveryRecord = {
+        id: deliveryId,
+        tenantId: trigger.tenantId,
+        triggerId: trigger.id,
+        idempotencyKey: params.idempotencyKey ?? null,
+        deliveredAt: stamp,
+        status: "accepted",
+        httpStatus: 202,
+        payloadSummary: params.payloadSummary ?? {},
+        durationMs: params.durationMs ?? 0,
+      };
+
+      await tx.query("SAVEPOINT sp_webhook_delivery");
+      try {
+        await tx.recordWebhookDelivery(acceptedDelivery);
+        await tx.query("RELEASE SAVEPOINT sp_webhook_delivery");
+      } catch (err: any) {
+        await tx.query("ROLLBACK TO SAVEPOINT sp_webhook_delivery");
+        if (err?.code === "23505" && String(err?.constraint || err?.message).includes("accepted_replay")) {
+          const existingAcceptedRes = await tx.query(
+            "SELECT * FROM studio_webhook_deliveries WHERE trigger_id = $1 AND idempotency_key = $2 AND status = 'accepted' LIMIT 1",
+            [trigger.id, params.idempotencyKey]
+          );
+          const existingDelivery = existingAcceptedRes.rows[0] ? decodeWebhookDelivery(existingAcceptedRes.rows[0]) : acceptedDelivery;
+          return {
+            decision: "replay",
+            httpStatus: 409,
+            delivery: existingDelivery,
+            error: "Duplicate delivery or replay detected",
+          };
+        }
+        throw err;
+      }
+
+      const outboxKey = params.idempotencyKey
+        ? `wh:${trigger.id}:${params.idempotencyKey}`
+        : `wh:${trigger.id}:${deliveryId}`;
+
+      const outboxEvent = await tx.enqueueTriggerEvent({
+        tenantId: trigger.tenantId,
+        eventType: "webhook_inbound",
+        targetType: trigger.targetType,
+        targetId: trigger.targetId,
+        idempotencyKey: outboxKey,
+        payload: {
+          triggerId: trigger.id,
+          triggerName: trigger.name,
+          deliveryId,
+          payload: params.payload,
+        },
+      });
+
+      return {
+        decision: "accepted",
+        httpStatus: 202,
+        delivery: acceptedDelivery,
+        outboxEvent,
+      };
+    });
   }
 
   // --- Agent Heartbeats ---
@@ -1267,5 +1435,21 @@ export class PostgresStudioStore implements StudioStore {
       [workerId, limit],
     );
     return result.rows.map(decodeAgentHeartbeat);
+  }
+
+  async isAgentBusy(agentId: string, tenantId: string): Promise<boolean> {
+    const result = await this.query(
+      `SELECT 1 FROM studio_runs
+       WHERE tenant_id = $1
+         AND status IN ('queued', 'running', 'waiting_for_human')
+         AND (
+           (agents_snapshot IS NOT NULL AND jsonb_path_exists(agents_snapshot, '$[*] ? (@.id == $agentId)', jsonb_build_object('agentId', $2::text)))
+           OR metadata->>'targetAgentId' = $2
+           OR metadata->>'agentId' = $2
+         )
+       LIMIT 1`,
+      [tenantId, agentId],
+    );
+    return result.rows.length > 0;
   }
 }

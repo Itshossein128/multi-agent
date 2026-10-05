@@ -65,7 +65,7 @@
 - [ ] dead-letter queue
 - [ ] اجرای طولانی‌مدت بدون وابستگی به process memory
 
-worker فعال، SSE listener، timer و بخشی از execution state هنوز process-local هستند. restart فقط برخی approvalهای قابل‌بازیابی را restore می‌کند.
+برای رویدادهای assignment/comment/approval، routine و webhook، intent و claim در PostgreSQL پایدار است. heartbeat عامل و بازیابی run از lease استفاده می‌کنند؛ نمونهٔ دوم، run فعال نمونهٔ اول را هنگام startup تصاحب نمی‌کند و مالک قبلی پس از واگذاری lease اجازهٔ تغییر وضعیت ندارد. اجرای خود workflow، listenerهای SSE و زمان‌سنج‌های درون process همچنان محلی‌اند. queue و worker pool مستقل، انتقال زندهٔ run در حال اجرا، backpressure و graceful drain سراسری هنوز کامل نشده‌اند؛ بنابراین موارد بالا تا آزمون استقرار واقعی چندنمونه‌ای باز می‌مانند.
 
 ### Backup و disaster recovery
 

@@ -9,13 +9,14 @@ import {
   Trash2,
   History,
   AlertCircle,
-  CheckCircle2,
   Clock,
   RefreshCw,
   X,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
+import { useStudioLocale } from "@/lib/useStudioLocale";
 
 interface Routine {
   id: string;
@@ -46,7 +47,125 @@ interface RoutineHistoryItem {
   error?: string | null;
 }
 
+const translations = {
+  en: {
+    title: "Recurring Routines",
+    subtitle: "Automated continuous agent & workflow routines driven by cron or interval schedules.",
+    refresh: "Refresh",
+    createRoutine: "Create Routine",
+    loading: "Loading routines...",
+    noRoutines: "No Routines Configured",
+    noRoutinesDesc: "Routines wake agents or execute workflows automatically on cron or interval schedules.",
+    createFirst: "Create Your First Routine",
+    active: "Active",
+    paused: "Paused",
+    pauseTitle: "Pause routine",
+    resumeTitle: "Resume routine",
+    historyTitle: "View execution history",
+    deleteTitle: "Delete routine",
+    schedule: "Schedule",
+    timezone: "Timezone",
+    target: "Target",
+    misfire: "Misfire Policy",
+    next: "Next",
+    none: "None",
+    last: "Last",
+    never: "Never",
+    confirmDelete: "Are you sure you want to delete this routine?",
+    createModalTitle: "Create Recurring Routine",
+    nameLabel: "Name",
+    namePlaceholder: "e.g. Daily Queue Sweeper",
+    descLabel: "Description",
+    descPlaceholder: "Optional description of routine purpose",
+    scheduleTypeLabel: "Schedule Type",
+    cronOption: "Cron Expression",
+    intervalOption: "Interval (e.g. every:60s)",
+    timezoneLabel: "Timezone",
+    scheduleExprLabel: "Schedule Expression",
+    previewButton: "Preview Next Runs",
+    upcoming: "Upcoming Triggers:",
+    targetTypeLabel: "Target Type",
+    targetIdLabel: "Target ID",
+    targetIdPlaceholder: "Workflow or Agent ID",
+    misfireLabel: "Misfire Policy",
+    misfireSkip: "Skip (Ignore missed runs)",
+    misfireCoalesce: "Coalesce (Collapse into one run)",
+    misfireEnqueue: "Enqueue (Run all missed runs)",
+    cancel: "Cancel",
+    saveRoutine: "Save Routine",
+    creating: "Creating...",
+    historyHeading: "Execution History:",
+    historySubtitle: "Past trigger executions and audit log",
+    loadingHistory: "Loading history...",
+    noHistory: "No past executions recorded yet.",
+    runPrefix: "Run:",
+    loadError: "Failed to load routines",
+    createError: "Failed to create routine",
+    previewError: "Invalid schedule expression or timezone",
+    switchLang: "فارسی",
+  },
+  fa: {
+    title: "روال‌های زمان‌بندی‌شده",
+    subtitle: "روال‌های خودکار و مستمر عوامل و گردش‌کارها بر اساس برنامه‌های کران یا بازه‌ای.",
+    refresh: "تازه‌سازی",
+    createRoutine: "تعریف روال جدید",
+    loading: "در حال بارگذاری روال‌ها...",
+    noRoutines: "هیچ روالی تعریف نشده است",
+    noRoutinesDesc: "روال‌ها، عوامل یا گردش‌کارها را بر اساس زمان‌بندی‌های کران یا بازه‌ای به صورت خودکار اجرا می‌کنند.",
+    createFirst: "اولین روال خود را بسازید",
+    active: "فعال",
+    paused: "متوقف شده",
+    pauseTitle: "توقف روال",
+    resumeTitle: "ادامه روال",
+    historyTitle: "مشاهده تاریخچه اجرا",
+    deleteTitle: "حذف روال",
+    schedule: "زمان‌بندی",
+    timezone: "منطقه زمانی",
+    target: "مقصد",
+    misfire: "سیاست تعویق",
+    next: "اجرای بعدی",
+    none: "هیچ‌کدام",
+    last: "آخرین اجرا",
+    never: "هرگز",
+    confirmDelete: "آیا از حذف این روال اطمینان دارید؟",
+    createModalTitle: "تعریف روال زمان‌بندی‌شده جدید",
+    nameLabel: "عنوان روال",
+    namePlaceholder: "مثلاً پایشگر روزانه صف کارها",
+    descLabel: "توضیحات",
+    descPlaceholder: "توضیحات اختیاری درباره هدف این روال",
+    scheduleTypeLabel: "نوع زمان‌بندی",
+    cronOption: "عبارت کران (Cron)",
+    intervalOption: "بازه تکرار (مثلا every:60s)",
+    timezoneLabel: "منطقه زمانی",
+    scheduleExprLabel: "عبارت زمان‌بندی",
+    previewButton: "پیش‌نمایش ۵ اجرای بعدی",
+    upcoming: "اجراهای پیش‌رو:",
+    targetTypeLabel: "نوع مقصد",
+    targetIdLabel: "شناسه مقصد",
+    targetIdPlaceholder: "شناسه گردش‌کار یا عامل",
+    misfireLabel: "رفتار در زمان تعویق",
+    misfireSkip: "رد کردن (چشم‌پوشی از اجراهای از دست‌رفته)",
+    misfireCoalesce: "تجمیع (ادغام در یک اجرا)",
+    misfireEnqueue: "صف‌بندی (اجرای تمام موارد جامانده)",
+    cancel: "انصراف",
+    saveRoutine: "ذخیره روال",
+    creating: "در حال ایجاد...",
+    historyHeading: "تاریخچه اجرا:",
+    historySubtitle: "سوابق اجراهای روال و لاگ‌های بازرسی",
+    loadingHistory: "در حال بارگذاری تاریخچه...",
+    noHistory: "هنوز اجرایی ثبت نشده است.",
+    runPrefix: "اجرا:",
+    loadError: "خطا در دریافت لیست روال‌ها",
+    createError: "خطا در ایجاد روال",
+    previewError: "عبارت زمان‌بندی یا منطقه زمانی نامعتبر است",
+    switchLang: "English",
+  },
+};
+
 export default function RoutinesPage() {
+  const { locale, direction, toggleLocale } = useStudioLocale();
+  const t = translations[locale];
+
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,12 +193,12 @@ export default function RoutinesPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/studio/routines");
-      if (!res.ok) throw new Error("Failed to load routines");
+      const res = await fetch("/api/execution/studio/routines");
+      if (!res.ok) throw new Error(t.loadError);
       const data = await res.json();
       setRoutines(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      setError(err?.message || "Failed to load routines");
+      setError(err?.message || t.loadError);
     } finally {
       setLoading(false);
     }
@@ -92,7 +211,7 @@ export default function RoutinesPage() {
   const handlePreview = async () => {
     try {
       setFormError(null);
-      const res = await fetch("/studio/routines/preview", {
+      const res = await fetch("/api/execution/studio/routines/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -104,12 +223,12 @@ export default function RoutinesPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to calculate preview");
+        throw new Error(data.error || t.previewError);
       }
       const data = await res.json();
       setPreviewRuns(data.previews || []);
     } catch (err: any) {
-      setFormError(err?.message || "Invalid schedule expression or timezone");
+      setFormError(err?.message || t.previewError);
       setPreviewRuns([]);
     }
   };
@@ -121,7 +240,7 @@ export default function RoutinesPage() {
     try {
       setCreating(true);
       setFormError(null);
-      const res = await fetch("/studio/routines", {
+      const res = await fetch("/api/execution/studio/routines", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -139,7 +258,7 @@ export default function RoutinesPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create routine");
+        throw new Error(data.error || t.createError);
       }
 
       setModalOpen(false);
@@ -149,7 +268,7 @@ export default function RoutinesPage() {
       setPreviewRuns([]);
       await fetchRoutines();
     } catch (err: any) {
-      setFormError(err?.message || "Failed to create routine");
+      setFormError(err?.message || t.createError);
     } finally {
       setCreating(false);
     }
@@ -158,9 +277,12 @@ export default function RoutinesPage() {
   const handleTogglePause = async (routine: Routine) => {
     try {
       const action = routine.enabled ? "pause" : "resume";
-      const res = await fetch(`/studio/routines/${routine.id}/${action}`, {
-        method: "POST",
-      });
+      const res = await fetch(
+        `/api/execution/studio/routines/${encodeURIComponent(routine.id)}/${encodeURIComponent(action)}`,
+        {
+          method: "POST",
+        }
+      );
       if (res.ok) {
         await fetchRoutines();
       }
@@ -170,13 +292,16 @@ export default function RoutinesPage() {
   };
 
   const handleDelete = async (routineId: string) => {
-    if (!window.confirm("Are you sure you want to delete this routine? / آیا از حذف این روال اطمینان دارید؟")) {
+    if (!window.confirm(t.confirmDelete)) {
       return;
     }
     try {
-      const res = await fetch(`/studio/routines/${routineId}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/execution/studio/routines/${encodeURIComponent(routineId)}`,
+        {
+          method: "DELETE",
+        }
+      );
       if (res.ok) {
         setRoutines((prev) => prev.filter((r) => r.id !== routineId));
       }
@@ -189,7 +314,9 @@ export default function RoutinesPage() {
     setHistoryRoutine(routine);
     try {
       setHistoryLoading(true);
-      const res = await fetch(`/studio/routines/${routine.id}/history`);
+      const res = await fetch(
+        `/api/execution/studio/routines/${encodeURIComponent(routine.id)}/history`
+      );
       if (res.ok) {
         const data = await res.json();
         setHistoryItems(Array.isArray(data) ? data : []);
@@ -202,7 +329,10 @@ export default function RoutinesPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
+    <div
+      dir={direction}
+      className="container mx-auto px-4 py-8 max-w-6xl space-y-6"
+    >
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-5">
         <div>
@@ -212,16 +342,26 @@ export default function RoutinesPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-white">
-                Recurring Routines / روال‌های زمان‌بندی‌شده
+                {t.title}
               </h1>
               <p className="text-xs text-zinc-400">
-                Automated continuous agent & workflow routines driven by cron or interval schedules.
+                {t.subtitle}
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={toggleLocale}
+            className="inline-flex items-center gap-1 text-xs font-mono text-zinc-300 hover:text-indigo-300 bg-zinc-800/80 px-2.5 py-1.5 rounded-lg border border-zinc-700/60 cursor-pointer"
+            title="Toggle English / Persian"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            <span>{t.switchLang}</span>
+          </button>
+
           <Button
             variant="outline"
             size="sm"
@@ -229,7 +369,7 @@ export default function RoutinesPage() {
             className="gap-1.5 text-xs border-zinc-800 hover:bg-zinc-900 cursor-pointer"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+            {t.refresh}
           </Button>
 
           <Button
@@ -242,7 +382,7 @@ export default function RoutinesPage() {
             className="gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            Create Routine / تعریف روال
+            {t.createRoutine}
           </Button>
         </div>
       </div>
@@ -257,14 +397,14 @@ export default function RoutinesPage() {
       {/* Routine Cards Grid */}
       {loading && routines.length === 0 ? (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/20 p-8 text-center text-sm text-zinc-500">
-          Loading routines...
+          {t.loading}
         </div>
       ) : routines.length === 0 ? (
         <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/10 p-12 text-center space-y-3">
           <CalendarClock className="h-8 w-8 text-zinc-600 mx-auto" />
-          <h3 className="text-sm font-semibold text-zinc-300">No Routines Configured / هیچ روالی تعریف نشده است</h3>
+          <h3 className="text-sm font-semibold text-zinc-300">{t.noRoutines}</h3>
           <p className="text-xs text-zinc-500 max-w-md mx-auto">
-            Routines wake agents or execute workflows automatically on cron or interval schedules.
+            {t.noRoutinesDesc}
           </p>
           <Button
             size="sm"
@@ -272,7 +412,7 @@ export default function RoutinesPage() {
             className="gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer mt-2"
           >
             <Plus className="h-3.5 w-3.5" />
-            Create Your First Routine
+            {t.createFirst}
           </Button>
         </div>
       ) : (
@@ -293,7 +433,7 @@ export default function RoutinesPage() {
                           : "border-zinc-700 bg-zinc-800/40 text-zinc-400"
                       }`}
                     >
-                      {routine.enabled ? "Active" : "Paused"}
+                      {routine.enabled ? t.active : t.paused}
                     </span>
                   </div>
                   {routine.description && (
@@ -307,7 +447,7 @@ export default function RoutinesPage() {
                     size="sm"
                     onClick={() => handleTogglePause(routine)}
                     className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-200 cursor-pointer"
-                    title={routine.enabled ? "Pause routine" : "Resume routine"}
+                    title={routine.enabled ? t.pauseTitle : t.resumeTitle}
                   >
                     {routine.enabled ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 text-emerald-400" />}
                   </Button>
@@ -316,7 +456,7 @@ export default function RoutinesPage() {
                     size="sm"
                     onClick={() => openHistory(routine)}
                     className="h-7 w-7 p-0 text-zinc-400 hover:text-indigo-300 cursor-pointer"
-                    title="View execution history"
+                    title={t.historyTitle}
                   >
                     <History className="h-3.5 w-3.5" />
                   </Button>
@@ -325,7 +465,7 @@ export default function RoutinesPage() {
                     size="sm"
                     onClick={() => handleDelete(routine.id)}
                     className="h-7 w-7 p-0 text-zinc-500 hover:text-red-400 cursor-pointer"
-                    title="Delete routine"
+                    title={t.deleteTitle}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -335,19 +475,19 @@ export default function RoutinesPage() {
               {/* Schedule Info */}
               <div className="grid grid-cols-2 gap-2 text-xs border-t border-zinc-800/80 pt-3">
                 <div>
-                  <span className="text-[11px] text-zinc-500">Schedule ({routine.scheduleType})</span>
+                  <span className="text-[11px] text-zinc-500">{t.schedule} ({routine.scheduleType})</span>
                   <p className="font-mono text-zinc-200 mt-0.5">{routine.scheduleExpr}</p>
                 </div>
                 <div>
-                  <span className="text-[11px] text-zinc-500">Timezone</span>
+                  <span className="text-[11px] text-zinc-500">{t.timezone}</span>
                   <p className="font-mono text-zinc-200 mt-0.5">{routine.timezone}</p>
                 </div>
                 <div>
-                  <span className="text-[11px] text-zinc-500">Target ({routine.targetType})</span>
+                  <span className="text-[11px] text-zinc-500">{t.target} ({routine.targetType})</span>
                   <p className="font-mono text-zinc-200 mt-0.5 truncate">{routine.targetId}</p>
                 </div>
                 <div>
-                  <span className="text-[11px] text-zinc-500">Misfire Policy</span>
+                  <span className="text-[11px] text-zinc-500">{t.misfire}</span>
                   <p className="font-mono text-zinc-200 mt-0.5">{routine.misfirePolicy}</p>
                 </div>
               </div>
@@ -356,10 +496,10 @@ export default function RoutinesPage() {
               <div className="rounded-lg border border-zinc-800/80 bg-zinc-950/40 p-2.5 flex items-center justify-between text-[11px]">
                 <div className="flex items-center gap-1.5 text-zinc-400">
                   <Clock className="h-3.5 w-3.5 text-indigo-400" />
-                  <span>Next: {routine.nextRunAt && routine.enabled ? formatRelativeTime(routine.nextRunAt) : "None"}</span>
+                  <span>{t.next}: {routine.nextRunAt && routine.enabled ? formatRelativeTime(routine.nextRunAt) : t.none}</span>
                 </div>
                 <div className="text-zinc-500">
-                  Last: {routine.lastRunAt ? formatRelativeTime(routine.lastRunAt) : "Never"}
+                  {t.last}: {routine.lastRunAt ? formatRelativeTime(routine.lastRunAt) : t.never}
                 </div>
               </div>
             </div>
@@ -370,10 +510,13 @@ export default function RoutinesPage() {
       {/* Create Routine Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div
+            dir={direction}
+            className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <h3 className="text-sm font-semibold text-zinc-100">
-                Create Recurring Routine / تعریف روال زمان‌بندی‌شده
+                {t.createModalTitle}
               </h3>
               <button
                 type="button"
@@ -386,43 +529,43 @@ export default function RoutinesPage() {
 
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-zinc-300">Name / عنوان</label>
+                <label className="text-xs font-medium text-zinc-300">{t.nameLabel}</label>
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Daily Queue Sweeper"
+                  placeholder={t.namePlaceholder}
                   className="w-full mt-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300">Description / توضیحات</label>
+                <label className="text-xs font-medium text-zinc-300">{t.descLabel}</label>
                 <textarea
                   rows={2}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional description of routine purpose"
+                  placeholder={t.descPlaceholder}
                   className="w-full mt-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-hidden"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-zinc-300">Schedule Type / نوع زمان‌بندی</label>
+                  <label className="text-xs font-medium text-zinc-300">{t.scheduleTypeLabel}</label>
                   <select
                     value={scheduleType}
                     onChange={(e) => setScheduleType(e.target.value as any)}
                     className="w-full mt-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 focus:border-indigo-500 focus:outline-hidden"
                   >
-                    <option value="cron">Cron Expression</option>
-                    <option value="interval">Interval (e.g. every:60s)</option>
+                    <option value="cron">{t.cronOption}</option>
+                    <option value="interval">{t.intervalOption}</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-zinc-300">Timezone / منطقه زمانی</label>
+                  <label className="text-xs font-medium text-zinc-300">{t.timezoneLabel}</label>
                   <input
                     type="text"
                     value={timezone}
@@ -436,14 +579,14 @@ export default function RoutinesPage() {
               <div>
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium text-zinc-300">
-                    Schedule Expression / عبارت زمان‌بندی
+                    {t.scheduleExprLabel}
                   </label>
                   <button
                     type="button"
                     onClick={handlePreview}
                     className="text-[11px] text-indigo-400 hover:text-indigo-300 cursor-pointer font-medium"
                   >
-                    Preview Next Runs / پیش‌نمایش
+                    {t.previewButton}
                   </button>
                 </div>
                 <input
@@ -459,11 +602,11 @@ export default function RoutinesPage() {
               {/* Next run previews */}
               {previewRuns.length > 0 && (
                 <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 space-y-1">
-                  <span className="text-[10px] uppercase font-semibold text-zinc-500">Upcoming Triggers:</span>
+                  <span className="text-[10px] uppercase font-semibold text-zinc-500">{t.upcoming}</span>
                   {previewRuns.map((run, i) => (
                     <div key={i} className="text-xs font-mono text-zinc-300 flex items-center gap-2">
                       <span className="text-zinc-600">#{i + 1}</span>
-                      <span>{new Date(run).toLocaleString()}</span>
+                      <span>{new Date(run).toLocaleString(locale === "fa" ? "fa-IR" : undefined)}</span>
                     </div>
                   ))}
                 </div>
@@ -471,7 +614,7 @@ export default function RoutinesPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-zinc-300">Target Type / نوع مقصد</label>
+                  <label className="text-xs font-medium text-zinc-300">{t.targetTypeLabel}</label>
                   <select
                     value={targetType}
                     onChange={(e) => setTargetType(e.target.value as any)}
@@ -483,28 +626,28 @@ export default function RoutinesPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-zinc-300">Target ID / شناسه مقصد</label>
+                  <label className="text-xs font-medium text-zinc-300">{t.targetIdLabel}</label>
                   <input
                     type="text"
                     required
                     value={targetId}
                     onChange={(e) => setTargetId(e.target.value)}
-                    placeholder="Workflow or Agent ID"
+                    placeholder={t.targetIdPlaceholder}
                     className="w-full mt-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 focus:border-indigo-500 focus:outline-hidden"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-zinc-300">Misfire Policy / رفتار در عقب‌افتادگی</label>
+                <label className="text-xs font-medium text-zinc-300">{t.misfireLabel}</label>
                 <select
                   value={misfirePolicy}
                   onChange={(e) => setMisfirePolicy(e.target.value as any)}
                   className="w-full mt-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 focus:border-indigo-500 focus:outline-hidden"
                 >
-                  <option value="skip">Skip (رد کردن اجراهای از دست‌رفته)</option>
-                  <option value="coalesce">Coalesce (تجمیع در یک اجرا)</option>
-                  <option value="enqueue">Enqueue (اجرای تمام موارد جامانده)</option>
+                  <option value="skip">{t.misfireSkip}</option>
+                  <option value="coalesce">{t.misfireCoalesce}</option>
+                  <option value="enqueue">{t.misfireEnqueue}</option>
                 </select>
               </div>
 
@@ -518,7 +661,7 @@ export default function RoutinesPage() {
                   onClick={() => setModalOpen(false)}
                   className="text-xs border-zinc-800 hover:bg-zinc-900 cursor-pointer"
                 >
-                  Cancel
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
@@ -526,7 +669,7 @@ export default function RoutinesPage() {
                   disabled={creating}
                   className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"
                 >
-                  {creating ? "Creating..." : "Save Routine"}
+                  {creating ? t.creating : t.saveRoutine}
                 </Button>
               </div>
             </form>
@@ -537,13 +680,16 @@ export default function RoutinesPage() {
       {/* Execution History Modal */}
       {historyRoutine && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[80vh] overflow-y-auto">
+          <div
+            dir={direction}
+            className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[80vh] overflow-y-auto"
+          >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div>
                 <h3 className="text-sm font-semibold text-zinc-100">
-                  Execution History: {historyRoutine.name}
+                  {t.historyHeading} {historyRoutine.name}
                 </h3>
-                <p className="text-xs text-zinc-400">Past trigger executions and audit log</p>
+                <p className="text-xs text-zinc-400">{t.historySubtitle}</p>
               </div>
               <button
                 type="button"
@@ -555,9 +701,9 @@ export default function RoutinesPage() {
             </div>
 
             {historyLoading ? (
-              <p className="text-xs text-zinc-500 py-4 text-center">Loading history...</p>
+              <p className="text-xs text-zinc-500 py-4 text-center">{t.loadingHistory}</p>
             ) : historyItems.length === 0 ? (
-              <p className="text-xs text-zinc-500 py-4 text-center">No past executions recorded yet.</p>
+              <p className="text-xs text-zinc-500 py-4 text-center">{t.noHistory}</p>
             ) : (
               <div className="space-y-2">
                 {historyItems.map((item) => (
@@ -577,7 +723,7 @@ export default function RoutinesPage() {
                           }`}
                         />
                         <span className="font-medium text-zinc-200 capitalize">{item.status}</span>
-                        {item.runId && <span className="font-mono text-zinc-500 text-[11px]">Run: {item.runId}</span>}
+                        {item.runId && <span className="font-mono text-zinc-500 text-[11px]">{t.runPrefix} {item.runId}</span>}
                       </div>
                       {item.error && <p className="text-[11px] text-red-400 mt-0.5">{item.error}</p>}
                     </div>

@@ -79,8 +79,8 @@ Whole-run و conditional branch-level cancellation وجود دارد؛ branch ca
 - PostgreSQL ایزوله منبع durable برای Studio entities (شامل project و workspace)، taskها، runها، eventها، approvalها و long-term memory است.
 - taskها به دقیقاً یک workspace و یک یا چند project پیوند دارند؛ داشبوردهای `/projects` و `/workspaces` ارتباط‌ها را از همین پیوندها استخراج می‌کنند. package import/export همچنان روی `/studio/workspace` است و با entityهای `/studio/workspaces` فرق دارد.
 - migrationها صریح و خارج از startup اجرا می‌شوند.
-- checkpoint و paused context برای recovery approval استفاده می‌شوند؛ state channelهای جدید default امن دارند و proposalهای `needs_human` نیز در paused context نسخه‌پذیر ذخیره می‌شوند. workerهای فعال، SSE listenerها و timerها process-local هستند.
-- runهای queued از snapshotهای durable به scheduler bounded تحویل داده می‌شوند و پس از restart قابل requeue هستند؛ `GET /runs/:runId/replay` timeline persisted را بدون اجرای مجدد workflow بازسازی می‌کند.
+- checkpoint و paused context برای recovery approval استفاده می‌شوند؛ state channelهای جدید default امن دارند و proposalهای `needs_human` نیز در paused context نسخه‌پذیر ذخیره می‌شوند. runها در PostgreSQL مالک و lease دارند؛ هنگام restart فقط runهای بی‌مالک یا دارای lease منقضی claim می‌شوند. worker اجرایی، SSE listener و timerهای درون process همچنان محلی‌اند.
+- assignment/comment/approval، heartbeat عامل، routine و webhook با outbox و claim پایدار در PostgreSQL پردازش می‌شوند. runهای queued از snapshotهای durable به scheduler bounded تحویل داده می‌شوند و پس از انقضای lease قابل requeue هستند؛ `GET /runs/:runId/replay` timeline persisted را بدون اجرای مجدد workflow بازسازی می‌کند.
 - notification outbox، plugin registry و evaluation runner در `src/notifications`، `src/plugins` و `src/evaluation` قراردادهای عمومی و قابل جایگزینی هستند؛ sinkهای production و pluginهای واقعی باید با allowlist سرور ثبت شوند.
 - short-term memory داخل state/checkpoint همان run است؛ long-term memory از `MemoryService` و namespace/tenant authorization عبور می‌کند.
 - Redis در معماری فعلی استفاده نمی‌شود.

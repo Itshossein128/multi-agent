@@ -147,6 +147,27 @@ export class TriggerOutboxProcessor {
       userId: (event.payload?.userId as string) ?? "system-trigger",
     };
 
+    const triggerDispatchKey = `trigger:${event.id}`;
+
+    // If this event was already dispatched to a run in a previous attempt before worker crash
+    if (event.dispatchedRunId) {
+      return event.dispatchedRunId;
+    }
+
+    if (this.executor && typeof this.executor.getStore === "function") {
+      const runStore = this.executor.getStore();
+      const existing = runStore?.findByTriggerDispatchKey?.(triggerDispatchKey, event.tenantId);
+      if (existing) {
+        return existing.run.id;
+      }
+      if (typeof (runStore as any)?.findDurableRunIdByTriggerDispatchKey === "function") {
+        const durableRunId = await (runStore as any).findDurableRunIdByTriggerDispatchKey(triggerDispatchKey, event.tenantId);
+        if (durableRunId) {
+          return durableRunId;
+        }
+      }
+    }
+
     if (event.targetType === "task") {
       const task = await this.store.getTask(event.targetId, principal);
       if (!task) {
@@ -202,6 +223,7 @@ export class TriggerOutboxProcessor {
             input: { taskId: task.id, title: task.title, ...(event.payload ?? {}) },
             taskId: task.id,
             metadata: {
+              triggerDispatchKey,
               triggerEventId: event.id,
               triggerEventType: event.eventType,
               targetAgentId: specificTargetAgentId,
@@ -215,7 +237,8 @@ export class TriggerOutboxProcessor {
 
       // Check if task is already running
       if (task.status === "running" && task.runId) {
-        const existingRun = this.executor?.getStore().get(task.runId);
+        const runStore = typeof this.executor?.getStore === "function" ? this.executor.getStore() : undefined;
+        const existingRun = runStore?.get(task.runId);
         if (existingRun && ["queued", "running", "waiting_for_human"].includes(existingRun.run.status)) {
           // Task is already actively executing; do not start duplicate run
           return task.runId;
@@ -224,10 +247,14 @@ export class TriggerOutboxProcessor {
 
       if (this.taskService) {
         try {
-          const result = await this.taskService.start(task.id, {
-            userId: principal.userId,
-            tenantId: principal.tenantId,
-          });
+          const result = await this.taskService.start(
+            task.id,
+            {
+              userId: principal.userId,
+              tenantId: principal.tenantId,
+            },
+            { triggerDispatchKey },
+          );
           return result.runId;
         } catch (err: any) {
           if (/already executing/i.test(err?.message)) {
@@ -250,7 +277,12 @@ export class TriggerOutboxProcessor {
                 tools,
                 input: { taskId: task.id, title: task.title, ...(event.payload ?? {}) },
                 taskId: task.id,
-                metadata: { triggerEventId: event.id, triggerEventType: event.eventType, tenantId: event.tenantId },
+                metadata: {
+                  triggerDispatchKey,
+                  triggerEventId: event.id,
+                  triggerEventType: event.eventType,
+                  tenantId: event.tenantId,
+                },
               },
               undefined,
               principal,
@@ -272,7 +304,12 @@ export class TriggerOutboxProcessor {
                 tools,
                 input: { taskId: task.id, title: task.title, ...(event.payload ?? {}) },
                 taskId: task.id,
-                metadata: { triggerEventId: event.id, triggerEventType: event.eventType, tenantId: event.tenantId },
+                metadata: {
+                  triggerDispatchKey,
+                  triggerEventId: event.id,
+                  triggerEventType: event.eventType,
+                  tenantId: event.tenantId,
+                },
               },
               undefined,
               principal,
@@ -304,6 +341,7 @@ export class TriggerOutboxProcessor {
           tools,
           input: event.payload ?? {},
           metadata: {
+            triggerDispatchKey,
             triggerEventId: event.id,
             triggerEventType: event.eventType,
             tenantId: event.tenantId,
@@ -337,6 +375,7 @@ export class TriggerOutboxProcessor {
           tools,
           input: event.payload ?? {},
           metadata: {
+            triggerDispatchKey,
             triggerEventId: event.id,
             triggerEventType: event.eventType,
             tenantId: event.tenantId,

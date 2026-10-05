@@ -54,6 +54,10 @@ export default function TaskBoardPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<TaskStatus>("backlog");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    const linkedTaskId = new URLSearchParams(window.location.search).get("taskId");
+    if (linkedTaskId && tasks.some(task => task.id === linkedTaskId)) setDetailTaskId(linkedTaskId);
+  }, [tasks]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [workspaceNamesById, setWorkspaceNamesById] = useState<Map<string, string>>(new Map());
   const [projectNamesById, setProjectNamesById] = useState<Map<string, string>>(new Map());

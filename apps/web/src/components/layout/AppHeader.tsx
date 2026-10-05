@@ -14,6 +14,8 @@ import {
   Boxes,
   CalendarClock,
   Webhook,
+  Network,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +75,24 @@ export function AppHeader() {
             >
               <Workflow className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Org</span>
+            </Link>
+
+            <Link
+              href="/organization"
+              title="Organization goals and delegation"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+            >
+              <Network className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Goals</span>
+            </Link>
+
+            <Link
+              href="/budgets"
+              title="Cost budgets"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Budgets</span>
             </Link>
 
             <Link

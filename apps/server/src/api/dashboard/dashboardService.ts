@@ -5,6 +5,8 @@ import type { RunExecutor } from "../../runtime/runExecutor";
 import type { RunStoreContract } from "../../runtime/runStore";
 import { ApiError } from "../shared/http";
 import { ensureTenantProjectWorkspaceDefaults } from "../studio/tenantDefaults";
+import type { BudgetStore } from "../../budgets/budgetStore";
+import type { BudgetRecord } from "../../budgets/budgetStore";
 import type { AgentInstance, CompletedTask, DashboardCommand, FailedTask, QueuedTask, StudioDashboardData, TimeFilter, TokenMetrics } from "./models";
 
 const DEFAULT_MODEL = () => process.env.LLM_MODEL || "gemini-3.6-flash";
@@ -47,20 +49,23 @@ export class DashboardService {
     private readonly runStore: RunStoreContract,
     private readonly studioStore?: StudioStore,
     private readonly executor?: Pick<RunExecutor, "cancel">,
+    private readonly budgetStore?: BudgetStore,
   ) { }
 
   async get(principal: RequestPrincipal): Promise<StudioDashboardData> {
     const runs = this.runStore.list({}, principal);
-    const [tasks, studioAgents] = await Promise.all([
+    const [tasks, studioAgents, budgets] = await Promise.all([
       this.studioStore?.listTasks(principal) ?? [],
       this.studioStore?.listAgents(principal) ?? [],
+      this.budgetStore?.list(principal.tenantId) ?? [],
     ]);
+    const companyBudget = budgets.find(budget => budget.scope === "company" && budget.scopeId === principal.tenantId);
     return {
       agents: this.buildAgents(runs, tasks, studioAgents),
       queue: this.buildQueue(runs, tasks),
       completedTasks: this.buildCompleted(runs, tasks),
       failedTasks: this.buildFailures(runs, tasks),
-      tokenMetrics: this.buildMetrics(runs),
+      tokenMetrics: this.buildMetrics(runs, companyBudget),
       lastUpdated: nowIso(),
     };
   }
@@ -167,8 +172,9 @@ export class DashboardService {
     return result.sort((a, b) => b.timestamp - a.timestamp);
   }
 
-  private buildMetrics(runs: Run[]): TokenMetrics {
-    const completed = runs.filter((run) => run.status === "completed");
+  private buildMetrics(runs: Run[], companyBudget?: BudgetRecord): TokenMetrics {
+    const periodStart = new Date(); periodStart.setUTCDate(1); periodStart.setUTCHours(0, 0, 0, 0);
+    const completed = runs.filter((run) => ["completed", "failed", "cancelled"].includes(run.status) && (!companyBudget || new Date(run.startedAt).getTime() >= periodStart.getTime()));
     const providers = new Map<string, { provider: string; model: string; tokens: number; cost: number }>();
     let totalTokens = 0; let promptTokens = 0; let completionTokens = 0; let totalCostUsd = 0;
     for (const run of completed) {
@@ -179,7 +185,7 @@ export class DashboardService {
       const current = providers.get(key) ?? { provider, model, tokens: 0, cost: 0 }; current.tokens += tokens; current.cost += cost; providers.set(key, current);
     }
     const providerBreakdown = providers.size ? [...providers.values()] : [{ provider: (process.env.LLM_PROVIDER || "gemini").toUpperCase(), model: DEFAULT_MODEL(), tokens: 0, cost: 0 }];
-    return { totalTokens, promptTokens, completionTokens, totalCostUsd: Number(totalCostUsd.toFixed(4)), budgetUsd: 25, providerBreakdown };
+    return { totalTokens, promptTokens, completionTokens, totalCostUsd: Number((companyBudget?.spentUsd ?? totalCostUsd).toFixed(4)), costEstimated: completed.some(run => run.metadata?.costEstimated === true), budgetUsd: companyBudget?.limitUsd ?? null, providerBreakdown };
   }
 
   private async retry(id: string, principal: RequestPrincipal) {

@@ -172,7 +172,7 @@ export function StatCards() {
               ${tokenMetrics.totalCostUsd.toFixed(4)}
             </span>
             <span className="text-xs text-zinc-500">
-              / ${tokenMetrics.budgetUsd.toFixed(0)} cap
+              {tokenMetrics.budgetUsd === null ? "No cap set" : `/ $${tokenMetrics.budgetUsd.toFixed(0)} cap`}
             </span>
           </div>
           <div className="mt-3 flex items-center justify-between text-xs text-zinc-400">

@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Activity, Clock, CheckCircle2, AlertCircle, Save } from "lucide-react";
+import { Activity, Clock, CheckCircle2, AlertCircle, Save, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
+import { useStudioLocale } from "@/lib/useStudioLocale";
 
 interface HeartbeatData {
   agentId: string;
@@ -14,7 +15,53 @@ interface HeartbeatData {
   nextHeartbeatAt?: string | null;
 }
 
+const translations = {
+  en: {
+    title: "Agent Heartbeat & Auto-Wakeup",
+    subtitle: "Periodically check in and wake this agent even if no manual tasks are assigned.",
+    active: "Active",
+    disabled: "Disabled",
+    enableLabel: "Enable periodic heartbeat wakeup for this agent",
+    intervalLabel: "Heartbeat Interval (seconds):",
+    intervalHelp: "Minimum 30 seconds, default 300 seconds (5 minutes).",
+    lastHeartbeat: "Last Heartbeat",
+    nextScheduled: "Next Scheduled",
+    never: "Never",
+    notScheduled: "Not scheduled",
+    loading: "Loading heartbeat settings...",
+    loadError: "Failed to load heartbeat settings",
+    saveError: "Failed to save heartbeat settings",
+    saveSuccess: "Heartbeat settings saved successfully",
+    saveButton: "Save Heartbeat Settings",
+    saving: "Saving...",
+    switchLang: "فارسی",
+  },
+  fa: {
+    title: "ضربان و بیداری خودکار عامل",
+    subtitle: "بررسی دوره‌ای و فعال‌سازی خودکار این عامل حتی در صورت عدم انتساب دستی وظایف.",
+    active: "فعال",
+    disabled: "غیرفعال",
+    enableLabel: "فعال‌سازی بیداری متناوب برای این عامل",
+    intervalLabel: "فاصله زمانی ضربان (ثانیه):",
+    intervalHelp: "حداقل ۳۰ ثانیه، پیش‌فرض ۳۰۰ ثانیه (۵ دقیقه).",
+    lastHeartbeat: "آخرین ضربان",
+    nextScheduled: "اجرای بعدی",
+    never: "هرگز",
+    notScheduled: "برنامه‌ریزی نشده",
+    loading: "در حال بارگذاری تنظیمات ضربان...",
+    loadError: "خطا در دریافت تنظیمات ضربان",
+    saveError: "خطا در ذخیره تنظیمات ضربان",
+    saveSuccess: "تنظیمات ضربان با موفقیت ذخیره شد",
+    saveButton: "ذخیره تنظیمات ضربان",
+    saving: "در حال ذخیره...",
+    switchLang: "English",
+  },
+};
+
 export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
+  const { locale, direction, toggleLocale } = useStudioLocale();
+  const t = translations[locale];
+
   const [data, setData] = useState<HeartbeatData | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [intervalSeconds, setIntervalSeconds] = useState(300);
@@ -29,8 +76,8 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch(`/studio/agents/${agentId}/heartbeat`);
-        if (!res.ok) throw new Error("Failed to load heartbeat settings");
+        const res = await fetch(`/api/execution/studio/agents/${encodeURIComponent(agentId)}/heartbeat`);
+        if (!res.ok) throw new Error(t.loadError);
         const json: HeartbeatData = await res.json();
         if (mounted) {
           setData(json);
@@ -38,7 +85,7 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
           setIntervalSeconds(json.intervalSeconds || 300);
         }
       } catch (err: any) {
-        if (mounted) setError(err?.message || "Failed to load heartbeat settings");
+        if (mounted) setError(err?.message || t.loadError);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -55,7 +102,7 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
       setSaving(true);
       setError(null);
       setSuccess(null);
-      const res = await fetch(`/studio/agents/${agentId}/heartbeat`, {
+      const res = await fetch(`/api/execution/studio/agents/${encodeURIComponent(agentId)}/heartbeat`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -65,13 +112,13 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || "Failed to save heartbeat settings");
+        throw new Error(errJson.error || t.saveError);
       }
       const updated: HeartbeatData = await res.json();
       setData(updated);
-      setSuccess("Heartbeat settings saved successfully / تنظیمات ضربان با موفقیت ذخیره شد");
+      setSuccess(t.saveSuccess);
     } catch (err: any) {
-      setError(err?.message || "Failed to save heartbeat settings");
+      setError(err?.message || t.saveError);
     } finally {
       setSaving(false);
     }
@@ -80,26 +127,38 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
   if (loading) {
     return (
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 text-sm text-zinc-400">
-        Loading heartbeat settings...
+        {t.loading}
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-6">
+    <div
+      dir={direction}
+      className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-6"
+    >
       <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
         <div className="flex items-center gap-2.5">
           <Activity className="h-5 w-5 text-indigo-400" />
           <div>
             <h3 className="text-sm font-semibold text-zinc-100">
-              Agent Heartbeat & Auto-Wakeup / ضربان و بیداری خودکار عامل
+              {t.title}
             </h3>
             <p className="text-xs text-zinc-400">
-              Periodically check in and wake this agent even if no manual tasks are assigned.
+              {t.subtitle}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleLocale}
+            className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400 hover:text-indigo-300 bg-zinc-800/80 px-2 py-0.5 rounded border border-zinc-700/60 cursor-pointer"
+            title="Toggle English / Persian"
+          >
+            <Globe className="h-3 w-3" />
+            <span>{t.switchLang}</span>
+          </button>
           <span
             className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
               enabled
@@ -112,7 +171,7 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
                 enabled ? "bg-emerald-400 animate-pulse" : "bg-zinc-500"
               }`}
             />
-            {enabled ? "Active" : "Disabled"}
+            {enabled ? t.active : t.disabled}
           </span>
         </div>
       </div>
@@ -127,13 +186,13 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
             className="h-4 w-4 rounded border-zinc-700 bg-zinc-900 text-indigo-600 focus:ring-indigo-500"
           />
           <label htmlFor="heartbeatEnabled" className="text-xs font-medium text-zinc-200 cursor-pointer">
-            Enable periodic heartbeat wakeup for this agent / فعال‌سازی بیداری متناوب برای این عامل
+            {t.enableLabel}
           </label>
         </div>
 
         <div className="space-y-1.5 max-w-xs">
           <label className="text-xs font-medium text-zinc-300">
-            Heartbeat Interval (seconds) / فاصله زمانی ضربان (ثانیه):
+            {t.intervalLabel}
           </label>
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-zinc-500" />
@@ -149,24 +208,24 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
             />
           </div>
           <p className="text-[11px] text-zinc-500">
-            Minimum 30 seconds, default 300 seconds (5 minutes).
+            {t.intervalHelp}
           </p>
         </div>
 
         {/* Timestamps status */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-            <span className="text-[11px] text-zinc-500 uppercase font-semibold">Last Heartbeat</span>
+            <span className="text-[11px] text-zinc-500 uppercase font-semibold">{t.lastHeartbeat}</span>
             <p className="text-xs font-mono text-zinc-200 mt-1">
-              {data?.lastHeartbeatAt ? formatRelativeTime(data.lastHeartbeatAt) : "Never / هرگز"}
+              {data?.lastHeartbeatAt ? formatRelativeTime(data.lastHeartbeatAt) : t.never}
             </p>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
-            <span className="text-[11px] text-zinc-500 uppercase font-semibold">Next Scheduled</span>
+            <span className="text-[11px] text-zinc-500 uppercase font-semibold">{t.nextScheduled}</span>
             <p className="text-xs font-mono text-zinc-200 mt-1">
               {data?.nextHeartbeatAt && enabled
                 ? formatRelativeTime(data.nextHeartbeatAt)
-                : "Not scheduled / زمان‌بندی نشده"}
+                : t.notScheduled}
             </p>
           </div>
         </div>
@@ -193,7 +252,7 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
             className="gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs cursor-pointer"
           >
             <Save className="h-3.5 w-3.5" />
-            {saving ? "Saving..." : "Save Heartbeat Settings"}
+            {saving ? t.saving : t.saveButton}
           </Button>
         </div>
       </form>

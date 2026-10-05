@@ -133,13 +133,13 @@ export function CompletedAndCostSection() {
             </CardTitle>
           </div>
           <CardDescription className="text-xs text-zinc-400 mt-1">
-            Real usage queried from active LLM runtime.
+            {tokenMetrics.costEstimated ? "Cost includes conservative estimates for providers without usage rates." : tokenMetrics.budgetUsd === null ? "Usage and cost recorded by completed and failed runs." : "Usage and configured model rates for this month."}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
           {/* Budget Progress Bar */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 space-y-2">
+          {tokenMetrics.budgetUsd !== null ? <div className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-zinc-400">Monthly Budget Burn</span>
               <span className="font-semibold text-white">
@@ -161,7 +161,7 @@ export function CompletedAndCostSection() {
               <span>{((tokenMetrics.totalCostUsd / tokenMetrics.budgetUsd) * 100).toFixed(2)}% used</span>
               <span>${(tokenMetrics.budgetUsd - tokenMetrics.totalCostUsd).toFixed(2)} remaining</span>
             </div>
-          </div>
+          </div> : <a href="/budgets" className="block rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 text-xs text-indigo-300 underline">Set a company budget</a>}
 
           {/* Provider & Model Distribution */}
           <div className="space-y-2.5">
