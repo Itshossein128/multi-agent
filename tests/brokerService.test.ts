@@ -322,6 +322,37 @@ describe("broker service: audit trail", () => {
     }, 1, "0".repeat(64), Date.now())).not.toThrow();
   });
 
+  test("audit builder allows valid base64url lease IDs and context strings with sk-/pk-/rk- substrings while blocking actual secrets", async () => {
+    const { auditEvent } = await import("../src/broker/audit");
+    const genesis = "0".repeat(64);
+    const now = Date.now();
+
+    // Base64url lease IDs or UUIDs containing embedded "sk-", "pk-", or "rk-" substrings must not throw
+    expect(() => auditEvent({
+      tenantId: "t", principalId: "p", operation: "lease.issue.succeeded", result: "succeeded",
+      sourceService: "s", leaseId: "A1B2sk-c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0u1V2w3X4y5Z6",
+      correlationId: "task-runner-sk-subtask-123",
+    }, 1, genesis, now)).not.toThrow();
+
+    // Real API keys, AWS keys, private key blocks, bearer tokens, and DB connection strings must throw
+    const secrets = [
+      "sk-proj-1234567890abcdefghijklmnopqrst",
+      "pk-live-1234567890abcdef",
+      "rk-test-1234567890abcdef",
+      "AKIAIOSFODNN7EXAMPLE",
+      "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----",
+      "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.s2d",
+      "postgresql://user:password@localhost:5432/dbname",
+    ];
+
+    for (const secret of secrets) {
+      expect(() => auditEvent({
+        tenantId: "t", principalId: "p", operation: "lease.issue.succeeded", result: "succeeded",
+        sourceService: "s", correlationId: secret,
+      }, 1, genesis, now)).toThrow();
+    }
+  });
+
   test("expired-lease cleanup removes records and reports a count", async () => {
     const harness = createBrokerHarness({ limits: { maxTtlMs: 3_000, defaultTtlMs: 1_000 } });
     const lease = await harness.service.issue(leaseRequest());
