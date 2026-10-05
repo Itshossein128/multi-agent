@@ -1,3 +1,10 @@
+if (typeof Symbol.dispose === "undefined") {
+  Object.defineProperty(Symbol, "dispose", {
+    value: Symbol.for("nodejs.dispose"),
+    configurable: true,
+  });
+}
+
 import {
   isForbiddenIp,
   isForbiddenIpv4,
