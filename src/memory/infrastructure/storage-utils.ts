@@ -21,6 +21,8 @@ export function validateMemory(memory: Memory): void {
   validateScope(memory.tenantId, [memory.namespace]);
   if (!memory.id || !Number.isInteger(memory.version) || memory.version < 1) throw new MemoryValidationError("Invalid memory identity or version");
   validateEmbedding(memory.embedding, memory.embeddingMetadata);
+  for (const value of [memory.validFrom, memory.validUntil, memory.observedAt]) if (value !== undefined && !Number.isFinite(Date.parse(value))) throw new MemoryValidationError("Invalid memory temporal timestamp");
+  if (memory.validFrom && memory.validUntil && Date.parse(memory.validFrom) >= Date.parse(memory.validUntil)) throw new MemoryValidationError("Memory validFrom must be before validUntil");
 }
 export function validateScope(tenantId: string, namespaces: Memory["namespace"][] = []): void {
   if (typeof tenantId !== "string" || !tenantId.trim() || !Array.isArray(namespaces) || namespaces.some(n => !isMemoryNamespace(n))) throw new MemoryValidationError("Memory tenant and exact namespaces are required");

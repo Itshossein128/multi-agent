@@ -208,6 +208,8 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
     });
 
     test("tasks: tenant-scoped sharing (Alice and Bob in same tenant share tasks, Eve isolated)", async () => {
+      const ws = await json(await app.fetch(req("/workspaces", "GET", undefined, alice)));
+      const pr = await json(await app.fetch(req("/projects", "GET", undefined, alice)));
       const taskRes = await app.fetch(
         req(
           "/tasks",
@@ -223,6 +225,8 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
             retryCount: 0,
             paused: false,
             createdAt: new Date().toISOString(),
+            workspaceId: ws[0].id,
+            projectIds: [pr[0].id],
           },
           alice,
         ),
@@ -502,6 +506,10 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
       const wf = createEmptyDefinition("Postgres Alice Flow");
       const agent = createAgentRecord({ name: "Postgres Alice Agent" });
       const tool = createToolRecord({ name: "Postgres Alice Tool" });
+      const now = new Date().toISOString();
+      await store.saveWorkspace({ id: "ws-1", tenantId: "tenant-alpha", ownerId: "user-alice", name: "Workspace 1", description: "", status: "active", settings: {}, createdAt: now, updatedAt: now }, alice);
+      await store.saveProject({ id: "proj-1", tenantId: "tenant-alpha", ownerId: "user-alice", name: "Project 1", description: "", status: "active", settings: {}, createdAt: now, updatedAt: now }, alice);
+
       const task: StudioTask = {
         id: "pg-task-1",
         title: "Postgres Task",
@@ -509,11 +517,13 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
         priority: "high",
         status: "todo",
         assignedAgent: null,
+        workspaceId: "ws-1",
+        projectIds: ["proj-1"],
         dependencies: [],
         output: null,
         retryCount: 0,
         paused: false,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
       };
 
       await store.saveWorkflow(wf, alice);

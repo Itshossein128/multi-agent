@@ -126,6 +126,8 @@ export interface CreateTaskInput {
   parentTaskId?: string | null;
   dependencies?: string[];
   status?: TaskStatus;
+  workspaceId?: string;
+  projectIds?: string[];
 }
 
 export async function createTask(input: CreateTaskInput, principal?: AuthenticatedPrincipal | null): Promise<Task> {
@@ -145,6 +147,8 @@ export interface UpdateTaskPatch {
   workflowId?: string | null;
   parentTaskId?: string | null;
   dependencies?: string[];
+  workspaceId?: string;
+  projectIds?: string[];
 }
 
 export async function updateTask(taskId: string, patch: UpdateTaskPatch, principal?: AuthenticatedPrincipal | null): Promise<Task> {
@@ -188,4 +192,23 @@ export async function cancelTask(taskId: string, principal?: AuthenticatedPrinci
 export async function deleteTask(taskId: string, principal?: AuthenticatedPrincipal | null): Promise<{ id: string }> {
   await studioRequest(`/tasks/${taskId}`, { method: "DELETE" }, principal);
   return { id: taskId };
+}
+
+export async function getTaskClarification(taskId: string, principal?: AuthenticatedPrincipal | null) {
+  return studioRequest(`/tasks/${taskId}/clarification`, { method: "GET" }, principal);
+}
+
+export async function submitTaskClarification(
+  taskId: string,
+  answers: Array<{ questionId: string; value: string }>,
+  principal?: AuthenticatedPrincipal | null,
+  idempotencyKey?: string,
+) {
+  const headers: HeadersInit = {};
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  return studioRequest(`/tasks/${taskId}/clarification`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ answers }),
+  }, principal);
 }

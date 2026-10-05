@@ -1,10 +1,37 @@
+import type { EpisodeService, EpisodeExtractionInput, ProceduralService, EpisodeExtractionResult } from "../../../../src/memory/application";
+import type { MemoryBackgroundJobs } from "../../../../src/memory/contracts";
 import { MemorySaver, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { nowIso, uid, validateAgent, type AgentRecord, type AgentTestRequest, type ApprovalDecisionRequest, type Run, type RunCreateRequest, type RunEvent, type WorkflowDefinition } from "@multi-agent/types";
-import { compileWorkflow, UnsupportedPhase4NodeError, type AgentExecutionEvent, type CompileOptions } from "../compiler/workflowCompiler";
+import {
+  nowIso,
+  uid,
+  validateAgent,
+  ContractViolationError,
+  createResultEnvelope,
+  diagnosticsFromValidation,
+  migrateNodeContract,
+  validateAgainstSchema,
+  type AgentRecord,
+  type AgentTestRequest,
+  type ApprovalDecisionRequest,
+  type NodeResultEnvelope,
+  type Run,
+  type RunCreateRequest,
+  type RunEvent,
+  type WorkflowDefinition,
+} from "@multi-agent/types";
+import {
+  BranchRoutingError,
+  NodeOutcomeError,
+  WorkflowStepLimitError,
+  compileWorkflow,
+  UnsupportedPhase4NodeError,
+  type AgentExecutionEvent,
+  type CompileOptions,
+} from "../compiler/workflowCompiler";
 import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
-import { AgentRuntime, mapAgentExecutionEvent, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
-import { ToolRuntime } from "../../../../src/tools";
+import { AgentRuntime, AgentExecutionFailedError, mapAgentExecutionEvent, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
+import { ToolPolicyError, ToolRuntime } from "../../../../src/tools";
 import { ExecutionTelemetry } from "../../../../src/observability/telemetry";
 import { validateWorkflow } from "../compiler/validation";
 import { runtimeGuardrailsFromEnvironment, type RuntimeGuardrails } from "./guardrails";
@@ -12,6 +39,9 @@ import { log } from "../logging";
 import type { RequestPrincipal } from "../auth/principal";
 import { ApprovalManager, type PausedContext } from "./approvalManager";
 import { GraphRunner } from "./graphRunner";
+import type { DurableMemoryJob, EnqueueMemoryJob } from "../../../../src/memory/infrastructure";
+
+interface DurableMemoryJobEnqueuer { enqueue(input: EnqueueMemoryJob): Promise<{ job: DurableMemoryJob; duplicate: boolean }>; }
 
 function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
   return mapAgentExecutionEvent(event as Parameters<typeof mapAgentExecutionEvent>[0], runId);
@@ -19,6 +49,11 @@ function mapAgentEvents(event: AgentExecutionEvent, runId: string): RunEvent[] {
 
 function asCredentialPrincipal(principal?: RequestPrincipal): TrustedCredentialPrincipal | undefined {
   return principal ? { tenantId: principal.tenantId, principalId: principal.userId } : undefined;
+}
+
+function configuredRunConcurrency(): number {
+  const value = Number(process.env.WORKFLOW_MAX_CONCURRENT_RUNS ?? 4);
+  return Number.isInteger(value) && value >= 1 && value <= 256 ? value : 4;
 }
 
 /**
@@ -30,6 +65,9 @@ export class RunExecutor {
   private checkpointers = new Map<string, BaseCheckpointSaver>();
   private pausedContext = new Map<string, PausedContext>();
   private branchControllers = new Map<string, Map<string, AbortController>>();
+  private pendingRequests = new Map<string, { request: RunCreateRequest; memoryAccess?: MemoryAccessContext; principal?: RequestPrincipal }>();
+  private activeRuns = new Set<string>();
+  private readonly maxConcurrentRuns = configuredRunConcurrency();
   private approvalManager: ApprovalManager;
   private graphRunner: GraphRunner;
 
@@ -40,9 +78,15 @@ export class RunExecutor {
     private readonly telemetry: ExecutionTelemetry = ExecutionTelemetry.disabled(),
     private readonly guardrails: RuntimeGuardrails = runtimeGuardrailsFromEnvironment(),
     private readonly toolRuntime?: Pick<ToolRuntime, "execute">,
+    private readonly episodeService?: EpisodeService,
+    private readonly proceduralService?: ProceduralService,
+    private readonly memoryJobs?: MemoryBackgroundJobs,
+    private readonly durableMemoryJobs?: DurableMemoryJobEnqueuer,
   ) {
     // Wire up the extracted managers with shared state.
-    this.graphRunner = new GraphRunner(this.store, this.pausedContext, this.checkpointers);
+    this.graphRunner = new GraphRunner(this.store, this.pausedContext, this.checkpointers, this.episodeService,
+      (runId, input, access, result) => this.scheduleProceduralLearning(runId, input, access, result),
+      (runId, input, access) => this.scheduleDurableEpisodicExtraction(runId, input, access));
     this.approvalManager = new ApprovalManager({
       store: this.store,
       checkpointers: this.checkpointers,
@@ -61,6 +105,90 @@ export class RunExecutor {
   }
 
   getStore() { return this.store; }
+
+  private scheduleProceduralLearning(runId: string, input: EpisodeExtractionInput, access: import("../../../../src/memory/contracts").MemoryAccessContext, _episode: EpisodeExtractionResult): void {
+    if (!this.proceduralService) return;
+    this.store.markProceduralMemoryPending?.(runId);
+    if (this.durableMemoryJobs) {
+      void this.durableMemoryJobs.enqueue({
+        kind: "procedural_learning", idempotencyKey: `procedural:${access.tenantId}:${input.namespace.scope}:${input.namespace.id}:${runId}:v1`,
+        tenantId: access.tenantId, namespace: input.namespace, runId,
+      }).then(({ job, duplicate }) => {
+        log.info(duplicate ? "memory.job.idempotent_replay" : "memory.job.enqueued", { jobId: job.id, jobKind: job.kind, tenantId: access.tenantId, namespace: input.namespace.id, runId });
+      }, () => {
+        // The run has already produced its episode. Keep the failure visible;
+        // a durable reconciliation deployment can safely resubmit by run id.
+        this.store.setProceduralMemoryStatus?.(runId, "failed");
+        log.warn("memory.job.failed", { jobKind: "procedural_learning", runId, reason: "durable_enqueue_failed" });
+      });
+      return;
+    }
+    const task = async () => {
+      try {
+        const result = await this.proceduralService!.learnFromAuthorizedEpisodes({ access, namespace: input.namespace, agentId: input.agentId });
+        const failed = result.failed === true || result.reason === "persistence_failed";
+        this.store.setProceduralMemoryStatus?.(runId, failed ? "failed" : "processed");
+        log[failed ? "warn" : "info"]("memory.procedural.learned", { runId, namespace: input.namespace.id, created: result.created, reinforced: result.reinforced, skipped: result.skipped, reason: result.reason });
+        if (failed) throw new Error(result.reason);
+      } catch (error) {
+        this.store.setProceduralMemoryStatus?.(runId, "failed");
+        log.warn("memory.procedural.learning_failed", { runId, reason: "learning_operation_failed", error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
+    };
+    if (!this.memoryJobs?.enqueue(task)) {
+      this.store.setProceduralMemoryStatus?.(runId, "failed");
+      log.warn("memory.procedural.learning_failed", { runId, reason: "queue_unavailable" });
+    }
+  }
+
+  private async scheduleDurableEpisodicExtraction(runId: string, input: EpisodeExtractionInput, access: MemoryAccessContext): Promise<boolean> {
+    if (!this.durableMemoryJobs) return false;
+    this.store.markEpisodicMemoryPending?.(runId);
+    try {
+      const { job, duplicate } = await this.durableMemoryJobs.enqueue({
+        kind: "episodic_extraction", idempotencyKey: `episodic:${runId}:v1`, tenantId: access.tenantId, namespace: input.namespace, runId,
+      });
+      log.info(duplicate ? "memory.job.idempotent_replay" : "memory.job.enqueued", { jobId: job.id, jobKind: job.kind, tenantId: access.tenantId, namespace: input.namespace.id, runId });
+      return true;
+    } catch (error) {
+      this.store.setEpisodicMemoryStatus?.(runId, "failed");
+      log.warn("memory.job.failed", { jobKind: "episodic_extraction", runId, reason: "durable_enqueue_failed", error: error instanceof Error ? error.message : String(error) });
+      return true;
+    }
+  }
+
+  private durableScope(job: DurableMemoryJob): MemoryAccessContext | undefined {
+    const entry = job.runId ? this.store.get(job.runId) : undefined;
+    const access = entry?.memoryAccess;
+    if (!entry || !access || access.tenantId !== job.tenantId || !access.writableNamespaces.some(n => n.scope === job.namespace.scope && n.id === job.namespace.id)) return undefined;
+    return { principalId: "memory-maintenance", tenantId: job.tenantId, readableNamespaces: [job.namespace], writableNamespaces: [job.namespace] };
+  }
+
+  /** Durable handler: re-load run state and validate its trusted captured scope. */
+  async processDurableEpisodicJob(job: DurableMemoryJob): Promise<void> {
+    const access = this.durableScope(job);
+    if (!job.runId || !access) throw new Error("access validation failed for durable episodic job");
+    const entry = this.store.get(job.runId)!;
+    if (!this.episodeService || !["completed", "failed", "cancelled"].includes(entry.run.status)) throw new Error("unsupported episodic job state");
+    await this.processTerminalEpisodicMemory(
+      job.runId,
+      { succeeded: entry.run.status === "completed", error: entry.run.error, cancelled: entry.run.status === "cancelled" },
+      { skipDurableEnqueue: true },
+    );
+  }
+
+  /** Durable handler: procedures read authoritative episodes at execution time. */
+  async processDurableProceduralJob(job: DurableMemoryJob): Promise<void> {
+    const access = this.durableScope(job);
+    if (!job.runId || !access || !this.proceduralService) throw new Error("access validation failed for durable procedural job");
+    const entry = this.store.get(job.runId)!;
+    const agentId = entry.agentsSnapshot?.[0]?.id ?? "unknown";
+    const result = await this.proceduralService.learnFromAuthorizedEpisodes({ access, namespace: job.namespace, agentId });
+    const failed = result.failed === true || result.reason === "persistence_failed";
+    this.store.setProceduralMemoryStatus?.(job.runId, failed ? "failed" : "processed");
+    if (failed) throw new Error(result.reason);
+  }
 
   private credentialPrincipalForRun(runId: string): TrustedCredentialPrincipal | undefined {
     const run = this.store.get(runId)?.run;
@@ -90,11 +218,14 @@ export class RunExecutor {
     const stamp = nowIso();
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
+    const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
+    const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
     this.store.create(
       { id, workflowId: `agent-test:${request.agent.id}`, status: "running", startedAt: stamp, input: request.input, metadata: { kind: "agent-test" }, ownerId, tenantId },
-      memoryAccess,
+      memoryOwnerId && memoryOwnerTenantId ? { principalId: memoryOwnerId, tenantId: memoryOwnerTenantId } : undefined,
       undefined,
       principal,
+      memoryAccess,
     );
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.created", timestamp: stamp, sequence: 0, payload: {} });
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.started", timestamp: stamp, sequence: 0, payload: {} });
@@ -111,12 +242,15 @@ export class RunExecutor {
         if (event.type === "agent.failed") throw new Error((event.payload as { error?: string })?.error ?? "Agent failed");
       }
       this.store.signal(runId)?.throwIfAborted();
-      this.store.update(runId, { status: "completed", completedAt: nowIso(), output });
+      this.store.update(runId, { status: "completed", completedAt: nowIso(), output, result: createResultEnvelope("success", { value: output }) });
       this.store.append(runId, { id: uid("event"), runId, type: "run.completed", timestamp: nowIso(), sequence: 0, payload: { output } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const cancelled = Boolean(this.store.signal(runId)?.aborted);
-      this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message });
+      const result = cancelled
+        ? createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Agent test was cancelled.", retryable: false } })
+        : classifyRunFailure(error);
+      this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message, result });
       this.store.append(runId, { id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message, ...(cancelled ? { cancelled: true } : {}) } });
     }
   }
@@ -125,17 +259,44 @@ export class RunExecutor {
     const issues = validateWorkflow(request.workflow, request.agents, this.guardrails, request.tools);
     const errors = issues.filter(issue => issue.level === "error");
     if (errors.length) throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
+    this.assertRunInputContract(request);
     const id = uid("run"); const stamp = nowIso();
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
+    const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
+    const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
     const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId };
-    this.store.create(run, memoryAccess, { workflow: request.workflow, agents: request.agents, tools: request.tools }, principal);
+    this.store.create(
+      run,
+      memoryOwnerId && memoryOwnerTenantId ? { principalId: memoryOwnerId, tenantId: memoryOwnerTenantId } : undefined,
+      { workflow: request.workflow, agents: request.agents, tools: request.tools },
+      principal,
+      memoryAccess,
+    );
     log.info("run.started", { runId: id, workflowId: request.workflow.id, taskId: request.taskId });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.created", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     this.store.append(id, { id: uid("event"), runId: id, type: "run.started", timestamp: stamp, sequence: 0, payload: { workflowId: request.workflow.id } });
     this.branchControllers.set(id, new Map());
-    void this.execute(id, request, memoryAccess, principal);
+    this.pendingRequests.set(id, { request, memoryAccess, principal });
+    this.pumpQueue();
     return id;
+  }
+
+  /** Requeue a durable `queued` run after a process restart. */
+  resumeQueuedRun(runId: string, memoryAccess?: MemoryAccessContext) {
+    const entry = this.store.get(runId);
+    if (!entry || entry.run.status !== "queued") return false;
+    const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+    const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
+    const tools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
+    if (!workflow || !agents) return false;
+    this.pendingRequests.set(runId, {
+      request: { workflow, agents, tools, input: entry.run.input ?? {}, metadata: entry.run.metadata, taskId: entry.run.taskId },
+      memoryAccess: memoryAccess ?? entry.memoryAccess,
+      principal: entry.run.ownerId && entry.run.tenantId ? { userId: entry.run.ownerId, tenantId: entry.run.tenantId } : undefined,
+    });
+    this.pumpQueue();
+    return true;
   }
 
   retry(runId: string, memoryAccess?: MemoryAccessContext) {
@@ -158,10 +319,76 @@ export class RunExecutor {
     }, memoryAccess, entry.run.ownerId && entry.run.tenantId ? { userId: entry.run.ownerId, tenantId: entry.run.tenantId } : undefined);
   }
 
+  /** Mark a run interrupted by restart as failed and run the optional episode hook. */
+  recordRecoveredFailure(runId: string, message = "Run interrupted by server restart and cannot continue safely.") {
+    const entry = this.store.get(runId);
+    if (!entry || ["completed", "failed", "cancelled"].includes(entry.run.status)) {
+      return false;
+    }
+    const now = nowIso();
+    const result = classifyRunFailure(new Error(message));
+    this.store.update(runId, { status: "failed", completedAt: now, error: message, result });
+    if (entry.memoryAccess) this.store.markEpisodicMemoryPending?.(runId);
+    this.store.append(runId, { id: `recovery-${runId}`, runId, type: "run.failed", timestamp: now, sequence: 0, payload: { error: "interrupted by restart" } });
+    void this.processTerminalEpisodicMemory(runId, { succeeded: false, error: message });
+    return true;
+  }
+
+  /** Retry an episode whose durable status was pending/failed after restart. */
+  retryPendingEpisodicMemory(runId: string) {
+    const entry = this.store.get(runId);
+    if (!entry || !entry.memoryAccess || !["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
+    void this.processTerminalEpisodicMemory(
+      runId,
+      {
+        succeeded: entry.run.status === "completed",
+        error: entry.run.error,
+        cancelled: entry.run.status === "cancelled",
+      },
+      { skipDurableEnqueue: true },
+    );
+    return true;
+  }
+
+  /** Retry durable procedural learning after a restart or queue failure. */
+  retryPendingProceduralMemory(runId: string) {
+    const entry = this.store.get(runId);
+    const access = entry?.memoryAccess;
+    const namespace = access?.writableNamespaces[0];
+    const agentId = (this.store.getAgentSnapshot?.(runId) ?? entry?.agentsSnapshot)?.[0]?.id;
+    if (!entry || !access || !namespace || !agentId || !this.proceduralService || !["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
+    this.scheduleProceduralLearning(runId, {
+      runId,
+      workflowId: entry.run.workflowId,
+      nodeId: "recovery",
+      agentId,
+      task: entry.run.input,
+      output: entry.run.output,
+      succeeded: entry.run.status === "completed",
+      error: entry.run.error,
+      startedAt: entry.run.startedAt,
+      completedAt: entry.run.completedAt,
+      namespace,
+    }, access, { created: false, reason: "recovery" });
+    return true;
+  }
+
   cancel(runId: string) {
     const entry = this.store.get(runId);
     if (!entry) return false;
     if (["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
+    if (this.pendingRequests.has(runId)) {
+      this.pendingRequests.delete(runId);
+      this.branchControllers.delete(runId);
+      this.store.update(runId, {
+        status: "cancelled",
+        completedAt: nowIso(),
+        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while queued.", retryable: false } }),
+      });
+      this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      this.store.cancel(runId);
+      return true;
+    }
     if (entry.run.status === "waiting_for_human") {
       for (const approval of this.store.listApprovals(runId)) {
         if (approval.status === "requested") {
@@ -173,7 +400,11 @@ export class RunExecutor {
       this.checkpointers.delete(runId);
       this.branchControllers.delete(runId);
       this.store.setPausedContext?.(runId, null);
-      this.store.update(runId, { status: "cancelled", completedAt: nowIso() });
+      this.store.update(runId, {
+        status: "cancelled",
+        completedAt: nowIso(),
+        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while waiting for a human.", retryable: false } }),
+      });
       this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
       return true;
     }
@@ -220,9 +451,20 @@ export class RunExecutor {
     return true;
   }
 
+  /** Whether pause maps still allow a safe in-process resume for this run. */
+  isRunResumable(runId: string): boolean {
+    return this.pausedContext.has(runId) && this.checkpointers.has(runId);
+  }
+
+  /** Test/ops helper: drop in-memory pause maps so resume is no longer safe. */
+  dropPausedState(runId: string): void {
+    this.pausedContext.delete(runId);
+    this.checkpointers.delete(runId);
+  }
+
   /** Delegate approval resolution to ApprovalManager. */
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
-    this.approvalManager.resolveApproval(runId, approvalId, decision);
+    return this.approvalManager.resolveApproval(runId, approvalId, decision);
   }
 
   /** Delegate approval timer rearming to ApprovalManager. */
@@ -236,6 +478,19 @@ export class RunExecutor {
       this.store.update(runId, { metadata: { ...(this.store.get(runId)?.run.metadata ?? {}), observability: { provider: "langfuse", traceId } } });
     }
     return this.telemetry.withWorkflow({ runId, workflowId: request.workflow.id, taskId: request.taskId, input: request.input }, () => this.executeWorkflow(runId, request, memoryAccess, principal));
+  }
+
+  private pumpQueue() {
+    while (this.activeRuns.size < this.maxConcurrentRuns) {
+      const next = this.pendingRequests.keys().next().value as string | undefined;
+      if (!next) return;
+      const pending = this.pendingRequests.get(next);
+      if (!pending) continue;
+      this.pendingRequests.delete(next);
+      this.activeRuns.add(next);
+      void this.execute(next, pending.request, pending.memoryAccess, pending.principal)
+        .finally(() => { this.activeRuns.delete(next); this.pumpQueue(); });
+    }
   }
 
   private async executeWorkflow(runId: string, request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
@@ -278,10 +533,151 @@ export class RunExecutor {
     this.branchControllers.delete(runId);
     this.store.setPausedContext?.(runId, null);
     const cancelled = Boolean(this.store.signal(runId)?.aborted);
-    this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message });
-    this.store.append(runId, { id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0, payload: { error: message, ...(cancelled ? { cancelled: true } : {}) } });
-    const logPayload = { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message };
+    const result = cancelled
+      ? createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled.", retryable: false } })
+      : classifyRunFailure(error);
+    this.store.update(runId, { status: cancelled ? "cancelled" : "failed", completedAt: nowIso(), error: message, result });
+    if (this.store.get(runId)?.memoryAccess) this.store.markEpisodicMemoryPending?.(runId);
+    this.store.append(runId, {
+      id: uid("event"), runId, type: cancelled ? "run.cancelled" : "run.failed", timestamp: nowIso(), sequence: 0,
+      payload: {
+        error: message,
+        ...(cancelled ? { cancelled: true } : {}),
+        resultStatus: result.status,
+        ...(result.error ? { code: result.error.code } : {}),
+      },
+    });
+    const logPayload = { runId, workflowId: this.store.get(runId)?.run.workflowId, taskId: this.store.get(runId)?.run.taskId, error: message, resultStatus: result.status, ...(result.error ? { code: result.error.code } : {}) };
     if (cancelled) log.info("run.cancelled", logPayload);
     else log.error("run.failed", logPayload);
+
+    if (this.episodeService) {
+      void this.processTerminalEpisodicMemory(runId, { succeeded: false, error: message, cancelled });
+    }
   }
+
+  /**
+   * Server-authoritative run input contract: schema + payload bounds are
+   * enforced before any execution happens, regardless of what the client
+   * validated in the browser.
+   */
+
+  private async processTerminalEpisodicMemory(
+    runId: string,
+    opts: { succeeded: boolean; error?: string; cancelled?: boolean },
+    executionOpts?: { skipDurableEnqueue?: boolean },
+  ) {
+    if (!this.episodeService) return;
+    try {
+      const entry = this.store.get(runId);
+      if (!entry) return;
+      const memoryAccess = entry.memoryAccess;
+      if (!memoryAccess || !memoryAccess.writableNamespaces.length) return;
+      const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+      const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
+      const outputNodeId = workflow?.nodes.find((node) => node.type === "output")?.id ?? "unknown";
+      const primaryAgentId = agents?.[0]?.id ?? "unknown";
+
+      let handoffs: Record<string, unknown> | undefined;
+      let workingMemory: Record<string, unknown> | undefined;
+      if (this.checkpointer) {
+        try {
+          const state = await (this.checkpointer as any).get({ configurable: { thread_id: runId } });
+          if (state?.values) {
+            handoffs = state.values.handoffs;
+            workingMemory = state.values.workingMemory;
+          }
+        } catch {
+          /* ignore checkpointer read errors for optional memory */
+        }
+      }
+
+      const input: EpisodeExtractionInput = {
+        runId,
+        workflowId: entry.run.workflowId,
+        nodeId: outputNodeId,
+        agentId: primaryAgentId,
+        task: entry.run.input,
+        output: entry.run.output,
+        succeeded: opts.succeeded,
+        error: opts.error,
+        handoffs,
+        workingMemory,
+        startedAt: entry.run.startedAt,
+        completedAt: entry.run.completedAt,
+        approvals: entry.approvals?.map(a => ({ decision: a.status })),
+        namespace: memoryAccess.writableNamespaces[0],
+      };
+
+      if (this.durableMemoryJobs && !executionOpts?.skipDurableEnqueue) {
+        await this.scheduleDurableEpisodicExtraction(runId, input, memoryAccess);
+        return;
+      }
+
+      const result = await this.episodeService.processRun(input, memoryAccess);
+      this.store.setEpisodicMemoryStatus?.(runId, result.reason === "persistence_failed" || result.reason === "extraction_failed" ? "failed" : "processed");
+      log.info("memory.episodic.extracted", { runId, created: result.created, reason: result.reason, memoryId: result.memoryId });
+      if (result.reason !== "persistence_failed" && result.reason !== "extraction_failed") this.scheduleProceduralLearning(runId, input, memoryAccess, result);
+    } catch (err) {
+      this.store.setEpisodicMemoryStatus?.(runId, "failed");
+      log.warn("memory.episodic.extraction_failed", { runId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private assertRunInputContract(request: RunCreateRequest) {
+    const inputNode = request.workflow.nodes.find((node) => node.type === "input");
+    const contract = migrateNodeContract(inputNode?.contract);
+    if (!contract) return;
+    const input = request.input ?? {};
+    if (contract.inputSchema) {
+      const validation = validateAgainstSchema(contract.inputSchema, input);
+      if (!validation.valid) {
+        throw new ContractViolationError("INPUT_CONTRACT_VIOLATION", "Run input does not match the workflow input contract", {
+          nodeId: inputNode?.id,
+          diagnostics: diagnosticsFromValidation(validation),
+        });
+      }
+    }
+    if (contract.maxPayloadBytes !== undefined) {
+      const bytes = Buffer.byteLength(JSON.stringify(input) ?? "", "utf8");
+      if (bytes > contract.maxPayloadBytes) {
+        throw new ContractViolationError("PAYLOAD_TOO_LARGE", `Run input of ${bytes} bytes exceeds the declared ${contract.maxPayloadBytes}-byte bound`, {
+          nodeId: inputNode?.id,
+          diagnostics: [{ code: "PAYLOAD_TOO_LARGE", message: "Run input exceeded declared byte bound", path: "$" }],
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Map an execution error to the deterministic result taxonomy so validation
+ * failures, operational failures, policy rejections, blocked execution, and
+ * unknown/ambiguous outcomes stay distinguishable in persisted run state.
+ */
+export function classifyRunFailure(error: unknown): NodeResultEnvelope {
+  if (error instanceof NodeOutcomeError) return error.envelope;
+  if (error instanceof ContractViolationError) return error.envelope;
+  if (error instanceof BranchRoutingError) return error.envelope;
+  if (error instanceof ToolPolicyError) {
+    return createResultEnvelope("policy_rejected", {
+      error: { code: "TOOL_POLICY_REJECTED", message: (error.message || "Tool execution was rejected by server policy").slice(0, 300), retryable: false },
+    });
+  }
+  if (error instanceof WorkflowStepLimitError) {
+    return createResultEnvelope("blocked", {
+      error: { code: "WORKFLOW_STEP_LIMIT", message: `Workflow exceeded the server-owned ${error.limit}-step execution limit`, retryable: false },
+    });
+  }
+  if (error instanceof AgentExecutionFailedError) {
+    return createResultEnvelope("failed", {
+      error: { code: "AGENT_EXECUTION_FAILED", message: (error.message || "Agent execution failed").slice(0, 300), retryable: true },
+    });
+  }
+  const name = error instanceof Error ? error.name : "";
+  if (name === "AbortError") {
+    return createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Execution was cancelled.", retryable: false } });
+  }
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+  return createResultEnvelope("failed", { error: { code: "RUN_EXECUTION_FAILED", message: message || "Run execution failed", retryable: true } });
 }

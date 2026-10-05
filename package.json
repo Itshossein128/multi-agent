@@ -10,12 +10,17 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli/index.js",
-    "dev": "pnpm --parallel --filter web --filter server run dev",
-    "dev:web": "pnpm --filter web dev",
+    "build:types": "pnpm --filter @multi-agent/types build",
+    "dev": "pnpm run build:types && pnpm --parallel --filter web --filter server --filter docs run dev",
+    "dev:web": "pnpm run build:types && pnpm --filter web dev",
+    "dev:docs": "pnpm --filter docs dev",
     "dev:cli": "ts-node src/cli/index.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit",
-    "dev:server": "pnpm --filter server dev",
-    "dev:all": "pnpm --parallel --filter web --filter server run dev",
+    "dev:server": "pnpm run build:types && pnpm --filter server dev",
+    "dev:all": "pnpm run build:types && pnpm --parallel --filter web --filter server run dev",
+    "build:docs": "pnpm --filter docs build",
+    "start:docs": "pnpm --filter docs start",
+    "lint:docs": "pnpm --filter docs lint",
     "db:dev:up": "docker compose -f infrastructure/memory/compose.yml --profile memory up -d",
     "db:dev:down": "docker compose -f infrastructure/memory/compose.yml --profile memory down",
     "db:migrate": "node -r dotenv/config infrastructure/memory/migrate.cjs && node -r dotenv/config infrastructure/studio/migrate.cjs",
@@ -30,7 +35,9 @@
     "verification:real-tools": "ts-node --transpile-only infrastructure/docker/verification-real-tools.ts",
     "credentials:login-codex": "ts-node --transpile-only scripts/login-agent-codex.ts",
     "credentials:status-codex": "ts-node --transpile-only scripts/login-agent-codex.ts -- --status",
-    "memory:backfill-embeddings": "node scripts/memory/backfill-embeddings.mjs"
+    "memory:backfill-embeddings": "node scripts/memory/backfill-embeddings.mjs",
+    "memory:eval": "ts-node --transpile-only scripts/memory/memoryEval.ts",
+    "memory:benchmark": "ts-node --transpile-only scripts/memory/memoryBenchmark.ts"
   },
   "license": "MIT",
   "dependencies": {

@@ -6,6 +6,8 @@ import { AgentExecutionFailedError } from "./errors";
 import type { WorkerRuntime, WorkerSpec } from "./workerRuntime";
 import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver, type WorkerLaunchSecrets } from "./workerCredentials";
+import { defaultCliExecutable } from "./cliProviderDefaults";
+import { configuredAgentTimeout } from "./agentTimeout";
 
 export interface CliRuntimePolicy {
   enabled: boolean;
@@ -157,7 +159,7 @@ export class CliAgentExecutor implements AgentExecutor {
         executable: spawnExecutable,
         args,
         cwd: policy.workspaceRoot!,
-        timeoutMs: Number(process.env.AGENT_MAX_DURATION_MS ?? 120_000),
+        timeoutMs: configuredAgentTimeout(),
         maxOutputBytes: this.runtimePolicy.maxOutputBytes,
         workspaceAccess: policy.filesystem === "read-write" ? "read-write" : "read-only",
         network: policy.network === true,
@@ -263,9 +265,7 @@ function event(type: AgentExecutionEvent["type"], input: AgentExecutionInput, pa
   return { type, timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload };
 }
 
-export function defaultCliExecutable(provider: string): string {
-  return provider === "claude-code" ? "claude" : provider;
-}
+export { defaultCliExecutable };
 
 function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>, workerMode: CliWorkerMode): string[] {
   const explicit = backend.args?.filter((arg) => arg.length > 0);
@@ -273,9 +273,11 @@ function commandArgs(backend: Extract<AgentBackend, { type: "cli" }>, workerMode
     ? codexArgs(explicit, workerMode)
     : backend.provider === "claude-code"
       ? claudeArgs(explicit, workerMode === "container")
-      : backend.provider === "agy"
-      ? agyArgs(explicit)
-      : [...(explicit ?? [])];
+      : backend.provider === "cursor"
+        ? cursorArgs(explicit, workerMode === "container")
+        : backend.provider === "agy"
+          ? agyArgs(explicit)
+          : [...(explicit ?? [])];
   if (backend.model && !args.some((arg) => arg === "--model" || arg === "-m")) args.push("--model", backend.model);
   return args;
 }
@@ -394,6 +396,23 @@ function claudeArgs(explicit: string[] | undefined, allowPermissionBypass: boole
     && !args.includes("--permission-mode")
     && !args.includes("--allow-dangerously-skip-permissions")) {
     args.push("--dangerously-skip-permissions");
+  }
+  return args;
+}
+
+/**
+ * Headless Cursor Agent CLI defaults. Prompt is supplied on stdin (same as Claude).
+ * `--force` is container-only: Docker is the sandbox; local keeps Cursor's approval model.
+ */
+export function cursorArgs(explicit: string[] | undefined, allowForce: boolean): string[] {
+  const args = [...(explicit ?? [])];
+  if (!args.includes("-p") && !args.includes("--print")) args.unshift("-p");
+  if (!args.includes("--output-format") && !args.some((arg) => arg.startsWith("--output-format="))) {
+    args.push("--output-format", "text");
+  }
+  if (!args.includes("--trust")) args.push("--trust");
+  if (allowForce && !args.includes("--force") && !args.includes("--yolo")) {
+    args.push("--force");
   }
   return args;
 }

@@ -11,6 +11,8 @@ import { TaskFields } from "./detail/TaskFields";
 import { DependencyEditor } from "./detail/DependencyEditor";
 import { LinkedRunCard } from "./detail/LinkedRunCard";
 import { LastErrorCard } from "./detail/LastErrorCard";
+import { ClarificationPanel } from "./detail/ClarificationPanel";
+import { TaskCommentsSection } from "./detail/TaskCommentsSection";
 import { useTaskDraft } from "./detail/useTaskDraft";
 
 interface TaskDetailPanelProps {
@@ -57,6 +59,7 @@ export function TaskDetailPanel({
   const isTerminal = canonical === "completed" || canonical === "failed" || canonical === "cancelled";
 
   const handleSave = async () => {
+    if (!draft.associationsValid) return;
     await onUpdate(draft.savePayload());
   };
 
@@ -106,6 +109,7 @@ export function TaskDetailPanel({
 
           <LinkedRunCard runId={task.runId} />
           <LastErrorCard lastError={task.lastError} />
+          <ClarificationPanel task={task} />
 
           <TaskFields
             task={task}
@@ -124,6 +128,13 @@ export function TaskDetailPanel({
             onRemoveDependency={draft.removeDependency}
           />
 
+          <TaskCommentsSection taskId={task.id} agents={agents} />
+
+          {draft.associationsError && (
+            <p className="rounded-lg border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+              {draft.associationsError}
+            </p>
+          )}
           {errorMessage && (
             <p className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
               {errorMessage}
@@ -163,7 +174,7 @@ export function TaskDetailPanel({
           <Button
             type="button"
             size="sm"
-            disabled={isMutating}
+            disabled={isMutating || !draft.associationsValid}
             onClick={handleSave}
             className="gap-1 bg-indigo-600 text-xs text-white hover:bg-indigo-500 cursor-pointer"
           >

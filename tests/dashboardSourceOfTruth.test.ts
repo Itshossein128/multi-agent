@@ -87,6 +87,8 @@ describe("Authoritative Dashboard Source of Truth", () => {
         retryCount: 0,
         paused: false,
         createdAt: "2026-09-11T10:00:00.000Z",
+        workspaceId: "workspace-default",
+        projectIds: ["project-default"],
       };
       const activeTask: StudioTask = {
         id: "task-active-1",
@@ -100,6 +102,8 @@ describe("Authoritative Dashboard Source of Truth", () => {
         retryCount: 0,
         paused: false,
         createdAt: "2026-09-11T10:10:00.000Z",
+        workspaceId: "workspace-default",
+        projectIds: ["project-default"],
       };
       await studioStore.saveTask(todoTask, alice);
       await studioStore.saveTask(activeTask, alice);
@@ -262,6 +266,8 @@ describe("Authoritative Dashboard Source of Truth", () => {
         retryCount: 0,
         paused: false,
         createdAt: nowIso(),
+        workspaceId: "workspace-default",
+        projectIds: ["project-default"],
       };
       await studioStore.saveTask(aliceTask, alice);
 
@@ -356,6 +362,8 @@ describe("Authoritative Dashboard Source of Truth", () => {
         retryCount: 1,
         paused: false,
         createdAt: nowIso(),
+        workspaceId: "workspace-default",
+        projectIds: ["project-default"],
       };
       await studioStore.saveTask(failedTask, alice);
 
@@ -430,6 +438,8 @@ describe("Authoritative Dashboard Source of Truth", () => {
         retryCount: 0,
         paused: false,
         createdAt: nowIso(),
+        workspaceId: "workspace-default",
+        projectIds: ["project-default"],
       };
       await pgStudioStore1.saveTask(durableTask, alice);
 

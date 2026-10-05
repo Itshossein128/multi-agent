@@ -10,6 +10,10 @@ import {
   Radio,
   Columns3,
   Workflow,
+  FolderKanban,
+  Boxes,
+  CalendarClock,
+  Webhook,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,11 +76,48 @@ export function AppHeader() {
             </Link>
 
             <Link
+              href="/projects"
+              title="Projects"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+            >
+              <FolderKanban className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Projects</span>
+            </Link>
+
+            <Link
+              href="/workspaces"
+              title="Workspaces"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+            >
+              <Boxes className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Workspaces</span>
+            </Link>
+
+            <Link
               href="/tasks"
+              title="Task Board"
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
             >
               <Columns3 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Task Board</span>
+              <span className="hidden sm:inline">Tasks</span>
+            </Link>
+
+            <Link
+              href="/routines"
+              title="Routines"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+            >
+              <CalendarClock className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Routines</span>
+            </Link>
+
+            <Link
+              href="/webhooks"
+              title="Webhook Triggers"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
+            >
+              <Webhook className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Webhooks</span>
             </Link>
 
             <Button

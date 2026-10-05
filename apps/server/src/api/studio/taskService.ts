@@ -7,6 +7,7 @@ import {
   toCanonicalStatus,
   uid,
   type AgentRecord,
+  type Run,
   type TaskStatus,
   type WorkflowDefinition,
 } from "@multi-agent/types";
@@ -15,6 +16,12 @@ import type { RequestPrincipal } from "../../auth/principal";
 import type { RunExecutor } from "../../runtime/runExecutor";
 import { ApiError } from "../shared/http";
 import { requireResource } from "./resource";
+import { ensureTenantProjectWorkspaceDefaults } from "./tenantDefaults";
+import {
+  buildClarificationPackage,
+  fingerprintAnswers,
+  validateClarificationAnswers,
+} from "../clarification";
 
 const TITLE_MAX = 200;
 const DESCRIPTION_MAX = 2000;
@@ -29,6 +36,20 @@ const TASK_STATUSES = new Set([
   "backlog", "ready", "queued", "running", "blocked", "waiting_for_human", "completed", "failed", "cancelled",
   "todo", "planning", "in_progress", "waiting_tool", "review", "done",
 ]);
+
+const LEGACY_BLOCKED_OUTPUT = /(?:clarification\s+required|intake\s+remains\s+in\s+clarification|not[\s_-]*ready|needs[\s_-]*verification|no\s+implementation\s+task(?:\s+has\s+been)?\s+dispatched|\bblocked\b)/i;
+
+function taskStatusForCompletedRun(run: Pick<Run, "result" | "output">): TaskStatus {
+  const resultStatus = run.result?.status;
+  if (resultStatus === "needs_human") return "waiting_for_human";
+  if (resultStatus === "blocked" || resultStatus === "policy_rejected" || resultStatus === "validation_failed" || resultStatus === "unknown") {
+    return "blocked";
+  }
+  if (resultStatus === "failed") return "failed";
+
+  const serializedOutput = typeof run.output === "string" ? run.output : JSON.stringify(run.output ?? "");
+  return serializedOutput && LEGACY_BLOCKED_OUTPUT.test(serializedOutput) ? "blocked" : "completed";
+}
 
 function boundedText(value: unknown, max: number, field: string): string {
   if (typeof value !== "string") throw new ApiError(400, `${field} must be a string`);
@@ -115,7 +136,7 @@ export class TaskService {
     let changed = false;
     for (const task of tasks) {
       if (this.syncTaskWithRun(task)) {
-        await this.store.saveTask(task, principal);
+        await this.store.saveTask(await this.withAssociations(task, principal), principal);
         changed = true;
       }
     }
@@ -125,7 +146,7 @@ export class TaskService {
   async get(id: string, principal: RequestPrincipal): Promise<StudioTask> {
     const task = requireResource(await this.store.getTask(id, principal), "Task");
     if (this.syncTaskWithRun(task)) {
-      return this.store.saveTask(task, principal);
+      return this.store.saveTask(await this.withAssociations(task, principal), principal);
     }
     return task;
   }
@@ -169,6 +190,9 @@ export class TaskService {
     this.validateParentTask(id, parentTaskId, tenantTasks);
     this.checkDependencyGating({ id, title, dependencies }, status, tenantTasks);
     const metadata = validateMetadata(body.metadata);
+    const { workspaceId, projectIds } = await this.resolveAssociations(body, principal, {
+      allowMissingAsDefaults: false,
+    });
 
     const stamp = nowIso();
     const task: StudioTask = {
@@ -192,9 +216,16 @@ export class TaskService {
       metadata,
       tenantId: principal.tenantId,
       ownerId: principal.userId,
+      workspaceId,
+      projectIds,
     };
 
-    return this.store.saveTask(task, principal);
+    const saved = await this.store.transaction(async (tx) => {
+      const savedTask = await tx.saveTask(task, principal);
+      await this.enqueueAssignmentTrigger(savedTask, principal, undefined, tx);
+      return savedTask;
+    });
+    return saved;
   }
 
   async save(id: string, body: StudioTask, principal: RequestPrincipal): Promise<StudioTask> {
@@ -238,6 +269,17 @@ export class TaskService {
       this.checkDependencyGating({ id, title, dependencies }, targetStatus, tenantTasks);
     }
 
+    const associationSource: Partial<StudioTask> = {
+      workspaceId: body.workspaceId !== undefined ? body.workspaceId : existing.workspaceId,
+      projectIds: body.projectIds !== undefined ? body.projectIds : existing.projectIds,
+    };
+    const { workspaceId, projectIds } = await this.resolveAssociations(associationSource, principal, {
+      allowMissingAsDefaults: body.workspaceId === undefined && body.projectIds === undefined,
+      // Updates may still carry retired project ids from before retire; keep any active
+      // selections and require at least one active project before save.
+      stripRetiredProjects: true,
+    });
+
     const updated: StudioTask = {
       ...existing,
       ...body,
@@ -260,12 +302,19 @@ export class TaskService {
       retryCount: existing.retryCount ?? 0,
       createdAt: existing.createdAt,
       metadata,
+      workspaceId,
+      projectIds,
       updatedAt: nowIso(),
       tenantId: principal.tenantId,
       ownerId: existing.ownerId ?? principal.userId,
     };
 
-    return this.store.saveTask(updated, principal);
+    const saved = await this.store.transaction(async (tx) => {
+      const savedTask = await tx.saveTask(updated, principal);
+      await this.enqueueAssignmentTrigger(savedTask, principal, existing.assignedAgent ?? existing.assignedAgents?.[0], tx);
+      return savedTask;
+    });
+    return saved;
   }
 
   async patch(id: string, patch: Partial<StudioTask>, principal: RequestPrincipal): Promise<StudioTask> {
@@ -290,7 +339,7 @@ export class TaskService {
         if (other.dependencies && other.dependencies.includes(id)) {
           other.dependencies = other.dependencies.filter((d) => d !== id);
           other.updatedAt = nowIso();
-          await transactionStore.saveTask(other, principal);
+          await transactionStore.saveTask(await this.withAssociations(other, principal), principal);
         }
       }
     });
@@ -325,8 +374,18 @@ export class TaskService {
         if (!keep.has(task.id)) await transactionStore.deleteTask(task.id, principal);
       }
       for (const task of normalizedTasks) {
+        const { workspaceId, projectIds } = await this.resolveAssociations(task, principal, {
+          allowMissingAsDefaults: false,
+        });
         await transactionStore.saveTask(
-          { ...task, dependencies: this.validateDependencies(task.id, task.dependencies, normalizedTasks), tenantId: principal.tenantId, ownerId: task.ownerId ?? principal.userId },
+          {
+            ...task,
+            dependencies: this.validateDependencies(task.id, task.dependencies, normalizedTasks),
+            tenantId: principal.tenantId,
+            ownerId: task.ownerId ?? principal.userId,
+            workspaceId,
+            projectIds,
+          },
           principal,
         );
       }
@@ -422,7 +481,7 @@ export class TaskService {
 
     let saved: StudioTask;
     try {
-      saved = await this.store.saveTask(task, principal);
+      saved = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     } catch (error) {
       this.executor.cancel(runId);
       throw error;
@@ -435,7 +494,7 @@ export class TaskService {
           const fresh = await this.store.getTask(task.id, principal);
           if (fresh && fresh.runId === runId) {
             if (this.syncTaskWithRun(fresh)) {
-              await this.store.saveTask(fresh, principal);
+              await this.store.saveTask(await this.withAssociations(fresh, principal), principal);
             }
           }
         } catch {
@@ -473,7 +532,7 @@ export class TaskService {
     task.completedAt = nowIso();
     task.paused = false;
     task.updatedAt = nowIso();
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
   }
 
@@ -491,16 +550,20 @@ export class TaskService {
     task.lastError = null;
     task.completedAt = null;
     task.paused = false;
+    // Drop the failed/cancelled run binding before start(). Otherwise get() →
+    // syncTaskWithRun() re-applies the old terminal status and start() 409s with
+    // "must be retried before starting".
+    task.runId = null;
     task.status = "ready";
     task.updatedAt = nowIso();
 
     const hasExecutableTarget = task.workflowId || (task.assignedAgents && task.assignedAgents.length > 0) || task.assignedAgent;
     if (this.executor && hasExecutableTarget) {
-      await this.store.saveTask(task, principal);
+      await this.store.saveTask(await this.withAssociations(task, principal), principal);
       return this.start(id, principal);
     }
 
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
   }
 
@@ -518,7 +581,7 @@ export class TaskService {
     }
     task.paused = true;
     task.updatedAt = nowIso();
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
   }
 
@@ -533,8 +596,336 @@ export class TaskService {
     }
     task.paused = false;
     task.updatedAt = nowIso();
-    const updated = await this.store.saveTask(task, principal);
+    const updated = await this.store.saveTask(await this.withAssociations(task, principal), principal);
     return { success: true, task: updated };
+  }
+
+  async getClarification(id: string, principal: RequestPrincipal) {
+    if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
+    const task = await this.get(id, principal);
+    if (!task.runId) throw new ApiError(404, "Task has no linked run");
+    const entry = this.executor.getStore().get(task.runId);
+    if (!entry) throw new ApiError(404, "Linked run not found");
+    return buildClarificationPackage({
+      run: entry.run,
+      approvals: this.executor.getStore().listApprovals(task.runId),
+      taskId: task.id,
+    });
+  }
+
+  async submitClarification(
+    id: string,
+    body: { answers?: unknown },
+    principal: RequestPrincipal,
+    options: { idempotencyKey?: string } = {},
+  ) {
+    if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
+    const task = await this.get(id, principal);
+    if (!task.runId) throw new ApiError(404, "Task has no linked run");
+    const runId = task.runId;
+    const entry = this.executor.getStore().get(runId);
+    if (!entry) throw new ApiError(404, "Linked run not found");
+
+    const pkg = buildClarificationPackage({
+      run: entry.run,
+      approvals: this.executor.getStore().listApprovals(runId),
+      taskId: task.id,
+    });
+
+    if (!pkg.canSubmit) {
+      const existingMeta = (task.metadata ?? {}) as {
+        clarificationOfRunId?: string;
+        clarificationAnswerFingerprint?: string;
+        followUpRunId?: string;
+      };
+      if (
+        Array.isArray(body.answers)
+        && existingMeta.clarificationAnswerFingerprint
+        && existingMeta.followUpRunId
+        && task.runId === existingMeta.followUpRunId
+      ) {
+        try {
+          const questions = pkg.questions.length
+            ? pkg.questions
+            : (Array.isArray(task.metadata?.clarificationAnswers)
+              ? (task.metadata!.clarificationAnswers as Array<{ questionId: string }>).map((a) => ({
+                  id: a.questionId,
+                  prompt: a.questionId,
+                  required: true,
+                }))
+              : []);
+          if (questions.length) {
+            const normalized = validateClarificationAnswers(questions, body.answers);
+            const fp = fingerprintAnswers(normalized);
+            if (fp === existingMeta.clarificationAnswerFingerprint) {
+              const followUpEntry = this.executor.getStore().get(existingMeta.followUpRunId);
+              return {
+                ok: true,
+                package: followUpEntry
+                  ? buildClarificationPackage({
+                      run: followUpEntry.run,
+                      approvals: this.executor.getStore().listApprovals(existingMeta.followUpRunId),
+                      taskId: task.id,
+                    })
+                  : pkg,
+                idempotentReplay: true,
+                followUpRunId: existingMeta.followUpRunId,
+              };
+            }
+          }
+        } catch {
+          // fall through
+        }
+      }
+      if (pkg.answers?.length && Array.isArray(body.answers) && pkg.questions.length) {
+        try {
+          const normalized = validateClarificationAnswers(pkg.questions, body.answers);
+          const fp = fingerprintAnswers(normalized);
+          const prior = this.executor.getStore().listApprovals(runId)
+            .map((a) => (a.metadata as { answerFingerprint?: string } | undefined)?.answerFingerprint)
+            .find(Boolean);
+          if (prior && prior === fp) {
+            return {
+              ok: true,
+              package: await this.getClarification(id, principal),
+              idempotentReplay: true,
+              followUpRunId: null as string | null,
+            };
+          }
+        } catch {
+          // fall through
+        }
+      }
+      throw new ApiError(409, "Clarification is not currently submittable for this task");
+    }
+
+    const answers = validateClarificationAnswers(pkg.questions, body.answers);
+    const stamped = answers.map((a) => ({
+      ...a,
+      answeredAt: nowIso(),
+      actorId: principal.userId,
+    }));
+
+    if (pkg.continuation === "resume") {
+      if (!pkg.approvalId) throw new ApiError(409, "No pending clarification approval found");
+      if (!this.executor.isRunResumable(runId)) {
+        const approval = this.executor.getStore().getApproval(runId, pkg.approvalId);
+        if (approval) {
+          this.executor.getStore().updateApproval(runId, pkg.approvalId, {
+            metadata: {
+              ...(approval.metadata ?? {}),
+              clarificationAnswers: stamped,
+              answerFingerprint: fingerprintAnswers(stamped),
+              resumeError: "Run is not resumable; answers were stored without continuing execution.",
+            },
+            response: `Clarification answers submitted (${stamped.length}) — resume unavailable`,
+          });
+        }
+        return {
+          ok: false,
+          package: await this.getClarification(id, principal),
+          idempotentReplay: false,
+          followUpRunId: null as string | null,
+          errorVisible: true,
+        };
+      }
+      try {
+        const result = this.executor.resolveApproval(runId, pkg.approvalId, {
+          decision: "approved",
+          clarificationAnswers: stamped,
+          response: options.idempotencyKey ? `idempotency:${options.idempotencyKey}` : undefined,
+        });
+        await this.store.enqueueTriggerEvent({
+          tenantId: principal.tenantId,
+          eventType: "approval_resolved",
+          targetType: "task",
+          targetId: id,
+          idempotencyKey: `approval:${runId}:${pkg.approvalId}:${options.idempotencyKey ?? "direct"}`,
+          status: "processed",
+          payload: {
+            runId,
+            approvalId: pkg.approvalId,
+            decision: "approved",
+            taskId: id,
+          },
+        }).catch(() => {});
+        return {
+          ok: true,
+          package: await this.getClarification(id, principal),
+          idempotentReplay: Boolean(result?.idempotentReplay),
+          followUpRunId: null as string | null,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to resume after clarification";
+        if (/already been resolved/i.test(message)) throw new ApiError(409, message);
+        return {
+          ok: false,
+          package: await this.getClarification(id, principal),
+          idempotentReplay: false,
+          followUpRunId: null as string | null,
+          errorVisible: true,
+        };
+      }
+    }
+
+    return this.startClarificationFollowUp(task, principal, stamped, runId);
+  }
+
+  private async startClarificationFollowUp(
+    task: StudioTask,
+    principal: RequestPrincipal,
+    answers: Array<{ questionId: string; value: string; answeredAt: string; actorId: string }>,
+    parentRunId: string,
+  ) {
+    if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
+
+    const existingMeta = (task.metadata ?? {}) as {
+      clarificationOfRunId?: string;
+      clarificationAnswerFingerprint?: string;
+      followUpRunId?: string;
+    };
+    const fp = fingerprintAnswers(answers);
+    if (
+      existingMeta.clarificationOfRunId === parentRunId
+      && existingMeta.clarificationAnswerFingerprint === fp
+      && existingMeta.followUpRunId
+      && task.runId === existingMeta.followUpRunId
+    ) {
+      const followUpEntry = this.executor.getStore().get(existingMeta.followUpRunId);
+      return {
+        ok: true,
+        package: followUpEntry
+          ? buildClarificationPackage({
+              run: followUpEntry.run,
+              approvals: this.executor.getStore().listApprovals(existingMeta.followUpRunId),
+              taskId: task.id,
+            })
+          : await this.getClarification(task.id, principal),
+        idempotentReplay: true,
+        followUpRunId: existingMeta.followUpRunId,
+      };
+    }
+
+    const tenantTasks = await this.store.listTasks(principal);
+    this.checkDependencyGating(task, "running", tenantTasks);
+
+    let workflowToRun: WorkflowDefinition;
+    let agentsToRun: AgentRecord[];
+    const toolsToRun = await this.store.listTools(principal);
+    const workspaceAgents = await this.store.listAgents(principal);
+
+    if (task.workflowId) {
+      const wf = await this.store.getWorkflow(task.workflowId, principal);
+      if (!wf) throw new ApiError(400, `Workflow "${task.workflowId}" not found`);
+      workflowToRun = wf;
+      const referencedAgentIds = new Set(
+        workflowToRun.nodes
+          .filter((node) => node.type === "agent")
+          .map((node) => (node.config as { agentId?: string | null }).agentId)
+          .filter((agentId): agentId is string => Boolean(agentId)),
+      );
+      agentsToRun = workspaceAgents.filter((agent) => referencedAgentIds.has(agent.id));
+    } else {
+      const agentIdentifier = task.assignedAgents?.[0] ?? task.assignedAgent;
+      if (!agentIdentifier) {
+        throw new ApiError(400, "Task must have an assigned agent or workflow to execute");
+      }
+      const agent = workspaceAgents.find((a) => a.id === agentIdentifier || a.name === agentIdentifier);
+      if (!agent) throw new ApiError(400, `Assigned agent "${agentIdentifier}" not found in workspace`);
+      workflowToRun = createSingleAgentWorkflow(agent, task.title);
+      agentsToRun = [agent];
+    }
+
+    let followUpRunId: string;
+    try {
+      followUpRunId = this.executor.start(
+        {
+          workflow: workflowToRun,
+          agents: agentsToRun,
+          tools: toolsToRun,
+          input: {
+            title: task.title,
+            description: task.description,
+            taskId: task.id,
+            clarificationAnswers: answers,
+            parentRunId,
+          },
+          metadata: {
+            ...task.metadata,
+            taskId: task.id,
+            taskTitle: task.title,
+            parentRunId,
+            clarificationOfRunId: parentRunId,
+            clarificationAnswerFingerprint: fp,
+          },
+          taskId: task.id,
+        },
+        undefined,
+        principal,
+      );
+    } catch (error) {
+      throw new ApiError(400, error instanceof Error ? error.message : "Unable to start clarification follow-up run");
+    }
+
+    task.metadata = {
+      ...(task.metadata ?? {}),
+      parentRunId,
+      clarificationOfRunId: parentRunId,
+      clarificationAnswerFingerprint: fp,
+      followUpRunId,
+      clarificationAnswers: answers,
+    };
+    task.runId = followUpRunId;
+    task.status = "running";
+    task.startedAt = nowIso();
+    task.completedAt = null;
+    task.lastError = null;
+    task.paused = false;
+    task.updatedAt = nowIso();
+
+    try {
+      await this.store.saveTask(await this.withAssociations(task, principal), principal);
+    } catch (error) {
+      this.executor.cancel(followUpRunId);
+      throw error;
+    }
+
+    const unsubscribe = this.executor.getStore().subscribe(followUpRunId, async (event) => {
+      if (event.type === "run.completed" || event.type === "run.failed" || event.type === "run.cancelled") {
+        unsubscribe();
+        try {
+          const fresh = await this.store.getTask(task.id, principal);
+          if (fresh && fresh.runId === followUpRunId) {
+            if (this.syncTaskWithRun(fresh)) {
+              await this.store.saveTask(await this.withAssociations(fresh, principal), principal);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    const followUpEntry = this.executor.getStore().get(followUpRunId);
+    return {
+      ok: true,
+      package: followUpEntry
+        ? {
+            ...buildClarificationPackage({
+              run: followUpEntry.run,
+              approvals: this.executor.getStore().listApprovals(followUpRunId),
+              taskId: task.id,
+            }),
+            status: "follow_up_started" as const,
+            parentRunId,
+            canSubmit: false,
+            continuation: "none" as const,
+            answers,
+          }
+        : await this.getClarification(task.id, principal),
+      idempotentReplay: false,
+      followUpRunId,
+    };
   }
 
   private validateDependencies(
@@ -617,6 +1008,77 @@ export class TaskService {
     }
   }
 
+  private async resolveAssociations(
+    body: Partial<StudioTask>,
+    principal: RequestPrincipal,
+    options?: { allowMissingAsDefaults?: boolean; stripRetiredProjects?: boolean },
+  ): Promise<{ workspaceId: string; projectIds: string[] }> {
+    const allowDefaults = options?.allowMissingAsDefaults !== false;
+    const stripRetired = options?.stripRetiredProjects === true;
+    const defaults = await ensureTenantProjectWorkspaceDefaults(this.store, principal);
+
+    if (body.workspaceId === null) {
+      throw new ApiError(400, "workspaceId is required");
+    }
+    if (body.projectIds !== undefined && !Array.isArray(body.projectIds)) {
+      throw new ApiError(400, "projectIds must be an array");
+    }
+    if (Array.isArray(body.projectIds) && body.projectIds.length === 0) {
+      throw new ApiError(400, "At least one project is required");
+    }
+
+    let workspaceId =
+      body.workspaceId === undefined
+        ? undefined
+        : normalizeId(body.workspaceId, "workspaceId");
+    let projectIds =
+      body.projectIds === undefined
+        ? undefined
+        : [...new Set(body.projectIds.map((id) => normalizeId(id, "projectIds item")))];
+
+    if (!workspaceId) {
+      if (!allowDefaults) throw new ApiError(400, "workspaceId is required");
+      workspaceId = defaults.workspaceId;
+    }
+    if (!projectIds?.length) {
+      if (!allowDefaults) throw new ApiError(400, "At least one project is required");
+      projectIds = [defaults.projectId];
+    }
+
+    const workspace = await this.store.getWorkspace(workspaceId, principal);
+    if (!workspace) throw new ApiError(400, `Unknown workspace: ${workspaceId}`);
+    if (workspace.status !== "active") throw new ApiError(400, `Workspace "${workspaceId}" is retired and cannot receive tasks`);
+
+    const activeProjectIds: string[] = [];
+    for (const projectId of projectIds) {
+      const project = await this.store.getProject(projectId, principal);
+      if (!project) throw new ApiError(400, `Unknown project: ${projectId}`);
+      if (project.status !== "active") {
+        if (stripRetired) continue;
+        throw new ApiError(400, `Project "${projectId}" is retired and cannot receive tasks`);
+      }
+      activeProjectIds.push(projectId);
+    }
+    if (activeProjectIds.length === 0) {
+      throw new ApiError(
+        400,
+        stripRetired
+          ? "All linked projects are retired; select at least one active project before save"
+          : "At least one project is required",
+      );
+    }
+
+    return { workspaceId, projectIds: activeProjectIds };
+  }
+
+  private async withAssociations(task: StudioTask, principal: RequestPrincipal): Promise<StudioTask> {
+    if (task.workspaceId && Array.isArray(task.projectIds) && task.projectIds.length > 0) {
+      return task;
+    }
+    const { workspaceId, projectIds } = await this.resolveAssociations(task, principal);
+    return { ...task, workspaceId, projectIds };
+  }
+
   private syncTaskWithRun(task: StudioTask): boolean {
     if (!task.runId || !this.executor) return false;
     const entry = this.executor.getStore().get(task.runId);
@@ -624,10 +1086,26 @@ export class TaskService {
     const run = entry.run;
     let changed = false;
 
-    if (run.status === "completed" && task.status !== "completed" && task.status !== "done") {
-      task.status = "completed";
-      task.completedAt = run.completedAt ?? nowIso();
-      changed = true;
+    if (run.status === "completed") {
+      const syncedStatus = taskStatusForCompletedRun(run);
+      if (syncedStatus === "blocked" || syncedStatus === "waiting_for_human") {
+        if (task.status !== syncedStatus || task.completedAt !== null) {
+          task.status = syncedStatus;
+          task.completedAt = null;
+          changed = true;
+        }
+      } else if (syncedStatus === "failed") {
+        if (task.status !== "failed") {
+          task.status = "failed";
+          task.completedAt = run.completedAt ?? nowIso();
+          task.lastError = run.error ?? "Run reported failure";
+          changed = true;
+        }
+      } else if (task.status !== "completed" && task.status !== "done") {
+        task.status = "completed";
+        task.completedAt = run.completedAt ?? nowIso();
+        changed = true;
+      }
     } else if (run.status === "failed" && task.status !== "failed") {
       task.status = "failed";
       task.completedAt = run.completedAt ?? nowIso();
@@ -659,6 +1137,34 @@ export class TaskService {
     if (changed) task.updatedAt = nowIso();
 
     return changed;
+  }
+
+  private async enqueueAssignmentTrigger(
+    task: StudioTask,
+    principal: RequestPrincipal,
+    previousAgent?: string | null,
+    store: StudioStore = this.store,
+  ): Promise<void> {
+    const currentAgent = task.assignedAgent ?? task.assignedAgents?.[0];
+    if (!currentAgent) return;
+    const canonical = toCanonicalStatus(task.status);
+    if (!["backlog", "ready", "todo"].includes(canonical)) return;
+    if (previousAgent && previousAgent === currentAgent) return;
+
+    await store.enqueueTriggerEvent({
+      tenantId: principal.tenantId,
+      eventType: "task_assignment",
+      targetType: "task",
+      targetId: task.id,
+      idempotencyKey: `assign:${task.id}:${currentAgent}:${task.updatedAt ?? task.createdAt}`,
+      maxRetries: 3,
+      payload: {
+        taskId: task.id,
+        assignedAgent: currentAgent,
+        assignedAgents: task.assignedAgents,
+        status: task.status,
+      },
+    }).catch(() => {});
   }
 }
 

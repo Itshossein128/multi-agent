@@ -6,10 +6,12 @@ import {
   createTask,
   deleteTask,
   getBoardData,
+  getTaskClarification,
   moveTask,
   retryTask,
   setTaskPaused,
   startTask,
+  submitTaskClarification,
   updateTask,
   UpdateTaskPatch,
 } from "@/lib/taskBoard";
@@ -39,12 +41,17 @@ interface TaskActionBody {
   parentTaskId?: string | null;
   dependencies?: string[];
   status?: TaskStatus;
+  workspaceId?: string;
+  projectIds?: string[];
   // move
   toStatus?: TaskStatus;
   // pause / resume
   paused?: boolean;
   // update patch
   patch?: UpdateTaskPatch;
+  // clarification
+  answers?: Array<{ questionId: string; value: string }>;
+  idempotencyKey?: string;
 }
 
 export async function POST(request: Request) {
@@ -75,6 +82,8 @@ export async function POST(request: Request) {
           parentTaskId: body.parentTaskId ?? null,
           dependencies: body.dependencies ?? [],
           status: body.status,
+          workspaceId: body.workspaceId,
+          projectIds: body.projectIds,
         }, principal);
         return NextResponse.json({ success: true, task });
       }
@@ -101,6 +110,8 @@ export async function POST(request: Request) {
           workflowId: body.workflowId,
           parentTaskId: body.parentTaskId,
           dependencies: body.dependencies,
+          workspaceId: body.workspaceId,
+          projectIds: body.projectIds,
         };
         const task = await updateTask(taskId, patch, principal);
         return NextResponse.json({ success: true, task });
@@ -145,6 +156,25 @@ export async function POST(request: Request) {
         }
         const result = await deleteTask(taskId, principal);
         return NextResponse.json(result);
+      }
+
+      case "getClarification": {
+        if (!taskId) {
+          return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+        }
+        const clarification = await getTaskClarification(taskId, principal);
+        return NextResponse.json(clarification);
+      }
+
+      case "submitClarification": {
+        if (!taskId) {
+          return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+        }
+        if (!Array.isArray(body.answers)) {
+          return NextResponse.json({ error: "answers array is required" }, { status: 400 });
+        }
+        const result = await submitTaskClarification(taskId, body.answers, principal, body.idempotencyKey);
+        return NextResponse.json(result, { status: (result as { ok?: boolean; idempotentReplay?: boolean }).ok === false ? 409 : 200 });
       }
 
       default:

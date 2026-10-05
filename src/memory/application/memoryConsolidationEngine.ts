@@ -1,0 +1,312 @@
+import { randomUUID } from "node:crypto";
+import type { ConsolidationConfig, ConsolidationDiagnostics, ConsolidationResult, Memory, MemoryAccessContext, MemoryConsolidationJudge, MemoryNamespace, MemoryStore, MemoryCandidate } from "../contracts";
+import { MemoryConsolidationError, MemoryConflictError } from "../contracts";
+import { normalizeContent, contentHash, isLive, sameNamespace, namespaceKey, publicMemory, requireNamespaces } from "./access";
+import { embedSafely, sameEmbedding, validVector } from "./embedding";
+import { DeterministicMemoryConsolidationJudge } from "./memoryConsolidationJudge";
+import { resolveConsolidationConfig } from "./memoryConsolidationConfig";
+import { RELIABILITY_KEYS } from "./memoryReliability";
+
+export interface ConsolidationEngineOptions {
+  store: MemoryStore;
+  embeddingProvider?: { metadata: { provider: string; model: string; version: string; dimensions: number }; embed(text: string): Promise<number[]> };
+  embeddingTimeoutMs?: number;
+  judge?: MemoryConsolidationJudge;
+  config?: ConsolidationConfig;
+  now?: () => number;
+}
+
+function createDefaultDiagnostics(): ConsolidationDiagnostics {
+  return { candidatesEvaluated: 0, exactDuplicates: 0, semanticCandidates: 0, merged: 0, superseded: 0, ignored: 0, keptSeparate: 0, judgeFailures: 0, latencyMs: 0 };
+}
+
+function consolidatable(memory: Memory, now: number): boolean {
+  if (!isLive(memory, now)) return false;
+  const verification = memory.metadata?.[RELIABILITY_KEYS.verificationStatus];
+  // Historical episodes remain valid evidence even when old or disputed; only
+  // explicit invalidation removes them from consolidation consideration.
+  if (memory.kind === "episodic") return verification !== "invalidated";
+  return verification !== "invalidated" && verification !== "disputed" && verification !== "stale";
+}
+
+function provenance(memory: Memory): Record<string, unknown> {
+  return { memoryId: memory.id, source: memory.source, createdAt: memory.createdAt, updatedAt: memory.updatedAt };
+}
+
+/** Core consolidation engine: discovers candidates, makes decisions, persists results. */
+export class ConsolidationEngine {
+  private readonly store: MemoryStore;
+  private readonly embeddingProvider?: ConsolidationEngineOptions["embeddingProvider"];
+  private readonly embeddingTimeoutMs: number;
+  private readonly judge: MemoryConsolidationJudge;
+  private readonly config: Required<ConsolidationConfig>;
+  private readonly now: () => number;
+  constructor(options: ConsolidationEngineOptions) {
+    this.store = options.store;
+    this.embeddingProvider = options.embeddingProvider;
+    this.embeddingTimeoutMs = options.embeddingTimeoutMs ?? 1000;
+    this.judge = options.judge ?? new DeterministicMemoryConsolidationJudge(options.config);
+    this.config = resolveConsolidationConfig(options.config);
+    this.now = options.now ?? Date.now;
+  }
+  /** Discover candidate memories that might be related to the incoming memory. */
+  private async discoverCandidates(incoming: MemoryCandidate, access: MemoryAccessContext, excludeId?: string): Promise<Memory[]> {
+    const baseQuery = {
+      tenantId: access.tenantId,
+      namespaces: [incoming.namespace],
+      kinds: [incoming.kind],
+      status: "active" as const,
+      includeExpired: false,
+      limit: this.config.candidateSearchLimit,
+    };
+    // Search bounded significant terms independently. Passing the entire new
+    // sentence as one substring misses paraphrases in lexical-only stores.
+    const terms = [...new Set(normalizeContent(incoming.content).split(/\s+/).filter(term => term.length > 2))].slice(0, 8);
+    const lexicalPools = await Promise.all((terms.length ? terms : [incoming.content.slice(0, 200)]).map(text => this.store.search({
+      ...baseQuery,
+      text,
+      limit: Math.min(this.config.candidateSearchLimit, 20),
+    })));
+    const lexicalResults = lexicalPools.flat();
+    let semanticResults: Memory[] = [];
+    if (this.embeddingProvider) {
+      try {
+        const embedding = await embedSafely(this.embeddingProvider, incoming.content, this.embeddingTimeoutMs);
+        if (embedding && validVector(embedding, this.embeddingProvider.metadata.dimensions)) {
+          semanticResults = await this.store.search({
+            ...baseQuery,
+            embedding,
+            embeddingMetadata: this.embeddingProvider.metadata,
+            limit: this.config.embeddingSearchLimit,
+          });
+        }
+      } catch { /* Semantic search failure is non-fatal. */ }
+    }
+    const seen = new Set<string>();
+    const candidates: Memory[] = [];
+    for (const memory of [...lexicalResults, ...semanticResults]) {
+      if (!seen.has(memory.id) && consolidatable(memory, this.now()) && memory.id !== excludeId) {
+        seen.add(memory.id);
+        candidates.push(memory);
+      }
+    }
+    return candidates;
+  }
+  /** Execute the consolidation decision for a single incoming memory. */
+  async consolidateMemory(incoming: MemoryCandidate, access: MemoryAccessContext, diagnostics: ConsolidationDiagnostics, excludeId?: string): Promise<{ persisted: boolean; merged: number }> {
+    requireNamespaces([incoming.namespace], access, true);
+    diagnostics.candidatesEvaluated++;
+    const candidates = await this.discoverCandidates(incoming, access, excludeId);
+    if (!candidates.length) {
+      diagnostics.keptSeparate++;
+      return { persisted: false, merged: 0 };
+    }
+    diagnostics.semanticCandidates += candidates.length;
+    let decision;
+    try {
+      decision = await this.judge.decide(incoming, candidates);
+    } catch (error) {
+      diagnostics.judgeFailures++;
+      return { persisted: false, merged: 0 };
+    }
+    switch (decision.type) {
+      case "ignore_new": {
+        diagnostics.exactDuplicates++;
+        diagnostics.ignored++;
+        // Supersede the current memory in favor of the existing canonical
+        if (decision.canonicalMemoryId && incoming.id && incoming.id !== decision.canonicalMemoryId) {
+          try {
+            await this.store.transaction(namespaceKey(access.tenantId, incoming.namespace), async store => {
+              const current = await store.get(access.tenantId, incoming.id!);
+      if (current && consolidatable(current, this.now())) {
+                const now = new Date(this.now()).toISOString();
+                await store.update({
+                  ...current,
+                  status: "superseded",
+                  supersededByMemoryId: decision.canonicalMemoryId!,
+                  version: current.version + 1,
+                  updatedAt: now,
+                }, current.version);
+              }
+            });
+          } catch { /* Supersede failure is non-fatal for ignore_new. */ }
+        }
+        return { persisted: false, merged: 0 };
+      }
+      case "keep_both": {
+        diagnostics.keptSeparate++;
+        return { persisted: false, merged: 0 };
+      }
+      case "merge": {
+        diagnostics.merged++;
+        return this.executeMerge(incoming, decision, access, diagnostics);
+      }
+      case "supersede": {
+        diagnostics.superseded++;
+        return this.executeSupersede(incoming, decision, access, diagnostics);
+      }
+      default:
+        diagnostics.keptSeparate++;
+        return { persisted: false, merged: 0 };
+    }
+  }
+  private async executeMerge(incoming: MemoryCandidate, decision: { canonicalMemoryId?: string; relatedMemoryIds: string[]; mergedMemory?: MemoryCandidate }, access: MemoryAccessContext, _diagnostics: ConsolidationDiagnostics): Promise<{ persisted: boolean; merged: number }> {
+    const canonicalId = decision.canonicalMemoryId;
+    if (!canonicalId) return { persisted: false, merged: 0 };
+    const mergedContent = decision.mergedMemory?.content ?? incoming.content;
+    const mergedCandidate = decision.mergedMemory ?? { ...incoming, content: mergedContent };
+    return this.store.transaction(namespaceKey(access.tenantId, incoming.namespace), async store => {
+      const canonical = await store.get(access.tenantId, canonicalId);
+      if (!canonical || !isLive(canonical, this.now()) || !sameNamespace(canonical.namespace, incoming.namespace) || canonical.kind !== incoming.kind) {
+        return { persisted: false, merged: 0 };
+      }
+      const now = new Date(this.now()).toISOString();
+      const updatedCanonical: Memory = {
+        ...canonical,
+        content: mergedCandidate.content.trim(),
+        contentHash: contentHash(mergedCandidate.content),
+        importance: Math.max(canonical.importance, mergedCandidate.importance ?? 0.5),
+        confidence: mergedCandidate.confidence ?? canonical.confidence,
+          metadata: {
+          ...canonical.metadata,
+          ...mergedCandidate.metadata,
+          mergedFromMemoryIds: [
+            ...new Set([
+              ...((canonical.metadata?.mergedFromMemoryIds as string[]) ?? []),
+              ...decision.relatedMemoryIds.filter(id => id !== canonicalId),
+              ...((mergedCandidate.metadata?.mergedFromMemoryIds as string[]) ?? []).filter(id => id !== canonicalId),
+              // Track the incoming memory's ID when it's superseded
+              ...(incoming.id && incoming.id !== canonicalId ? [incoming.id] : []),
+            ]),
+          ],
+            consolidationTimestamp: now,
+            consolidationDecision: "merge",
+            consolidationProvenance: [
+              ...((canonical.metadata?.consolidationProvenance as unknown[]) ?? []),
+              provenance(canonical),
+              provenance(incoming as Memory),
+            ].slice(-100),
+          },
+        version: canonical.version + 1,
+        updatedAt: now,
+      };
+      await store.update(updatedCanonical, canonical.version);
+      // Collect all memory IDs that should be superseded (related + incoming if not canonical)
+      const toSupersede = new Set<string>();
+      for (const relatedId of decision.relatedMemoryIds) {
+        if (relatedId !== canonicalId) toSupersede.add(relatedId);
+      }
+      // If the incoming memory has an ID (was found in the store), supersede it too
+      if (incoming.id) toSupersede.add(incoming.id);
+      for (const supersedeId of toSupersede) {
+        try {
+          const related = await store.get(access.tenantId, supersedeId);
+          if (related && consolidatable(related, this.now()) && sameNamespace(related.namespace, incoming.namespace) && related.kind === incoming.kind && related.id !== canonicalId) {
+            await store.update({
+              ...related,
+              status: "superseded",
+              supersededByMemoryId: canonicalId,
+              metadata: { ...related.metadata, consolidationDecision: "merged_into", canonicalMemoryId: canonicalId },
+              version: related.version + 1,
+              updatedAt: now,
+            }, related.version);
+          }
+        } catch { /* Individual supersede failure does not break the batch. */ }
+      }
+      return { persisted: true, merged: 1 };
+    });
+  }
+  private async executeSupersede(incoming: MemoryCandidate, decision: { relatedMemoryIds: string[]; reason: string }, access: MemoryAccessContext, _diagnostics: ConsolidationDiagnostics): Promise<{ persisted: boolean; merged: number }> {
+    return this.store.transaction(namespaceKey(access.tenantId, incoming.namespace), async store => {
+      const now = new Date(this.now()).toISOString();
+      let supersededCount = 0;
+      const effectiveAt = incoming.validFrom ?? incoming.transition?.effectiveAt;
+      const isEvolution = decision.reason === "temporal_replacement";
+      // Without explicit effective time, consolidation must not invent a valid-time
+      // boundary from record timestamps. Leave the competing facts visible.
+      if (isEvolution && !effectiveAt) return { persisted: false, merged: 0 };
+      for (const relatedId of decision.relatedMemoryIds) {
+        try {
+          const existing = await store.get(access.tenantId, relatedId);
+          if (existing && consolidatable(existing, this.now()) && sameNamespace(existing.namespace, incoming.namespace) && existing.kind === incoming.kind) {
+            if (isEvolution) {
+              if (existing.validFrom && Date.parse(existing.validFrom) >= Date.parse(effectiveAt!)) continue;
+              await store.update({
+                ...existing, validUntil: effectiveAt, temporalScope: "historical",
+                replacedByMemoryId: incoming.id,
+                metadata: { ...existing.metadata, consolidationDecision: "temporal_replaced", consolidationProvenance: [...((existing.metadata?.consolidationProvenance as unknown[]) ?? []), provenance(existing)].slice(-100) },
+                version: existing.version + 1, updatedAt: now,
+              }, existing.version);
+              if (incoming.id) {
+                const current = await store.get(access.tenantId, incoming.id);
+                if (current && current.id !== existing.id && !current.replacesMemoryId) {
+                  await store.update({ ...current, replacesMemoryId: existing.id, temporalScope: "current", version: current.version + 1, updatedAt: now }, current.version);
+                }
+              }
+            } else {
+              await store.update({
+                ...existing, status: "superseded", supersededByMemoryId: incoming.id ?? incoming.supersedesMemoryId,
+                metadata: { ...existing.metadata, consolidationDecision: "corrected", consolidationProvenance: [...((existing.metadata?.consolidationProvenance as unknown[]) ?? []), provenance(existing)].slice(-100) },
+                version: existing.version + 1, updatedAt: now,
+              }, existing.version);
+            }
+            supersededCount++;
+          }
+        } catch { /* Individual supersede failure does not break the batch. */ }
+      }
+      return { persisted: supersededCount > 0, merged: supersededCount };
+    });
+  }
+  /** Run full consolidation for a namespace. */
+  async consolidate(access: MemoryAccessContext, namespace: MemoryNamespace): Promise<ConsolidationResult> {
+    requireNamespaces([namespace], access, true);
+    const start = this.now();
+    const diagnostics = createDefaultDiagnostics();
+    const activeMemories = await this.store.search({
+      tenantId: access.tenantId,
+      namespaces: [namespace],
+      status: "active",
+      includeExpired: false,
+      limit: 500,
+    });
+    let totalMerged = 0;
+    const processedIds = new Set<string>();
+    for (const memory of activeMemories) {
+      if (!consolidatable(memory, this.now()) || processedIds.has(memory.id)) continue;
+      const incoming: MemoryCandidate = {
+        namespace: memory.namespace,
+        kind: memory.kind,
+        content: memory.content,
+        source: memory.source,
+        importance: memory.importance,
+        confidence: memory.confidence,
+        subject: memory.subject,
+        title: memory.title,
+        situation: memory.situation,
+        action: memory.action,
+        result: memory.result,
+        lesson: memory.lesson,
+        success: memory.success,
+        structuredData: memory.structuredData,
+        metadata: memory.metadata,
+        id: memory.id,
+        procedure: memory.procedure,
+        trigger: memory.trigger,
+        idempotencyKey: memory.idempotencyKey,
+        supersedesMemoryId: memory.supersedesMemoryId,
+        replacesMemoryId: memory.replacesMemoryId,
+        validFrom: memory.validFrom,
+        validUntil: memory.validUntil,
+        observedAt: memory.observedAt,
+        temporalScope: memory.temporalScope,
+        transition: memory.transition,
+        embedding: memory.embedding,
+      } as MemoryCandidate & { embedding?: number[] };
+      const result = await this.consolidateMemory(incoming, access, diagnostics, memory.id);
+      totalMerged += result.merged;
+      processedIds.add(memory.id);
+    }
+    diagnostics.latencyMs = this.now() - start;
+    return { merged: totalMerged, diagnostics };
+  }
+}

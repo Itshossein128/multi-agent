@@ -2,6 +2,9 @@ import { assertNoCredentials, createAgentRecord, migrateAgentRecord, nowIso, rem
 import { cliExecutableAvailable, defaultCliExecutable, resolveCliSpawnExecutable, cliRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/cliAgentExecutor";
 import { assertContainerWorkerConfiguration, containerWorkerPolicyFromEnvironment } from "../../../../../src/agents/runtime/workerRuntime";
 import { localRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/localAgentExecutor";
+import { processRuntimePolicyFromEnvironment } from "../../../../../src/agents/runtime/processAgentExecutor";
+import { webhookPolicyFromEnvironment } from "../../../../../src/agents/runtime/ssrfProtection";
+import path from "node:path";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 import { ApiError } from "../shared/http";
@@ -14,7 +17,13 @@ export class AgentService {
   async diagnostics(id: string, principal: RequestPrincipal): Promise<AgentDiagnostics> {
     const agent = await this.get(id, principal);
     const checkedAt = nowIso();
-    const backend = { type: agent.backend.type, provider: agent.backend.provider, ...(agent.backend.type !== "cli" ? { model: agent.backend.model } : agent.backend.model ? { model: agent.backend.model } : {}) } as AgentDiagnostics["backend"];
+    const backend: AgentDiagnostics["backend"] = {
+      type: agent.backend.type,
+      ...("provider" in agent.backend && agent.backend.provider ? { provider: agent.backend.provider } : {}),
+      ...("model" in agent.backend && agent.backend.model ? { model: agent.backend.model } : {}),
+      ...(agent.backend.type === "process" ? { command: agent.backend.command } : {}),
+      ...(agent.backend.type === "webhook" ? { url: agent.backend.url } : {}),
+    };
     if (agent.backend.type === "api") {
       const envName = agent.backend.provider.toLowerCase() === "openai" ? "OPENAI_API_KEY"
         : agent.backend.provider.toLowerCase() === "anthropic" ? "ANTHROPIC_API_KEY"
@@ -45,18 +54,34 @@ export class AgentService {
       if (!cliExecutableAvailable(executable, process.env)) return { status: "unavailable", checkedAt, backend, message: "The configured CLI executable is not available on the execution server." };
       return { status: "unknown", checkedAt, backend, message: "CLI executable and server policy are ready, but authentication is owned by the CLI and was not inspected." };
     }
-    if (agent.backend.provider !== "ollama" && agent.backend.provider !== "lmstudio") {
-      return { status: "unsupported", checkedAt, backend, message: `Local provider "${agent.backend.provider}" is not supported by the server.` };
+    if (agent.backend.type === "process") {
+      const policy = processRuntimePolicyFromEnvironment();
+      if (!policy.enabled) return { status: "unavailable", checkedAt, backend, message: "Process agent execution is disabled by the server policy." };
+      const command = agent.backend.command;
+      const isAllowed = policy.allowedCommands.some((item) => item === command || (path.isAbsolute(item) && path.basename(item) === command));
+      if (!isAllowed) return { status: "misconfigured", checkedAt, backend, message: "The configured process command is not in the server allowlist." };
+      return { status: "ready", checkedAt, backend, message: "Process command and server policy are ready." };
     }
-    try {
-      const baseUrl = agent.backend.baseUrl || (agent.backend.provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234");
-      const origin = new URL(baseUrl).origin;
-      const policy = localRuntimePolicyFromEnvironment();
-      if (!policy.allowedOrigins.includes(origin)) return { status: "misconfigured", checkedAt, backend, message: "The local model origin is not allowed by the server policy." };
-      const endpoint = agent.backend.provider === "ollama" ? new URL("/api/tags", baseUrl) : new URL("/v1/models", baseUrl);
-      const response = await this.fetchImpl(endpoint, { method: "GET", signal: AbortSignal.timeout(2000) });
-      return { status: response.ok ? "ready" : "unavailable", checkedAt, backend, message: response.ok ? "Local model service responded successfully." : `Local model service returned HTTP ${response.status}.` };
-    } catch { return { status: "unavailable", checkedAt, backend, message: "The local model service could not be reached from the execution server." }; }
+    if (agent.backend.type === "webhook") {
+      const policy = webhookPolicyFromEnvironment();
+      if (!policy.enabled) return { status: "unavailable", checkedAt, backend, message: "Webhook agent execution is disabled by the server policy." };
+      return { status: "ready", checkedAt, backend, message: "Webhook agent destination is configured." };
+    }
+    if (agent.backend.type === "local") {
+      if (agent.backend.provider !== "ollama" && agent.backend.provider !== "lmstudio") {
+        return { status: "unsupported", checkedAt, backend, message: `Local provider "${agent.backend.provider}" is not supported by the server.` };
+      }
+      try {
+        const baseUrl = agent.backend.baseUrl || (agent.backend.provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234");
+        const origin = new URL(baseUrl).origin;
+        const policy = localRuntimePolicyFromEnvironment();
+        if (!policy.allowedOrigins.includes(origin)) return { status: "misconfigured", checkedAt, backend, message: "The local model origin is not allowed by the server policy." };
+        const endpoint = agent.backend.provider === "ollama" ? new URL("/api/tags", baseUrl) : new URL("/v1/models", baseUrl);
+        const response = await this.fetchImpl(endpoint, { method: "GET", signal: AbortSignal.timeout(2000) });
+        return { status: response.ok ? "ready" : "unavailable", checkedAt, backend, message: response.ok ? "Local model service responded successfully." : `Local model service returned HTTP ${response.status}.` };
+      } catch { return { status: "unavailable", checkedAt, backend, message: "The local model service could not be reached from the execution server." }; }
+    }
+    return { status: "unsupported", checkedAt, backend, message: "Agent backend type is not supported by the server." };
   }
   async create(body: Partial<AgentRecord> & { name?: string }, principal: RequestPrincipal) {
     assertNoCredentials(body);
@@ -89,5 +114,47 @@ export class AgentService {
       if (error instanceof ApiError) throw error;
       throw new ApiError(500, error instanceof Error ? error.message : String(error));
     }
+  }
+
+  async getHeartbeat(id: string, principal: RequestPrincipal) {
+    await this.get(id, principal);
+    const hb = await this.store.getAgentHeartbeat(id, principal);
+    if (!hb) {
+      return {
+        agentId: id,
+        tenantId: principal.tenantId,
+        enabled: false,
+        intervalSeconds: 300,
+        lastHeartbeatAt: null,
+        nextHeartbeatAt: null,
+      };
+    }
+    return hb;
+  }
+
+  async saveHeartbeat(id: string, body: Record<string, unknown>, principal: RequestPrincipal) {
+    await this.get(id, principal);
+    const enabled = body.enabled === true;
+    const intervalSeconds = typeof body.intervalSeconds === "number" && body.intervalSeconds >= 10
+      ? Math.floor(body.intervalSeconds)
+      : 300;
+
+    const existing = await this.store.getAgentHeartbeat(id, principal);
+    const nextHeartbeatAt = enabled
+      ? new Date(Date.now() + intervalSeconds * 1000).toISOString()
+      : null;
+
+    const updated = await this.store.saveAgentHeartbeat(
+      {
+        agentId: id,
+        tenantId: principal.tenantId,
+        enabled,
+        intervalSeconds,
+        lastHeartbeatAt: existing?.lastHeartbeatAt ?? null,
+        nextHeartbeatAt,
+      },
+      principal,
+    );
+    return updated;
   }
 }

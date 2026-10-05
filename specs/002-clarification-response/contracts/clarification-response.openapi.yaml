@@ -1,0 +1,306 @@
+openapi: 3.0.3
+info:
+  title: Clarification Response API
+  version: "1.0.0"
+  description: |
+    Structured clarification read/submit for runs and tasks.
+    Distinct from Approve/Reject at POST /runs/{runId}/approvals/{approvalId}/resolve.
+    Reuses waiting_for_human / ApprovalManager resume internally for resumable runs.
+servers:
+  - url: /
+security:
+  - principalAssertion: []
+paths:
+  /runs/{runId}/clarification:
+    get:
+      summary: Get clarification package for a run
+      operationId: getRunClarification
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Clarification package (may be status unavailable)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationPackage"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      summary: Submit structured clarification answers for a run
+      operationId: submitRunClarification
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClarificationSubmitRequest"
+      responses:
+        "200":
+          description: Answers accepted (including idempotent replay)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationSubmitResponse"
+        "202":
+          description: Answers accepted; continuation started asynchronously
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationSubmitResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /studio/tasks/{taskId}/clarification:
+    get:
+      summary: Get clarification package for a task (via linked run)
+      operationId: getTaskClarification
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Clarification package
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationPackage"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      summary: Submit clarification answers for a task’s linked run
+      operationId: submitTaskClarification
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClarificationSubmitRequest"
+      responses:
+        "200":
+          description: Answers accepted (including idempotent replay)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationSubmitResponse"
+        "202":
+          description: Answers accepted; continuation started asynchronously
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClarificationSubmitResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+components:
+  securitySchemes:
+    principalAssertion:
+      type: apiKey
+      in: header
+      name: X-Principal
+      description: Existing Studio/run principal assertion (tenant + user). Exact header names follow current server auth middleware.
+
+  parameters:
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 200
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        type: string
+        maxLength: 200
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 200
+      description: Optional client key; server also fingerprints canonical answers for duplicate submits.
+
+  schemas:
+    ClarificationQuestion:
+      type: object
+      required: [id, prompt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        required:
+          type: boolean
+          default: true
+        missingField:
+          type: string
+          maxLength: 128
+
+    ClarificationAnswerInput:
+      type: object
+      required: [questionId, value]
+      properties:
+        questionId:
+          type: string
+          minLength: 1
+          maxLength: 64
+        value:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    ClarificationSubmitRequest:
+      type: object
+      required: [answers]
+      properties:
+        answers:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/ClarificationAnswerInput"
+
+    ClarificationAnswer:
+      allOf:
+        - $ref: "#/components/schemas/ClarificationAnswerInput"
+        - type: object
+          properties:
+            answeredAt:
+              type: string
+              format: date-time
+            actorId:
+              type: string
+
+    ClarificationPackage:
+      type: object
+      required: [status, runId, questions, canSubmit, continuation, extraction]
+      properties:
+        status:
+          type: string
+          enum: [pending, answered, unavailable, resumed, follow_up_started]
+        runId:
+          type: string
+        taskId:
+          type: string
+          nullable: true
+        nodeId:
+          type: string
+          nullable: true
+        approvalId:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClarificationQuestion"
+        missingFields:
+          type: array
+          items:
+            type: string
+        answers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClarificationAnswer"
+        canSubmit:
+          type: boolean
+        continuation:
+          type: string
+          enum: [resume, follow_up, none]
+        parentRunId:
+          type: string
+          nullable: true
+        extraction:
+          type: string
+          enum: [structured, legacy_deterministic, unavailable]
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ClarificationSubmitResponse:
+      type: object
+      required: [ok, package]
+      properties:
+        ok:
+          type: boolean
+        package:
+          $ref: "#/components/schemas/ClarificationPackage"
+        followUpRunId:
+          type: string
+          description: Present when a legacy follow-up run was created
+          nullable: true
+        idempotentReplay:
+          type: boolean
+          description: True when this submit matched a prior identical accept
+        errorVisible:
+          type: boolean
+          description: True when continuation failed but answers may still be stored; task must not be Done
+
+  responses:
+    BadRequest:
+      description: Validation failed (empty/malformed/overlong/wrong count)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    Forbidden:
+      description: Principal not allowed for this tenant/resource
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    NotFound:
+      description: Run/task not found (or hidden)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    Conflict:
+      description: Not submittable, or conflicting prior answers
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+
+  # Non-clarification approval contract remains unchanged (reference only):
+  # POST /runs/{runId}/approvals/{approvalId}/resolve
+  # body: { decision: approved|rejected, response?: string }

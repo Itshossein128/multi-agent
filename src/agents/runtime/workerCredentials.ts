@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { credentialGatewayFromEnvironment, type CredentialGateway } from "../../security/credentialGateway";
 
 /** Server-trusted identity used only to authorize credential resolution. */
 export interface TrustedCredentialPrincipal {
@@ -52,9 +53,120 @@ export const NO_WORKER_CREDENTIALS: WorkerCredentialResolver = {
   async resolve() { return undefined; },
 };
 
+/**
+ * Broker-backed CLI credential delivery (codex / claude-code / cursor / agy).
+ *
+ * The server issues and consumes a short-lived, tenant/principal/run-bound
+ * lease from the external credential broker, then hands the value to the
+ * worker exclusively through the trusted launch-secret channel:
+ * - never in permanent WorkerSpec.env, argv, events, logs, or telemetry;
+ * - redacted from worker stdout/stderr by the runtime;
+ * - lifetime bounded by the lease TTL and the worker process.
+ *
+ * This is the *server-mediated* delivery mode (execution server transiently
+ * holds the secret). Worker-direct lease consumption and ephemeral provider
+ * tokens are the target architecture and remain recorded as a gap in
+ * docs/implementation-gaps.md.
+ *
+ * Production guard: server-mediated delivery must be acknowledged explicitly
+ * with CREDENTIAL_BROKER_TRUSTED_SERVER_DELIVERY=true; otherwise production
+ * startup fails instead of silently downgrading the credential boundary.
+ */
+export interface BrokerWorkerCredentialResolverPolicy {
+  enabled: boolean;
+  /** provider -> server-owned broker alias (never from agent/workflow records). */
+  providerAliases: Readonly<Record<string, string | undefined>>;
+  /** provider -> allowlisted launch-secret environment name. */
+  providerEnvironmentNames: Readonly<Record<string, string | undefined>>;
+  /** Required acknowledgment for production use of server-mediated delivery. */
+  trustedServerDelivery: boolean;
+  /** Environment under which the production guard applies. */
+  isProduction?: boolean;
+}
+
+export class BrokerWorkerCredentialResolver implements WorkerCredentialResolver {
+  constructor(
+    private readonly policy: BrokerWorkerCredentialResolverPolicy,
+    private readonly gateway: CredentialGateway,
+  ) {
+    const production = policy.isProduction ?? process.env.NODE_ENV === "production";
+    if (production && policy.enabled && !policy.trustedServerDelivery) {
+      throw new Error(
+        "Server-mediated worker credential delivery requires CREDENTIAL_BROKER_TRUSTED_SERVER_DELIVERY=true in production.",
+      );
+    }
+  }
+
+  async resolve(context: CredentialResolutionContext): Promise<WorkerLaunchSecrets | undefined> {
+    if (!this.policy.enabled) return undefined;
+    assertTrustedCredentialContext(context);
+    const alias = this.policy.providerAliases[context.provider];
+    const environmentName = this.policy.providerEnvironmentNames[context.provider];
+    if (!alias || !environmentName) return undefined;
+    if (!PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES[context.provider]?.has(environmentName)) {
+      throw new Error(`Unsupported server credential environment selection for provider "${context.provider}".`);
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(alias)) {
+      throw new Error("Broker credential alias is invalid.");
+    }
+    const leaseRequest = {
+      provider: context.provider as "codex" | "claude-code" | "cursor" | "agy",
+      alias,
+      tenantId: context.tenantId,
+      principalId: context.principalId,
+      runId: context.runId,
+      agentId: context.agentId,
+      purpose: "agent",
+    };
+    const lease = await this.gateway.issue(leaseRequest);
+    const secret = await this.gateway.consume(lease, leaseRequest);
+    if (!secret) throw new Error("Credential gateway returned no worker credential.");
+    // The secret exists only in this return value: launch secrets are merged
+    // at spawn time, redacted from streams, and never persisted.
+    return { environment: { [environmentName]: secret } };
+  }
+}
+
+export function brokerWorkerCredentialResolverFromEnvironment(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  gateway?: CredentialGateway,
+): WorkerCredentialResolver {
+  const enabled = env.CLI_CREDENTIAL_BROKER_ENABLED === "true";
+  if (!enabled) return NO_WORKER_CREDENTIALS;
+  // Construct the gateway only when the resolver is active, so dev setups
+  // without broker configuration keep composing cleanly.
+  const resolvedGateway = gateway ?? credentialGatewayFromEnvironment(env);
+  const trustedServerDelivery = env.CREDENTIAL_BROKER_TRUSTED_SERVER_DELIVERY === "true";
+  const aliasFor = (provider: string) =>
+    env[`CLI_CREDENTIAL_BROKER_ALIAS_${provider.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`]?.trim() || undefined;
+  const envFor = (provider: string, fallback: string) => {
+    const configured = env[`CLI_${provider.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_CREDENTIAL_ENV_VAR`]?.trim();
+    return configured || fallback;
+  };
+  return new BrokerWorkerCredentialResolver({
+    enabled,
+    trustedServerDelivery,
+    isProduction: env.NODE_ENV === "production",
+    providerAliases: {
+      codex: aliasFor("codex"),
+      "claude-code": aliasFor("claude-code"),
+      cursor: aliasFor("cursor"),
+      agy: aliasFor("agy"),
+    },
+    providerEnvironmentNames: {
+      codex: envFor("codex", "OPENAI_API_KEY"),
+      "claude-code": envFor("claude", "ANTHROPIC_API_KEY"),
+      cursor: envFor("cursor", "CURSOR_API_KEY"),
+      // agy authenticates through server-side CLI login, not an env secret.
+      agy: undefined,
+    },
+  }, resolvedGateway);
+}
+
 export const PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES: Readonly<Record<string, ReadonlySet<string>>> = {
   codex: new Set(["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"]),
   "claude-code": new Set(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"]),
+  cursor: new Set(["CURSOR_API_KEY"]),
 };
 
 export interface EnvironmentCredentialResolverPolicy {
@@ -91,6 +203,9 @@ export function environmentWorkerCredentialResolverFromEnvironment(
     providerEnvironmentNames: {
       codex: env.CLI_CODEX_CREDENTIAL_ENV_VAR,
       "claude-code": env.CLI_CLAUDE_CREDENTIAL_ENV_VAR,
+      // Cursor only accepts CURSOR_API_KEY; default the mapping when env delivery is on.
+      cursor: env.CLI_CURSOR_CREDENTIAL_ENV_VAR?.trim()
+        || (env.CLI_CREDENTIAL_ENVIRONMENT_ENABLED === "true" ? "CURSOR_API_KEY" : undefined),
     },
   }, env);
 }
@@ -218,7 +333,7 @@ export class ClaudeCredentialsFileCredentialResolver implements WorkerCredential
   }
 }
 
-/** First resolver that returns material wins (file delivery before environment). */
+/** First resolver that returns material wins (broker -> file -> environment). */
 export class CompositeWorkerCredentialResolver implements WorkerCredentialResolver {
   constructor(private readonly resolvers: ReadonlyArray<WorkerCredentialResolver>) { }
 
@@ -235,6 +350,7 @@ export function workerCredentialResolverFromEnvironment(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): WorkerCredentialResolver {
   return new CompositeWorkerCredentialResolver([
+    brokerWorkerCredentialResolverFromEnvironment(env),
     CodexAuthFileCredentialResolver.fromEnvironment(env),
     ClaudeCredentialsFileCredentialResolver.fromEnvironment(env),
     environmentWorkerCredentialResolverFromEnvironment(env),

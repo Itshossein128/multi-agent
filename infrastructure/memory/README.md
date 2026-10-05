@@ -34,6 +34,12 @@ provide `release`). The caller owns pool shutdown. No driver types are imported.
 The adapter never silently falls back to volatile storage. Without `vectorEnabled`,
 embeddings still round-trip as arrays; an embedding search fails explicitly.
 
+Migration `003_temporal_validity.sql` adds nullable semantic valid-time columns.
+`valid_from` is inclusive and `valid_until` is exclusive; `NULL valid_until` is
+open-ended. `created_at`/`updated_at` remain record timestamps and must never be
+backfilled into valid time. The migration preserves every existing row and adds a
+scoped partial B-tree index without changing the pgvector schema or search path.
+
 All searches require a tenant and exact `{ scope, id }` namespaces, return at most
 500 candidates, default to active/unexpired records, and support kind, metadata
 JSONB containment, literal case-insensitive content search and offset. Empty

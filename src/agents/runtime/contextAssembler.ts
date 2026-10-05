@@ -60,6 +60,8 @@ export interface ContextAssemblyRequest {
   history?: HistoryEntry[];
   longTermMemoryContext?: string;
   longTermMemoryEvents?: unknown[];
+  /** Phase 8: which retrieved memories were injected, with token accounting by kind. */
+  longTermMemoryMeta?: { memoryIds: string[]; tokens: number; tokensByKind: { semantic: number; episodic: number; procedural: number } };
   handoffs?: Record<string, AgentHandoff>;
   /** Run-scoped structured working memory entries from checkpointed state. */
   workingMemory?: WorkingMemoryEntries;
@@ -282,14 +284,71 @@ export class DefaultContextAssembler implements ContextAssembler {
 
     // Long-term memory — retrieve from memory service if available
     if (request.longTermMemoryContext) {
-      items.push({
-        id: `memory:${request.agentId}:${request.nodeId}`,
-        source: "long_term_memory",
-        priority: PRIORITY.LONG_TERM_MEMORY,
-        content: { type: "long_term_memory", text: request.longTermMemoryContext },
-        estimatedTokens: this.estimator.estimate(request.longTermMemoryContext),
-        metadata: { events: request.longTermMemoryEvents },
-      });
+      let ltmContext = request.longTermMemoryContext;
+      const duplicateMemoryIds: string[] = [];
+      try {
+        const parsed = JSON.parse(ltmContext) as {
+          type?: string;
+          warning?: string;
+          memories?: Array<{ id: string; kind?: string; content?: string }>;
+        };
+        if (parsed && Array.isArray(parsed.memories) && parsed.memories.length > 0) {
+          const higherPriorityTexts: string[] = [];
+          if (typeof request.task === "string") higherPriorityTexts.push(request.task.toLowerCase());
+          else if (request.task) higherPriorityTexts.push(JSON.stringify(request.task).toLowerCase());
+          if (request.handoffs) {
+            for (const h of Object.values(request.handoffs)) {
+              higherPriorityTexts.push(serializeHandoffForContext(h).toLowerCase());
+            }
+          }
+          if (workingMemorySelection.selected.length > 0) {
+            higherPriorityTexts.push(serializeWorkingMemoryForContext(workingMemorySelection.selected).toLowerCase());
+          }
+
+          const retainedMemories: Array<{ id: string; kind?: string; content?: string }> = [];
+          for (const mem of parsed.memories) {
+            const content = typeof mem.content === "string" ? mem.content.toLowerCase().trim() : "";
+            const isSubsumed = content.length > 10 && higherPriorityTexts.some(src => src.includes(content));
+            if (isSubsumed) {
+              duplicateMemoryIds.push(mem.id);
+            } else {
+              retainedMemories.push(mem);
+            }
+          }
+
+          if (duplicateMemoryIds.length > 0) {
+            if (retainedMemories.length === 0) {
+              ltmContext = "";
+            } else {
+              parsed.memories = retainedMemories;
+              ltmContext = JSON.stringify(parsed);
+            }
+          }
+        }
+      } catch {
+        // Fall back to unaltered context
+      }
+
+      if (ltmContext.trim()) {
+        items.push({
+          id: `memory:${request.agentId}:${request.nodeId}`,
+          source: "long_term_memory",
+          priority: PRIORITY.LONG_TERM_MEMORY,
+          content: { type: "long_term_memory", text: ltmContext },
+          estimatedTokens: this.estimator.estimate(ltmContext),
+          // Phase 8/9: memoryIds/tokens record which retrieved memories the assembler
+          // actually accepted (retrieved ≠ injected). IDs and counts only, never content.
+          metadata: {
+            events: request.longTermMemoryEvents,
+            ...(request.longTermMemoryMeta ? {
+              memoryIds: request.longTermMemoryMeta.memoryIds.filter(id => !duplicateMemoryIds.includes(id)),
+              memoryTokens: request.longTermMemoryMeta.tokens,
+              tokensByKind: request.longTermMemoryMeta.tokensByKind,
+            } : {}),
+            ...(duplicateMemoryIds.length > 0 ? { crossSourceDuplicateMemoryIds: duplicateMemoryIds } : {}),
+          },
+        });
+      }
     }
 
     // Short-term history — bounded entries

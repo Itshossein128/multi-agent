@@ -37,6 +37,8 @@ export interface AgentExecutionInput {
   nodeId: string;
   workflowId?: string;
   context?: Record<string, unknown>;
+  /** Server-owned, non-secret workflow state exposed as structured context. */
+  runtimeState?: Record<string, unknown>;
   signal?: AbortSignal;
   /** Trusted server composition only; configuration is never an authorization grant. */
   memoryAccess?: MemoryAccessContext;

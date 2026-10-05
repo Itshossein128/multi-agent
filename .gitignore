@@ -27,8 +27,8 @@ test-results/
 # Isolated agent provider credentials (never the developer ~/.codex / ~/.claude homes)
 .local/
 
-# Local runtime data
-workspaces/
+# Local runtime data (repo-root agent worktrees only)
+/workspaces/
 .langgraph_api
 .taskboard.json
 
@@ -39,3 +39,9 @@ graphify-out/.graphify_*
 graphify-out/.vocab.txt
 graphify-out/.needs_update
 graphify-out/cost.json
+
+# Phase 8 generated memory evaluation reports
+MEMORY_EVALUATION_REPORT.json
+MEMORY_EVALUATION_REPORT.md
+MEMORY_BENCHMARK_REPORT.json
+MEMORY_BENCHMARK_REPORT.md

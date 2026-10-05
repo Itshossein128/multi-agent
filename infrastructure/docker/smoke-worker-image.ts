@@ -86,6 +86,11 @@ try {
   runCheck({ name: "codex-home-initialized", executable: "codex", args: ["login", "status"], expectCode: 1, outputIncludes: "Not logged in", outputExcludes: "CODEX_HOME points to" });
   runCheck({ name: "claude-version", executable: "claude", args: ["--version"], outputIncludes: "Claude Code" });
   runCheck({ name: "claude-print", executable: "claude", args: ["--help"], outputIncludes: "--print" });
+  // Cursor Agent CLI is a first-class executable in the image. --version must
+  // succeed without credentials; --help must advertise the flags the runtime
+  // injects via cursorArgs(). No API key is required for presence checks.
+  runCheck({ name: "agent-version", executable: "agent", args: ["--version"], outputIncludes: "." });
+  runCheck({ name: "agent-print", executable: "agent", args: ["--help"], outputIncludes: "--print" });
   runCheck({
     name: "non-root-and-writable-home",
     executable: "bash",
@@ -98,8 +103,10 @@ try {
       "test \"$CLAUDE_CONFIG_DIR\" = /home/worker/.claude",
       "test \"$CLAUDE_CODE_SUBPROCESS_ENV_SCRUB\" = 0",
       "test \"$CLAUDE_CODE_SKIP_PROMPT_HISTORY\" = 1",
+      "command -v agent >/dev/null",
+      "test -x /opt/cursor-agent/cursor-agent",
       "for directory in \"$CODEX_HOME\" \"$CLAUDE_CONFIG_DIR\" \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" /home/worker/.local/share; do test -d \"$directory\"; test \"$(stat -c %u:%g \"$directory\")\" = 65534:65534; test \"$(stat -c %a \"$directory\")\" = 700; done",
-      "touch \"$HOME/home-write\" \"$XDG_CONFIG_HOME/config-write\" \"$XDG_CACHE_HOME/cache-write\" \"$CODEX_HOME/codex-write\" \"$CLAUDE_CONFIG_DIR/claude-write\"",
+      "touch \"$HOME/home-write\" \"$XDG_CONFIG_HOME/config-write\" \"$XDG_CACHE_HOME/cache-write\" \"$CODEX_HOME/codex-write\" \"$CLAUDE_CONFIG_DIR/claude-write\" \"$XDG_CACHE_HOME/cursor-compile-cache-write\"",
     ].join(" && ")],
   });
   runCheck({

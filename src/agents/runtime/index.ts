@@ -83,19 +83,25 @@ export {
 export { AgentRuntime } from "./agentRuntime";
 export { CliAgentExecutor } from "./cliAgentExecutor";
 export { LocalAgentExecutor } from "./localAgentExecutor";
+export { ProcessAgentExecutor } from "./processAgentExecutor";
+export { WebhookAgentExecutor } from "./webhookAgentExecutor";
+export { SsrfPolicyError, assertSafeDestinationUrl } from "./ssrfProtection";
 export { ExecutionPolicyError } from "./executionPolicy";
 export { AgentExecutorFactory, agentExecutorFactory } from "./agentExecutorFactory";
 export { ApiAgentExecutor } from "./apiAgentExecutor";
+export { OfflineTestAgentExecutor } from "./offlineTestAgentExecutor";
 export { NotImplementedAgentExecutor } from "./notImplementedExecutor";
 export { UnsupportedBackendError, AgentExecutionFailedError } from "./errors";
 export { mapAgentExecutionEvent } from "./mapAgentExecutionEvent";
 export type { MemoryAccessContext, RuntimeMemoryDependencies } from "../../memory/contracts";
 export {
+  BrokerWorkerCredentialResolver,
   ClaudeCredentialsFileCredentialResolver,
   CodexAuthFileCredentialResolver,
   CompositeWorkerCredentialResolver,
   EnvironmentWorkerCredentialResolver,
   NO_WORKER_CREDENTIALS,
+  brokerWorkerCredentialResolverFromEnvironment,
   CLAUDE_CONTAINER_CREDENTIALS_PATH,
   CODEX_CONTAINER_AUTH_PATH,
   assertClaudeCredentialsFileUsable,

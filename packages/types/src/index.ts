@@ -8,7 +8,12 @@
 export * from "./memory";
 export * from "./toolConfiguration";
 export * from "./approval";
+export * from "./schemaValidation";
+export * from "./nodeContract";
+export * from "./clarification";
+export * from "./branching";
 import type { ToolRecord } from "./toolConfiguration";
+import type { NodeContract, NodeResultEnvelope } from "./nodeContract";
 
 export type WorkflowNodeType =
   | "agent"
@@ -37,7 +42,7 @@ export type AgentBackend =
   }
   | {
     type: "cli";
-    provider: "codex" | "claude-code" | "agy" | (string & {});
+    provider: "codex" | "claude-code" | "agy" | "cursor" | (string & {});
     model?: string;
     executable?: string;
     args?: string[];
@@ -48,6 +53,22 @@ export type AgentBackend =
     model: string;
     baseUrl?: string;
     settings?: AgentModelSettings;
+  }
+  | {
+    type: "process";
+    provider?: "process" | (string & {});
+    command: string;
+    args?: string[];
+    workspaceRoot?: string;
+  }
+  | {
+    type: "webhook";
+    provider?: "webhook" | (string & {});
+    url: string;
+    method?: "POST" | "PUT";
+    credentialAlias?: string;
+    timeoutMs?: number;
+    headers?: Record<string, string>;
   };
 
 export type AgentBackendType = AgentBackend["type"];
@@ -102,7 +123,7 @@ export type AgentDiagnosticStatus = "ready" | "unavailable" | "not_authenticated
 export interface AgentDiagnostics {
   status: AgentDiagnosticStatus;
   checkedAt: string;
-  backend: { type: AgentBackendType; provider: string; model?: string };
+  backend: { type: AgentBackendType; provider?: string; model?: string; command?: string; url?: string };
   message: string;
 }
 
@@ -136,6 +157,12 @@ export function agentBackendLabel(backend: AgentBackend): string {
   if (backend.type === "local") {
     return `${backend.provider}/${backend.model}`;
   }
+  if (backend.type === "process") {
+    return `process:${backend.command}`;
+  }
+  if (backend.type === "webhook") {
+    return `webhook:${backend.url}`;
+  }
   return backend.model || backend.provider;
 }
 
@@ -146,6 +173,12 @@ export function agentRequiresModel(backend: AgentBackend): boolean {
 export function agentHasConfiguredModel(agent: AgentRecord): boolean {
   if (agent.backend.type === "cli") {
     return Boolean(agent.backend.provider.trim());
+  }
+  if (agent.backend.type === "process") {
+    return Boolean(agent.backend.command.trim());
+  }
+  if (agent.backend.type === "webhook") {
+    return Boolean(agent.backend.url.trim());
   }
   return Boolean(agent.backend.model.trim());
 }
@@ -175,13 +208,17 @@ export function migrateAgentRecord(raw: unknown): AgentRecord {
     const metaProvider =
       typeof record.metadata?.provider === "string" ? String(record.metadata.provider) : undefined;
     backend = createApiBackend(inferApiProvider(model, record.provider ?? metaProvider), model);
+  } else if (backend.type === "process" && !(backend as any).provider) {
+    backend = { ...backend, provider: "process" } as any;
+  } else if (backend.type === "webhook" && !(backend as any).provider) {
+    backend = { ...backend, provider: "webhook" } as any;
   }
 
   return {
     id: typeof record.id === "string" && record.id ? record.id : uid("agent"),
     name: typeof record.name === "string" && record.name.trim() ? record.name : "New Agent",
     description: typeof record.description === "string" ? record.description : "",
-    backend,
+    backend: backend as AgentBackend,
     systemPrompt: typeof record.systemPrompt === "string" ? record.systemPrompt : "",
     tools: Array.isArray(record.tools) ? record.tools.filter((t): t is string => typeof t === "string") : [],
     executionPolicy: record.executionPolicy,
@@ -223,6 +260,8 @@ export interface MemoryNodeConfig {
   memoryType: "short_term" | "long_term" | "shared";
   mode: "read" | "write" | "read_write";
   key: string;
+  /** Optional source for writes that need a complete run handoff. */
+  writeSource?: "last_value" | "node_results" | "handoffs" | "run_report";
 }
 
 export interface ConditionBranch {
@@ -236,6 +275,15 @@ export interface ConditionNodeConfig {
   valueSource?: "input" | "last_value";
   /** Optional field to read from the selected value, e.g. `status`. */
   valueField?: string;
+  /**
+   * Explicitly declared branch that receives unroutable values (missing,
+   * malformed, undeclared, mistyped, or ambiguous). When absent, unroutable
+   * values fail closed with a typed BRANCH_ROUTING_UNKNOWN error — the runtime
+   * never silently selects the first configured branch.
+   */
+  unknownRoute?: string;
+  /** Explicit branch for malformed or mistyped routing input. */
+  errorRoute?: string;
 }
 
 export interface InputNodeConfig {
@@ -276,6 +324,11 @@ export interface WorkflowNode {
   position: WorkflowPosition;
   config: WorkflowNodeConfig;
   retryPolicy?: NodeRetryPolicy;
+  /**
+   * Versioned input/output contract enforced at execution boundaries.
+   * Optional: legacy definitions without contracts remain valid.
+   */
+  contract?: NodeContract;
 }
 
 export interface WorkflowEdge {
@@ -292,6 +345,8 @@ export interface WorkflowEdge {
 
 export interface WorkflowDefinition {
   id: string;
+  /** Persisted workflow schema version; omitted legacy definitions migrate from v1. */
+  schemaVersion?: number;
   name: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
@@ -498,6 +553,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
   }
   return structuredCloneSafe({
     id: definition.id,
+    schemaVersion: definition.schemaVersion ?? 2,
     name: definition.name,
     nodes: definition.nodes.map((node) => ({
       id: node.id,
@@ -505,6 +561,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
       position: { x: node.position.x, y: node.position.y },
       config: node.config,
       ...(node.retryPolicy ? { retryPolicy: node.retryPolicy } : {}),
+      ...(node.contract ? { contract: node.contract } : {}),
     })),
     edges: definition.edges.map((edge) => ({
       id: edge.id,
@@ -535,11 +592,17 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
   }
   const definition = {
     ...value,
+    schemaVersion: Number.isInteger(value.schemaVersion) && Number(value.schemaVersion) >= 1 ? Number(value.schemaVersion) : 1,
     nodes: value.nodes.map((rawNode) => {
       const node = (rawNode ?? {}) as Record<string, unknown>;
       const position = (node.position ?? {}) as Record<string, unknown>;
+      // Preserve a supplied contract verbatim until server validation runs.
+      // Normalizing here would silently discard malformed or unknown fields
+      // and could turn invalid author input into a valid-looking workflow.
+      const hasContract = Object.prototype.hasOwnProperty.call(node, "contract");
+      const { contract: rawContract, ...nodeRest } = node;
       return {
-        ...node,
+        ...nodeRest,
         id: typeof node.id === "string" ? node.id : "",
         type: node.type,
         position: {
@@ -547,6 +610,7 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
           y: typeof position.y === "number" && Number.isFinite(position.y) ? position.y : 0,
         },
         config: node.config && typeof node.config === "object" && !Array.isArray(node.config) ? node.config : {},
+        ...(hasContract ? { contract: rawContract as NodeContract } : {}),
       };
     }),
     edges: value.edges.map((rawEdge) => {
@@ -559,7 +623,8 @@ export function deserializeWorkflowDefinition(raw: unknown): WorkflowDefinition 
       };
     }),
   } as WorkflowDefinition;
-  return serializeWorkflowDefinition(definition);
+  if ((definition.schemaVersion as number) > 2) throw new Error(`Workflow schema version ${String(definition.schemaVersion)} is newer than supported version 2.`);
+  return serializeWorkflowDefinition({ ...definition, schemaVersion: 2 });
 }
 
 function structuredCloneSafe<T>(value: T): T {
@@ -569,6 +634,7 @@ function structuredCloneSafe<T>(value: T): T {
 export function createEmptyDefinition(name?: string): WorkflowDefinition {
   return {
     id: uid("wf"),
+    schemaVersion: 2,
     name: name ?? "Untitled Workflow",
     nodes: [],
     edges: [],
@@ -584,6 +650,7 @@ export function createSingleAgentWorkflow(agent: AgentRecord, name = "Single Age
   const edge2 = createEdge({ source: agentNode.id, target: outputNode.id });
   return {
     id: uid("wf-task"),
+    schemaVersion: 2,
     name,
     nodes: [inputNode, agentNode, outputNode],
     edges: [edge1, edge2],
@@ -691,6 +758,12 @@ export interface Run {
   completedAt?: string;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
+  /**
+   * Deterministic structured result of the run lifecycle: success,
+   * validation failure, operational failure, policy rejection, blocked,
+   * needs-human, or unknown. Persisted alongside the run record.
+   */
+  result?: NodeResultEnvelope;
   error?: string;
   currentNodeId?: string;
   metadata: Record<string, unknown>;
@@ -825,4 +898,135 @@ export function isStatusDependencyGated(status: TaskStatus): boolean {
 
 export function isCompletedStatus(status: TaskStatus): boolean {
   return toCanonicalStatus(status) === "completed";
+}
+
+// ============================================================================
+// Feature 005: Event Routines, Triggers, Comments, Webhooks & Heartbeats
+// ============================================================================
+
+export type TaskCommentAuthorType = "user" | "agent" | "system";
+
+export interface TaskComment {
+  id: string;
+  tenantId: string;
+  taskId: string;
+  authorId: string;
+  authorType: TaskCommentAuthorType;
+  content: string;
+  mentions: string[];
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TriggerEventType =
+  | "task_assignment"
+  | "task_comment"
+  | "task_mention"
+  | "routine_tick"
+  | "webhook_inbound"
+  | "approval_resolved";
+
+export type TriggerTargetType = "agent" | "workflow" | "task";
+
+export type TriggerEventStatus = "pending" | "processing" | "processed" | "failed" | "dead_letter";
+
+export interface TriggerEvent {
+  id: string;
+  tenantId: string;
+  eventType: TriggerEventType;
+  targetType: TriggerTargetType;
+  targetId: string;
+  idempotencyKey: string;
+  payload: Record<string, unknown>;
+  status: TriggerEventStatus;
+  retryCount: number;
+  maxRetries: number;
+  nextRetryAt?: string | null;
+  lockedBy?: string | null;
+  lockedUntil?: string | null;
+  lastError?: string | null;
+  dispatchedRunId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RoutineScheduleType = "cron" | "interval";
+export type RoutineMisfirePolicy = "skip" | "coalesce" | "enqueue";
+
+export interface RoutineRecord {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  scheduleType: RoutineScheduleType;
+  scheduleExpr: string;
+  timezone: string;
+  targetType: "workflow" | "agent" | "task";
+  targetId: string;
+  inputPayload: Record<string, unknown>;
+  misfirePolicy: RoutineMisfirePolicy;
+  enabled: boolean;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastStatus?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  ownerId: string;
+}
+
+export type RoutineHistoryStatus = "success" | "failed" | "skipped";
+
+export interface RoutineHistoryRecord {
+  id: string;
+  tenantId: string;
+  routineId: string;
+  scheduledAt: string;
+  executedAt: string;
+  status: RoutineHistoryStatus;
+  runId?: string | null;
+  error?: string | null;
+  createdAt: string;
+}
+
+export interface WebhookTriggerRecord {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  secretHash: string;
+  targetType: "workflow" | "agent";
+  targetId: string;
+  enabled: boolean;
+  rateLimitPerMinute: number;
+  createdAt: string;
+  updatedAt: string;
+  ownerId: string;
+}
+
+export type WebhookDeliveryStatus = "accepted" | "rejected" | "failed";
+
+export interface WebhookDeliveryRecord {
+  id: string;
+  tenantId: string;
+  triggerId: string;
+  deliveredAt: string;
+  status: WebhookDeliveryStatus;
+  httpStatus: number;
+  errorReason?: string | null;
+  runId?: string | null;
+  payloadSummary: Record<string, unknown>;
+  durationMs: number;
+}
+
+export interface AgentHeartbeatSettings {
+  agentId: string;
+  tenantId: string;
+  enabled: boolean;
+  intervalSeconds: number;
+  lastHeartbeatAt?: string | null;
+  nextHeartbeatAt?: string | null;
+  lockedBy?: string | null;
+  lockedUntil?: string | null;
 }

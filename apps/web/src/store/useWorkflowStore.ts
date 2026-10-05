@@ -4,6 +4,7 @@ import { create } from "zustand";
 import {
   AgentRecord,
   CreateEdgeInput,
+  NodeContract,
   ToolRecord,
   WorkflowDefinition,
   WorkflowEdge,
@@ -69,6 +70,8 @@ interface WorkflowStoreState {
   removeSelection: (nodeIds: string[], edgeIds: string[]) => void;
   addEdge: (connection: { source: string; target: string; sourceHandle?: string | null }) => void;
   updateNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void;
+  /** Set (or clear with undefined) a node's versioned input/output contract. */
+  updateNodeContract: (nodeId: string, patch: NodeContract | undefined) => void;
   updateEdge: (
     edgeId: string,
     patch: Partial<Pick<WorkflowEdge, "kind" | "branchKey" | "label" | "metadata">>
@@ -373,6 +376,19 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
           if (node) {
             node.config = { ...node.config, ...patch } as typeof node.config;
           }
+        },
+        { keepSelection: true }
+      );
+    },
+
+    updateNodeContract: (nodeId, patch) => {
+      pushHistoryCoalesced(`node-contract:${nodeId}`);
+      withDefinition(
+        (draft) => {
+          const node = draft.nodes.find((n) => n.id === nodeId);
+          if (!node) return;
+          if (patch === undefined) delete node.contract;
+          else node.contract = patch;
         },
         { keepSelection: true }
       );

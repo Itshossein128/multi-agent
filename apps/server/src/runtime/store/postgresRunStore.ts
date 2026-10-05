@@ -1,9 +1,11 @@
 import type { AgentRecord, ApprovalRequest, Run, RunEvent, WorkflowDefinition } from "@multi-agent/types";
 import type { PgPool } from "../../../../../src/memory/infrastructure";
 import type { RequestPrincipal } from "../../auth/principal";
+import type { MemoryAccessContext } from "../../../../../src/memory/contracts";
 import type { MemoryOwner, RunEntry, RunListFilters, RunStoreContract } from "./contracts";
 import { InMemoryRunStore } from "./inMemoryRunStore";
 import { asIso } from "./helpers";
+import { randomUUID } from "node:crypto";
 
 type Listener = (event: RunEvent) => void;
 
@@ -16,7 +18,7 @@ export class PostgresRunStore implements RunStoreContract {
   private writeChain: Promise<void> = Promise.resolve();
   private persistenceError?: Error;
 
-  constructor(private readonly pool: PgPool) {}
+  constructor(private readonly pool: PgPool, private readonly options: { durableMemoryJobs?: boolean } = {}) {}
 
   private enqueue(operation: () => Promise<void>): void {
     this.writeChain = this.writeChain.then(async () => {
@@ -53,6 +55,7 @@ export class PostgresRunStore implements RunStoreContract {
         completedAt: row.completed_at ? asIso(row.completed_at) : undefined,
         input: row.input ?? undefined,
         output: row.output ?? undefined,
+        result: (row.result as import("@multi-agent/types").NodeResultEnvelope | null) ?? undefined,
         error: row.error ?? undefined,
         currentNodeId: row.current_node_id ?? undefined,
         metadata: (row.metadata ?? {}) as Record<string, unknown>,
@@ -70,7 +73,10 @@ export class PostgresRunStore implements RunStoreContract {
         workflow: row.workflow_snapshot as WorkflowDefinition | undefined,
         agents: row.agents_snapshot as AgentRecord[] | undefined,
         tools: row.tools_snapshot as import("@multi-agent/types").ToolRecord[] | undefined,
-      });
+      }, undefined, row.memory_access ? row.memory_access as MemoryAccessContext : undefined);
+      const hydrated = this.memory.get(run.id);
+      if (hydrated && row.episodic_memory_status) hydrated.episodicMemoryStatus = row.episodic_memory_status;
+      if (hydrated && row.procedural_memory_status) hydrated.proceduralMemoryStatus = row.procedural_memory_status;
       if (row.paused_context) this.memory.setPausedContext(run.id, row.paused_context as RunEntry["pausedContext"]);
 
       const events = await this.pool.query("SELECT event FROM studio_run_events WHERE run_id = $1 ORDER BY sequence ASC", [run.id]);
@@ -103,22 +109,23 @@ export class PostgresRunStore implements RunStoreContract {
     memoryOwner?: MemoryOwner,
     snapshots?: { workflow?: WorkflowDefinition; agents?: AgentRecord[]; tools?: import("@multi-agent/types").ToolRecord[] },
     principal?: RequestPrincipal,
+    memoryAccess?: MemoryAccessContext,
   ) {
     this.assertHealthy();
     if (principal) {
       run = { ...run, ownerId: principal.userId, tenantId: principal.tenantId };
     }
-    const created = this.memory.create(run, memoryOwner, snapshots, principal);
+    const created = this.memory.create(run, memoryOwner, snapshots, principal, memoryAccess);
     this.enqueue(async () => {
       await this.pool.query(
         `INSERT INTO studio_runs (
-           id, workflow_id, task_id, status, started_at, completed_at, input, output, error, current_node_id, metadata,
+           id, workflow_id, task_id, status, started_at, completed_at, input, output, result, error, current_node_id, metadata,
            memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, tools_snapshot, updated_at,
-           owner_id, tenant_id
-         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9,$10,$11::jsonb,$12,$13,$14::jsonb,$15::jsonb,$16::jsonb,now(),$17,$18)
+           owner_id, tenant_id, memory_access
+         ) VALUES ($1,$2,$3,$4,$5::timestamptz,$6::timestamptz,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12::jsonb,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,now(),$18,$19,$20::jsonb)
          ON CONFLICT (id) DO UPDATE SET
            status = EXCLUDED.status, completed_at = EXCLUDED.completed_at, input = EXCLUDED.input, output = EXCLUDED.output,
-           error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata,
+           result = EXCLUDED.result, error = EXCLUDED.error, current_node_id = EXCLUDED.current_node_id, metadata = EXCLUDED.metadata,
            tools_snapshot = EXCLUDED.tools_snapshot, updated_at = now()`,
         [
           run.id,
@@ -129,6 +136,7 @@ export class PostgresRunStore implements RunStoreContract {
           run.completedAt ?? null,
           run.input ? JSON.stringify(run.input) : null,
           run.output ? JSON.stringify(run.output) : null,
+          run.result ? JSON.stringify(run.result) : null,
           run.error ?? null,
           run.currentNodeId ?? null,
           JSON.stringify(run.metadata ?? {}),
@@ -139,6 +147,7 @@ export class PostgresRunStore implements RunStoreContract {
           snapshots?.tools ? JSON.stringify(snapshots.tools) : null,
           run.ownerId ?? principal?.userId ?? null,
           run.tenantId ?? principal?.tenantId ?? null,
+          memoryAccess ? JSON.stringify(memoryAccess) : null,
         ],
       );
     });
@@ -175,9 +184,34 @@ export class PostgresRunStore implements RunStoreContract {
     const run = this.memory.update(runId, patch);
     if (run) {
       this.enqueue(async () => {
+        const entry = this.memory.get(runId);
+        const namespace = entry?.memoryAccess?.writableNamespaces[0];
+        const terminal = ["completed", "failed", "cancelled"].includes(run.status);
+        // The server's studio and memory persistence use the same configured
+        // PostgreSQL database. Terminal state and its episodic work intent are
+        // committed together; a failed insert rolls both back.
+        if (this.options.durableMemoryJobs && terminal && namespace && entry?.memoryAccess) {
+          const client = await this.pool.connect();
+          try {
+            await client.query("BEGIN");
+            await client.query(
+              `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
+               result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb, updated_at = now() WHERE id = $1`,
+              [runId, run.status, run.completedAt ?? null, run.input ? JSON.stringify(run.input) : null, run.output ? JSON.stringify(run.output) : null, run.result ? JSON.stringify(run.result) : null, run.error ?? null, run.currentNodeId ?? null, JSON.stringify(run.metadata ?? {})],
+            );
+            await client.query(
+              `INSERT INTO studio_memory_jobs (id,job_kind,handler_version,idempotency_key,tenant_id,namespace_scope,namespace_id,run_id)
+               VALUES ($1,'episodic_extraction',1,$2,$3,$4,$5,$6)
+               ON CONFLICT (tenant_id,job_kind,handler_version,idempotency_key) DO NOTHING`,
+              [randomUUID(), `episodic:${runId}:v1`, entry.memoryAccess.tenantId, namespace.scope, namespace.id, runId],
+            );
+            await client.query("COMMIT");
+          } catch (error) { try { await client.query("ROLLBACK"); } catch {} throw error; } finally { client.release(); }
+          return;
+        }
         await this.pool.query(
           `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
-             error = $6, current_node_id = $7, metadata = $8::jsonb, updated_at = now()
+             result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb, updated_at = now()
            WHERE id = $1`,
           [
             runId,
@@ -185,6 +219,7 @@ export class PostgresRunStore implements RunStoreContract {
             run.completedAt ?? null,
             run.input ? JSON.stringify(run.input) : null,
             run.output ? JSON.stringify(run.output) : null,
+            run.result ? JSON.stringify(run.result) : null,
             run.error ?? null,
             run.currentNodeId ?? null,
             JSON.stringify(run.metadata ?? {}),
@@ -291,5 +326,37 @@ export class PostgresRunStore implements RunStoreContract {
   }
   getToolSnapshot(runId: string) {
     return this.memory.getToolSnapshot(runId);
+  }
+
+  markEpisodicMemoryPending(runId: string) {
+    this.assertHealthy();
+    this.memory.markEpisodicMemoryPending(runId);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET episodic_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
+    });
+  }
+
+  setEpisodicMemoryStatus(runId: string, status: "processed" | "failed") {
+    this.assertHealthy();
+    this.memory.setEpisodicMemoryStatus(runId, status);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET episodic_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
+    });
+  }
+
+  markProceduralMemoryPending(runId: string) {
+    this.assertHealthy();
+    this.memory.markProceduralMemoryPending(runId);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET procedural_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
+    });
+  }
+
+  setProceduralMemoryStatus(runId: string, status: "processed" | "failed") {
+    this.assertHealthy();
+    this.memory.setProceduralMemoryStatus(runId, status);
+    this.enqueue(async () => {
+      await this.pool.query("UPDATE studio_runs SET procedural_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
+    });
   }
 }

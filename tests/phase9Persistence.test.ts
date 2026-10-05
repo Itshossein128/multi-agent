@@ -1,9 +1,11 @@
 import { InMemoryStudioStore } from "../src/studio/infrastructure/in-memory-studio-store";
+import { PostgresStudioStore } from "../src/studio/infrastructure/postgres-studio-store";
 import { createEmptyDefinition, createAgentRecord, createToolRecord, nowIso } from "@multi-agent/types";
 import { InMemoryRunStore, PostgresRunStore } from "../apps/server/src/runtime/runStore";
 import { recoverInterruptedRuns } from "../apps/server/src/runtime/recovery";
 import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { MemorySaver } from "@langchain/langgraph";
+import type { MemoryAccessContext } from "../src/memory/contracts";
 
 test("studio store round-trips workflows agents tools and tasks", async () => {
   const store = new InMemoryStudioStore();
@@ -26,6 +28,8 @@ test("studio store round-trips workflows agents tools and tasks", async () => {
     paused: false,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    workspaceId: "workspace-default",
+    projectIds: ["project-default"],
   });
   expect((await store.listWorkflows())[0].id).toBe(workflow.id);
   expect((await store.listAgents())[0].id).toBe(agent.id);
@@ -107,6 +111,43 @@ test("recovery restores stepBudget from paused context", () => {
   expect((restored[0] as unknown[])[1]).toMatchObject({ stepBudget: { count: 7 } });
 });
 
+test("restart recovery creates one failure episode with the persisted namespace", async () => {
+  const store = new InMemoryRunStore();
+  const access: MemoryAccessContext = {
+    principalId: "user-a",
+    tenantId: "tenant-a",
+    readableNamespaces: [{ scope: "agent", id: "agent-a" }],
+    writableNamespaces: [{ scope: "agent", id: "agent-a" }],
+  };
+  const episodes: unknown[] = [];
+  const episodeService = {
+    async processRun(input: unknown) {
+      episodes.push(input);
+      return { created: true, reason: "meaningful_failure", memoryId: "memory-1" };
+    },
+  };
+  store.create(
+    { id: "restart-run", workflowId: "wf-restart", status: "running", startedAt: nowIso(), input: { task: "recover" }, metadata: {} },
+    { principalId: access.principalId, tenantId: access.tenantId },
+    undefined,
+    undefined,
+    access,
+  );
+
+  const executor = new RunExecutor(store, { execute: async function* () {} }, undefined, undefined, undefined, undefined, episodeService as never);
+  const result = recoverInterruptedRuns(executor, store, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  expect(result.failed).toContain("restart-run");
+  expect(store.get("restart-run")?.run.status).toBe("failed");
+  expect(store.get("restart-run")?.episodicMemoryStatus).toBe("processed");
+  expect((episodes[0] as { namespace: unknown }).namespace).toEqual(access.writableNamespaces[0]);
+
+  recoverInterruptedRuns(executor, store, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(episodes).toHaveLength(1);
+});
+
 test("durable run store exposes persistence failures instead of silently acknowledging them", async () => {
   const pool = { query: jest.fn().mockRejectedValue(new Error("database unavailable")) };
   const store = new PostgresRunStore(pool as never);
@@ -118,4 +159,43 @@ test("durable run store exposes persistence failures instead of silently acknowl
     id: "event-1", runId: "durability-1", type: "run.started", timestamp: nowIso(), sequence: 0, payload: {},
   })).toThrow(/persistence is unavailable/i);
   expect(pool.query).toHaveBeenCalledTimes(1);
+});
+
+test("PostgresStudioStore updates tenant_id on conflict for projects and workspaces", async () => {
+  const queries: { text: string; values: unknown[] }[] = [];
+  const fakePool = {
+    query: async (text: string, values?: unknown[]) => {
+      queries.push({ text, values: values ?? [] });
+      return { rows: [], rowCount: 1 };
+    },
+  };
+  const store = new PostgresStudioStore(fakePool as never);
+  await store.saveProject({
+    id: "proj-1",
+    tenantId: "tenant-updated",
+    name: "Project 1",
+    description: "Desc",
+    status: "active",
+    settings: {},
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    ownerId: "user-1",
+  });
+  await store.saveWorkspace({
+    id: "ws-1",
+    tenantId: "tenant-updated",
+    name: "Workspace 1",
+    description: "Desc",
+    status: "active",
+    settings: {},
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    ownerId: "user-1",
+  });
+
+  const projectQuery = queries.find((q) => q.text.includes("INSERT INTO studio_projects"));
+  expect(projectQuery?.text).toContain("tenant_id = EXCLUDED.tenant_id");
+
+  const workspaceQuery = queries.find((q) => q.text.includes("INSERT INTO studio_workspaces"));
+  expect(workspaceQuery?.text).toContain("tenant_id = EXCLUDED.tenant_id");
 });

@@ -57,6 +57,19 @@ export class InMemoryMemoryStore implements MemoryStore {
       return structuredClone(rows.slice(offset, offset + limit));
     });
   }
+  async listNamespaces(limit = 1000): Promise<Array<{ tenantId: string; namespace: MemoryNamespace }>> {
+    return this.run(() => {
+      const seen = new Set<string>();
+      const result: Array<{ tenantId: string; namespace: MemoryNamespace }> = [];
+      for (const memory of this.records.values()) {
+        const key = JSON.stringify([memory.tenantId, memory.namespace.scope, memory.namespace.id]);
+        if (seen.has(key)) continue;
+        seen.add(key); result.push({ tenantId: memory.tenantId, namespace: { ...memory.namespace } });
+        if (result.length >= limit) break;
+      }
+      return result;
+    });
+  }
   async deleteNamespace(tenantId: string, namespace: MemoryNamespace): Promise<number> {
     validateScope(tenantId, [namespace]);
     return this.run(() => { let count = 0; for (const [key, m] of this.records) if (m.tenantId === tenantId && m.namespace.scope === namespace.scope && m.namespace.id === namespace.id) { this.records.delete(key); count++; } return count; });

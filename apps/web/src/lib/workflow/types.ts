@@ -56,3 +56,19 @@
   TOOL_CATEGORIES,
   TOOL_IMPACTS,
 } from "@multi-agent/types";
+
+// Versioned node contracts and the deterministic result envelope.
+export {
+  type NodeContract,
+  type NodeResultEnvelope,
+  type NodeOutcomeStatus,
+  type ContractDiagnostic,
+  NODE_CONTRACT_VERSION,
+  NODE_OUTCOME_STATUSES,
+  migrateNodeContract,
+  validateNodeContract,
+  validateRawNodeContract,
+  validateAgainstSchema,
+  resolveBranchRoute,
+  BRANCH_ROUTING_ERROR_CODE,
+} from "@multi-agent/types";

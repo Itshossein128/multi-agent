@@ -41,7 +41,8 @@ export class ToolTestService {
     if (errors.length) throw new ApiError(400, errors.join(" "));
 
     try {
-      return { output: await this.runtime.execute(tool, request.input, undefined, { runId: `tool-test-${randomUUID()}`, credentialPrincipal: { tenantId: principal.tenantId, principalId: principal.userId } }) };
+      const runId = `tool-test-${randomUUID()}`;
+      return { output: await this.runtime.execute(tool, request.input, undefined, { runId, idempotencyKey: runId, credentialPrincipal: { tenantId: principal.tenantId, principalId: principal.userId } }) };
     } catch (error) {
       if (error instanceof UnsupportedToolCategoryError) throw new ApiError(400, error.message);
       throw error;

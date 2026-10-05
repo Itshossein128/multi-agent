@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { Command, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { nowIso, uid, type ApprovalDecisionRequest, type ApprovalRequest, type AgentRecord, type WorkflowDefinition } from "@multi-agent/types";
+import { createResultEnvelope, nowIso, uid, type ApprovalDecisionRequest, type ApprovalRequest, type AgentRecord, type WorkflowDefinition } from "@multi-agent/types";
 import type { RunStoreContract, RunEntry } from "./store/contracts";
 import type { RuntimeGuardrails } from "./guardrails";
 import { compileWorkflow, type CompileOptions, type AgentExecutionEvent } from "../compiler/workflowCompiler";
@@ -35,6 +36,7 @@ export interface PausedContext {
   tools?: import("@multi-agent/types").ToolRecord[];
   memoryAccess?: import("../../../../src/memory/contracts").MemoryAccessContext;
   stepBudget?: { count: number };
+  pendingHuman?: { nodeId: string; envelope: import("@multi-agent/types").NodeResultEnvelope };
 }
 
 /**
@@ -59,7 +61,19 @@ export class ApprovalManager {
       metadata: {},
     };
     this.deps.store.addApproval(runId, request, value.timeoutSeconds);
-    this.deps.store.update(runId, { status: "waiting_for_human", currentNodeId: value.nodeId });
+    // Structured needs-human result survives the pause in persisted run state.
+    const agentNeedsHuman = value.context && typeof value.context === "object"
+      && (value.context as { kind?: string }).kind === "agent_needs_human"
+      ? (value.context as { envelope?: import("@multi-agent/types").NodeResultEnvelope }).envelope
+      : undefined;
+    this.deps.store.update(runId, {
+      status: "waiting_for_human",
+      currentNodeId: value.nodeId,
+      result: agentNeedsHuman ?? createResultEnvelope("needs_human", {
+        needsHuman: { reason: String(value.message ?? "Human approval required").slice(0, 500) },
+        error: { code: "AWAITING_APPROVAL", message: "Run is waiting for human approval.", retryable: false },
+      }),
+    });
     this.deps.store.append(runId, { id: uid("event"), runId, type: "run.paused", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id } });
     this.deps.store.append(runId, { id: uid("event"), runId, type: "human_approval.requested", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id, message: value.message, approvalType: value.approvalType, timeoutSeconds: value.timeoutSeconds } });
     if (value.approvalType === "timeout" && value.timeoutSeconds > 0) {
@@ -74,15 +88,53 @@ export class ApprovalManager {
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
     const approval = this.deps.store.getApproval(runId, approvalId);
     if (!approval) throw new Error("Approval not found");
-    if (approval.status !== "requested") throw new Error("Approval has already been resolved.");
+
+    const answerFingerprint = decision.clarificationAnswers?.length
+      ? createHash("sha256")
+          .update(JSON.stringify(
+            [...decision.clarificationAnswers]
+              .map((a) => ({ questionId: String(a.questionId).trim(), value: String(a.value).trim() }))
+              .sort((a, b) => a.questionId.localeCompare(b.questionId)),
+          ))
+          .digest("hex")
+      : undefined;
+
+    // Idempotent clarification replay: same fingerprint already accepted.
+    if (approval.status !== "requested") {
+      const prior = (approval.metadata as { answerFingerprint?: string } | undefined)?.answerFingerprint;
+      if (answerFingerprint && prior && prior === answerFingerprint) {
+        return { idempotentReplay: true as const };
+      }
+      throw new Error("Approval has already been resolved.");
+    }
+
     this.deps.store.clearApprovalTimer(runId, approvalId);
     const stamp = nowIso();
-    this.deps.store.updateApproval(runId, approvalId, { status: decision.decision, resolvedAt: stamp, response: decision.response });
-    this.deps.store.append(runId, { id: uid("event"), runId, type: decision.decision === "approved" ? "human_approval.approved" : "human_approval.rejected", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: decision.response } });
-    this.deps.store.append(runId, { id: uid("event"), runId, type: "human_approval.resolved", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: decision.response } });
+    const metadata: Record<string, unknown> = { ...(approval.metadata ?? {}) };
+    if (decision.clarificationAnswers?.length) {
+      metadata.clarificationAnswers = decision.clarificationAnswers.map((a) => ({
+        questionId: a.questionId,
+        value: a.value,
+        answeredAt: stamp,
+      }));
+      if (answerFingerprint) metadata.answerFingerprint = answerFingerprint;
+    }
+    const responseSummary = decision.response
+      ?? (decision.clarificationAnswers?.length
+        ? `Clarification answers submitted (${decision.clarificationAnswers.length})`
+        : undefined);
+    this.deps.store.updateApproval(runId, approvalId, {
+      status: decision.decision,
+      resolvedAt: stamp,
+      response: responseSummary,
+      metadata,
+    });
+    this.deps.store.append(runId, { id: uid("event"), runId, type: decision.decision === "approved" ? "human_approval.approved" : "human_approval.rejected", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: responseSummary, hasClarificationAnswers: Boolean(decision.clarificationAnswers?.length) } });
+    this.deps.store.append(runId, { id: uid("event"), runId, type: "human_approval.resolved", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: responseSummary } });
     this.deps.store.append(runId, { id: uid("event"), runId, type: "run.resumed", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId } });
-    this.deps.store.update(runId, { status: "running" });
+    this.deps.store.update(runId, { status: "running", result: undefined });
     void this.continueAfterApproval(runId, decision);
+    return { idempotentReplay: false as const };
   }
 
   /** Re-arm timeout approvals after process restart when remaining time can be computed. */
@@ -119,6 +171,7 @@ export class ApprovalManager {
         workflowId: context.workflow.id,
         tools: context.tools,
         stepBudget: context.stepBudget,
+        pendingHuman: context.pendingHuman,
         guardrails: this.deps.guardrails,
         branchSignals: this.deps.branchControllers.get(runId),
         onAgentEvent: (event) => { this.deps.appendAgentEvent(runId, event); },

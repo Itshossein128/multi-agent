@@ -504,6 +504,77 @@ describe("LocalProcessWorkerRuntime", () => {
     expect(spawnFn).not.toHaveBeenCalled();
   });
 
+  test("clears timeout timer on cleanup to prevent dangling timeout callbacks", async () => {
+    const spawnFn = mockSpawnFn("running", "", 0, 10000);
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+
+    const spec = createSpec("node", ["-e", "setTimeout(() => {}, 10000)"]);
+    spec.timeoutMs = 50000;
+    const handle = await runtime.start(spec);
+
+    const state = (runtime as any).workers.get(handle.workerId);
+    expect(state.timeoutTimer).toBeDefined();
+
+    const clearTimeoutSpy = jest.spyOn(global, "clearTimeout");
+    try {
+      await runtime.cleanup(handle.workerId);
+
+      // Verify clearTimeout was called on state.timeoutTimer and worker state removed
+      expect(clearTimeoutSpy).toHaveBeenCalledWith(state.timeoutTimer);
+      expect((runtime as any).workers.has(handle.workerId)).toBe(false);
+    } finally {
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
+  test("finalizeSession is executed when delegate.cancel throws an error during cancel", async () => {
+    const spawnedCommands: string[] = [];
+    const spawnFn = ((command: string, args: string[], options: any) => {
+      spawnedCommands.push(`${command} ${args.join(" ")}`);
+      const listeners: Record<string, Array<(...values: any[]) => void>> = { close: [], error: [] };
+      const streamListeners: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
+      setTimeout(() => {
+        streamListeners.close.forEach((fn) => fn());
+        listeners.close.forEach((fn) => fn(0));
+      }, 0);
+      return {
+        stdout: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
+        stderr: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
+        stdin: { write: jest.fn(), end: jest.fn() },
+        on: (event: string, fn: (...values: any[]) => void) => listeners[event]?.push(fn),
+        once: (event: string, fn: (...values: any[]) => void) => listeners[event]?.push(fn),
+        kill: jest.fn(),
+        pid: 123,
+      } as any;
+    }) as any;
+
+    const runtime = new ContainerWorkerRuntime(
+      { ...policy, workerMode: "container", allowedExecutables: ["codex"] },
+      {
+        image: `registry.example/agent@sha256:${"a".repeat(64)}`,
+        dockerExecutable: process.execPath,
+        allowNetwork: false,
+        memory: "512m",
+        cpus: "0.5",
+        pidsLimit: 64,
+        user: "65534:65534",
+      },
+      spawnFn,
+    );
+
+    const handle = await runtime.start(createSpec("codex", ["--version"]));
+
+    // Force delegate.cancel to throw
+    const delegate = (runtime as any).delegate;
+    jest.spyOn(delegate, "cancel").mockRejectedValue(new Error("Delegate cancel error"));
+
+    await expect(runtime.cancel(handle.workerId)).rejects.toThrow("Delegate cancel error");
+
+    // Session must be cleaned up and container force-removed via spawnFn (rm -f)
+    expect((runtime as any).sessions.has(handle.workerId)).toBe(false);
+    expect(spawnedCommands.some((cmd) => cmd.includes("rm -f"))).toBe(true);
+  });
+
   test("[Integration] node child process runs harmlessly", async () => {
     // Tests that the default node spawn actually works for real process lifecycle.
     const runtime = new LocalProcessWorkerRuntime(policy);

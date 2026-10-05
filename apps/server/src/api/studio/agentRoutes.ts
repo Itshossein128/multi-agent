@@ -13,5 +13,7 @@ export function registerAgentRoutes(app: Hono<{ Variables: PrincipalVariables }>
   app.post("/agents", async (c) => c.json(await agents.create(await c.req.json<Partial<AgentRecord> & { name?: string }>().catch(() => ({})), c.get("principal")), 201));
   app.post("/agents/:id/duplicate", async (c) => c.json(await agents.duplicate(c.req.param("id"), c.get("principal")), 201));
   app.patch("/agents/:id", async (c) => c.json(await agents.update(c.req.param("id"), await c.req.json<Partial<Omit<AgentRecord, "id" | "createdAt">>>(), c.get("principal"))));
+  app.get("/agents/:id/heartbeat", async (c) => c.json(await agents.getHeartbeat(c.req.param("id"), c.get("principal"))));
+  app.put("/agents/:id/heartbeat", async (c) => c.json(await agents.saveHeartbeat(c.req.param("id"), await c.req.json().catch(() => ({})), c.get("principal"))));
   app.delete("/agents/:id", async (c) => { await agents.delete(c.req.param("id"), c.req.query("removeReferences") === "true", c.get("principal")); return c.json({ ok: true }); });
 }
