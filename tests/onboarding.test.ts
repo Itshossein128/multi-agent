@@ -5,8 +5,9 @@ import { AgentExecutorFactory } from "../src/agents/runtime/agentExecutorFactory
 import { NotImplementedAgentExecutor } from "../src/agents/runtime/notImplementedExecutor";
 
 const testDatabaseUrl =
-  process.env.MEMORY_TEST_DATABASE_URL ||
-  "postgresql://studio_memory:studio_memory_local@127.0.0.1:55432/studio_memory";
+  process.env.STUDIO_DATABASE_URL ||
+  process.env.MEMORY_TEST_DATABASE_URL;
+const describePg = testDatabaseUrl ? describe : describe.skip;
 
 describe("Local First-Run Onboarding Assistant", () => {
   const origEnv = { ...process.env };
@@ -64,7 +65,7 @@ describe("Local First-Run Onboarding Assistant", () => {
   });
 
   it("never implicitly targets MEMORY_TEST_DATABASE_URL when standard URLs are unset", async () => {
-    process.env.MEMORY_TEST_DATABASE_URL = testDatabaseUrl;
+    process.env.MEMORY_TEST_DATABASE_URL = testDatabaseUrl || "postgresql://localhost:5432/test";
 
     const report = await runOnboarding({
       databaseUrl: undefined,
@@ -113,12 +114,13 @@ describe("Local First-Run Onboarding Assistant", () => {
   });
 });
 
-describe("Onboarding Database & Persistence Integration", () => {
+describePg("Onboarding Database & Persistence Integration", () => {
+  const dbUrl = testDatabaseUrl!;
   let adminPool: Pool;
 
   beforeAll(async () => {
     // Fails fast and visibly if PostgreSQL is unreachable; no silent skips
-    adminPool = new Pool({ connectionString: testDatabaseUrl, connectionTimeoutMillis: 3000 });
+    adminPool = new Pool({ connectionString: dbUrl, connectionTimeoutMillis: 3000 });
     await adminPool.query("SELECT 1");
   });
 
@@ -131,7 +133,7 @@ describe("Onboarding Database & Persistence Integration", () => {
   it("detects checksum mismatches and blocks --migrate when ledger hash diverges", async () => {
     const schema = `onboard_chk_${randomUUID().replace(/-/g, "")}`;
     await adminPool.query(`CREATE SCHEMA "${schema}"`);
-    const scopedUrl = `${testDatabaseUrl}${testDatabaseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
+    const scopedUrl = `${dbUrl}${dbUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
 
     const schemaPool = new Pool({ connectionString: scopedUrl });
     try {
@@ -163,7 +165,7 @@ describe("Onboarding Database & Persistence Integration", () => {
   it("detects missing migration files on disk and records checksum error", async () => {
     const schema = `onboard_missing_${randomUUID().replace(/-/g, "")}`;
     await adminPool.query(`CREATE SCHEMA "${schema}"`);
-    const scopedUrl = `${testDatabaseUrl}${testDatabaseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
+    const scopedUrl = `${dbUrl}${dbUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
 
     const schemaPool = new Pool({ connectionString: scopedUrl });
     try {
@@ -192,7 +194,7 @@ describe("Onboarding Database & Persistence Integration", () => {
   it("handles vectorEnabled toggle properly for memory migrations", async () => {
     const schema = `onboard_vec_${randomUUID().replace(/-/g, "")}`;
     await adminPool.query(`CREATE SCHEMA "${schema}"`);
-    const scopedUrl = `${testDatabaseUrl}${testDatabaseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
+    const scopedUrl = `${dbUrl}${dbUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
 
     try {
       // 1. With vectorEnabled: false
@@ -218,7 +220,7 @@ describe("Onboarding Database & Persistence Integration", () => {
   it("executes real offline workflow scheduling through RunExecutor and verifies PostgreSQL persistence e2e", async () => {
     const schema = `onboard_e2e_${randomUUID().replace(/-/g, "")}`;
     await adminPool.query(`CREATE SCHEMA "${schema}"`);
-    const scopedUrl = `${testDatabaseUrl}${testDatabaseUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
+    const scopedUrl = `${dbUrl}${dbUrl.includes("?") ? "&" : "?"}options=-c%20search_path%3D${schema}%2Cpublic`;
 
     try {
       // 1. Run onboarding with applyMigrations: true and runSelfTest: true

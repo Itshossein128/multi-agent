@@ -96,9 +96,13 @@ describe("Production Episodic Memory Wiring Tests", () => {
       },
     };
     for (let i = 0; i < 3; i++) {
-      const executor = new RunExecutor(new InMemoryRunStore(), agentRuntime as any, undefined, undefined, undefined, undefined, episodeService, proceduralService, jobs);
-      executor.start({ workflow, agents: [mockAgent], input: { task: "authentication middleware modified" } }, accessA);
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      const runStore = new InMemoryRunStore();
+      const executor = new RunExecutor(runStore, agentRuntime as any, undefined, undefined, undefined, undefined, episodeService, proceduralService, jobs);
+      const runId = executor.start({ workflow, agents: [mockAgent], input: { task: "authentication middleware modified" } }, accessA);
+      const start = Date.now();
+      while (runStore.get(runId)?.run.status !== "completed" && Date.now() - start < 2000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
     }
     await jobs.drain();
 
