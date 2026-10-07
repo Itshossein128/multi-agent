@@ -535,10 +535,20 @@ export class InMemoryStudioStore implements StudioStore {
 
   async claimDueRoutines(workerId: string, limit = 5): Promise<RoutineRecord[]> {
     const now = Date.now();
-    const due = [...this.routines.values()]
-      .filter((r) => r.enabled && r.nextRunAt && Date.parse(r.nextRunAt) <= now)
-      .slice(0, limit);
-    return due.map((r) => structuredClone(r));
+    const leaseUntil = new Date(now + 60_000).toISOString();
+    const due: RoutineRecord[] = [];
+    for (const r of this.routines.values()) {
+      if (r.enabled && r.nextRunAt && Date.parse(r.nextRunAt) <= now) {
+        const originalNextRunAt = r.nextRunAt;
+        r.nextRunAt = leaseUntil;
+        r.updatedAt = nowIso();
+        const copy = structuredClone(r);
+        copy.nextRunAt = originalNextRunAt;
+        due.push(copy);
+        if (due.length >= limit) break;
+      }
+    }
+    return due;
   }
 
   async recordRoutineHistory(history: RoutineHistoryRecord): Promise<RoutineHistoryRecord> {

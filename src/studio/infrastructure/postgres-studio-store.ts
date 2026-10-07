@@ -1071,15 +1071,34 @@ export class PostgresStudioStore implements StudioStore {
 
   async claimDueRoutines(workerId: string, limit = 5): Promise<RoutineRecord[]> {
     const result = await this.query(
-      `SELECT * FROM studio_routines
-       WHERE enabled = true
-         AND next_run_at IS NOT NULL
-         AND next_run_at <= now()
-       ORDER BY next_run_at ASC
-       LIMIT $1`,
+      `WITH due AS (
+         SELECT id, next_run_at AS original_next_run_at
+         FROM studio_routines
+         WHERE enabled = true
+           AND next_run_at IS NOT NULL
+           AND next_run_at <= now()
+         ORDER BY next_run_at ASC
+         FOR UPDATE SKIP LOCKED
+         LIMIT $1
+       ),
+       updated AS (
+         UPDATE studio_routines r
+         SET next_run_at = now() + interval '60 seconds',
+             updated_at = now()
+         FROM due
+         WHERE r.id = due.id
+         RETURNING r.*, due.original_next_run_at
+       )
+       SELECT * FROM updated ORDER BY original_next_run_at ASC`,
       [limit],
     );
-    return result.rows.map(decodeRoutine);
+    return result.rows.map((row) => {
+      const routine = decodeRoutine(row);
+      if (row.original_next_run_at) {
+        routine.nextRunAt = asIso(row.original_next_run_at);
+      }
+      return routine;
+    });
   }
 
   async recordRoutineHistory(history: RoutineHistoryRecord): Promise<RoutineHistoryRecord> {

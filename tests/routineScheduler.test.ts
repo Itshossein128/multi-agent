@@ -161,5 +161,54 @@ describe("Routine Scheduler & Cron Engine", () => {
       expect(history).toHaveLength(1);
       expect(history[0].status).toBe("skipped");
     });
+
+    it("prevents duplicate execution across concurrent workers claiming due routines", async () => {
+      const principal = { tenantId: "tenant-test", userId: "user-test" };
+      const pastDue = new Date(Date.now() - 2000).toISOString();
+
+      const routine: RoutineRecord = {
+        id: "routine-concurrent",
+        tenantId: "tenant-test",
+        name: "Concurrent Routine",
+        description: "",
+        scheduleType: "interval",
+        scheduleExpr: "every:60s",
+        timezone: "UTC",
+        targetType: "workflow",
+        targetId: "wf-concurrent",
+        inputPayload: { task: "concurrent-test" },
+        misfirePolicy: "coalesce",
+        enabled: true,
+        nextRunAt: pastDue,
+        lastRunAt: null,
+        lastStatus: null,
+        lastError: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ownerId: "user-test",
+      };
+
+      await store.saveRoutine(routine, principal);
+
+      const workerA = new RoutineScheduler(store, { workerId: "worker-A" });
+      const workerB = new RoutineScheduler(store, { workerId: "worker-B" });
+
+      // Concurrent ticks
+      const [processedA, processedB] = await Promise.all([
+        workerA.tick(),
+        workerB.tick(),
+      ]);
+
+      // Exactly one worker claims and processes the routine
+      const totalProcessed = processedA.length + processedB.length;
+      expect(totalProcessed).toBe(1);
+
+      // Verify history and trigger outbox have no duplicates
+      const history = await store.listRoutineHistory("routine-concurrent", principal);
+      expect(history).toHaveLength(1);
+
+      const events = await store.listTriggerEvents({ tenantId: "tenant-test" });
+      expect(events).toHaveLength(1);
+    });
   });
 });
