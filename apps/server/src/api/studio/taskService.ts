@@ -25,7 +25,10 @@ import {
   maybeDeriveWorkspaceNameFromTask,
   uniquifyName,
 } from "./projectService";
-import { syncTaskWorkspaceWorkingCopies } from "./workspaceWorkingCopyService";
+import {
+  resolveTaskExecutionWorkspaceRoot,
+  syncTaskWorkspaceWorkingCopies,
+} from "./workspaceWorkingCopyService";
 import { getWorkspaceStorageRoot } from "../../../../../src/studio/infrastructure/workspace-storage";
 import {
   buildClarificationPackage,
@@ -482,7 +485,7 @@ export class TaskService {
     }
 
     const workspaceId = task.workspaceId ?? null;
-    let primaryWorkspacePath: string | null = null;
+    let preferredRepoPath: string | null = null;
     let workspaceStorageRoot: string | null = null;
     try {
       workspaceStorageRoot = getWorkspaceStorageRoot();
@@ -496,24 +499,46 @@ export class TaskService {
         workspaceId,
         principal,
       });
-      primaryWorkspacePath = synced.primaryPath;
+      preferredRepoPath = synced.primaryPath;
     } catch {
       // Working-copy sync must not block start when storage/git is unavailable.
     }
 
-    const agentsWithWorkspace = primaryWorkspacePath
-      ? agentsToRun.map((agent) => ({
-          ...agent,
-          executionPolicy: {
-            ...(agent.executionPolicy ?? {}),
-            workspaceRoot: primaryWorkspacePath!,
-            filesystem: agent.executionPolicy?.filesystem ?? "read-write",
-          },
-          backend: agent.backend
-            ? { ...agent.backend, workspaceRoot: primaryWorkspacePath! }
-            : agent.backend,
-        }))
-      : agentsToRun;
+    const primaryWorkspacePath = await resolveTaskExecutionWorkspaceRoot({
+      tenantId: principal.tenantId,
+      projectId: task.projectId,
+      workspaceId,
+      preferredPath: preferredRepoPath,
+    });
+
+    const agentsWithWorkspace = agentsToRun.map((agent) => {
+      const needsWorkspaceRoot =
+        agent.backend?.type === "cli"
+        || agent.backend?.type === "process"
+        || Boolean(agent.executionPolicy?.workspaceRoot);
+      if (!needsWorkspaceRoot) return agent;
+
+      const existingRoot =
+        (typeof agent.executionPolicy?.workspaceRoot === "string" && agent.executionPolicy.workspaceRoot.trim())
+        || (agent.backend && "workspaceRoot" in agent.backend && typeof agent.backend.workspaceRoot === "string"
+          ? agent.backend.workspaceRoot.trim()
+          : "");
+      const workspaceRoot = primaryWorkspacePath
+        ?? (existingRoot.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(existingRoot) ? existingRoot : null);
+      if (!workspaceRoot) return agent;
+
+      return {
+        ...agent,
+        executionPolicy: {
+          ...(agent.executionPolicy ?? {}),
+          workspaceRoot,
+          filesystem: agent.executionPolicy?.filesystem ?? "read-write",
+        },
+        backend: agent.backend && (agent.backend.type === "cli" || agent.backend.type === "process")
+          ? { ...agent.backend, ...(agent.backend.type === "process" ? { workspaceRoot } : {}) }
+          : agent.backend,
+      };
+    });
 
     let runId: string;
     try {

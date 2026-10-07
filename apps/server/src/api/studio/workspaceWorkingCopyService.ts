@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { access, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { nowIso } from "@multi-agent/types";
 import type {
@@ -277,4 +277,95 @@ export async function refreshWorkspaceRepoInventory(
     dirty,
   });
   return { state, changedFiles };
+}
+
+function listCliWorkspaceRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+  return (env.CLI_AGENT_WORKSPACE_ROOTS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => resolve(entry));
+}
+
+function isPathInsideRoot(candidate: string, root: string): boolean {
+  const absolute = resolve(candidate);
+  const absoluteRoot = resolve(root);
+  const rootWithSep = absoluteRoot.endsWith(sep) ? absoluteRoot : absoluteRoot + sep;
+  return absolute === absoluteRoot || absolute.startsWith(rootWithSep);
+}
+
+function safePathSegment(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes("..") || /[/\\:\0]/.test(trimmed)) return fallback;
+  return trimmed;
+}
+
+/**
+ * Resolve an absolute cwd for task/agent execution.
+ * Prefers a synced repo working copy; otherwise creates a task-scoped directory
+ * under STUDIO_WORKSPACE_STORAGE_ROOT or CLI_AGENT_WORKSPACE_ROOTS so CLI agents
+ * always have a valid workspaceRoot (FR-019 isolation).
+ */
+export async function resolveTaskExecutionWorkspaceRoot(params: {
+  tenantId: string;
+  projectId: string;
+  workspaceId: string | null;
+  preferredPath?: string | null;
+  env?: NodeJS.ProcessEnv;
+}): Promise<string | null> {
+  const env = params.env ?? process.env;
+  const allowedRoots = listCliWorkspaceRoots(env);
+
+  const candidates: string[] = [];
+  if (params.preferredPath && isAbsolute(params.preferredPath)) {
+    candidates.push(resolve(params.preferredPath));
+  }
+
+  try {
+    const storagePath = await ensureWorkspaceRepoDir({
+      tenantId: params.tenantId,
+      projectId: params.projectId,
+      workspaceId: params.workspaceId,
+      repoId: "_workspace",
+    }, env);
+    candidates.push(storagePath);
+  } catch {
+    // Storage root unset — fall through to CLI roots.
+  }
+
+  if (allowedRoots.length > 0) {
+    const relative = [
+      safePathSegment(params.tenantId, "tenant"),
+      safePathSegment(params.projectId, "project"),
+      params.workspaceId ? safePathSegment(params.workspaceId, "workspace") : "default",
+      "_workspace",
+    ];
+    candidates.push(normalize(join(allowedRoots[0], ...relative)));
+  }
+
+  for (const candidate of candidates) {
+    if (allowedRoots.length > 0 && !allowedRoots.some((root) => isPathInsideRoot(candidate, root))) {
+      continue;
+    }
+    try {
+      await mkdir(candidate, { recursive: true });
+      return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+
+  // Last resort when allowlist is empty (dev): still provide an absolute dir if we have any candidate.
+  if (allowedRoots.length === 0) {
+    for (const candidate of candidates) {
+      try {
+        await mkdir(candidate, { recursive: true });
+        return candidate;
+      } catch {
+        // continue
+      }
+    }
+  }
+
+  return null;
 }

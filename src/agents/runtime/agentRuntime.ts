@@ -6,7 +6,7 @@ import { validateAgent, nowIso } from "@multi-agent/types";
 import { RuntimeMemory } from "./runtimeMemory";
 import { boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
-import { assertExecutionPolicy, ExecutionPolicyError } from "./executionPolicy";
+import { assertExecutionPolicy, ExecutionPolicyError, withResolvedWorkspaceRoot } from "./executionPolicy";
 import type { WorkerRuntime } from "./workerRuntime";
 import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
 import { cliRuntimePolicyFromEnvironment } from "./cliAgentExecutor";
@@ -42,17 +42,19 @@ export class AgentRuntime {
   }
 
   async *execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent> {
-    const errors = validateAgent(input.agent);
-    if (input.agent.enabled === false) errors.push("Agent is disabled. Enable it before execution.");
+    const agent = withResolvedWorkspaceRoot(input.agent);
+    input = { ...input, agent };
+    const errors = validateAgent(agent);
+    if (agent.enabled === false) errors.push("Agent is disabled. Enable it before execution.");
     if (errors.length) {
-      yield { type: "agent.failed", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: errors.join(" ") } };
+      yield { type: "agent.failed", timestamp: nowIso(), agentId: agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: errors.join(" ") } };
       throw new Error(errors.join(" "));
     }
     try {
-      assertExecutionPolicy(input.agent);
+      assertExecutionPolicy(agent);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      yield { type: "agent.failed", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: message } };
+      yield { type: "agent.failed", timestamp: nowIso(), agentId: agent.id, nodeId: input.nodeId, runId: input.runId, payload: { error: message } };
       throw error instanceof ExecutionPolicyError ? error : new ExecutionPolicyError(message);
     }
     const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(this.maxExecutionMs)]) : AbortSignal.timeout(this.maxExecutionMs);

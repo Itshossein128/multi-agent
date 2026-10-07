@@ -10,6 +10,61 @@ export class ExecutionPolicyError extends Error {
   }
 }
 
+function firstAbsoluteEnvPath(env: NodeJS.ProcessEnv, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const raw = env[key]?.trim();
+    if (!raw) continue;
+    // CLI_AGENT_WORKSPACE_ROOTS may be a comma-separated allowlist.
+    const first = raw.split(",")[0]?.trim();
+    if (!first) continue;
+    const resolved = path.resolve(first);
+    if (path.isAbsolute(resolved)) return resolved;
+  }
+  return undefined;
+}
+
+/**
+ * Ensure CLI/process agents have an absolute workspaceRoot before policy checks.
+ * Prefers an existing absolute policy/backend root; otherwise uses
+ * STUDIO_WORKSPACE_STORAGE_ROOT or the first CLI_AGENT_WORKSPACE_ROOTS entry.
+ */
+export function withResolvedWorkspaceRoot(
+  agent: AgentRecord,
+  env: NodeJS.ProcessEnv = process.env,
+): AgentRecord {
+  const backend = agent.backend;
+  if (backend.type !== "cli" && backend.type !== "process") return agent;
+
+  const existing =
+    (typeof agent.executionPolicy?.workspaceRoot === "string" && agent.executionPolicy.workspaceRoot.trim())
+    || (backend.type === "process" && typeof backend.workspaceRoot === "string" ? backend.workspaceRoot.trim() : "");
+  if (existing && path.isAbsolute(existing)) {
+    if (agent.executionPolicy?.workspaceRoot === existing) return agent;
+    return {
+      ...agent,
+      executionPolicy: { ...(agent.executionPolicy ?? {}), workspaceRoot: existing },
+    };
+  }
+
+  const fallback = firstAbsoluteEnvPath(env, [
+    "STUDIO_WORKSPACE_STORAGE_ROOT",
+    "CLI_AGENT_WORKSPACE_ROOTS",
+    "PROCESS_AGENT_WORKSPACE_ROOTS",
+    "WORKSPACE_DIR",
+  ]);
+  if (!fallback) return agent;
+
+  return {
+    ...agent,
+    executionPolicy: {
+      ...(agent.executionPolicy ?? {}),
+      workspaceRoot: fallback,
+      filesystem: agent.executionPolicy?.filesystem ?? "read-write",
+    },
+    backend: backend.type === "process" ? { ...backend, workspaceRoot: fallback } : backend,
+  };
+}
+
 /**
  * Apply the policy at the server-side runtime boundary. CLI execution is always
  * opt-in: it needs a workspace plus an explicit shell permission. This avoids
