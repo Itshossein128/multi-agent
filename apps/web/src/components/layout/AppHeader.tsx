@@ -4,24 +4,17 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useDashboardQuery } from "@/hooks/useDashboardQuery";
 import { useStudioStore } from "@/store/useStudioStore";
-import {
-  Layers,
-  Sparkles,
-  Radio,
-  Columns3,
-  Workflow,
-  FolderKanban,
-  Boxes,
-  CalendarClock,
-  Webhook,
-  Network,
-  Wallet,
-} from "lucide-react";
+import { Layers, Menu, Radio, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserMenu } from "./UserMenu";
 
-export function AppHeader() {
+type AppHeaderProps = {
+  onMenuClick?: () => void;
+  menuOpen?: boolean;
+};
+
+export function AppHeader({ onMenuClick, menuOpen = false }: AppHeaderProps) {
   const { isLive } = useStudioStore();
   const { enqueueTask, isMutating } = useDashboardQuery();
   const [modalOpen, setModalOpen] = useState(false);
@@ -41,104 +34,53 @@ export function AppHeader() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md">
-        <div className="container mx-auto px-4 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/20">
+      <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md">
+        <div className="flex h-16 items-center justify-between gap-3 px-4 lg:px-6">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onMenuClick}
+              aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={menuOpen}
+              aria-controls="app-sidebar"
+              className="h-9 w-9 shrink-0 p-0 text-zinc-300 hover:bg-zinc-800 hover:text-white lg:hidden"
+            >
+              {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </Button>
+
+            <Link
+              href="/"
+              className="flex min-w-0 items-center gap-3 hover:opacity-80 transition-opacity"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/20">
                 <Layers className="h-5 w-5 text-white" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm tracking-tight text-white">
+                  <span className="truncate font-bold text-sm tracking-tight text-white">
                     AGENT STUDIO
                   </span>
-                  <Badge variant="outline" className="text-[10px] text-zinc-400 border-zinc-700 bg-zinc-900/60">
+                  <Badge
+                    variant="outline"
+                    className="hidden text-[10px] text-zinc-400 border-zinc-700 bg-zinc-900/60 sm:inline-flex"
+                  >
                     Live React-Query
                   </Badge>
                 </div>
-                <p className="text-[11px] text-zinc-400">Multi-Agent Orchestration & Observability</p>
+                <p className="hidden truncate text-[11px] text-zinc-400 sm:block">
+                  Multi-Agent Orchestration & Observability
+                </p>
               </div>
             </Link>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full border border-emerald-500/30 bg-emerald-950/30 text-emerald-400 text-xs font-medium">
-              <Radio className="h-3 w-3 text-emerald-400 animate-pulse" />
-              <span>{isLive ? "Live Telemetry Connected" : "Connecting..."}</span>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="hidden items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 text-xs font-medium text-emerald-400 md:flex">
+              <Radio className="h-3 w-3 animate-pulse text-emerald-400" />
+              <span>{isLive ? "Live" : "Connecting..."}</span>
             </div>
-
-            <Link
-              href="/org"
-              title="Visual workflow editor"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <Workflow className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Org</span>
-            </Link>
-
-            <Link
-              href="/organization"
-              title="Organization goals and delegation"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <Network className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Goals</span>
-            </Link>
-
-            <Link
-              href="/budgets"
-              title="Cost budgets"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <Wallet className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Budgets</span>
-            </Link>
-
-            <Link
-              href="/projects"
-              title="Projects"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <FolderKanban className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Projects</span>
-            </Link>
-
-            <Link
-              href="/workspaces"
-              title="Workspaces"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <Boxes className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Workspaces</span>
-            </Link>
-
-            <Link
-              href="/tasks"
-              title="Task Board"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <Columns3 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Tasks</span>
-            </Link>
-
-            <Link
-              href="/routines"
-              title="Routines"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <CalendarClock className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Routines</span>
-            </Link>
-
-            <Link
-              href="/webhooks"
-              title="Webhook Triggers"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 bg-transparent px-3 text-xs font-medium text-zinc-300 shadow-sm transition-colors hover:bg-zinc-800 hover:text-zinc-100 cursor-pointer"
-            >
-              <Webhook className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Webhooks</span>
-            </Link>
 
             <Button
               size="sm"
@@ -148,26 +90,26 @@ export function AppHeader() {
               <Sparkles className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Launch Agent Task</span>
             </Button>
-            
-            <div className="w-px h-5 bg-zinc-800 mx-1"></div>
-            
+
+            <div className="mx-1 hidden h-5 w-px bg-zinc-800 sm:block" />
+
             <UserMenu />
           </div>
         </div>
       </header>
 
-      {/* Task Creation Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl space-y-4">
+          <div className="w-full max-w-md space-y-4 rounded-xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
                 <Sparkles className="h-4 w-4 text-indigo-400" />
                 Dispatch Agent Workflow Task
               </h3>
               <button
+                type="button"
                 onClick={() => setModalOpen(false)}
-                className="text-zinc-500 hover:text-zinc-300 text-xs"
+                className="text-xs text-zinc-500 hover:text-zinc-300"
               >
                 ✕
               </button>
@@ -196,7 +138,7 @@ export function AppHeader() {
                   type="submit"
                   size="sm"
                   disabled={isMutating || !taskPrompt.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs cursor-pointer"
+                  className="cursor-pointer bg-indigo-600 text-xs text-white hover:bg-indigo-500"
                 >
                   Dispatch to Pipeline
                 </Button>
