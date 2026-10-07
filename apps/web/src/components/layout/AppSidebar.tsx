@@ -95,7 +95,7 @@ export function AppSidebar({ open, onNavigate }: AppSidebarProps) {
           </span>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <nav className="flex-1 overflow-y-auto px-3 py-4 sticky top-0 max-h-screen">
           <div className="space-y-6">
             {NAV_GROUPS.map((group) => (
               <div key={group.label}>

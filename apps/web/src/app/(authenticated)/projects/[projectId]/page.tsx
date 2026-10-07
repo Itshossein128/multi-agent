@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/store/useToastStore";
 
 interface WorkspaceRow {
   id: string;
@@ -85,8 +86,11 @@ export default function ProjectDashboardPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Save failed");
       await load();
+      toast("Project saved");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      const message = err instanceof Error ? err.message : "Save failed";
+      setError(message);
+      toast(message, "error");
     } finally {
       setBusy(false);
     }
