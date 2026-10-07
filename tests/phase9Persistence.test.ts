@@ -28,8 +28,8 @@ test("studio store round-trips workflows agents tools and tasks", async () => {
     paused: false,
     createdAt: nowIso(),
     updatedAt: nowIso(),
-    workspaceId: "workspace-default",
-    projectIds: ["project-default"],
+    workspaceId: null,
+    projectId: "project-default",
   });
   expect((await store.listWorkflows())[0].id).toBe(workflow.id);
   expect((await store.listAgents())[0].id).toBe(agent.id);
@@ -174,6 +174,7 @@ test("PostgresStudioStore updates tenant_id on conflict for projects and workspa
     id: "proj-1",
     tenantId: "tenant-updated",
     name: "Project 1",
+    nameSource: "manual",
     description: "Desc",
     status: "active",
     settings: {},
@@ -184,10 +185,15 @@ test("PostgresStudioStore updates tenant_id on conflict for projects and workspa
   await store.saveWorkspace({
     id: "ws-1",
     tenantId: "tenant-updated",
+    projectId: "proj-1",
     name: "Workspace 1",
+    nameSource: "manual",
     description: "Desc",
     status: "active",
     settings: {},
+    settingsOverrides: {},
+    effectiveSettings: {},
+    overriddenKeys: [],
     createdAt: nowIso(),
     updatedAt: nowIso(),
     ownerId: "user-1",

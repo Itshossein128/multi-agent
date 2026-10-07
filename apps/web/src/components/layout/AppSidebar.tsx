@@ -35,7 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/", label: "Dashboard", icon: LayoutDashboard, match: "exact" },
       { href: "/tasks", label: "Tasks", icon: Columns3 },
       { href: "/projects", label: "Projects", icon: FolderKanban },
-      { href: "/workspaces", label: "Workspaces", icon: Boxes },
+      { href: "/workspaces", label: "Project workspaces", icon: Boxes },
     ],
   },
   {

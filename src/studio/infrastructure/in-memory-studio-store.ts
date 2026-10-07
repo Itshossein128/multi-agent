@@ -16,6 +16,8 @@ import {
 import type {
   AcceptWebhookDeliveryParams,
   AcceptWebhookDeliveryResult,
+  OrganizationProfile,
+  ProjectRepository,
   StudioEntityStatusFilter,
   StudioPrincipal,
   StudioProject,
@@ -23,11 +25,26 @@ import type {
   StudioTask,
   StudioWorkspace,
   StudioWorkspaceImport,
+  WorkspaceRepositoryMembership,
+  WorkspaceRepositoryState,
 } from "../contracts";
 
 function matchesStatus(status: StudioProject["status"], filter: StudioEntityStatusFilter = "active"): boolean {
   if (filter === "all") return true;
   return status === filter;
+}
+
+function workspaceRepoMembershipKey(workspaceId: string, repoId: string): string {
+  return `${workspaceId}:${repoId}`;
+}
+
+function workspaceRepoStateKey(
+  tenantId: string,
+  projectId: string,
+  workspaceId: string | null | undefined,
+  repoId: string,
+): string {
+  return `${tenantId}|${projectId}|${workspaceId ?? ""}|${repoId}`;
 }
 
 export class InMemoryStudioStore implements StudioStore {
@@ -37,6 +54,10 @@ export class InMemoryStudioStore implements StudioStore {
   private tasks = new Map<string, StudioTask>();
   private projects = new Map<string, StudioProject>();
   private workspaces = new Map<string, StudioWorkspace>();
+  private organizations = new Map<string, OrganizationProfile>();
+  private projectRepositories = new Map<string, ProjectRepository>();
+  private workspaceRepositories = new Map<string, WorkspaceRepositoryMembership>(); // key: `${workspaceId}:${repoId}`
+  private workspaceRepoStates = new Map<string, WorkspaceRepositoryState>(); // key: `${tenantId}|${projectId}|${workspaceId??''}|${repoId}`
 
   // Feature 005 stores
   private comments = new Map<string, TaskComment>();
@@ -56,6 +77,10 @@ export class InMemoryStudioStore implements StudioStore {
       tasks: new Map(structuredClone([...this.tasks])),
       projects: new Map(structuredClone([...this.projects])),
       workspaces: new Map(structuredClone([...this.workspaces])),
+      organizations: new Map(structuredClone([...this.organizations])),
+      projectRepositories: new Map(structuredClone([...this.projectRepositories])),
+      workspaceRepositories: new Map(structuredClone([...this.workspaceRepositories])),
+      workspaceRepoStates: new Map(structuredClone([...this.workspaceRepoStates])),
       comments: new Map(structuredClone([...this.comments])),
       triggerEvents: new Map(structuredClone([...this.triggerEvents])),
       routines: new Map(structuredClone([...this.routines])),
@@ -74,6 +99,10 @@ export class InMemoryStudioStore implements StudioStore {
       this.tasks = snapshot.tasks;
       this.projects = snapshot.projects;
       this.workspaces = snapshot.workspaces;
+      this.organizations = snapshot.organizations;
+      this.projectRepositories = snapshot.projectRepositories;
+      this.workspaceRepositories = snapshot.workspaceRepositories;
+      this.workspaceRepoStates = snapshot.workspaceRepoStates;
       this.comments = snapshot.comments;
       this.triggerEvents = snapshot.triggerEvents;
       this.routines = snapshot.routines;
@@ -253,7 +282,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async listTasksByProject(projectId: string, principal?: StudioPrincipal) {
-    return (await this.listTasks(principal)).filter((task) => (task.projectIds ?? []).includes(projectId));
+    return (await this.listTasks(principal)).filter((task) => task.projectId === projectId);
   }
 
   async saveTask(task: StudioTask, principal?: StudioPrincipal) {
@@ -264,10 +293,9 @@ export class InMemoryStudioStore implements StudioStore {
         : [];
     const assignedAgent = task.assignedAgent ?? (assignedAgents[0] ?? null);
     const updatedAt = task.updatedAt ?? task.createdAt ?? new Date().toISOString();
-    const projectIds = Array.isArray(task.projectIds) ? [...new Set(task.projectIds.filter(Boolean))] : [];
-    const workspaceId = task.workspaceId;
-    if (!workspaceId) throw new Error("Task workspaceId is required");
-    if (!projectIds.length) throw new Error("Task projectIds must include at least one project");
+    const projectId = task.projectId?.trim();
+    if (!projectId) throw new Error("Task projectId is required");
+    const workspaceId = task.workspaceId === undefined || task.workspaceId === "" ? null : task.workspaceId;
     let record: StudioTask = {
       ...task,
       assignedAgent,
@@ -279,8 +307,8 @@ export class InMemoryStudioStore implements StudioStore {
       runId: task.runId ?? null,
       lastError: task.lastError ?? null,
       metadata: task.metadata ?? {},
+      projectId,
       workspaceId,
-      projectIds,
       updatedAt,
     };
     if (principal) {
@@ -327,13 +355,48 @@ export class InMemoryStudioStore implements StudioStore {
       if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to project");
       project = { ...project, tenantId: principal.tenantId, ownerId: project.ownerId || principal.userId };
     }
+    const nameSource = project.nameSource ?? "manual";
+    project = { ...project, nameSource };
     this.projects.set(project.id, structuredClone(project));
     return structuredClone(project);
+  }
+
+  async claimPlaceholderProjectName(
+    projectId: string,
+    name: string,
+    principal?: StudioPrincipal,
+  ): Promise<boolean> {
+    const current = this.projects.get(projectId);
+    if (!current) return false;
+    if (principal && current.tenantId !== principal.tenantId) return false;
+    if (current.nameSource !== "placeholder") return false;
+    this.projects.set(projectId, {
+      ...current,
+      name,
+      nameSource: "derived",
+      updatedAt: nowIso(),
+    });
+    return true;
   }
 
   async listWorkspaces(principal?: StudioPrincipal, status: StudioEntityStatusFilter = "active") {
     return [...this.workspaces.values()]
       .filter((workspace) => {
+        if (principal && workspace.tenantId !== principal.tenantId) return false;
+        return matchesStatus(workspace.status, status);
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((workspace) => structuredClone(workspace));
+  }
+
+  async listWorkspacesByProject(
+    projectId: string,
+    principal?: StudioPrincipal,
+    status: StudioEntityStatusFilter = "active",
+  ) {
+    return [...this.workspaces.values()]
+      .filter((workspace) => {
+        if (workspace.projectId !== projectId) return false;
         if (principal && workspace.tenantId !== principal.tenantId) return false;
         return matchesStatus(workspace.status, status);
       })
@@ -349,13 +412,219 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveWorkspace(workspace: StudioWorkspace, principal?: StudioPrincipal) {
+    if (!workspace.projectId?.trim()) throw new Error("Workspace projectId is required");
     if (principal) {
       const existing = this.workspaces.get(workspace.id);
       if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to workspace");
       workspace = { ...workspace, tenantId: principal.tenantId, ownerId: workspace.ownerId || principal.userId };
     }
+    const nameSource = workspace.nameSource ?? "manual";
+    const settingsOverrides = workspace.settingsOverrides ?? {};
+    const overriddenKeys = Object.keys(settingsOverrides);
+    workspace = {
+      ...workspace,
+      nameSource,
+      settingsOverrides,
+      overriddenKeys,
+      effectiveSettings: workspace.effectiveSettings ?? { ...(workspace.settings ?? {}), ...settingsOverrides },
+      settings: workspace.settings ?? {},
+    };
     this.workspaces.set(workspace.id, structuredClone(workspace));
     return structuredClone(workspace);
+  }
+
+  async claimPlaceholderWorkspaceName(
+    workspaceId: string,
+    name: string,
+    principal?: StudioPrincipal,
+  ): Promise<boolean> {
+    const current = this.workspaces.get(workspaceId);
+    if (!current) return false;
+    if (principal && current.tenantId !== principal.tenantId) return false;
+    if (current.nameSource !== "placeholder") return false;
+    this.workspaces.set(workspaceId, {
+      ...current,
+      name,
+      nameSource: "derived",
+      updatedAt: nowIso(),
+    });
+    return true;
+  }
+
+  async getOrganizationProfile(principal: StudioPrincipal): Promise<OrganizationProfile | null> {
+    const profile = this.organizations.get(principal.tenantId);
+    return profile ? structuredClone(profile) : null;
+  }
+
+  async createOrganizationProfile(
+    profile: OrganizationProfile,
+    principal: StudioPrincipal,
+  ): Promise<OrganizationProfile> {
+    if (profile.id !== principal.tenantId) {
+      throw new Error("Organization profile id must equal tenant id");
+    }
+    const existing = await this.getOrganizationProfile(principal);
+    if (existing) throw new Error("Organization already exists for this tenant");
+    const record: OrganizationProfile = {
+      ...profile,
+      id: principal.tenantId,
+      ownerId: profile.ownerId || principal.userId,
+      description: profile.description ?? "",
+      config: profile.config ?? {},
+    };
+    this.organizations.set(record.id, structuredClone(record));
+    return structuredClone(record);
+  }
+
+  async listProjectRepositories(projectId: string, principal?: StudioPrincipal): Promise<ProjectRepository[]> {
+    return [...this.projectRepositories.values()]
+      .filter((repo) => {
+        if (repo.projectId !== projectId) return false;
+        if (principal && repo.tenantId !== principal.tenantId) return false;
+        return true;
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((repo) => structuredClone(repo));
+  }
+
+  async getProjectRepository(id: string, principal?: StudioPrincipal): Promise<ProjectRepository | null> {
+    const repo = this.projectRepositories.get(id);
+    if (!repo) return null;
+    if (principal && repo.tenantId !== principal.tenantId) return null;
+    return structuredClone(repo);
+  }
+
+  async saveProjectRepository(repo: ProjectRepository, principal?: StudioPrincipal): Promise<ProjectRepository> {
+    if (principal) {
+      const existing = this.projectRepositories.get(repo.id);
+      if (existing && existing.tenantId !== principal.tenantId) {
+        throw new Error("Access denied to project repository");
+      }
+      repo = { ...repo, tenantId: principal.tenantId };
+    }
+    this.projectRepositories.set(repo.id, structuredClone(repo));
+    return structuredClone(repo);
+  }
+
+  async deleteProjectRepository(id: string, principal?: StudioPrincipal): Promise<void> {
+    if (principal) {
+      const existing = this.projectRepositories.get(id);
+      if (!existing || existing.tenantId !== principal.tenantId) return;
+    }
+    this.projectRepositories.delete(id);
+  }
+
+  async listWorkspaceRepositories(
+    workspaceId: string,
+    principal?: StudioPrincipal,
+  ): Promise<WorkspaceRepositoryMembership[]> {
+    if (principal) {
+      const workspace = await this.getWorkspace(workspaceId, principal);
+      if (!workspace) return [];
+    }
+    return [...this.workspaceRepositories.values()]
+      .filter((membership) => membership.workspaceId === workspaceId)
+      .sort((a, b) => a.projectRepositoryId.localeCompare(b.projectRepositoryId))
+      .map((membership) => structuredClone(membership));
+  }
+
+  async replaceWorkspaceRepositories(
+    workspaceId: string,
+    memberships: WorkspaceRepositoryMembership[],
+    principal?: StudioPrincipal,
+  ): Promise<WorkspaceRepositoryMembership[]> {
+    if (principal) {
+      const workspace = await this.getWorkspace(workspaceId, principal);
+      if (!workspace) throw new Error("Access denied to workspace");
+    }
+    for (const [key, membership] of [...this.workspaceRepositories.entries()]) {
+      if (membership.workspaceId === workspaceId) {
+        this.workspaceRepositories.delete(key);
+      }
+    }
+    const stamp = nowIso();
+    const saved: WorkspaceRepositoryMembership[] = [];
+    for (const membership of memberships) {
+      const record: WorkspaceRepositoryMembership = {
+        workspaceId,
+        projectRepositoryId: membership.projectRepositoryId,
+        branch: membership.branch,
+        createdAt: membership.createdAt ?? stamp,
+        updatedAt: stamp,
+      };
+      this.workspaceRepositories.set(
+        workspaceRepoMembershipKey(workspaceId, record.projectRepositoryId),
+        structuredClone(record),
+      );
+      saved.push(structuredClone(record));
+    }
+    return saved;
+  }
+
+  async listWorkspaceRepoStates(params: {
+    tenantId: string;
+    projectId: string;
+    workspaceId?: string | null;
+    projectRepositoryId?: string;
+  }): Promise<WorkspaceRepositoryState[]> {
+    return [...this.workspaceRepoStates.values()]
+      .filter((state) => {
+        if (state.tenantId !== params.tenantId) return false;
+        if (state.projectId !== params.projectId) return false;
+        if (params.workspaceId === null) {
+          if (state.workspaceId !== null) return false;
+        } else if (params.workspaceId !== undefined) {
+          if (state.workspaceId !== params.workspaceId) return false;
+        }
+        if (params.projectRepositoryId && state.projectRepositoryId !== params.projectRepositoryId) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((state) => structuredClone(state));
+  }
+
+  async saveWorkspaceRepoState(state: WorkspaceRepositoryState): Promise<WorkspaceRepositoryState> {
+    const key = workspaceRepoStateKey(
+      state.tenantId,
+      state.projectId,
+      state.workspaceId,
+      state.projectRepositoryId,
+    );
+    this.workspaceRepoStates.set(key, structuredClone(state));
+    return structuredClone(state);
+  }
+
+  async rekeyWorkspaceRepoStates(params: {
+    tenantId: string;
+    projectId: string;
+    fromWorkspaceId: string | null;
+    toWorkspaceId: string;
+  }): Promise<number> {
+    const matching = [...this.workspaceRepoStates.entries()].filter(([, state]) => {
+      if (state.tenantId !== params.tenantId) return false;
+      if (state.projectId !== params.projectId) return false;
+      return state.workspaceId === params.fromWorkspaceId;
+    });
+    let count = 0;
+    for (const [oldKey, state] of matching) {
+      this.workspaceRepoStates.delete(oldKey);
+      const updated: WorkspaceRepositoryState = {
+        ...state,
+        workspaceId: params.toWorkspaceId,
+        updatedAt: nowIso(),
+      };
+      const newKey = workspaceRepoStateKey(
+        updated.tenantId,
+        updated.projectId,
+        updated.workspaceId,
+        updated.projectRepositoryId,
+      );
+      this.workspaceRepoStates.set(newKey, structuredClone(updated));
+      count += 1;
+    }
+    return count;
   }
 
   async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal) {

@@ -19,7 +19,7 @@ export class BudgetedAgentRuntime implements Pick<AgentRuntime, "execute"> {
     if (!tenantId) { yield* this.inner.execute(input); return; }
     const principal = entry?.run.ownerId ? { userId: entry.run.ownerId, tenantId } : undefined;
     const task = entry?.run.taskId && principal ? await this.studio?.getTask(entry.run.taskId, principal) : null;
-    const projectIds = task?.projectIds ?? [];
+    const projectIds = task?.projectId ? [task.projectId] : [];
     const reservationId = `${input.runId}:${randomUUID()}`;
     const admitted = await this.budgets.admitInvocation(reservationId, tenantId, input.agent.id, projectIds);
     if (!admitted) throw new Error("BUDGET_EXCEEDED: company, agent, or project budget has reached its cap");

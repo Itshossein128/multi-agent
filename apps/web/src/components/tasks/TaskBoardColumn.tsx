@@ -135,7 +135,7 @@ export function TaskBoardColumn({
             tasksById={tasksById}
             workflowName={task.workflowId ? workflowsById.get(task.workflowId) : undefined}
             workspaceName={task.workspaceId ? workspaceNamesById.get(task.workspaceId) : undefined}
-            projectNames={(task.projectIds ?? []).map((id) => projectNamesById.get(id) ?? id)}
+            projectName={task.projectId ? projectNamesById.get(task.projectId) : undefined}
             isMutating={isMutating}
             isDragging={draggingTaskId === task.id}
             onOpen={onOpenTask}

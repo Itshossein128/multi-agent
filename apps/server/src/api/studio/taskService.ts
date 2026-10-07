@@ -16,7 +16,17 @@ import type { RequestPrincipal } from "../../auth/principal";
 import type { RunExecutor } from "../../runtime/runExecutor";
 import { ApiError } from "../shared/http";
 import { requireResource } from "./resource";
-import { ensureTenantProjectWorkspaceDefaults } from "./tenantDefaults";
+import {
+  ensureTenantProjectWorkspaceDefaults,
+  findActiveTenantProjectId,
+} from "./tenantDefaults";
+import {
+  maybeDeriveProjectNameFromTask,
+  maybeDeriveWorkspaceNameFromTask,
+  uniquifyName,
+} from "./projectService";
+import { syncTaskWorkspaceWorkingCopies } from "./workspaceWorkingCopyService";
+import { getWorkspaceStorageRoot } from "../../../../../src/studio/infrastructure/workspace-storage";
 import {
   buildClarificationPackage,
   fingerprintAnswers,
@@ -151,7 +161,12 @@ export class TaskService {
     return task;
   }
 
-  async create(body: Partial<StudioTask>, principal: RequestPrincipal): Promise<StudioTask> {
+  async create(
+    body: Partial<StudioTask> & {
+      createProject?: { name?: string; description?: string };
+    },
+    principal: RequestPrincipal,
+  ): Promise<StudioTask> {
     const title = boundedText(body.title ?? "", TITLE_MAX, "Task title").trim();
     if (!title) throw new ApiError(400, "Task title is required");
 
@@ -190,7 +205,17 @@ export class TaskService {
     this.validateParentTask(id, parentTaskId, tenantTasks);
     this.checkDependencyGating({ id, title, dependencies }, status, tenantTasks);
     const metadata = validateMetadata(body.metadata);
-    const { workspaceId, projectIds } = await this.resolveAssociations(body, principal, {
+
+    let associationBody: Partial<StudioTask> = { ...body };
+    if (
+      body.createProject
+      && (body.projectId === undefined || body.projectId === null || body.projectId === "")
+    ) {
+      const createdProjectId = await this.createProjectInline(body.createProject, title, principal);
+      associationBody = { ...associationBody, projectId: createdProjectId };
+    }
+
+    const { workspaceId, projectId } = await this.resolveAssociations(associationBody, principal, {
       allowMissingAsDefaults: false,
     });
 
@@ -217,7 +242,7 @@ export class TaskService {
       tenantId: principal.tenantId,
       ownerId: principal.userId,
       workspaceId,
-      projectIds,
+      projectId,
     };
 
     const saved = await this.store.transaction(async (tx) => {
@@ -225,6 +250,7 @@ export class TaskService {
       await this.enqueueAssignmentTrigger(savedTask, principal, undefined, tx);
       return savedTask;
     });
+    await this.derivePlaceholderNames(saved, principal);
     return saved;
   }
 
@@ -271,13 +297,10 @@ export class TaskService {
 
     const associationSource: Partial<StudioTask> = {
       workspaceId: body.workspaceId !== undefined ? body.workspaceId : existing.workspaceId,
-      projectIds: body.projectIds !== undefined ? body.projectIds : existing.projectIds,
+      projectId: body.projectId !== undefined ? body.projectId : existing.projectId,
     };
-    const { workspaceId, projectIds } = await this.resolveAssociations(associationSource, principal, {
-      allowMissingAsDefaults: body.workspaceId === undefined && body.projectIds === undefined,
-      // Updates may still carry retired project ids from before retire; keep any active
-      // selections and require at least one active project before save.
-      stripRetiredProjects: true,
+    const { workspaceId, projectId } = await this.resolveAssociations(associationSource, principal, {
+      allowMissingAsDefaults: body.workspaceId === undefined && body.projectId === undefined,
     });
 
     const updated: StudioTask = {
@@ -303,7 +326,7 @@ export class TaskService {
       createdAt: existing.createdAt,
       metadata,
       workspaceId,
-      projectIds,
+      projectId,
       updatedAt: nowIso(),
       tenantId: principal.tenantId,
       ownerId: existing.ownerId ?? principal.userId,
@@ -314,6 +337,7 @@ export class TaskService {
       await this.enqueueAssignmentTrigger(savedTask, principal, existing.assignedAgent ?? existing.assignedAgents?.[0], tx);
       return savedTask;
     });
+    await this.derivePlaceholderNames(saved, principal);
     return saved;
   }
 
@@ -374,7 +398,7 @@ export class TaskService {
         if (!keep.has(task.id)) await transactionStore.deleteTask(task.id, principal);
       }
       for (const task of normalizedTasks) {
-        const { workspaceId, projectIds } = await this.resolveAssociations(task, principal, {
+        const { workspaceId, projectId } = await this.resolveAssociations(task, principal, {
           allowMissingAsDefaults: false,
         });
         await transactionStore.saveTask(
@@ -384,7 +408,7 @@ export class TaskService {
             tenantId: principal.tenantId,
             ownerId: task.ownerId ?? principal.userId,
             workspaceId,
-            projectIds,
+            projectId,
           },
           principal,
         );
@@ -457,19 +481,56 @@ export class TaskService {
       toolsToRun.splice(0, toolsToRun.length, ...toolsToRun.filter((tool) => assignedToolIds.has(tool.id)));
     }
 
+    const workspaceId = task.workspaceId ?? null;
+    let primaryWorkspacePath: string | null = null;
+    let workspaceStorageRoot: string | null = null;
+    try {
+      workspaceStorageRoot = getWorkspaceStorageRoot();
+    } catch {
+      workspaceStorageRoot = null;
+    }
+    try {
+      const synced = await syncTaskWorkspaceWorkingCopies(this.store, {
+        tenantId: principal.tenantId,
+        projectId: task.projectId,
+        workspaceId,
+        principal,
+      });
+      primaryWorkspacePath = synced.primaryPath;
+    } catch {
+      // Working-copy sync must not block start when storage/git is unavailable.
+    }
+
+    const agentsWithWorkspace = primaryWorkspacePath
+      ? agentsToRun.map((agent) => ({
+          ...agent,
+          executionPolicy: {
+            ...(agent.executionPolicy ?? {}),
+            workspaceRoot: primaryWorkspacePath!,
+            filesystem: agent.executionPolicy?.filesystem ?? "read-write",
+          },
+          backend: agent.backend
+            ? { ...agent.backend, workspaceRoot: primaryWorkspacePath! }
+            : agent.backend,
+        }))
+      : agentsToRun;
+
     let runId: string;
     try {
       runId = this.executor.start(
         {
           workflow: workflowToRun,
-          agents: agentsToRun,
+          agents: agentsWithWorkspace,
           tools: toolsToRun,
           input: { title: task.title, description: task.description, taskId: task.id },
           metadata: {
             ...task.metadata,
             taskId: task.id,
             taskTitle: task.title,
-            projectIds: task.projectIds ?? [],
+            projectId: task.projectId,
+            workspaceId,
+            ...(primaryWorkspacePath ? { workspaceRoot: primaryWorkspacePath } : {}),
+            ...(workspaceStorageRoot ? { workspaceStorageRoot } : {}),
             ...(options?.triggerDispatchKey ? { triggerDispatchKey: options.triggerDispatchKey } : {}),
           },
           taskId: task.id,
@@ -864,7 +925,7 @@ export class TaskService {
             ...task.metadata,
             taskId: task.id,
             taskTitle: task.title,
-            projectIds: task.projectIds ?? [],
+            projectId: task.projectId,
             parentRunId,
             clarificationOfRunId: parentRunId,
             clarificationAnswerFingerprint: fp,
@@ -1019,75 +1080,135 @@ export class TaskService {
     }
   }
 
+  private async createProjectInline(
+    createProject: { name?: string; description?: string },
+    taskTitle: string,
+    principal: RequestPrincipal,
+  ): Promise<string> {
+    const stamp = nowIso();
+    const rawName = typeof createProject.name === "string" ? createProject.name.trim() : "";
+    let name: string;
+    let nameSource: "placeholder" | "derived" | "manual";
+    if (rawName) {
+      if (rawName.length > 120) throw new ApiError(400, "name must be at most 120 characters");
+      name = rawName;
+      nameSource = "manual";
+    } else if (taskTitle.trim()) {
+      const peers = await this.store.listProjects(principal, "all");
+      name = uniquifyName(taskTitle, peers.map((project) => project.name));
+      nameSource = "derived";
+    } else {
+      name = "Untitled project";
+      nameSource = "placeholder";
+    }
+    const description = typeof createProject.description === "string" ? createProject.description : "";
+    if (description.length > 2000) {
+      throw new ApiError(400, "description must be at most 2000 characters");
+    }
+    const saved = await this.store.saveProject({
+      id: uid("project"),
+      tenantId: principal.tenantId,
+      name,
+      nameSource,
+      description,
+      status: "active",
+      settings: {},
+      createdAt: stamp,
+      updatedAt: stamp,
+      ownerId: principal.userId,
+    }, principal);
+    return saved.id;
+  }
+
+  private async derivePlaceholderNames(task: StudioTask, principal: RequestPrincipal): Promise<void> {
+    if (task.projectId) {
+      await maybeDeriveProjectNameFromTask(this.store, task.projectId, task.title, principal);
+    }
+    if (task.workspaceId) {
+      await maybeDeriveWorkspaceNameFromTask(this.store, task.workspaceId, task.title, principal);
+    }
+  }
+
   private async resolveAssociations(
     body: Partial<StudioTask>,
     principal: RequestPrincipal,
-    options?: { allowMissingAsDefaults?: boolean; stripRetiredProjects?: boolean },
-  ): Promise<{ workspaceId: string; projectIds: string[] }> {
+    options?: { allowMissingAsDefaults?: boolean },
+  ): Promise<{ workspaceId: string | null; projectId: string }> {
     const allowDefaults = options?.allowMissingAsDefaults !== false;
-    const stripRetired = options?.stripRetiredProjects === true;
-    const defaults = await ensureTenantProjectWorkspaceDefaults(this.store, principal);
 
-    if (body.workspaceId === null) {
-      throw new ApiError(400, "workspaceId is required");
-    }
-    if (body.projectIds !== undefined && !Array.isArray(body.projectIds)) {
-      throw new ApiError(400, "projectIds must be an array");
-    }
-    if (Array.isArray(body.projectIds) && body.projectIds.length === 0) {
-      throw new ApiError(400, "At least one project is required");
-    }
-
-    let workspaceId =
-      body.workspaceId === undefined
+    let projectId =
+      body.projectId === undefined || body.projectId === null || body.projectId === ""
         ? undefined
-        : normalizeId(body.workspaceId, "workspaceId");
-    let projectIds =
-      body.projectIds === undefined
-        ? undefined
-        : [...new Set(body.projectIds.map((id) => normalizeId(id, "projectIds item")))];
+        : normalizeId(body.projectId, "projectId");
 
-    if (!workspaceId) {
-      if (!allowDefaults) throw new ApiError(400, "workspaceId is required");
-      workspaceId = defaults.workspaceId;
-    }
-    if (!projectIds?.length) {
-      if (!allowDefaults) throw new ApiError(400, "At least one project is required");
-      projectIds = [defaults.projectId];
-    }
-
-    const workspace = await this.store.getWorkspace(workspaceId, principal);
-    if (!workspace) throw new ApiError(400, `Unknown workspace: ${workspaceId}`);
-    if (workspace.status !== "active") throw new ApiError(400, `Workspace "${workspaceId}" is retired and cannot receive tasks`);
-
-    const activeProjectIds: string[] = [];
-    for (const projectId of projectIds) {
-      const project = await this.store.getProject(projectId, principal);
-      if (!project) throw new ApiError(400, `Unknown project: ${projectId}`);
-      if (project.status !== "active") {
-        if (stripRetired) continue;
-        throw new ApiError(400, `Project "${projectId}" is retired and cannot receive tasks`);
+    // Transition: tolerate legacy projectIds[0] when projectId is absent.
+    if (!projectId) {
+      const legacyIds = (body as { projectIds?: unknown }).projectIds;
+      if (Array.isArray(legacyIds) && typeof legacyIds[0] === "string" && legacyIds[0].trim()) {
+        projectId = normalizeId(legacyIds[0], "projectId");
       }
-      activeProjectIds.push(projectId);
-    }
-    if (activeProjectIds.length === 0) {
-      throw new ApiError(
-        400,
-        stripRetired
-          ? "All linked projects are retired; select at least one active project before save"
-          : "At least one project is required",
-      );
     }
 
-    return { workspaceId, projectIds: activeProjectIds };
+    if (!projectId) {
+      if (!allowDefaults) throw new ApiError(400, "projectId is required");
+      const activeProjectId = await findActiveTenantProjectId(this.store, principal);
+      if (activeProjectId) {
+        projectId = activeProjectId;
+      } else {
+        try {
+          const defaults = await ensureTenantProjectWorkspaceDefaults(this.store, principal);
+          projectId = defaults.projectId;
+        } catch (error) {
+          throw new ApiError(
+            400,
+            error instanceof Error
+              ? error.message
+              : "No active project in this organization; create a project before continuing",
+          );
+        }
+      }
+    }
+
+    const project = await this.store.getProject(projectId, principal);
+    if (!project) throw new ApiError(400, `Unknown project: ${projectId}`);
+    if (project.status !== "active") {
+      throw new ApiError(400, `Project "${projectId}" is retired and cannot receive tasks`);
+    }
+
+    const activeWorkspaces = await this.store.listWorkspacesByProject(projectId, principal, "active");
+    if (activeWorkspaces.length === 0) {
+      // Implicit project workspace: coerce any client workspace id to null.
+      return { workspaceId: null, projectId };
+    }
+
+    if (body.workspaceId === undefined || body.workspaceId === null || body.workspaceId === "") {
+      // Do not invent a tenant default workspace when the project has explicit ones.
+      throw new ApiError(400, "workspaceId is required; choose a workspace for this project");
+    }
+
+    const workspaceId = normalizeId(body.workspaceId, "workspaceId");
+    const workspace = activeWorkspaces.find((entry) => entry.id === workspaceId);
+    if (!workspace) {
+      const lookedUp = await this.store.getWorkspace(workspaceId, principal);
+      if (!lookedUp) throw new ApiError(400, `Unknown workspace: ${workspaceId}`);
+      if (lookedUp.projectId !== projectId) {
+        throw new ApiError(400, `Workspace "${workspaceId}" does not belong to project "${projectId}"`);
+      }
+      if (lookedUp.status !== "active") {
+        throw new ApiError(400, `Workspace "${workspaceId}" is retired and cannot receive tasks`);
+      }
+      throw new ApiError(400, `Workspace "${workspaceId}" is not an active workspace of project "${projectId}"`);
+    }
+
+    return { workspaceId, projectId };
   }
 
   private async withAssociations(task: StudioTask, principal: RequestPrincipal): Promise<StudioTask> {
-    if (task.workspaceId && Array.isArray(task.projectIds) && task.projectIds.length > 0) {
+    if (task.projectId && task.workspaceId !== undefined) {
       return task;
     }
-    const { workspaceId, projectIds } = await this.resolveAssociations(task, principal);
-    return { ...task, workspaceId, projectIds };
+    const { workspaceId, projectId } = await this.resolveAssociations(task, principal);
+    return { ...task, workspaceId, projectId };
   }
 
   private syncTaskWithRun(task: StudioTask): boolean {

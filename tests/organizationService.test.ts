@@ -10,6 +10,19 @@ describe("organization goals and delegation", () => {
   it("keeps one CEO, rejects reporting cycles, and links delegated tasks to goals", async () => {
     const studio = new InMemoryStudioStore();
     const service = new OrganizationService(new InMemoryOrganizationStore(), studio);
+    const stamp = new Date().toISOString();
+    await studio.saveProject({
+      id: "project-org",
+      tenantId: alice.tenantId,
+      name: "Org Project",
+      nameSource: "manual",
+      description: "",
+      status: "active",
+      settings: {},
+      createdAt: stamp,
+      updatedAt: stamp,
+      ownerId: alice.userId,
+    }, alice);
     const ceo = await studio.saveAgent({ ...createAgentRecord({ name: "CEO" }), id: "ceo" }, alice);
     const manager = await studio.saveAgent({ ...createAgentRecord({ name: "Manager" }), id: "manager" }, alice);
     const worker = await studio.saveAgent({ ...createAgentRecord({ name: "Worker" }), id: "worker" }, alice);
@@ -25,7 +38,8 @@ describe("organization goals and delegation", () => {
     const task = await service.delegate(goal.id, { agentId: worker.id }, alice);
     expect(task.metadata?.organizationGoalId).toBe(goal.id);
     expect(task.assignedAgent).toBe(worker.id);
-    expect(task.projectIds).toHaveLength(1);
+    expect(task.projectId).toBe("project-org");
+    expect(task.workspaceId).toBeNull();
     const proposal = await service.requestStrategyProposal({ title: "Grow reliability", brief: "Reduce failed runs" }, alice);
     expect(proposal.goal.status).toBe("proposed");
     expect(proposal.task.assignedAgent).toBe(ceo.id);

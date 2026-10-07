@@ -17,13 +17,18 @@ import type { PgClient, PgPool } from "../../memory/infrastructure";
 import type {
   AcceptWebhookDeliveryParams,
   AcceptWebhookDeliveryResult,
+  OrganizationProfile,
+  ProjectRepository,
   StudioEntityStatusFilter,
+  StudioNameSource,
   StudioPrincipal,
   StudioProject,
   StudioStore,
   StudioTask,
   StudioWorkspace,
   StudioWorkspaceImport,
+  WorkspaceRepositoryMembership,
+  WorkspaceRepositoryState,
 } from "../contracts";
 
 function asIso(value: unknown): string {
@@ -157,11 +162,29 @@ function decodeAgentHeartbeat(row: Record<string, unknown>): AgentHeartbeatSetti
   };
 }
 
+function decodeNameSource(value: unknown): StudioNameSource {
+  if (value === "placeholder" || value === "derived" || value === "manual") return value;
+  return "manual";
+}
+
+function decodeOrganization(row: Record<string, unknown>): OrganizationProfile {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    description: String(row.description ?? ""),
+    config: decodeSettings(row.config),
+    ownerId: String(row.owner_id),
+    createdAt: asIso(row.created_at),
+    updatedAt: asIso(row.updated_at),
+  };
+}
+
 function decodeProject(row: Record<string, unknown>): StudioProject {
   return {
     id: String(row.id),
     tenantId: String(row.tenant_id),
     name: String(row.name),
+    nameSource: decodeNameSource(row.name_source),
     description: String(row.description ?? ""),
     status: row.status === "retired" ? "retired" : "active",
     settings: decodeSettings(row.settings),
@@ -172,20 +195,59 @@ function decodeProject(row: Record<string, unknown>): StudioProject {
 }
 
 function decodeWorkspace(row: Record<string, unknown>): StudioWorkspace {
+  const settings = decodeSettings(row.settings);
+  const settingsOverrides = decodeSettings(row.settings_overrides);
+  const overriddenKeys = Object.keys(settingsOverrides);
   return {
     id: String(row.id),
     tenantId: String(row.tenant_id),
+    projectId: String(row.project_id),
     name: String(row.name),
+    nameSource: decodeNameSource(row.name_source),
     description: String(row.description ?? ""),
     status: row.status === "retired" ? "retired" : "active",
-    settings: decodeSettings(row.settings),
+    settings,
+    settingsOverrides,
+    effectiveSettings: { ...settings, ...settingsOverrides },
+    overriddenKeys,
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
     ownerId: String(row.owner_id),
   };
 }
 
-function decodeTask(row: Record<string, unknown>, projectIds: string[] = []): StudioTask {
+function decodeProjectRepository(row: Record<string, unknown>): ProjectRepository {
+  const status = row.status === "unavailable" || row.status === "removed" ? row.status : "active";
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    projectId: String(row.project_id),
+    name: String(row.name),
+    source: String(row.source),
+    defaultBranch: String(row.default_branch),
+    status,
+    createdAt: asIso(row.created_at),
+    updatedAt: asIso(row.updated_at),
+  };
+}
+
+function decodeWorkspaceRepoState(row: Record<string, unknown>): WorkspaceRepositoryState {
+  const availability =
+    row.availability === "unavailable" || row.availability === "branch_missing" ? row.availability : "ready";
+  return {
+    tenantId: String(row.tenant_id),
+    projectId: String(row.project_id),
+    workspaceId: row.workspace_id == null ? null : String(row.workspace_id),
+    projectRepositoryId: String(row.project_repository_id),
+    branch: String(row.branch),
+    storagePath: String(row.storage_path),
+    hasUncommittedChanges: Boolean(row.has_uncommitted_changes),
+    availability,
+    updatedAt: asIso(row.updated_at),
+  };
+}
+
+function decodeTask(row: Record<string, unknown>): StudioTask {
   const assignedAgents = Array.isArray(row.assigned_agents)
     ? (row.assigned_agents as string[])
     : row.assigned_agent
@@ -216,8 +278,8 @@ function decodeTask(row: Record<string, unknown>, projectIds: string[] = []): St
     metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? (row.metadata as Record<string, unknown>) : {},
     ownerId: (row.owner_id as string | null) ?? undefined,
     tenantId: (row.tenant_id as string | null) ?? undefined,
-    workspaceId: row.workspace_id ? String(row.workspace_id) : undefined,
-    projectIds,
+    projectId: String(row.project_id),
+    workspaceId: row.workspace_id == null || row.workspace_id === "" ? null : String(row.workspace_id),
   };
 }
 
@@ -416,34 +478,6 @@ export class PostgresStudioStore implements StudioStore {
     }
   }
 
-  private async loadProjectIdsByTask(taskIds: string[]): Promise<Map<string, string[]>> {
-    const map = new Map<string, string[]>();
-    if (!taskIds.length) return map;
-    const result = await this.query(
-      "SELECT task_id, project_id FROM studio_task_projects WHERE task_id = ANY($1::text[]) ORDER BY project_id",
-      [taskIds],
-    );
-    for (const row of result.rows) {
-      const taskId = String(row.task_id);
-      const list = map.get(taskId) ?? [];
-      list.push(String(row.project_id));
-      map.set(taskId, list);
-    }
-    return map;
-  }
-
-  private async replaceTaskProjects(taskId: string, tenantId: string, projectIds: string[]): Promise<void> {
-    await this.query("DELETE FROM studio_task_projects WHERE task_id = $1", [taskId]);
-    for (const projectId of projectIds) {
-      await this.query(
-        `INSERT INTO studio_task_projects (tenant_id, task_id, project_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (task_id, project_id) DO NOTHING`,
-        [tenantId, taskId, projectId],
-      );
-    }
-  }
-
   private statusClause(status: StudioEntityStatusFilter | undefined, startIndex: number): { sql: string; values: unknown[] } {
     if (!status || status === "active") return { sql: ` AND status = $${startIndex}`, values: ["active"] };
     if (status === "retired") return { sql: ` AND status = $${startIndex}`, values: ["retired"] };
@@ -454,8 +488,7 @@ export class PostgresStudioStore implements StudioStore {
     const result = principal
       ? await this.query("SELECT * FROM studio_tasks WHERE tenant_id = $1 ORDER BY updated_at DESC, id", [principal.tenantId])
       : await this.query("SELECT * FROM studio_tasks ORDER BY updated_at DESC, id");
-    const projectIds = await this.loadProjectIdsByTask(result.rows.map((row) => String(row.id)));
-    return result.rows.map((row) => decodeTask(row, projectIds.get(String(row.id)) ?? []));
+    return result.rows.map((row) => decodeTask(row));
   }
 
   async getTask(id: string, principal?: StudioPrincipal): Promise<StudioTask | null> {
@@ -463,8 +496,7 @@ export class PostgresStudioStore implements StudioStore {
       ? await this.query("SELECT * FROM studio_tasks WHERE id = $1 AND tenant_id = $2", [id, principal.tenantId])
       : await this.query("SELECT * FROM studio_tasks WHERE id = $1", [id]);
     if (!result.rows[0]) return null;
-    const projectIds = await this.loadProjectIdsByTask([id]);
-    return decodeTask(result.rows[0], projectIds.get(id) ?? []);
+    return decodeTask(result.rows[0]);
   }
 
   async listTasksByWorkspace(workspaceId: string, principal?: StudioPrincipal): Promise<StudioTask[]> {
@@ -477,28 +509,24 @@ export class PostgresStudioStore implements StudioStore {
           "SELECT * FROM studio_tasks WHERE workspace_id = $1 ORDER BY updated_at DESC, id",
           [workspaceId],
         );
-    const projectIds = await this.loadProjectIdsByTask(result.rows.map((row) => String(row.id)));
-    return result.rows.map((row) => decodeTask(row, projectIds.get(String(row.id)) ?? []));
+    return result.rows.map((row) => decodeTask(row));
   }
 
   async listTasksByProject(projectId: string, principal?: StudioPrincipal): Promise<StudioTask[]> {
     const result = principal
       ? await this.query(
-          `SELECT t.* FROM studio_tasks t
-           INNER JOIN studio_task_projects tp ON tp.task_id = t.id
-           WHERE tp.project_id = $1 AND t.tenant_id = $2
-           ORDER BY t.updated_at DESC, t.id`,
+          `SELECT * FROM studio_tasks
+           WHERE project_id = $1 AND tenant_id = $2
+           ORDER BY updated_at DESC, id`,
           [projectId, principal.tenantId],
         )
       : await this.query(
-          `SELECT t.* FROM studio_tasks t
-           INNER JOIN studio_task_projects tp ON tp.task_id = t.id
-           WHERE tp.project_id = $1
-           ORDER BY t.updated_at DESC, t.id`,
+          `SELECT * FROM studio_tasks
+           WHERE project_id = $1
+           ORDER BY updated_at DESC, id`,
           [projectId],
         );
-    const projectIds = await this.loadProjectIdsByTask(result.rows.map((row) => String(row.id)));
-    return result.rows.map((row) => decodeTask(row, projectIds.get(String(row.id)) ?? []));
+    return result.rows.map((row) => decodeTask(row));
   }
 
   async saveTask(task: StudioTask, principal?: StudioPrincipal): Promise<StudioTask> {
@@ -515,10 +543,9 @@ export class PostgresStudioStore implements StudioStore {
     const runId = task.runId ?? null;
     const lastError = task.lastError ?? null;
     const metadata = task.metadata ?? {};
-    const projectIds = Array.isArray(task.projectIds) ? [...new Set(task.projectIds.filter(Boolean))] : [];
-    const workspaceId = task.workspaceId;
-    if (!workspaceId) throw new Error("Task workspaceId is required");
-    if (!projectIds.length) throw new Error("Task projectIds must include at least one project");
+    const projectId = task.projectId?.trim();
+    if (!projectId) throw new Error("Task projectId is required");
+    const workspaceId = task.workspaceId === undefined || task.workspaceId === "" ? null : task.workspaceId;
 
     if (principal) {
       const existing = await this.query("SELECT tenant_id FROM studio_tasks WHERE id = $1", [task.id]);
@@ -537,8 +564,8 @@ export class PostgresStudioStore implements StudioStore {
         runId,
         lastError,
         metadata,
+        projectId,
         workspaceId,
-        projectIds,
         tenantId: principal.tenantId,
         ownerId: task.ownerId ?? principal.userId,
         updatedAt,
@@ -548,13 +575,13 @@ export class PostgresStudioStore implements StudioStore {
            id, title, description, priority, status, assigned_agent, dependencies, output,
            retry_count, paused, created_at, updated_at, owner_id, tenant_id,
            workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata,
-           workspace_id
+           workspace_id, project_id
          )
          VALUES (
            $1, $2, $3, $4, $5, $6, $7::jsonb, $8,
            $9, $10, $11::timestamptz, $12::timestamptz, $13, $14,
            $15, $16::jsonb, $17::timestamptz, $18::timestamptz, $19, $20, $21, $22::jsonb,
-           $23
+           $23, $24
          )
          ON CONFLICT (id) DO UPDATE SET
            title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
@@ -565,17 +592,16 @@ export class PostgresStudioStore implements StudioStore {
            started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
            parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
            last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata,
-           workspace_id = EXCLUDED.workspace_id`,
+           workspace_id = EXCLUDED.workspace_id, project_id = EXCLUDED.project_id`,
         [
           task.id, task.title, task.description, task.priority, task.status, assignedAgent,
           JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
           task.createdAt, updatedAt, task.ownerId, principal.tenantId,
           workflowId, JSON.stringify(assignedAgents), startedAt, completedAt,
           parentTaskId, runId, lastError, JSON.stringify(metadata),
-          workspaceId,
+          workspaceId, projectId,
         ],
       );
-      await this.replaceTaskProjects(task.id, principal.tenantId, projectIds);
     } else {
       const updatedAt = task.updatedAt ?? task.createdAt ?? nowIso();
       const tenantId = task.tenantId ?? "_orphan";
@@ -590,8 +616,8 @@ export class PostgresStudioStore implements StudioStore {
         runId,
         lastError,
         metadata,
+        projectId,
         workspaceId,
-        projectIds,
         updatedAt,
       };
       await this.query(
@@ -599,13 +625,13 @@ export class PostgresStudioStore implements StudioStore {
            id, title, description, priority, status, assigned_agent, dependencies, output,
            retry_count, paused, created_at, updated_at,
            workflow_id, assigned_agents, started_at, completed_at, parent_task_id, run_id, last_error, metadata,
-           workspace_id, tenant_id, owner_id
+           workspace_id, project_id, tenant_id, owner_id
          )
          VALUES (
            $1, $2, $3, $4, $5, $6, $7::jsonb, $8,
            $9, $10, $11::timestamptz, $12::timestamptz,
            $13, $14::jsonb, $15::timestamptz, $16::timestamptz, $17, $18, $19, $20::jsonb,
-           $21, $22, $23
+           $21, $22, $23, $24
          )
          ON CONFLICT (id) DO UPDATE SET
            title = EXCLUDED.title, description = EXCLUDED.description, priority = EXCLUDED.priority,
@@ -615,17 +641,16 @@ export class PostgresStudioStore implements StudioStore {
            started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
            parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
            last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata,
-           workspace_id = EXCLUDED.workspace_id`,
+           workspace_id = EXCLUDED.workspace_id, project_id = EXCLUDED.project_id`,
         [
           task.id, task.title, task.description, task.priority, task.status, assignedAgent,
           JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
           task.createdAt, updatedAt,
           workflowId, JSON.stringify(assignedAgents), startedAt, completedAt,
           parentTaskId, runId, lastError, JSON.stringify(metadata),
-          workspaceId, tenantId, task.ownerId ?? null,
+          workspaceId, projectId, tenantId, task.ownerId ?? null,
         ],
       );
-      await this.replaceTaskProjects(task.id, tenantId, projectIds);
     }
     return task;
   }
@@ -670,18 +695,43 @@ export class PostgresStudioStore implements StudioStore {
       }
       project = { ...project, tenantId: principal.tenantId, ownerId: project.ownerId || principal.userId };
     }
+    const nameSource = project.nameSource ?? "manual";
+    project = { ...project, nameSource };
     await this.query(
-      `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9)
+      `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id, name_source)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9, $10)
        ON CONFLICT (id) DO UPDATE SET
          tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
-         settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id`,
+         settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id,
+         name_source = EXCLUDED.name_source`,
       [
         project.id, project.tenantId, project.name, project.description, project.status,
         JSON.stringify(project.settings ?? {}), project.createdAt, project.updatedAt, project.ownerId,
+        nameSource,
       ],
     );
     return project;
+  }
+
+  async claimPlaceholderProjectName(
+    projectId: string,
+    name: string,
+    principal?: StudioPrincipal,
+  ): Promise<boolean> {
+    const result = principal
+      ? await this.query(
+          `UPDATE studio_projects
+           SET name = $1, name_source = 'derived', updated_at = NOW()
+           WHERE id = $2 AND tenant_id = $3 AND name_source = 'placeholder'`,
+          [name, projectId, principal.tenantId],
+        )
+      : await this.query(
+          `UPDATE studio_projects
+           SET name = $1, name_source = 'derived', updated_at = NOW()
+           WHERE id = $2 AND name_source = 'placeholder'`,
+          [name, projectId],
+        );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async listWorkspaces(principal?: StudioPrincipal, status: StudioEntityStatusFilter = "active"): Promise<StudioWorkspace[]> {
@@ -701,6 +751,27 @@ export class PostgresStudioStore implements StudioStore {
     return result.rows.map(decodeWorkspace);
   }
 
+  async listWorkspacesByProject(
+    projectId: string,
+    principal?: StudioPrincipal,
+    status: StudioEntityStatusFilter = "active",
+  ): Promise<StudioWorkspace[]> {
+    if (principal) {
+      const filter = this.statusClause(status, 3);
+      const result = await this.query(
+        `SELECT * FROM studio_workspaces WHERE project_id = $1 AND tenant_id = $2${filter.sql} ORDER BY updated_at DESC, id`,
+        [projectId, principal.tenantId, ...filter.values],
+      );
+      return result.rows.map(decodeWorkspace);
+    }
+    const filter = this.statusClause(status, 2);
+    const result = await this.query(
+      `SELECT * FROM studio_workspaces WHERE project_id = $1${filter.sql} ORDER BY updated_at DESC, id`,
+      [projectId, ...filter.values],
+    );
+    return result.rows.map(decodeWorkspace);
+  }
+
   async getWorkspace(id: string, principal?: StudioPrincipal): Promise<StudioWorkspace | null> {
     const result = principal
       ? await this.query("SELECT * FROM studio_workspaces WHERE id = $1 AND tenant_id = $2", [id, principal.tenantId])
@@ -709,6 +780,7 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async saveWorkspace(workspace: StudioWorkspace, principal?: StudioPrincipal): Promise<StudioWorkspace> {
+    if (!workspace.projectId?.trim()) throw new Error("Workspace projectId is required");
     if (principal) {
       const existing = await this.query("SELECT tenant_id FROM studio_workspaces WHERE id = $1", [workspace.id]);
       if (existing.rows.length && existing.rows[0].tenant_id !== principal.tenantId) {
@@ -716,18 +788,265 @@ export class PostgresStudioStore implements StudioStore {
       }
       workspace = { ...workspace, tenantId: principal.tenantId, ownerId: workspace.ownerId || principal.userId };
     }
+    const nameSource = workspace.nameSource ?? "manual";
+    const settingsOverrides = workspace.settingsOverrides ?? {};
+    const overriddenKeys = Object.keys(settingsOverrides);
+    workspace = {
+      ...workspace,
+      nameSource,
+      settingsOverrides,
+      overriddenKeys,
+      effectiveSettings: workspace.effectiveSettings ?? { ...(workspace.settings ?? {}), ...settingsOverrides },
+      settings: workspace.settings ?? {},
+    };
     await this.query(
-      `INSERT INTO studio_workspaces (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9)
+      `INSERT INTO studio_workspaces (
+         id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id,
+         project_id, name_source, settings_overrides
+       )
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9, $10, $11, $12::jsonb)
        ON CONFLICT (id) DO UPDATE SET
          tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
-         settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id`,
+         settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id,
+         project_id = EXCLUDED.project_id, name_source = EXCLUDED.name_source,
+         settings_overrides = EXCLUDED.settings_overrides`,
       [
         workspace.id, workspace.tenantId, workspace.name, workspace.description, workspace.status,
         JSON.stringify(workspace.settings ?? {}), workspace.createdAt, workspace.updatedAt, workspace.ownerId,
+        workspace.projectId, nameSource, JSON.stringify(settingsOverrides),
       ],
     );
     return workspace;
+  }
+
+  async claimPlaceholderWorkspaceName(
+    workspaceId: string,
+    name: string,
+    principal?: StudioPrincipal,
+  ): Promise<boolean> {
+    const result = principal
+      ? await this.query(
+          `UPDATE studio_workspaces
+           SET name = $1, name_source = 'derived', updated_at = NOW()
+           WHERE id = $2 AND tenant_id = $3 AND name_source = 'placeholder'`,
+          [name, workspaceId, principal.tenantId],
+        )
+      : await this.query(
+          `UPDATE studio_workspaces
+           SET name = $1, name_source = 'derived', updated_at = NOW()
+           WHERE id = $2 AND name_source = 'placeholder'`,
+          [name, workspaceId],
+        );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getOrganizationProfile(principal: StudioPrincipal): Promise<OrganizationProfile | null> {
+    const result = await this.query("SELECT * FROM studio_organizations WHERE id = $1", [principal.tenantId]);
+    return result.rows[0] ? decodeOrganization(result.rows[0]) : null;
+  }
+
+  async createOrganizationProfile(
+    profile: OrganizationProfile,
+    principal: StudioPrincipal,
+  ): Promise<OrganizationProfile> {
+    if (profile.id !== principal.tenantId) {
+      throw new Error("Organization profile id must equal tenant id");
+    }
+    const existing = await this.getOrganizationProfile(principal);
+    if (existing) throw new Error("Organization already exists for this tenant");
+    const record: OrganizationProfile = {
+      ...profile,
+      id: principal.tenantId,
+      ownerId: profile.ownerId || principal.userId,
+      description: profile.description ?? "",
+      config: profile.config ?? {},
+    };
+    await this.query(
+      `INSERT INTO studio_organizations (id, name, description, config, owner_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6::timestamptz, $7::timestamptz)`,
+      [
+        record.id, record.name, record.description, JSON.stringify(record.config),
+        record.ownerId, record.createdAt, record.updatedAt,
+      ],
+    );
+    return record;
+  }
+
+  async listProjectRepositories(projectId: string, principal?: StudioPrincipal): Promise<ProjectRepository[]> {
+    const result = principal
+      ? await this.query(
+          `SELECT * FROM studio_project_repositories
+           WHERE project_id = $1 AND tenant_id = $2
+           ORDER BY updated_at DESC, id`,
+          [projectId, principal.tenantId],
+        )
+      : await this.query(
+          `SELECT * FROM studio_project_repositories WHERE project_id = $1 ORDER BY updated_at DESC, id`,
+          [projectId],
+        );
+    return result.rows.map(decodeProjectRepository);
+  }
+
+  async getProjectRepository(id: string, principal?: StudioPrincipal): Promise<ProjectRepository | null> {
+    const result = principal
+      ? await this.query(
+          "SELECT * FROM studio_project_repositories WHERE id = $1 AND tenant_id = $2",
+          [id, principal.tenantId],
+        )
+      : await this.query("SELECT * FROM studio_project_repositories WHERE id = $1", [id]);
+    return result.rows[0] ? decodeProjectRepository(result.rows[0]) : null;
+  }
+
+  async saveProjectRepository(repo: ProjectRepository, principal?: StudioPrincipal): Promise<ProjectRepository> {
+    if (principal) {
+      const existing = await this.query("SELECT tenant_id FROM studio_project_repositories WHERE id = $1", [repo.id]);
+      if (existing.rows.length && existing.rows[0].tenant_id !== principal.tenantId) {
+        throw new Error("Access denied to project repository");
+      }
+      repo = { ...repo, tenantId: principal.tenantId };
+    }
+    await this.query(
+      `INSERT INTO studio_project_repositories (
+         id, tenant_id, project_id, name, source, default_branch, status, created_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz)
+       ON CONFLICT (id) DO UPDATE SET
+         tenant_id = EXCLUDED.tenant_id, project_id = EXCLUDED.project_id, name = EXCLUDED.name,
+         source = EXCLUDED.source, default_branch = EXCLUDED.default_branch, status = EXCLUDED.status,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        repo.id, repo.tenantId, repo.projectId, repo.name, repo.source, repo.defaultBranch,
+        repo.status, repo.createdAt, repo.updatedAt,
+      ],
+    );
+    return repo;
+  }
+
+  async deleteProjectRepository(id: string, principal?: StudioPrincipal): Promise<void> {
+    if (principal) {
+      await this.query(
+        "DELETE FROM studio_project_repositories WHERE id = $1 AND tenant_id = $2",
+        [id, principal.tenantId],
+      );
+    } else {
+      await this.query("DELETE FROM studio_project_repositories WHERE id = $1", [id]);
+    }
+  }
+
+  async listWorkspaceRepositories(
+    workspaceId: string,
+    principal?: StudioPrincipal,
+  ): Promise<WorkspaceRepositoryMembership[]> {
+    if (principal) {
+      const workspace = await this.getWorkspace(workspaceId, principal);
+      if (!workspace) return [];
+    }
+    const result = await this.query(
+      `SELECT * FROM studio_workspace_repositories WHERE workspace_id = $1 ORDER BY project_repository_id`,
+      [workspaceId],
+    );
+    return result.rows.map((row) => ({
+      workspaceId: String(row.workspace_id),
+      projectRepositoryId: String(row.project_repository_id),
+      branch: String(row.branch),
+      createdAt: asIso(row.created_at),
+      updatedAt: asIso(row.updated_at),
+    }));
+  }
+
+  async replaceWorkspaceRepositories(
+    workspaceId: string,
+    memberships: WorkspaceRepositoryMembership[],
+    principal?: StudioPrincipal,
+  ): Promise<WorkspaceRepositoryMembership[]> {
+    if (principal) {
+      const workspace = await this.getWorkspace(workspaceId, principal);
+      if (!workspace) throw new Error("Access denied to workspace");
+    }
+    await this.query("DELETE FROM studio_workspace_repositories WHERE workspace_id = $1", [workspaceId]);
+    const stamp = nowIso();
+    const saved: WorkspaceRepositoryMembership[] = [];
+    for (const membership of memberships) {
+      const record: WorkspaceRepositoryMembership = {
+        workspaceId,
+        projectRepositoryId: membership.projectRepositoryId,
+        branch: membership.branch,
+        createdAt: membership.createdAt ?? stamp,
+        updatedAt: stamp,
+      };
+      await this.query(
+        `INSERT INTO studio_workspace_repositories (workspace_id, project_repository_id, branch, created_at, updated_at)
+         VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)`,
+        [record.workspaceId, record.projectRepositoryId, record.branch, record.createdAt, record.updatedAt],
+      );
+      saved.push(record);
+    }
+    return saved;
+  }
+
+  async listWorkspaceRepoStates(params: {
+    tenantId: string;
+    projectId: string;
+    workspaceId?: string | null;
+    projectRepositoryId?: string;
+  }): Promise<WorkspaceRepositoryState[]> {
+    const values: unknown[] = [params.tenantId, params.projectId];
+    let sql =
+      `SELECT * FROM studio_workspace_repo_states
+       WHERE tenant_id = $1 AND project_id = $2`;
+    if (params.workspaceId === null) {
+      sql += " AND workspace_id IS NULL";
+    } else if (params.workspaceId !== undefined) {
+      values.push(params.workspaceId);
+      sql += ` AND workspace_id = $${values.length}`;
+    }
+    if (params.projectRepositoryId) {
+      values.push(params.projectRepositoryId);
+      sql += ` AND project_repository_id = $${values.length}`;
+    }
+    sql += " ORDER BY updated_at DESC";
+    const result = await this.query(sql, values);
+    return result.rows.map(decodeWorkspaceRepoState);
+  }
+
+  async saveWorkspaceRepoState(state: WorkspaceRepositoryState): Promise<WorkspaceRepositoryState> {
+    const workspaceKey = state.workspaceId ?? "";
+    await this.query(
+      `INSERT INTO studio_workspace_repo_states (
+         tenant_id, project_id, workspace_id, workspace_key, project_repository_id, branch, storage_path,
+         has_uncommitted_changes, availability, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz)
+       ON CONFLICT (tenant_id, project_id, project_repository_id, workspace_key)
+       DO UPDATE SET
+         branch = EXCLUDED.branch,
+         storage_path = EXCLUDED.storage_path,
+         has_uncommitted_changes = EXCLUDED.has_uncommitted_changes,
+         availability = EXCLUDED.availability,
+         updated_at = EXCLUDED.updated_at,
+         workspace_id = EXCLUDED.workspace_id`,
+      [
+        state.tenantId, state.projectId, state.workspaceId, workspaceKey, state.projectRepositoryId,
+        state.branch, state.storagePath, state.hasUncommittedChanges, state.availability, state.updatedAt,
+      ],
+    );
+    return state;
+  }
+
+  async rekeyWorkspaceRepoStates(params: {
+    tenantId: string;
+    projectId: string;
+    fromWorkspaceId: string | null;
+    toWorkspaceId: string;
+  }): Promise<number> {
+    const fromKey = params.fromWorkspaceId ?? "";
+    const result = await this.query(
+      `UPDATE studio_workspace_repo_states
+       SET workspace_id = $4, workspace_key = $4, updated_at = now()
+       WHERE tenant_id = $1 AND project_id = $2 AND workspace_key = $3`,
+      [params.tenantId, params.projectId, fromKey, params.toWorkspaceId],
+    );
+    return result.rowCount ?? 0;
   }
 
   async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal): Promise<void> {

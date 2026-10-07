@@ -88,7 +88,7 @@ describe("Authoritative Dashboard Source of Truth", () => {
         paused: false,
         createdAt: "2026-09-11T10:00:00.000Z",
         workspaceId: "workspace-default",
-        projectIds: ["project-default"],
+        projectId: "project-default",
       };
       const activeTask: StudioTask = {
         id: "task-active-1",
@@ -103,7 +103,7 @@ describe("Authoritative Dashboard Source of Truth", () => {
         paused: false,
         createdAt: "2026-09-11T10:10:00.000Z",
         workspaceId: "workspace-default",
-        projectIds: ["project-default"],
+        projectId: "project-default",
       };
       await studioStore.saveTask(todoTask, alice);
       await studioStore.saveTask(activeTask, alice);
@@ -267,7 +267,7 @@ describe("Authoritative Dashboard Source of Truth", () => {
         paused: false,
         createdAt: nowIso(),
         workspaceId: "workspace-default",
-        projectIds: ["project-default"],
+        projectId: "project-default",
       };
       await studioStore.saveTask(aliceTask, alice);
 
@@ -315,6 +315,20 @@ describe("Authoritative Dashboard Source of Truth", () => {
 
   describe("5. Dashboard Action Mutations (Enqueue, Retry, Cancel)", () => {
     test("action 'enqueue' creates a task in StudioStore with tenant ownership", async () => {
+      const stamp = nowIso();
+      await studioStore.saveProject({
+        id: "project-enqueue",
+        tenantId: alice.tenantId,
+        name: "Enqueue Project",
+        nameSource: "manual",
+        description: "",
+        status: "active",
+        settings: {},
+        createdAt: stamp,
+        updatedAt: stamp,
+        ownerId: alice.userId,
+      }, alice);
+
       const res = await app.fetch(
         req("/", "POST", { action: "enqueue", title: "New Feature Task", role: "Developer Agent", priority: "high" }, alice)
       );
@@ -330,6 +344,8 @@ describe("Authoritative Dashboard Source of Truth", () => {
       expect(task?.status).toBe("todo");
       expect(task?.ownerId).toBe(alice.userId);
       expect(task?.tenantId).toBe(alice.tenantId);
+      expect(task?.projectId).toBe("project-enqueue");
+      expect(task?.workspaceId).toBeNull();
     });
 
     test("action 'cancel' cancels an active run in RunStore or deletes task in StudioStore", async () => {
@@ -363,7 +379,7 @@ describe("Authoritative Dashboard Source of Truth", () => {
         paused: false,
         createdAt: nowIso(),
         workspaceId: "workspace-default",
-        projectIds: ["project-default"],
+        projectId: "project-default",
       };
       await studioStore.saveTask(failedTask, alice);
 
@@ -439,7 +455,7 @@ describe("Authoritative Dashboard Source of Truth", () => {
         paused: false,
         createdAt: nowIso(),
         workspaceId: "workspace-default",
-        projectIds: ["project-default"],
+        projectId: "project-default",
       };
       await pgStudioStore1.saveTask(durableTask, alice);
 

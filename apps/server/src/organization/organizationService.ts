@@ -122,7 +122,7 @@ export class OrganizationService {
     const task = await new TaskService(this.studio).create({
       title: input.title === undefined ? goal.title : text(input.title, "title", 200), description: goal.description,
       assignedAgent: agentId, parentTaskId: input.parentTaskId === null || input.parentTaskId === undefined ? null : text(input.parentTaskId, "parentTaskId", 200),
-      workspaceId: defaults.workspaceId, projectIds: [goal.projectId ?? defaults.projectId], metadata: { organizationGoalId: goal.id },
+      projectId: goal.projectId ?? defaults.projectId, workspaceId: null, metadata: { organizationGoalId: goal.id },
     }, principal);
     return task;
   }
@@ -140,7 +140,7 @@ export class OrganizationService {
       const task = await new TaskService(this.studio).create({
         title: `Strategy proposal: ${title}`.slice(0, 200),
         description: `Propose a concrete strategy for this organization goal. Include measurable outcomes, a delegation plan, and risks. Brief: ${brief}`.slice(0, 2000),
-        assignedAgent: ceo.agentId, workspaceId: defaults.workspaceId, projectIds: [goal.projectId ?? defaults.projectId],
+        assignedAgent: ceo.agentId, projectId: goal.projectId ?? defaults.projectId, workspaceId: null,
         metadata: { organizationGoalId: goal.id, strategyProposal: true },
       }, principal);
       return { goal, task };

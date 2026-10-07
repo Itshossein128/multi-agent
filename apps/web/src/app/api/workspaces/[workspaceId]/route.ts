@@ -22,7 +22,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ works
   if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { workspaceId } = await context.params;
   try {
-    const body = await request.json() as { name?: string; description?: string; settings?: Record<string, unknown>; action?: string };
+    const body = await request.json() as {
+      name?: string;
+      description?: string;
+      settings?: Record<string, unknown>;
+      settingsOverrides?: Record<string, unknown>;
+      clearOverrideKeys?: string[];
+      action?: string;
+    };
     if (body.action === "retire") return NextResponse.json(await retireWorkspace(workspaceId, principal));
     return NextResponse.json(await patchWorkspace(workspaceId, body, principal));
   } catch (error) {

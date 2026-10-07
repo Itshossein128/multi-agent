@@ -70,7 +70,7 @@ describe("cost budgets", () => {
     await studio.saveTask({
       id: "task-project-budget", title: "Project task", description: "", priority: "medium", status: "todo",
       assignedAgent: null, createdAt: nowIso(), dependencies: [], output: null, retryCount: 0, paused: false,
-      workspaceId: "workspace-a", projectIds: ["project-a"],
+      workspaceId: null, projectId: "project-a",
     }, { userId: "alice", tenantId: "tenant" });
     const runs = new InMemoryRunStore();
     runs.create({ id: "run-project-budget", workflowId: "workflow", taskId: "task-project-budget", status: "running", startedAt: nowIso(), metadata: {}, ownerId: "alice", tenantId: "tenant" });

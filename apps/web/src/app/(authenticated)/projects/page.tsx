@@ -41,16 +41,15 @@ export default function ProjectsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function createProject(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
+  async function createProjectRequest(explicitName?: string) {
     setBusy(true);
     setError(null);
     try {
+      const value = (explicitName ?? name).trim();
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify(value ? { name: value } : {}),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Create failed");
@@ -61,6 +60,11 @@ export default function ProjectsPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function createProject(e: React.FormEvent) {
+    e.preventDefault();
+    await createProjectRequest();
   }
 
   async function retire(id: string) {
@@ -113,15 +117,15 @@ export default function ProjectsPage() {
 
       <form onSubmit={createProject} className="flex flex-wrap gap-2 items-end">
         <label className="flex-1 min-w-[12rem] space-y-1 text-xs text-zinc-400">
-          New project name
+          New project name (optional)
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
-            placeholder="e.g. Platform rollout"
+            placeholder="Leave blank for Untitled project"
           />
         </label>
-        <Button type="submit" disabled={busy || !name.trim()} size="sm">Create</Button>
+        <Button type="submit" disabled={busy} size="sm">Create</Button>
       </form>
 
       {error && (
@@ -133,9 +137,19 @@ export default function ProjectsPage() {
       {loading && <p className="text-sm text-zinc-400">Loading projects…</p>}
 
       {!loading && loaded && items.length === 0 && (
-        <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-8 text-center space-y-2">
-          <p className="text-sm text-zinc-300">No active projects yet.</p>
-          <p className="text-xs text-zinc-500">Create one above to organize tasks across workspaces.</p>
+        <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-8 text-center space-y-3">
+          <p className="text-sm text-zinc-300">No projects yet — create your first one to get started.</p>
+          <p className="text-xs text-zinc-500">
+            You can create a project here, or add one inline while creating a task.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" size="sm" disabled={busy} onClick={() => void createProjectRequest()}>
+              Create project
+            </Button>
+            <Link href="/tasks" className="inline-flex">
+              <Button type="button" variant="ghost" size="sm">Create a task</Button>
+            </Link>
+          </div>
         </div>
       )}
 

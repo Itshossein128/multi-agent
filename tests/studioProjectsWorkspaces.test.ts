@@ -36,6 +36,25 @@ async function json<T = any>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function createProjectWithRepo(
+  app: ReturnType<typeof createStudioRouter>,
+  principal: AuthenticatedPrincipal,
+  name: string,
+) {
+  const project = await json(await app.fetch(req("/projects", "POST", { name }, principal)));
+  const repo = await json(
+    await app.fetch(
+      req(
+        `/projects/${project.id}/repositories`,
+        "POST",
+        { name: "app", source: "https://example.com/app.git", defaultBranch: "main" },
+        principal,
+      ),
+    ),
+  );
+  return { project, repo };
+}
+
 describe("Studio projects & workspaces", () => {
   let store: InMemoryStudioStore;
   let app: ReturnType<typeof createStudioRouter>;
@@ -59,26 +78,44 @@ describe("Studio projects & workspaces", () => {
     });
   });
 
-  it("lists default project/workspace and supports create, rename, retire", async () => {
+  it("starts empty and supports create, rename, retire", async () => {
     const listProjects = await app.fetch(req("/projects", "GET", undefined, alice));
     expect(listProjects.status).toBe(200);
-    const projects = await json(listProjects);
-    expect(projects.length).toBeGreaterThanOrEqual(1);
+    expect(await json(listProjects)).toEqual([]);
 
     const listWorkspaces = await app.fetch(req("/workspaces", "GET", undefined, alice));
     expect(listWorkspaces.status).toBe(200);
-    const workspaces = await json(listWorkspaces);
-    expect(workspaces.length).toBeGreaterThanOrEqual(1);
+    expect(await json(listWorkspaces)).toEqual([]);
 
     const createdProject = await json(await app.fetch(req("/projects", "POST", { name: "Alpha" }, alice)));
     expect(createdProject.name).toBe("Alpha");
+    expect(createdProject.nameSource).toBe("manual");
+    expect(createdProject.usesDefaultWorkspace).toBe(true);
+
     const renamed = await json(
       await app.fetch(req(`/projects/${createdProject.id}`, "PATCH", { name: "Alpha Renamed" }, alice)),
     );
     expect(renamed.name).toBe("Alpha Renamed");
 
-    const createdWorkspace = await json(await app.fetch(req("/workspaces", "POST", { name: "Lab" }, alice)));
+    const repo = await json(
+      await app.fetch(
+        req(
+          `/projects/${createdProject.id}/repositories`,
+          "POST",
+          { name: "app", source: "https://example.com/app.git", defaultBranch: "main" },
+          alice,
+        ),
+      ),
+    );
+    const createdWorkspace = await json(
+      await app.fetch(
+        req("/workspaces", "POST", { name: "Lab", projectId: createdProject.id }, alice),
+      ),
+    );
     expect(createdWorkspace.name).toBe("Lab");
+    expect(createdWorkspace.projectId).toBe(createdProject.id);
+    expect(repo.id).toBeDefined();
+
     const renamedWs = await json(
       await app.fetch(req(`/workspaces/${createdWorkspace.id}`, "PATCH", { name: "Lab 2" }, alice)),
     );
@@ -93,101 +130,107 @@ describe("Studio projects & workspaces", () => {
     expect(activeWorkspaces.some((w: { id: string }) => w.id === createdWorkspace.id)).toBe(false);
   });
 
-  it("rejects task create without workspace/projects and blocks retired associations", async () => {
+  it("rejects task create without projectId and blocks retired associations", async () => {
     const missing = await app.fetch(req("/tasks", "POST", { title: "No links" }, alice));
     expect(missing.status).toBe(400);
     const missingBody = await json(missing);
-    expect(missingBody.error).toMatch(/workspaceId is required|At least one project/i);
+    expect(missingBody.error).toMatch(/projectId is required/i);
 
-    await app.fetch(req("/projects", "GET", undefined, alice));
     const project = await json(await app.fetch(req("/projects", "POST", { name: "P1" }, alice)));
-    const workspace = await json(await app.fetch(req("/workspaces", "POST", { name: "W1" }, alice)));
 
     const created = await app.fetch(
       req("/tasks", "POST", {
         title: "Linked",
-        workspaceId: workspace.id,
-        projectIds: [project.id],
+        projectId: project.id,
+        workspaceId: null,
       }, alice),
     );
     expect(created.status).toBe(201);
+    const createdBody = await json(created);
+    expect(createdBody.projectId).toBe(project.id);
+    expect(createdBody.workspaceId).toBeNull();
 
     await app.fetch(req(`/projects/${project.id}/retire`, "POST", undefined, alice));
     const blockedProject = await app.fetch(
       req("/tasks", "POST", {
         title: "Onto retired project",
-        workspaceId: workspace.id,
-        projectIds: [project.id],
+        projectId: project.id,
       }, alice),
     );
     expect(blockedProject.status).toBe(400);
     expect((await json(blockedProject)).error).toMatch(/retired/i);
 
+    const { project: activeProject } = await createProjectWithRepo(app, alice, "Active");
+    const workspace = await json(
+      await app.fetch(
+        req("/workspaces", "POST", { name: "W1", projectId: activeProject.id }, alice),
+      ),
+    );
     await app.fetch(req(`/workspaces/${workspace.id}/retire`, "POST", undefined, alice));
-    const activeWs = await json(await app.fetch(req("/workspaces", "GET", undefined, alice)));
-    const activeProj = await json(await app.fetch(req("/projects", "GET", undefined, alice)));
     const blockedWorkspace = await app.fetch(
       req("/tasks", "POST", {
         title: "Onto retired workspace",
+        projectId: activeProject.id,
         workspaceId: workspace.id,
-        projectIds: [activeProj[0].id],
       }, alice),
     );
     expect(blockedWorkspace.status).toBe(400);
     expect((await json(blockedWorkspace)).error).toMatch(/retired/i);
-    expect(activeWs.some((w: { id: string }) => w.id === workspace.id)).toBe(false);
   });
 
-  it("allows task update to replace retired project associations with an active project", async () => {
+  it("allows task update to replace a retired project association with an active project", async () => {
     const retired = await json(await app.fetch(req("/projects", "POST", { name: "Soon Retired" }, alice)));
     const active = await json(await app.fetch(req("/projects", "POST", { name: "Still Active" }, alice)));
-    const workspace = await json(await app.fetch(req("/workspaces", "POST", { name: "Assoc WS" }, alice)));
 
     const created = await json(
       await app.fetch(
         req("/tasks", "POST", {
           title: "Needs reassignment",
-          workspaceId: workspace.id,
-          projectIds: [retired.id],
+          projectId: retired.id,
+          workspaceId: null,
         }, alice),
       ),
     );
-    expect(created.projectIds).toEqual([retired.id]);
+    expect(created.projectId).toBe(retired.id);
+    expect(created.workspaceId).toBeNull();
 
     await app.fetch(req(`/projects/${retired.id}/retire`, "POST", undefined, alice));
 
     const blocked = await app.fetch(
       req(`/tasks/${created.id}`, "PATCH", {
         title: "Still on retired only",
-        projectIds: [retired.id],
+        projectId: retired.id,
       }, alice),
     );
     expect(blocked.status).toBe(400);
-    expect((await json(blocked)).error).toMatch(/retired|active project/i);
+    expect((await json(blocked)).error).toMatch(/retired/i);
 
     const replaced = await app.fetch(
       req(`/tasks/${created.id}`, "PATCH", {
         title: "Reassigned",
-        workspaceId: workspace.id,
-        projectIds: [retired.id, active.id],
+        projectId: active.id,
+        workspaceId: null,
       }, alice),
     );
     expect(replaced.status).toBe(200);
     const body = await json(replaced);
     expect(body.title).toBe("Reassigned");
-    expect(body.projectIds).toEqual([active.id]);
-    expect(body.workspaceId).toBe(workspace.id);
+    expect(body.projectId).toBe(active.id);
+    expect(body.workspaceId).toBeNull();
   });
 
   it("returns project and workspace dashboards with related entities", async () => {
-    await app.fetch(req("/projects", "GET", undefined, alice));
-    const project = await json(await app.fetch(req("/projects", "POST", { name: "Dash Project" }, alice)));
-    const workspace = await json(await app.fetch(req("/workspaces", "POST", { name: "Dash Workspace" }, alice)));
+    const { project } = await createProjectWithRepo(app, alice, "Dash Project");
+    const workspace = await json(
+      await app.fetch(
+        req("/workspaces", "POST", { name: "Dash Workspace", projectId: project.id }, alice),
+      ),
+    );
     await app.fetch(
       req("/tasks", "POST", {
         title: "Dash Task",
+        projectId: project.id,
         workspaceId: workspace.id,
-        projectIds: [project.id],
       }, alice),
     );
 
@@ -205,8 +248,12 @@ describe("Studio projects & workspaces", () => {
   });
 
   it("enforces tenant isolation for projects and workspaces", async () => {
-    const project = await json(await app.fetch(req("/projects", "POST", { name: "Secret" }, alice)));
-    const workspace = await json(await app.fetch(req("/workspaces", "POST", { name: "Secret WS" }, alice)));
+    const { project } = await createProjectWithRepo(app, alice, "Secret");
+    const workspace = await json(
+      await app.fetch(
+        req("/workspaces", "POST", { name: "Secret WS", projectId: project.id }, alice),
+      ),
+    );
 
     const eveProjects = await json(await app.fetch(req("/projects", "GET", undefined, eve)));
     expect(eveProjects.some((p: { id: string }) => p.id === project.id)).toBe(false);

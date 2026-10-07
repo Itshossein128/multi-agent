@@ -54,7 +54,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
     const task: StudioTask = {
       id: "task-100",
       workspaceId: "ws-1",
-      projectIds: ["proj-1"],
+      projectId: "proj-1",
       title: "Write documentation",
       description: "Document feature 005",
       priority: "medium",
@@ -161,7 +161,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
         {
           id: "task-test",
           workspaceId: "ws-1",
-          projectIds: ["p-1"],
+          projectId: "p-1",
           title: "Test Task",
           description: "",
           priority: "medium",
@@ -275,7 +275,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
         {
           id: "task-assigned-to-a",
           workspaceId: "ws-1",
-          projectIds: ["p-1"],
+          projectId: "p-1",
           title: "Assigned Task",
           description: "",
           priority: "medium",
@@ -329,7 +329,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
         {
           id: "task-appr",
           workspaceId: "ws-1",
-          projectIds: ["p-1"],
+          projectId: "p-1",
           title: "Approval Task",
           description: "",
           priority: "high",

@@ -19,6 +19,8 @@ import { registerWorkspaceEntityRoutes } from "./studio/workspaceEntityRoutes";
 import { registerTaskCommentRoutes } from "./studio/taskCommentRoutes";
 import { registerRoutineRoutes } from "./studio/routineRoutes";
 import { registerWebhookTriggerRoutes } from "./studio/webhookTriggerRoutes";
+import { OrganizationProfileService } from "./studio/organizationProfileService";
+import { registerOrganizationProfileRoutes } from "./studio/organizationProfileRoutes";
 import { InMemoryOrganizationStore, type OrganizationStore } from "../organization/organizationStore";
 import { OrganizationService } from "../organization/organizationService";
 import { registerOrganizationRoutes } from "../organization/organizationRoutes";
@@ -43,6 +45,7 @@ export function createStudioRouter(
   const workspace = new WorkspaceService(store);
   const projects = new ProjectService(store);
   const workspaceEntities = new WorkspaceEntityService(store);
+  const organizationProfiles = new OrganizationProfileService(store);
   app.use("/*", requirePrincipal(resolvePrincipal));
   app.onError(respondWithApiError);
 
@@ -54,6 +57,7 @@ export function createStudioRouter(
   registerWorkspaceRoutes(app, workspace);
   registerProjectRoutes(app, projects);
   registerWorkspaceEntityRoutes(app, workspaceEntities);
+  registerOrganizationProfileRoutes(app, organizationProfiles);
   registerTaskCommentRoutes(app, store);
   registerRoutineRoutes(app, store);
   registerWebhookTriggerRoutes(app, store);

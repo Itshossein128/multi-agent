@@ -22,10 +22,13 @@ export interface TaskDraft {
   setWorkflowId: (value: string) => void;
   parentTaskId: string;
   setParentTaskId: (value: string) => void;
+  projectId: string;
+  setProjectId: (value: string) => void;
   workspaceId: string;
   setWorkspaceId: (value: string) => void;
-  projectIds: string[];
-  setProjectIds: (value: string[]) => void;
+  /** When true, workspace is optional (default-workspace project). */
+  workspaceRequired: boolean;
+  setWorkspaceRequired: (value: boolean) => void;
   dependencies: string[];
   addDependency: (id: string) => void;
   removeDependency: (id: string) => void;
@@ -41,8 +44,9 @@ export function useTaskDraft(task: Task): TaskDraft {
   const [assignedAgent, setAssignedAgent] = useState(task.assignedAgent ?? "");
   const [workflowId, setWorkflowId] = useState(task.workflowId ?? "");
   const [parentTaskId, setParentTaskId] = useState(task.parentTaskId ?? "");
+  const [projectId, setProjectId] = useState(task.projectId ?? "");
   const [workspaceId, setWorkspaceId] = useState(task.workspaceId ?? "");
-  const [projectIds, setProjectIds] = useState<string[]>(task.projectIds ?? []);
+  const [workspaceRequired, setWorkspaceRequired] = useState(Boolean(task.workspaceId));
   const [dependencies, setDependencies] = useState<string[]>(task.dependencies ?? []);
 
   const addDependency = (id: string) => {
@@ -54,11 +58,12 @@ export function useTaskDraft(task: Task): TaskDraft {
     setDependencies((prev) => prev.filter((depId) => depId !== id));
   };
 
-  const associationsValid = Boolean(workspaceId.trim()) && projectIds.length > 0;
-  const associationsError = !workspaceId.trim()
-    ? "Select a workspace before saving."
-    : projectIds.length === 0
-      ? "Select at least one project before saving."
+  const associationsValid =
+    Boolean(projectId.trim()) && (!workspaceRequired || Boolean(workspaceId.trim()));
+  const associationsError = !projectId.trim()
+    ? "Select a project before saving."
+    : workspaceRequired && !workspaceId.trim()
+      ? "Select a workspace before saving."
       : null;
 
   /** Payload for the update mutation; execution output stays read-only. */
@@ -72,10 +77,8 @@ export function useTaskDraft(task: Task): TaskDraft {
     workflowId: workflowId || null,
     parentTaskId: parentTaskId || null,
     dependencies,
-    // Always include associations so clearing them is rejected server-side
-    // instead of silently preserving prior links.
-    workspaceId,
-    projectIds,
+    projectId,
+    workspaceId: workspaceId.trim() ? workspaceId : null,
   });
 
   return {
@@ -91,10 +94,12 @@ export function useTaskDraft(task: Task): TaskDraft {
     setWorkflowId,
     parentTaskId,
     setParentTaskId,
+    projectId,
+    setProjectId,
     workspaceId,
     setWorkspaceId,
-    projectIds,
-    setProjectIds,
+    workspaceRequired,
+    setWorkspaceRequired,
     dependencies,
     addDependency,
     removeDependency,

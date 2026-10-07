@@ -1,0 +1,723 @@
+openapi: 3.0.3
+info:
+  title: Studio Organization → Project → Workspace Hierarchy API
+  version: "1.0.0"
+  description: |
+    Hierarchy APIs under `/studio`. Supersedes task association rules from
+    `001-project-workspace-dashboards` (single project per task; optional workspace).
+    Does not replace package import/export at `/studio/workspace` or agent goals at
+    `/studio/organization`.
+servers:
+  - url: /studio
+security:
+  - principalAssertion: []
+paths:
+  /organizations/current:
+    get:
+      summary: Get organization profile for the current tenant
+      responses:
+        "200":
+          description: Organization profile exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationProfile"
+        "404":
+          description: No organization yet — client must show setup wizard
+  /organizations:
+    post:
+      summary: Create organization profile (first-run wizard)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationWrite"
+      responses:
+        "201":
+          description: Created; caller is owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Organization already exists for this tenant
+  /projects:
+    get:
+      summary: List projects for the current organization/tenant
+      parameters:
+        - $ref: "#/components/parameters/StatusFilter"
+      responses:
+        "200":
+          description: Project list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StudioProject"
+    post:
+      summary: Create a project (name optional → placeholder)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectWrite"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /projects/{id}:
+    get:
+      summary: Get project
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update project (manual rename sets nameSource=manual)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectPatch"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{id}/retire:
+    post:
+      summary: Retire project (idempotent); blocks new tasks
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioProject"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{id}/dashboard:
+    get:
+      summary: Project dashboard (workspaces, repos, tasks, default-workspace flag)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDashboard"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{id}/repositories:
+    get:
+      summary: List repositories attached to the project
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectRepository"
+    post:
+      summary: Attach a repository to the project
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRepositoryWrite"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRepository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /projects/{id}/repositories/{repoId}:
+    delete:
+      summary: Remove repository from project (may require confirmDiscardChanges)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: repoId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirmDiscardChanges:
+                  type: boolean
+                  description: Required true when any workspace has unsaved changes for this repo
+      responses:
+        "204":
+          description: Removed
+        "409":
+          description: Unsaved changes present; confirmation required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /projects/{projectId}/workspaces:
+    get:
+      summary: List explicit workspaces for a project (empty when using default workspace)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/StatusFilter"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StudioWorkspace"
+    post:
+      summary: |
+        Create an explicit workspace under the project. If this is the first
+        explicit workspace, materializes "Default" from the default workspace first.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceWrite"
+      responses:
+        "201":
+          description: Created workspace (Default may also have been created)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceCreateResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspaces/{id}:
+    get:
+      summary: Get workspace with effective settings and override markers
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioWorkspace"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update workspace; patch settingsOverrides; manage inherit/clear
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspacePatch"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioWorkspace"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspaces/{id}/retire:
+    post:
+      summary: Retire workspace; blocked if last active with assigned tasks
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioWorkspace"
+        "409":
+          description: Cannot retire last active workspace while tasks remain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspaces/{id}/dashboard:
+    get:
+      summary: Workspace dashboard (repos, branches, dirty files summary, tasks)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDashboard"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /workspaces/{id}/repositories:
+    put:
+      summary: Replace workspace repository membership and branches
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceRepositoriesPut"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkspaceRepositoryMembership"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /tasks:
+    post:
+      summary: Create task (requires projectId; workspaceId rules per project state)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCreate"
+      responses:
+        "201":
+          description: Created (may derive project/workspace name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudioTask"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+components:
+  securitySchemes:
+    principalAssertion:
+      type: apiKey
+      in: header
+      name: x-studio-principal
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [active, retired, all]
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    NotFound:
+      description: Not found in tenant
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+  schemas:
+    ErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    OrganizationProfile:
+      type: object
+      required: [id, name, description, config, ownerId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        ownerId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    OrganizationWrite:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+    NameSource:
+      type: string
+      enum: [placeholder, derived, manual]
+    StudioProject:
+      type: object
+      required:
+        [id, tenantId, name, nameSource, description, status, settings, createdAt, updatedAt, ownerId]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+          maxLength: 120
+        nameSource:
+          $ref: "#/components/schemas/NameSource"
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, retired]
+        settings:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        ownerId:
+          type: string
+        usesDefaultWorkspace:
+          type: boolean
+          description: True when project has no active explicit workspaces
+    ProjectWrite:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          description: Omit or empty for placeholder name
+        description:
+          type: string
+        settings:
+          type: object
+          additionalProperties: true
+    ProjectPatch:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        settings:
+          type: object
+          additionalProperties: true
+    ProjectRepository:
+      type: object
+      required: [id, tenantId, projectId, name, source, defaultBranch, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+        source:
+          type: string
+        defaultBranch:
+          type: string
+        status:
+          type: string
+          enum: [active, unavailable, removed]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ProjectRepositoryWrite:
+      type: object
+      required: [name, source, defaultBranch]
+      properties:
+        name:
+          type: string
+        source:
+          type: string
+        defaultBranch:
+          type: string
+    StudioWorkspace:
+      type: object
+      required:
+        [
+          id,
+          tenantId,
+          projectId,
+          name,
+          nameSource,
+          description,
+          status,
+          settingsOverrides,
+          effectiveSettings,
+          overriddenKeys,
+          createdAt,
+          updatedAt,
+          ownerId,
+        ]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+          maxLength: 120
+        nameSource:
+          $ref: "#/components/schemas/NameSource"
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, retired]
+        settingsOverrides:
+          type: object
+          additionalProperties: true
+        effectiveSettings:
+          type: object
+          additionalProperties: true
+        overriddenKeys:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        ownerId:
+          type: string
+    WorkspaceWrite:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        settingsOverrides:
+          type: object
+          additionalProperties: true
+        repositories:
+          type: array
+          description: Optional initial membership; default = all project repos
+          items:
+            type: object
+            required: [projectRepositoryId]
+            properties:
+              projectRepositoryId:
+                type: string
+              branch:
+                type: string
+    WorkspaceCreateResult:
+      type: object
+      required: [workspace]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/StudioWorkspace"
+        materializedDefault:
+          allOf:
+            - $ref: "#/components/schemas/StudioWorkspace"
+          description: Present when Default was created from the implicit default workspace
+    WorkspacePatch:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        settingsOverrides:
+          type: object
+          additionalProperties: true
+          description: Merge into overrides
+        clearOverrideKeys:
+          type: array
+          items:
+            type: string
+          description: Keys to remove from overrides (resume project inheritance)
+    WorkspaceRepositoryMembership:
+      type: object
+      required: [workspaceId, projectRepositoryId, branch]
+      properties:
+        workspaceId:
+          type: string
+        projectRepositoryId:
+          type: string
+        branch:
+          type: string
+        availability:
+          type: string
+          enum: [ready, unavailable, branch_missing]
+        hasUncommittedChanges:
+          type: boolean
+    WorkspaceRepositoriesPut:
+      type: object
+      required: [repositories]
+      properties:
+        repositories:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [projectRepositoryId]
+            properties:
+              projectRepositoryId:
+                type: string
+              branch:
+                type: string
+    ProjectDashboard:
+      type: object
+      required: [project, usesDefaultWorkspace, workspaces, repositories, tasks]
+      properties:
+        project:
+          $ref: "#/components/schemas/StudioProject"
+        usesDefaultWorkspace:
+          type: boolean
+        workspaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioWorkspace"
+        repositories:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectRepository"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioTask"
+    WorkspaceDashboard:
+      type: object
+      required: [workspace, project, repositories, tasks]
+      properties:
+        workspace:
+          $ref: "#/components/schemas/StudioWorkspace"
+        project:
+          $ref: "#/components/schemas/StudioProject"
+        repositories:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceRepositoryMembership"
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/StudioTask"
+    StudioTask:
+      type: object
+      required: [id, tenantId, title, projectId]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        title:
+          type: string
+        projectId:
+          type: string
+        workspaceId:
+          type: string
+          nullable: true
+          description: Null when using the project default workspace
+    TaskCreate:
+      type: object
+      required: [title, projectId]
+      properties:
+        title:
+          type: string
+        projectId:
+          type: string
+        workspaceId:
+          type: string
+          nullable: true
+        createProject:
+          type: object
+          description: Inline project create from task form
+          properties:
+            name:
+              type: string
+              maxLength: 120
+            description:
+              type: string

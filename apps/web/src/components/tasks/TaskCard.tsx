@@ -26,7 +26,7 @@ interface TaskCardProps {
   tasksById: Map<string, Task>;
   workflowName?: string;
   workspaceName?: string;
-  projectNames?: string[];
+  projectName?: string;
   isMutating: boolean;
   isDragging: boolean;
   onOpen: (task: Task) => void;
@@ -44,7 +44,7 @@ export function TaskCard({
   tasksById,
   workflowName,
   workspaceName,
-  projectNames,
+  projectName,
   isMutating,
   isDragging,
   onOpen,
@@ -128,21 +128,26 @@ export function TaskCard({
         <p className="text-xs text-zinc-500 leading-snug line-clamp-2">{task.description}</p>
       )}
 
-      {(workspaceName || (projectNames && projectNames.length > 0) || task.workspaceId || (task.projectIds && task.projectIds.length > 0)) && (
-        <div className="flex flex-wrap gap-1 text-[10px] text-zinc-400">
-          {(workspaceName || task.workspaceId) && (
-            <span className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem]" title={workspaceName ?? task.workspaceId}>
-              {workspaceName ?? task.workspaceId}
-            </span>
+      {(projectName || task.projectId || workspaceName || task.workspaceId) && (
+        <div className="flex flex-wrap gap-1 text-[10px] text-zinc-400" onClick={(e) => e.stopPropagation()}>
+          {(projectName || task.projectId) && (
+            <Link
+              href={`/projects/${encodeURIComponent(task.projectId)}`}
+              className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem] hover:border-indigo-500/60 hover:text-indigo-300"
+              title={projectName ?? task.projectId}
+            >
+              {projectName ?? task.projectId}
+            </Link>
           )}
-          {(projectNames && projectNames.length > 0
-            ? projectNames
-            : (task.projectIds ?? [])
-          ).slice(0, 3).map((label, index) => (
-            <span key={`${label}-${index}`} className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem]" title={label}>
-              {label}
-            </span>
-          ))}
+          {(workspaceName || task.workspaceId) && task.workspaceId && (
+            <Link
+              href={`/workspaces/${encodeURIComponent(task.workspaceId)}`}
+              className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem] hover:border-indigo-500/60 hover:text-indigo-300"
+              title={workspaceName ?? task.workspaceId}
+            >
+              {workspaceName ?? task.workspaceId}
+            </Link>
+          )}
         </div>
       )}
 

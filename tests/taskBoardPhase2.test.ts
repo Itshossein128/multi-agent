@@ -45,7 +45,7 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
   let app: ReturnType<typeof createStudioRouter>;
   let releaseAgentExecutions: Set<() => void>;
   let activeAgentExecutions: number;
-  let taskAssoc: { workspaceId: string; projectIds: string[] };
+  let taskAssoc: { workspaceId: string | null; projectId: string };
 
   const sampleAgent: AgentRecord = {
     ...createAgentRecord({ name: "Alpha Dev Agent" }),
@@ -71,7 +71,7 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       const record = body as Record<string, unknown>;
       payload = {
         workspaceId: taskAssoc.workspaceId,
-        projectIds: taskAssoc.projectIds,
+        projectId: taskAssoc.projectId,
         ...record,
       };
     }
@@ -136,10 +136,9 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       executor
     );
 
-    await app.fetch(req("/projects", "GET", undefined, alice));
-    const projects = await studioStore.listProjects(alice, "active");
-    const workspaces = await studioStore.listWorkspaces(alice, "active");
-    taskAssoc = { workspaceId: workspaces[0]!.id, projectIds: [projects[0]!.id] };
+    const projectRes = await app.fetch(req("/projects", "POST", { name: "Board Project" }, alice));
+    const project = await json(projectRes);
+    taskAssoc = { workspaceId: null, projectId: project.id };
   });
 
   afterEach(async () => {
@@ -194,12 +193,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
     });
 
     it("preserves backward compatibility with legacy single agent and legacy statuses", async () => {
-      // Ensure tenant defaults exist for direct store writes that bypass TaskService.
-      await app.fetch(req("/projects", "GET", undefined, alice));
       const projects = await studioStore.listProjects(alice, "active");
-      const workspaces = await studioStore.listWorkspaces(alice, "active");
       expect(projects.length).toBeGreaterThan(0);
-      expect(workspaces.length).toBeGreaterThan(0);
 
       const legacyTask: StudioTask = {
         id: "task-legacy-001",
@@ -213,8 +208,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
         retryCount: 0,
         paused: false,
         createdAt: "2026-09-01T00:00:00.000Z",
-        workspaceId: workspaces[0]!.id,
-        projectIds: [projects[0]!.id],
+        workspaceId: null,
+        projectId: projects[0]!.id,
       };
 
       await studioStore.saveTask(legacyTask, alice);
@@ -225,8 +220,8 @@ describe("Phase 2 Task Board — Comprehensive Production Specification", () => 
       expect(fetched.id).toBe("task-legacy-001");
       expect(fetched.assignedAgents).toEqual(["agent-alpha-1"]);
       expect(toCanonicalStatus(fetched.status)).toBe("backlog");
-      expect(fetched.workspaceId).toBe(workspaces[0]!.id);
-      expect(fetched.projectIds).toEqual([projects[0]!.id]);
+      expect(fetched.workspaceId).toBeNull();
+      expect(fetched.projectId).toBe(projects[0]!.id);
     });
 
     it("supports parentTaskId hierarchical relations", async () => {

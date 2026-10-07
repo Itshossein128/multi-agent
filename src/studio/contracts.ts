@@ -45,30 +45,92 @@ export type {
 
 export type StudioEntityStatus = "active" | "retired";
 
+/** Controls whether a project/workspace name may still be derived from its first task. */
+export type StudioNameSource = "placeholder" | "derived" | "manual";
+
+/** Tenant organization profile (id equals tenantId). Distinct from agent goals `/organization`. */
+export interface OrganizationProfile {
+  id: string;
+  name: string;
+  description: string;
+  config: Record<string, unknown>;
+  ownerId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** First-class project entity (distinct from memory namespace "project"). */
 export interface StudioProject {
   id: string;
   tenantId: string;
   name: string;
+  nameSource: StudioNameSource;
   description: string;
   status: StudioEntityStatus;
   settings: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
   ownerId: string;
+  /** Computed: true when the project has no active explicit workspaces. */
+  usesDefaultWorkspace?: boolean;
 }
 
 /** First-class workspace entity (distinct from StudioWorkspaceImport package). */
 export interface StudioWorkspace {
   id: string;
   tenantId: string;
+  projectId: string;
   name: string;
+  nameSource: StudioNameSource;
   description: string;
   status: StudioEntityStatus;
+  /** Legacy opaque settings blob; prefer settingsOverrides for hierarchy inheritance. */
   settings: Record<string, unknown>;
+  /** Sparse overrides of project.settings keys. */
+  settingsOverrides: Record<string, unknown>;
+  /** Effective settings after merging project settings ← overrides (may be filled by services). */
+  effectiveSettings: Record<string, unknown>;
+  overriddenKeys: string[];
   createdAt: string;
   updatedAt: string;
   ownerId: string;
+}
+
+export type ProjectRepositoryStatus = "active" | "unavailable" | "removed";
+
+export interface ProjectRepository {
+  id: string;
+  tenantId: string;
+  projectId: string;
+  name: string;
+  source: string;
+  defaultBranch: string;
+  status: ProjectRepositoryStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceRepositoryMembership {
+  workspaceId: string;
+  projectRepositoryId: string;
+  branch: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type WorkspaceRepoAvailability = "ready" | "unavailable" | "branch_missing";
+
+export interface WorkspaceRepositoryState {
+  tenantId: string;
+  projectId: string;
+  /** Null means the project's implicit default workspace. */
+  workspaceId: string | null;
+  projectRepositoryId: string;
+  branch: string;
+  storagePath: string;
+  hasUncommittedChanges: boolean;
+  availability: WorkspaceRepoAvailability;
+  updatedAt: string;
 }
 
 /** Task board record persisted by the Studio store (shared with the web task board model). */
@@ -95,10 +157,13 @@ export interface StudioTask {
   metadata?: Record<string, unknown>;
   ownerId?: string;
   tenantId?: string;
-  /** Exactly one workspace after association rules apply (filled by TaskService / migration). */
-  workspaceId?: string;
-  /** One or more project ids after association rules apply. */
-  projectIds?: string[];
+  /** Exactly one project (hierarchy FR-023). */
+  projectId: string;
+  /**
+   * Explicit workspace id, or null/undefined when the task uses the project's
+   * implicit default workspace.
+   */
+  workspaceId?: string | null;
 }
 
 export interface StudioWorkspaceImport {
@@ -146,10 +211,63 @@ export interface StudioStore {
   listProjects(principal?: StudioPrincipal, status?: StudioEntityStatusFilter): Promise<StudioProject[]>;
   getProject(id: string, principal?: StudioPrincipal): Promise<StudioProject | null>;
   saveProject(project: StudioProject, principal?: StudioPrincipal): Promise<StudioProject>;
+  /** Atomic claim: set name/nameSource=derived only when still placeholder. Returns true if claimed. */
+  claimPlaceholderProjectName(
+    projectId: string,
+    name: string,
+    principal?: StudioPrincipal,
+  ): Promise<boolean>;
 
   listWorkspaces(principal?: StudioPrincipal, status?: StudioEntityStatusFilter): Promise<StudioWorkspace[]>;
+  listWorkspacesByProject(
+    projectId: string,
+    principal?: StudioPrincipal,
+    status?: StudioEntityStatusFilter,
+  ): Promise<StudioWorkspace[]>;
   getWorkspace(id: string, principal?: StudioPrincipal): Promise<StudioWorkspace | null>;
   saveWorkspace(workspace: StudioWorkspace, principal?: StudioPrincipal): Promise<StudioWorkspace>;
+  /** Atomic claim: set name/nameSource=derived only when still placeholder. Returns true if claimed. */
+  claimPlaceholderWorkspaceName(
+    workspaceId: string,
+    name: string,
+    principal?: StudioPrincipal,
+  ): Promise<boolean>;
+
+  getOrganizationProfile(principal: StudioPrincipal): Promise<OrganizationProfile | null>;
+  createOrganizationProfile(
+    profile: OrganizationProfile,
+    principal: StudioPrincipal,
+  ): Promise<OrganizationProfile>;
+
+  listProjectRepositories(projectId: string, principal?: StudioPrincipal): Promise<ProjectRepository[]>;
+  getProjectRepository(id: string, principal?: StudioPrincipal): Promise<ProjectRepository | null>;
+  saveProjectRepository(repo: ProjectRepository, principal?: StudioPrincipal): Promise<ProjectRepository>;
+  deleteProjectRepository(id: string, principal?: StudioPrincipal): Promise<void>;
+
+  listWorkspaceRepositories(
+    workspaceId: string,
+    principal?: StudioPrincipal,
+  ): Promise<WorkspaceRepositoryMembership[]>;
+  replaceWorkspaceRepositories(
+    workspaceId: string,
+    memberships: WorkspaceRepositoryMembership[],
+    principal?: StudioPrincipal,
+  ): Promise<WorkspaceRepositoryMembership[]>;
+
+  listWorkspaceRepoStates(params: {
+    tenantId: string;
+    projectId: string;
+    workspaceId?: string | null;
+    projectRepositoryId?: string;
+  }): Promise<WorkspaceRepositoryState[]>;
+  saveWorkspaceRepoState(state: WorkspaceRepositoryState): Promise<WorkspaceRepositoryState>;
+  /** Rekey default-workspace (null) storage rows to an explicit workspace id. */
+  rekeyWorkspaceRepoStates(params: {
+    tenantId: string;
+    projectId: string;
+    fromWorkspaceId: string | null;
+    toWorkspaceId: string;
+  }): Promise<number>;
 
   /** Upsert entire workspace package (used by one-shot browser import). */
   importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal): Promise<void>;

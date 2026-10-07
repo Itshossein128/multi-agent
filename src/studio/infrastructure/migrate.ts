@@ -44,6 +44,26 @@ const LEGACY_SCHEMA_REQUIREMENTS: Record<string, LegacySchemaRequirements> = {
     studio_tasks: ["workspace_id"],
     studio_task_projects: ["tenant_id", "task_id", "project_id"],
   },
+  "017_project_workspace_hierarchy.sql": {
+    studio_organizations: ["id", "name", "description", "config", "owner_id", "created_at", "updated_at"],
+    studio_projects: ["name_source"],
+    studio_workspaces: ["project_id", "name_source", "settings_overrides"],
+    studio_tasks: ["project_id", "workspace_id"],
+    studio_project_repositories: ["id", "tenant_id", "project_id", "name", "source", "default_branch", "status", "created_at", "updated_at"],
+    studio_workspace_repositories: ["workspace_id", "project_repository_id", "branch", "created_at", "updated_at"],
+    studio_workspace_repo_states: [
+      "tenant_id",
+      "project_id",
+      "workspace_id",
+      "workspace_key",
+      "project_repository_id",
+      "branch",
+      "storage_path",
+      "has_uncommitted_changes",
+      "availability",
+      "updated_at",
+    ],
+  },
 };
 
 async function reconcileLegacySchema(client: { query(text: string, values?: any[]): Promise<{ rows: any[] }> }, migrationName: string): Promise<boolean> {
@@ -72,7 +92,7 @@ async function reconcileLegacySchema(client: { query(text: string, values?: any[
   if (!complete) {
     // Later migrations are intentionally idempotent and can finish a schema
     // that is still being created in this same transaction.
-    if (["004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql", "011_projects_workspaces.sql"].includes(migrationName)) return false;
+    if (["004_ownership.sql", "005_users.sql", "006_task_domain.sql", "007_run_tool_snapshot.sql", "011_projects_workspaces.sql", "017_project_workspace_hierarchy.sql"].includes(migrationName)) return false;
     throw new Error(`Studio migration ${migrationName} found an existing but incomplete schema; inspect it and create a reviewed migration before retrying`);
   }
   return true;
@@ -98,6 +118,7 @@ export async function runStudioMigrations(pool: PgPool, options: { directory?: s
     "014_organization_goals.sql",
     "015_cost_budgets.sql",
     "016_run_execution_leases.sql",
+    "017_project_workspace_hierarchy.sql",
   ];
   const migrations = await Promise.all(names.map(async (name) => {
     const sql = await readFile(resolve(directory, name), "utf8");

@@ -228,8 +228,8 @@ export class DashboardService {
         updatedAt: nowIso(),
         ownerId: principal.userId,
         tenantId: principal.tenantId,
-        workspaceId: defaults.workspaceId,
-        projectIds: [defaults.projectId],
+        projectId: defaults.projectId,
+        workspaceId: null,
       }, principal);
     }
     return { success: true, id };

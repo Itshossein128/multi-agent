@@ -111,7 +111,7 @@ describe("clarification response end-to-end", () => {
   let studioApp: ReturnType<typeof createStudioRouter>;
   let runsApp: ReturnType<typeof createRunsRouter>["app"];
   let executor: RunExecutor;
-  let taskAssoc: { workspaceId: string; projectIds: string[] };
+  let taskAssoc: { workspaceId: string | null; projectId: string };
 
   const sampleAgent: AgentRecord = {
     ...createAgentRecord({ name: "Alpha Dev Agent" }),
@@ -153,10 +153,9 @@ describe("clarification response end-to-end", () => {
     runsApp = createRunsRouter(executor, async () => null, studioStore, resolvePrincipal).app;
 
     await studioStore.saveAgent(sampleAgent, alice);
-    await studioApp.fetch(studioReq("/projects", "GET", undefined, alice));
-    const projects = await studioStore.listProjects(alice, "active");
-    const workspaces = await studioStore.listWorkspaces(alice, "active");
-    taskAssoc = { workspaceId: workspaces[0]!.id, projectIds: [projects[0]!.id] };
+    const projectRes = await studioApp.fetch(studioReq("/projects", "POST", { name: "Clarify Project" }, alice));
+    const project = await projectRes.json() as { id: string };
+    taskAssoc = { workspaceId: null, projectId: project.id };
   });
 
   function studioReq(path: string, method = "GET", body?: unknown, principal: AuthenticatedPrincipal = alice) {

@@ -1,55 +1,36 @@
-import { nowIso, uid } from "@multi-agent/types";
 import type { RequestPrincipal } from "../../auth/principal";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 
-export interface TenantDefaults {
-  workspaceId: string;
+export interface TenantProjectDefault {
   projectId: string;
 }
 
-/** Ensure the tenant has at least one active workspace and project; return their ids. */
+/**
+ * Resolve an existing active project for the tenant without creating peer
+ * "Default Project" / "Default Workspace" entities (hierarchy 006).
+ * Returns null when the tenant has no active projects yet.
+ */
+export async function findActiveTenantProjectId(
+  store: StudioStore,
+  principal: RequestPrincipal,
+): Promise<string | null> {
+  const activeProjects = await store.listProjects(principal, "active");
+  return activeProjects[0]?.id ?? null;
+}
+
+/**
+ * @deprecated Prefer findActiveTenantProjectId. Kept as a thin wrapper for
+ * call sites that previously ensured peer defaults; no longer creates entities.
+ */
 export async function ensureTenantProjectWorkspaceDefaults(
   store: StudioStore,
   principal: RequestPrincipal,
-): Promise<TenantDefaults> {
-  const [activeWorkspaces, activeProjects] = await Promise.all([
-    store.listWorkspaces(principal, "active"),
-    store.listProjects(principal, "active"),
-  ]);
-
-  let workspaceId = activeWorkspaces[0]?.id;
-  if (!workspaceId) {
-    const stamp = nowIso();
-    const created = await store.saveWorkspace({
-      id: uid("workspace"),
-      tenantId: principal.tenantId,
-      name: "Default Workspace",
-      description: "",
-      status: "active",
-      settings: {},
-      createdAt: stamp,
-      updatedAt: stamp,
-      ownerId: principal.userId,
-    }, principal);
-    workspaceId = created.id;
-  }
-
-  let projectId = activeProjects[0]?.id;
+): Promise<TenantProjectDefault> {
+  const projectId = await findActiveTenantProjectId(store, principal);
   if (!projectId) {
-    const stamp = nowIso();
-    const created = await store.saveProject({
-      id: uid("project"),
-      tenantId: principal.tenantId,
-      name: "Default Project",
-      description: "",
-      status: "active",
-      settings: {},
-      createdAt: stamp,
-      updatedAt: stamp,
-      ownerId: principal.userId,
-    }, principal);
-    projectId = created.id;
+    throw new Error(
+      "No active project in this organization; create a project before continuing",
+    );
   }
-
-  return { workspaceId, projectId };
+  return { projectId };
 }

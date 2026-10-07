@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BoardAgent, BoardWorkflow, Task, TaskPriority, TASK_PRIORITIES, toCanonicalStatus } from "@/lib/taskStatus";
 
@@ -7,9 +8,16 @@ const labelClass = "text-[11px] font-semibold uppercase tracking-wider text-zinc
 const selectClass =
   "w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-500";
 
-interface EntityOption {
+interface ProjectOption {
   id: string;
   name: string;
+  usesDefaultWorkspace?: boolean;
+}
+
+interface WorkspaceOption {
+  id: string;
+  name: string;
+  projectId: string;
 }
 
 interface TaskFieldsProps {
@@ -29,46 +37,55 @@ interface TaskFieldsProps {
     setParentTaskId: (value: string) => void;
     description: string;
     setDescription: (value: string) => void;
+    projectId: string;
+    setProjectId: (value: string) => void;
     workspaceId: string;
     setWorkspaceId: (value: string) => void;
-    projectIds: string[];
-    setProjectIds: (value: string[]) => void;
+    workspaceRequired: boolean;
+    setWorkspaceRequired: (value: boolean) => void;
   };
 }
 
 /**
  * Assignment and description fields: priority, agent, workflow, parent task,
- * workspace/projects, description, and the read-only execution output.
+ * project/workspace, description, and the read-only execution output.
  */
 export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }: TaskFieldsProps) {
   const canonical = toCanonicalStatus(task.status);
   const isTerminal = canonical === "completed" || canonical === "failed" || canonical === "cancelled";
-  const [workspaces, setWorkspaces] = useState<EntityOption[]>([]);
-  const [projects, setProjects] = useState<EntityOption[]>([]);
-  const [retiredProjects, setRetiredProjects] = useState<EntityOption[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [retiredProjects, setRetiredProjects] = useState<ProjectOption[]>([]);
+  const [projectWorkspaces, setProjectWorkspaces] = useState<WorkspaceOption[]>([]);
   const [optionsError, setOptionsError] = useState<string | null>(null);
+
+  const selectedProject =
+    projects.find((p) => p.id === draft.projectId) ??
+    retiredProjects.find((p) => p.id === draft.projectId);
+  const usesDefaultWorkspace =
+    Boolean(selectedProject?.usesDefaultWorkspace) ||
+    (Boolean(draft.projectId) && projectWorkspaces.length === 0);
+  const workspaceRequired = Boolean(draft.projectId) && !usesDefaultWorkspace;
+
+  const { setWorkspaceRequired, setWorkspaceId, projectId } = draft;
+
+  useEffect(() => {
+    setWorkspaceRequired(workspaceRequired);
+  }, [workspaceRequired, setWorkspaceRequired]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [wsRes, projRes, retiredRes] = await Promise.all([
-          fetch("/api/workspaces"),
+        const [projRes, retiredRes] = await Promise.all([
           fetch("/api/projects"),
           fetch("/api/projects?status=retired"),
         ]);
-        const [wsBody, projBody, retiredBody] = await Promise.all([
-          wsRes.json(),
-          projRes.json(),
-          retiredRes.json(),
-        ]);
-        if (!wsRes.ok) throw new Error(wsBody.error ?? "Failed to load workspaces");
+        const [projBody, retiredBody] = await Promise.all([projRes.json(), retiredRes.json()]);
         if (!projRes.ok) throw new Error(projBody.error ?? "Failed to load projects");
         if (!retiredRes.ok) throw new Error(retiredBody.error ?? "Failed to load retired projects");
         if (cancelled) return;
-        setWorkspaces(wsBody as EntityOption[]);
-        setProjects(projBody as EntityOption[]);
-        setRetiredProjects(retiredBody as EntityOption[]);
+        setProjects(projBody as ProjectOption[]);
+        setRetiredProjects(retiredBody as ProjectOption[]);
       } catch (err) {
         if (!cancelled) setOptionsError(err instanceof Error ? err.message : "Failed to load options");
       }
@@ -76,16 +93,40 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
     return () => { cancelled = true; };
   }, []);
 
-  const toggleProject = (id: string) => {
-    draft.setProjectIds(
-      draft.projectIds.includes(id)
-        ? draft.projectIds.filter((item) => item !== id)
-        : [...draft.projectIds, id],
-    );
-  };
+  useEffect(() => {
+    if (!projectId) {
+      setProjectWorkspaces([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workspaces`);
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "Failed to load workspaces");
+        if (cancelled) return;
+        const list = (body as WorkspaceOption[]) ?? [];
+        setProjectWorkspaces(list);
+        const project =
+          projects.find((p) => p.id === projectId) ??
+          retiredProjects.find((p) => p.id === projectId);
+        if (project?.usesDefaultWorkspace || list.length === 0) {
+          setWorkspaceId("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setProjectWorkspaces([]);
+          setOptionsError(err instanceof Error ? err.message : "Failed to load workspaces");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, projects, retiredProjects, setWorkspaceId]);
 
-  const stuckProjectIds = draft.projectIds.filter((id) => !projects.some((project) => project.id === id));
-  const retiredNameById = new Map(retiredProjects.map((project) => [project.id, project.name]));
+  const projectMissing =
+    Boolean(draft.projectId) &&
+    !projects.some((p) => p.id === draft.projectId) &&
+    !retiredProjects.some((p) => p.id === draft.projectId);
 
   return (
     <>
@@ -158,7 +199,46 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-1.5">
+        <label className={labelClass}>Project *</label>
+        <select
+          value={draft.projectId}
+          onChange={(e) => draft.setProjectId(e.target.value)}
+          disabled={isMutating}
+          className={selectClass}
+          required
+        >
+          <option value="">Select project</option>
+          {projectMissing && (
+            <option value={draft.projectId}>{draft.projectId} (current)</option>
+          )}
+          {retiredProjects
+            .filter((p) => p.id === draft.projectId || !projects.some((a) => a.id === p.id))
+            .filter((p) => p.id === draft.projectId)
+            .map((p) => (
+              <option key={`retired-${p.id}`} value={p.id}>
+                {p.name} (retired)
+              </option>
+            ))}
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>{project.name}</option>
+          ))}
+        </select>
+        <p className="text-[11px] text-zinc-500 pt-1">
+          To create a new project, use New Task or the Projects page (projects are only created on save).
+        </p>
+        {draft.projectId && (
+          <Link
+            href={`/projects/${encodeURIComponent(draft.projectId)}`}
+            className="text-[11px] text-indigo-300 hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Open project →
+          </Link>
+        )}
+      </div>
+
+      {workspaceRequired && (
         <div className="space-y-1.5">
           <label className={labelClass}>Workspace *</label>
           <select
@@ -169,52 +249,27 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
             required
           >
             <option value="">Select workspace</option>
-            {workspaces.map((ws) => (
+            {projectWorkspaces.map((ws) => (
               <option key={ws.id} value={ws.id}>{ws.name}</option>
             ))}
-            {draft.workspaceId && !workspaces.some((ws) => ws.id === draft.workspaceId) && (
+            {draft.workspaceId && !projectWorkspaces.some((ws) => ws.id === draft.workspaceId) && (
               <option value={draft.workspaceId}>{draft.workspaceId} (current)</option>
             )}
           </select>
+          {draft.workspaceId && (
+            <Link
+              href={`/workspaces/${encodeURIComponent(draft.workspaceId)}`}
+              className="text-[11px] text-indigo-300 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Open workspace →
+            </Link>
+          )}
         </div>
-        <div className="space-y-1.5">
-          <label className={labelClass}>Projects * ({draft.projectIds.length})</label>
-          <div className="max-h-28 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
-            {projects.length === 0 && stuckProjectIds.length === 0 && (
-              <p className="text-xs text-zinc-600 px-1">No active projects.</p>
-            )}
-            {stuckProjectIds.map((id) => (
-              <label
-                key={`stuck-${id}`}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-zinc-800/60"
-              >
-                <input
-                  type="checkbox"
-                  checked
-                  onChange={() => toggleProject(id)}
-                  disabled={isMutating}
-                  className="h-3.5 w-3.5 accent-amber-500"
-                />
-                <span className="truncate text-amber-200/90">
-                  {retiredNameById.get(id) ?? id} (retired — uncheck to remove)
-                </span>
-              </label>
-            ))}
-            {projects.map((project) => (
-              <label key={project.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-zinc-800/60">
-                <input
-                  type="checkbox"
-                  checked={draft.projectIds.includes(project.id)}
-                  onChange={() => toggleProject(project.id)}
-                  disabled={isMutating}
-                  className="h-3.5 w-3.5 accent-indigo-500"
-                />
-                <span className="truncate text-zinc-200">{project.name}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      </div>
+      )}
+      {draft.projectId && usesDefaultWorkspace && (
+        <p className="text-[11px] text-zinc-500">Uses the project default workspace.</p>
+      )}
       {optionsError && <p className="text-xs text-red-300">{optionsError}</p>}
 
       <div className="space-y-1.5">
