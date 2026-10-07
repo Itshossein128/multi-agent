@@ -1,7 +1,7 @@
-# Specification Quality Checklist: Project & Workspace Lists and Dashboards
+# Specification Quality Checklist: Organization → Project → Workspace Hierarchy
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-09-29
+**Created**: 2026-10-07
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -31,7 +31,7 @@
 
 ## Notes
 
-- Validation iteration 1 (2026-09-29): All checklist items passed.
-- No [NEEDS CLARIFICATION] markers; defaults documented in Assumptions (dual lists, task→one workspace + ≥1 projects, config scope, lifecycle create/rename/retire).
-- Ready for `/speckit-clarify` (optional) or `/speckit-plan`.
-- Revision (2026-10-07): The spec was updated to match `006-project-workspace-hierarchy`. Tasks are now linked to exactly one project, workspaces are optional children of a project, and there's a default workspace. All checklist items still pass. The existing plan, data model, contracts, and tasks reflect the original implementation; the code changes are delivered under `006`.
+- Validation passed on the first iteration.
+- This spec supersedes the task-association rules (FR-005 to FR-007) of `specs/001-project-workspace-dashboards`. `001` was updated on 2026-10-07 to match.
+- All interpretation choices were confirmed in the 2026-10-07 clarification session (see the spec's Clarifications section).
+- Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`
