@@ -1,0 +1,95 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/taskBoardView.test.ts tests/eventRoutinesIntegration.test.ts tests/organizationBudgetRoutes.test.ts
+
+FAIL tests/eventRoutinesIntegration.test.ts (7.382 s)
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:22:56.953Z","level":"info","event":"run.started","runId":"run-mv2s7k8n-ss2iy8","workflowId":"wf-task-mv2s7k8l-6mk0rz"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:22:57.039Z","level":"info","event":"run.deduplicated_trigger_dispatch","runId":"run-mv2s7k8n-ss2iy8","triggerDispatchKey":"trigger:evt-unique-boundary-bcae8c2d-dcc6-410f-a3b8-4a6a89bc2b9b"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:22:58.961Z","level":"info","event":"run.started","runId":"run-mv2s7lsh-w18l68","workflowId":"wf-task-mv2s7lsh-iiufuu"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 0)
+
+    console.info
+      {"timestamp":"2026-10-10T19:22:58.962Z","level":"info","event":"run.started","runId":"run-mv2s7lsi-u5ektl","workflowId":"wf-task-mv2s7lsh-iiufuu"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 1)
+
+    console.info
+      {"timestamp":"2026-10-10T19:22:58.983Z","level":"info","event":"run.duplicate_trigger_dispatch_key_suppressed","runId":"run-mv2s7lsh-w18l68","triggerDispatchKey":"trigger:evt-race-spy-9bc7473c-78c9-4b73-b5dc-70ed77188b2c"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 0)
+
+    console.info
+      {"timestamp":"2026-10-10T19:22:58.983Z","level":"info","event":"run.suppressed_duplicate_execution","runId":"run-mv2s7lsh-w18l68","triggerDispatchKey":"trigger:evt-race-spy-9bc7473c-78c9-4b73-b5dc-70ed77188b2c"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:22:59.101Z","level":"info","event":"run.deduplicated_trigger_dispatch","runId":"run-mv2s7lsi-u5ektl","triggerDispatchKey":"trigger:evt-race-spy-9bc7473c-78c9-4b73-b5dc-70ed77188b2c"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+  ● Event Routines, Triggers & Outbox PostgreSQL Integration › Task Comments › saves, lists, and isolates task comments by tenant
+
+    error: null value in column "project_id" of relation "studio_tasks" violates not-null constraint
+
+      65 |   describe("Task Comments", () => {
+      66 |     it("saves, lists, and isolates task comments by tenant", async () => {
+    > 67 |       await pool.query(
+         |       ^
+      68 |         `INSERT INTO studio_tasks (id, tenant_id, workspace_id, title, description, priority, status, dependencies, retry_count, paused, created_at, updated_at)
+      69 |          VALUES ('task-100', $1, 'ws-test', 'Test Task 100', '', 'medium', 'running', '[]'::jsonb, 0, false, NOW(), NOW())
+      70 |          ON CONFLICT (id) DO NOTHING`,
+
+      at node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.0/node_modules/pg-pool/index.js:45:11
+      at Object.<anonymous> (tests/eventRoutinesIntegration.test.ts:67:7)
+
+FAIL tests/organizationBudgetRoutes.test.ts
+  ● serves organization and budget controls through the authenticated studio router
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 400
+
+      14 |   expect(putLine.status).toBe(200);
+      15 |   const goalResponse = await app.request("/organization/strategy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "Improve reliability", brief: "Reduce failed runs" }) });
+    > 16 |   expect(goalResponse.status).toBe(201);
+         |                               ^
+      17 |   const budgetResponse = await app.request("/budgets", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "company", limitUsd: 10, thresholdPercent: 80 }) });
+      18 |   expect(budgetResponse.status).toBe(200);
+      19 |   expect((await app.request("/budgets", { method: "PUT", headers: { "Content-Type": "application/json" }, body: "null" })).status).toBe(400);
+
+      at Object.<anonymous> (tests/organizationBudgetRoutes.test.ts:16:31)
+
+FAIL tests/taskBoardView.test.ts
+  ● Test suite failed to run
+
+    [96mtests/taskBoardView.test.ts[0m:[93m10[0m:[93m3[0m - [91merror[0m[90m TS2322: [0mType '{ id: string; title: string; description: string; priority: TaskPriority; status: TaskStatus; assignedAgent: string | null; assignedAgents?: string[] | undefined; workflowId?: string | null | undefined; ... 13 more ...; workspaceId?: string | ... 1 more ... | undefined; }' is not assignable to type 'Task'.
+      Types of property 'projectId' are incompatible.
+        Type 'string | undefined' is not assignable to type 'string'.
+          Type 'undefined' is not assignable to type 'string'.
+
+    [7m10[0m   return {
+    [7m  [0m [91m  ~~~~~~[0m
+
+Test Suites: 3 failed, 3 total
+Tests:       2 failed, 15 passed, 17 total
+Snapshots:   0 total
+Time:        8.648 s, estimated 10 s
+Ran all test suites matching /tests\/taskBoardView.test.ts|tests\/eventRoutinesIntegration.test.ts|tests\/organizationBudgetRoutes.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

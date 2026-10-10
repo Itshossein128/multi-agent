@@ -1,0 +1,33 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationService.test.ts
+
+PASS tests/organizationService.test.ts
+  goal project validation
+    ✓ rejects unknown before saving a goal (6 ms)
+    ✓ rejects foreign before saving a goal (1 ms)
+    ✓ rejects retired before saving a goal (1 ms)
+    ✓ still allows a goal without a project (1 ms)
+  strategy project validation and atomicity
+    ✓ rejects project undefined without any writes (4 ms)
+    ✓ rejects project foreign without any writes (1 ms)
+    ✓ rejects project retired without any writes (1 ms)
+    ✓ rolls back when saveTask fails (13 ms)
+    ✓ rolls back when enqueueTriggerEvent fails (2 ms)
+    ✓ fails closed on mixed stores before saving a goal (2 ms)
+  organization goals and delegation
+    ✓ keeps one CEO, rejects reporting cycles, and links delegated tasks to goals (18 ms)
+    ✓ keeps the in-memory reporting graph acyclic when updates race (1 ms)
+  explicit project for delegation
+    ✓ rejects invalid delegation project (undefined) (1 ms)
+    ✓ rejects invalid delegation project (other) (1 ms)
+    ✓ rejects invalid delegation project (foreign) (1 ms)
+    ✓ rejects invalid delegation project (retired) (1 ms)
+    ✓ uses the explicit project with goal project null (1 ms)
+    ✓ uses the explicit project with goal project project-org (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       18 passed, 18 total
+Snapshots:   0 total
+Time:        5.111 s
+Ran all test suites matching /tests\/organizationService.test.ts/i.

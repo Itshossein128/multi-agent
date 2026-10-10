@@ -1,0 +1,106 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationService.test.ts
+
+FAIL tests/organizationService.test.ts
+  goal project validation
+    ✓ rejects unknown before saving a goal (8 ms)
+    ✓ rejects foreign before saving a goal (1 ms)
+    ✓ rejects retired before saving a goal (2 ms)
+    ✓ still allows a goal without a project (1 ms)
+  strategy project validation and atomicity
+    ✓ rejects project undefined without any writes (6 ms)
+    ✓ rejects project foreign without any writes (2 ms)
+    ✓ rejects project retired without any writes (1 ms)
+    ✓ rolls back when saveTask fails (13 ms)
+    ✓ rolls back when enqueueTriggerEvent fails (2 ms)
+    ✓ fails closed on mixed stores before saving a goal (2 ms)
+  organization goals and delegation
+    ✓ keeps one CEO, rejects reporting cycles, and links delegated tasks to goals (19 ms)
+    ✓ keeps the in-memory reporting graph acyclic when updates race (1 ms)
+  explicit project for delegation
+    ✕ rejects invalid delegation project (undefined) (2 ms)
+    ✕ rejects invalid delegation project (other) (1 ms)
+    ✕ rejects invalid delegation project (foreign) (1 ms)
+    ✕ rejects invalid delegation project (retired) (1 ms)
+    ✓ uses the explicit project with goal project null (1 ms)
+    ✓ uses the explicit project with goal project project-org (1 ms)
+
+  ● explicit project for delegation › rejects invalid delegation project (undefined)
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:28:09.173Z", "dependencies": [], "description": "", "id": "task-mv2se95g-aixelf", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2se95g-yhvkcl"}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Goal", "updatedAt": "2026-10-10T19:28:09.173Z", "workflowId": null, "workspaceId": null}
+
+      141 |     const goal = await service.createGoal({ title: "Goal", projectId: goalProject }, alice);
+      142 |     const input = { agentId: "ceo", projectId: bodyProject };
+    > 143 |     await expect(service.delegate(goal.id, input, alice)).rejects.toMatchObject({ status, message });
+          |           ^
+      144 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      145 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+      146 |   });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:143:11
+
+  ● explicit project for delegation › rejects invalid delegation project (other)
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:28:09.176Z", "dependencies": [], "description": "", "id": "task-mv2se95k-nmrcqb", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2se95k-bhr4mm"}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Goal", "updatedAt": "2026-10-10T19:28:09.176Z", "workflowId": null, "workspaceId": null}
+
+      141 |     const goal = await service.createGoal({ title: "Goal", projectId: goalProject }, alice);
+      142 |     const input = { agentId: "ceo", projectId: bodyProject };
+    > 143 |     await expect(service.delegate(goal.id, input, alice)).rejects.toMatchObject({ status, message });
+          |           ^
+      144 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      145 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+      146 |   });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:143:11
+
+  ● explicit project for delegation › rejects invalid delegation project (foreign)
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:28:09.177Z", "dependencies": [], "description": "", "id": "task-mv2se95l-c6v0tz", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2se95l-jspext"}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Goal", "updatedAt": "2026-10-10T19:28:09.177Z", "workflowId": null, "workspaceId": null}
+
+      141 |     const goal = await service.createGoal({ title: "Goal", projectId: goalProject }, alice);
+      142 |     const input = { agentId: "ceo", projectId: bodyProject };
+    > 143 |     await expect(service.delegate(goal.id, input, alice)).rejects.toMatchObject({ status, message });
+          |           ^
+      144 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      145 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+      146 |   });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:143:11
+
+  ● explicit project for delegation › rejects invalid delegation project (retired)
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:28:09.179Z", "dependencies": [], "description": "", "id": "task-mv2se95n-6jy966", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2se95n-0ip3nh"}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Goal", "updatedAt": "2026-10-10T19:28:09.179Z", "workflowId": null, "workspaceId": null}
+
+      141 |     const goal = await service.createGoal({ title: "Goal", projectId: goalProject }, alice);
+      142 |     const input = { agentId: "ceo", projectId: bodyProject };
+    > 143 |     await expect(service.delegate(goal.id, input, alice)).rejects.toMatchObject({ status, message });
+          |           ^
+      144 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      145 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+      146 |   });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:143:11
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 14 passed, 18 total
+Snapshots:   0 total
+Time:        4.878 s
+Ran all test suites matching /tests\/organizationService.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

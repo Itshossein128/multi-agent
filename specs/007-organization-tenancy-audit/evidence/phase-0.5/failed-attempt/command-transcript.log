@@ -1,0 +1,20 @@
+$ git worktree add --detach /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2 5bb28b41af0357a726845f5d110473a996ab56f2
+EXIT 0 (0.188s)
+$ git status --porcelain --untracked-files=no
+EXIT 0 (0.216s)
+$ node --version
+v25.2.1
+EXIT 0 (0.004s)
+$ pnpm --version
+10.17.0
+EXIT 0 (0.15s)
+$ pnpm install --frozen-lockfile
+EXIT 0 (2.422s)
+$ psql $MEMORY_TEST_DATABASE_URL -Atc select version(); select extversion from pg_extension where extname='vector';
+PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+0.8.6
+EXIT 0 (0.05s)
+$ pnpm build:types
+EXIT 0 (1.874s)
+$ pnpm test --runInBand --json --outputFile=/tmp/phase0.5/baseline/jest.json
+EXIT 1 (167.017s)

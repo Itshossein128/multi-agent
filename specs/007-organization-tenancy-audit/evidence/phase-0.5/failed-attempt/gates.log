@@ -1,0 +1,8 @@
+$ pnpm build:types
+
+> multi-agent-platform@1.0.0 build:types /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2
+> pnpm --filter @multi-agent/types build
+
+
+> @multi-agent/types@0.1.0 build /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/packages/types
+> tsc -p tsconfig.json

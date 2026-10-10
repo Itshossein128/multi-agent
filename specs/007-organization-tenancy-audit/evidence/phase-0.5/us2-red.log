@@ -1,0 +1,116 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationStrategyAtomicity.test.ts tests/organizationUnitOfWork.test.ts tests/organizationService.test.ts tests/organizationBudgetRoutes.test.ts
+
+FAIL tests/organizationService.test.ts
+  ● strategy project validation and atomicity › rejects project undefined without any writes
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"goal": {"createdAt": "2026-10-10T19:25:31.018Z", "createdBy": "alice", "description": "Reduce failed runs", "id": "goal-mv2sav4a-9xhmfg", "ownerAgentId": "ceo", "parentGoalId": null, "projectId": null, "proposedByAgentId": "ceo", "status": "proposed", "tenantId": "tenant-a", "title": "Reliability", "updatedAt": "2026-10-10T19:25:31.018Z"}, "task": {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:25:31.019Z", "dependencies": [], "description": "Propose a concrete strategy for this organization goal. Include measurable outcomes, a delegation plan, and risks. Brief: Reduce failed runs", "id": "task-mv2sav4a-c404v2", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2sav4a-9xhmfg", "strategyProposal": true}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Strategy proposal: Reliability", "updatedAt": "2026-10-10T19:25:31.019Z", "workflowId": null, "workspaceId": null}}
+
+      43 |   ])("rejects project %s without any writes", async (projectId, status, message) => {
+      44 |     const { studio, organization, service } = await setupOrganization();
+    > 45 |     await expect(service.requestStrategyProposal({ ...proposal, projectId: projectId as string | undefined }, alice)).rejects.toMatchObject({ status, message });
+         |           ^
+      46 |     expect(await organization.goals(alice.tenantId)).toHaveLength(0);
+      47 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      48 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:45:11
+
+  ● strategy project validation and atomicity › rolls back when saveTask fails
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 0
+    Received length: 1
+    Received array:  [{"createdAt": "2026-10-10T19:25:31.032Z", "createdBy": "alice", "description": "Reduce failed runs", "id": "goal-mv2sav4o-vug9no", "ownerAgentId": "ceo", "parentGoalId": null, "projectId": "project-org", "proposedByAgentId": "ceo", "status": "cancelled", "tenantId": "tenant-a", "title": "Reliability", "updatedAt": "2026-10-10T19:25:31.032Z"}]
+
+      52 |     jest.spyOn(studio, method).mockRejectedValueOnce(new Error("injected"));
+      53 |     await expect(service.requestStrategyProposal(proposal, alice)).rejects.toThrow("injected");
+    > 54 |     expect(await organization.goals(alice.tenantId)).toHaveLength(0);
+         |                                                      ^
+      55 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      56 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+      57 |   });
+
+      at tests/organizationService.test.ts:54:54
+
+  ● strategy project validation and atomicity › rolls back when enqueueTriggerEvent fails
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"goal": {"createdAt": "2026-10-10T19:25:31.034Z", "createdBy": "alice", "description": "Reduce failed runs", "id": "goal-mv2sav4q-k0yrd1", "ownerAgentId": "ceo", "parentGoalId": null, "projectId": "project-org", "proposedByAgentId": "ceo", "status": "proposed", "tenantId": "tenant-a", "title": "Reliability", "updatedAt": "2026-10-10T19:25:31.034Z"}, "task": {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:25:31.035Z", "dependencies": [], "description": "Propose a concrete strategy for this organization goal. Include measurable outcomes, a delegation plan, and risks. Brief: Reduce failed runs", "id": "task-mv2sav4q-25cc6g", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2sav4q-k0yrd1", "strategyProposal": true}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Strategy proposal: Reliability", "updatedAt": "2026-10-10T19:25:31.035Z", "workflowId": null, "workspaceId": null}}
+
+      51 |     const { studio, organization, service } = await setupOrganization();
+      52 |     jest.spyOn(studio, method).mockRejectedValueOnce(new Error("injected"));
+    > 53 |     await expect(service.requestStrategyProposal(proposal, alice)).rejects.toThrow("injected");
+         |           ^
+      54 |     expect(await organization.goals(alice.tenantId)).toHaveLength(0);
+      55 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      56 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:53:11
+
+  ● strategy project validation and atomicity › fails closed on mixed stores before saving a goal
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"goal": {"createdAt": "2026-10-10T19:25:31.036Z", "createdBy": "alice", "description": "Reduce failed runs", "id": "goal-mv2sav4s-5vm0fr", "ownerAgentId": "ceo", "parentGoalId": null, "projectId": "project-org", "proposedByAgentId": "ceo", "status": "proposed", "tenantId": "tenant-a", "title": "Reliability", "updatedAt": "2026-10-10T19:25:31.036Z"}, "task": {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:25:31.036Z", "dependencies": [], "description": "Propose a concrete strategy for this organization goal. Include measurable outcomes, a delegation plan, and risks. Brief: Reduce failed runs", "id": "task-mv2sav4s-zzdgyt", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2sav4s-5vm0fr", "strategyProposal": true}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Strategy proposal: Reliability", "updatedAt": "2026-10-10T19:25:31.036Z", "workflowId": null, "workspaceId": null}}
+
+      62 |       reportingLines: organization.reportingLines.bind(organization), saveReportingLine: organization.saveReportingLine.bind(organization),
+      63 |     };
+    > 64 |     await expect(new OrganizationService(custom, studio).requestStrategyProposal(proposal, alice)).rejects.toMatchObject({ status: 503, message: "Atomic organization operations are not configured" });
+         |           ^
+      65 |     expect(custom.saveGoal).not.toHaveBeenCalled();
+      66 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      67 |   });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at Object.<anonymous> (tests/organizationService.test.ts:64:11)
+
+PASS tests/organizationBudgetRoutes.test.ts
+FAIL tests/organizationStrategyAtomicity.test.ts
+  ● Test suite failed to run
+
+    [96mtests/organizationStrategyAtomicity.test.ts[0m:[93m7[0m:[93m48[0m - [91merror[0m[90m TS2307: [0mCannot find module '../apps/server/src/organization/organizationUnitOfWork' or its corresponding type declarations.
+
+    [7m7[0m import { PostgresOrganizationUnitOfWork } from "../apps/server/src/organization/organizationUnitOfWork";
+    [7m [0m [91m                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationStrategyAtomicity.test.ts[0m:[93m38[0m:[93m91[0m - [91merror[0m[90m TS2554: [0mExpected 1-5 arguments, but got 6.
+
+    [7m38[0m     app = createStudioRouter(studio, () => principal, undefined, organization, undefined, new PostgresOrganizationUnitOfWork(pool));
+    [7m  [0m [91m                                                                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+FAIL tests/organizationUnitOfWork.test.ts
+  ● Test suite failed to run
+
+    [96mtests/organizationUnitOfWork.test.ts[0m:[93m7[0m:[93m109[0m - [91merror[0m[90m TS2307: [0mCannot find module '../apps/server/src/organization/organizationUnitOfWork' or its corresponding type declarations.
+
+    [7m7[0m import { InMemoryOrganizationUnitOfWork, PostgresOrganizationUnitOfWork, type OrganizationUnitOfWork } from "../apps/server/src/organization/organizationUnitOfWork";
+    [7m [0m [91m                                                                                                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationUnitOfWork.test.ts[0m:[93m29[0m:[93m90[0m - [91merror[0m[90m TS7006: [0mParameter 'stores' implicitly has an 'any' type.
+
+    [7m29[0m     const operation = new InMemoryOrganizationUnitOfWork(studio, organization).run(async stores => {
+    [7m  [0m [91m                                                                                         ~~~~~~[0m
+    [96mtests/organizationUnitOfWork.test.ts[0m:[93m63[0m:[93m37[0m - [91merror[0m[90m TS7006: [0mParameter 'stores' implicitly has an 'any' type.
+
+    [7m63[0m     const operation = uow.run(async stores => {
+    [7m  [0m [91m                                    ~~~~~~[0m
+    [96mtests/organizationUnitOfWork.test.ts[0m:[93m74[0m:[93m26[0m - [91merror[0m[90m TS7006: [0mParameter 'stores' implicitly has an 'any' type.
+
+    [7m74[0m     await expect(uow.run(stores => stores.organization.saveReportingLine({ tenantId: principal.tenantId,
+    [7m  [0m [91m                         ~~~~~~[0m
+
+Test Suites: 3 failed, 1 passed, 4 total
+Tests:       4 failed, 9 passed, 13 total
+Snapshots:   0 total
+Time:        7.223 s
+Ran all test suites matching /tests\/organizationStrategyAtomicity.test.ts|tests\/organizationUnitOfWork.test.ts|tests\/organizationService.test.ts|tests\/organizationBudgetRoutes.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

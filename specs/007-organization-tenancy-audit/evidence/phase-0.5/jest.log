@@ -1,0 +1,2429 @@
+$ pnpm test --runInBand --json --outputFile=/tmp/phase0.5/baseline/jest.json
+
+> multi-agent-platform@1.0.0 test /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand --json --outputFile=/tmp/phase0.5/baseline/jest.json
+
+PASS tests/organizationStrategyAtomicity.test.ts (20.058 s)
+PASS tests/agentExecutor.test.ts
+PASS tests/organizationUnitOfWork.test.ts
+PASS tests/eventRoutinesIntegration.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:21.669Z","level":"info","event":"run.started","runId":"run-mv2t1o4k-eddgrn","workflowId":"wf-task-mv2t1o4i-nwqomd"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:21.747Z","level":"info","event":"run.deduplicated_trigger_dispatch","runId":"run-mv2t1o4k-eddgrn","triggerDispatchKey":"trigger:evt-unique-boundary-d4f5f2b2-5807-4d07-b1d8-babc17ec9bbf"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:22.795Z","level":"info","event":"run.started","runId":"run-mv2t1ozv-h9mjt3","workflowId":"wf-task-mv2t1ozu-rh1txv"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 0)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:22.795Z","level":"info","event":"run.started","runId":"run-mv2t1ozv-sn5agc","workflowId":"wf-task-mv2t1ozu-rh1txv"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 1)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:22.819Z","level":"info","event":"run.duplicate_trigger_dispatch_key_suppressed","runId":"run-mv2t1ozv-sn5agc","triggerDispatchKey":"trigger:evt-race-spy-f78f735f-f9ae-4feb-a11d-a3231de837d3"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 1)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:22.820Z","level":"info","event":"run.suppressed_duplicate_execution","runId":"run-mv2t1ozv-sn5agc","triggerDispatchKey":"trigger:evt-race-spy-f78f735f-f9ae-4feb-a11d-a3231de837d3"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:22.935Z","level":"info","event":"run.deduplicated_trigger_dispatch","runId":"run-mv2t1ozv-h9mjt3","triggerDispatchKey":"trigger:evt-race-spy-f78f735f-f9ae-4feb-a11d-a3231de837d3"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/agents.test.ts
+  ● Console
+
+    console.log
+      [LangFuse] Credentials not provided; tracing operates in mock mode.
+
+      at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM intent triage failed, applying heuristic classification. Unsupported API provider: offline-test
+
+      74 |       };
+      75 |     } catch (err: any) {
+    > 76 |       console.warn('LLM intent triage failed, applying heuristic classification.', err.message);
+         |               ^
+      77 |       return this.heuristicClassify(prompt, availableRepos);
+      78 |     }
+      79 |   }
+
+      at LLMIntentClassifier.classify (src/agents/orchestrator/intentClassifier.ts:76:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:41:50)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [NEW_PROJECT] mode.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "repository": "MainProject-Backend",
+        "options": [
+          "clone",
+          "api"
+        ]
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: For repository "MainProject-Backend", how would you like to operate?
+      1. "clone": Clone repository locally to workspace and manage code with local Git.
+      2. "api": Operate directly via GitHub Cloud APIs without local cloning.
+      👉 Please reply with "clone" or "api".
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM document maturity evaluation failed, falling back to heuristic evaluation. Error: Unsupported API provider: offline-test
+          at LLMFactory.getModel (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/llmFactory.ts:102:11)
+          at getLLM (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/llmFactory.ts:111:25)
+          at LLMDocumentEvaluator.evaluate (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/orchestrator/documentEvaluator.ts:43:25)
+          at OrchestratorAgent.run (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/orchestrator/orchestratorAgent.ts:220:41)
+          at RunnableCallable.func (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/graphEngine.ts:111:25)
+          at RunnableCallable.invoke (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+          at RunnableSequence.invoke (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+          at Object._runWithRetry (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+          at PregelRunner._executeTasksWithRetry (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+          at PregelRunner.tick (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+          at CompiledStateGraph._runLoop (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+          at createAndRunLoop (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+      60 |       };
+      61 |     } catch (error) {
+    > 62 |       console.warn("LLM document maturity evaluation failed, falling back to heuristic evaluation.", error);
+         |               ^
+      63 |       const hasTechStack = /node|typescript|react|postgres|docker|api|jwt|database|schema/i.test(prompt);
+      64 |       const hasArch = /architecture|component|endpoint|service|flow|module/i.test(prompt);
+      65 |       const hasReqs = /requirement|feature|user story|acceptance/i.test(prompt);
+
+      at LLMDocumentEvaluator.evaluate (src/agents/orchestrator/documentEvaluator.ts:62:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:220:41)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent confirmed MATURE documentation. Creating work items...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Created 2 work items/issues in repo "MainProject-Backend": 137, 426
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585095-j9ba2
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent mode: "NEW_PROJECT" using [GitHub Cloud API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on NEW_PROJECT specification...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM generation failed, generating standard implementation template. Unsupported API provider: offline-test
+
+      49 |       return response.content.toString();
+      50 |     } catch (err: any) {
+    > 51 |       console.warn("LLM generation failed, generating standard implementation template.", err.message);
+         |               ^
+      52 |       return `import express, { Request, Response, NextFunction } from 'express';
+      53 | import jwt from 'jsonwebtoken';
+      54 |
+
+      at LLMCodeGenerator.generateCode (src/agents/developer/codeGenerator.ts:51:15)
+      at DeveloperAgent.run (src/agents/developer/developerAgent.ts:76:52)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:123:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent creating branch "feature/code-changes" in repository "MainProject-Backend"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "feature/code-changes"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "developerNode" | TraceID: trace-1791661585102-jtqdc
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+      [LangFuse] Credentials not provided; tracing operates in mock mode.
+
+      at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM intent triage failed, applying heuristic classification. Unsupported API provider: offline-test
+
+      74 |       };
+      75 |     } catch (err: any) {
+    > 76 |       console.warn('LLM intent triage failed, applying heuristic classification.', err.message);
+         |               ^
+      77 |       return this.heuristicClassify(prompt, availableRepos);
+      78 |     }
+      79 |   }
+
+      at LLMIntentClassifier.classify (src/agents/orchestrator/intentClassifier.ts:76:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:41:50)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [NEW_PROJECT] mode.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "repository": "MainProject-Backend",
+        "options": [
+          "clone",
+          "api"
+        ]
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: For repository "MainProject-Backend", how would you like to operate?
+      1. "clone": Clone repository locally to workspace and manage code with local Git.
+      2. "api": Operate directly via GitHub Cloud APIs without local cloning.
+      👉 Please reply with "clone" or "api".
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent determined input is NOT a documentation. Handing off to DocGeneratorAgent.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585122-3zv2i
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DocGeneratorAgent starting: Transforming amateur input into a mature technical spec...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM dynamic question generation failed. Unsupported API provider: offline-test
+
+      59 |       }
+      60 |     } catch (err: any) {
+    > 61 |       console.warn("LLM dynamic question generation failed.", err.message);
+         |               ^
+      62 |     }
+      63 |
+      64 |     if (reasons && reasons.length > 0) {
+
+      at DocGeneratorAgent.generateClarificationQuestions (src/agents/docGenerator/docGeneratorAgent.ts:61:15)
+      at DocGeneratorAgent.run (src/agents/docGenerator/docGeneratorAgent.ts:76:34)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:117:25)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "questionIndex": 1,
+        "totalQuestions": 1,
+        "initialInput": "build a simple chat app for our team"
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: Regarding "build a simple chat app for our team": Input is too short or informal to be considered a software spec documentation. Could you clarify?
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DocGeneratorAgent completed: Created mature documentation.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "docGeneratorNode" | TraceID: trace-1791661585126-0ktpr
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent confirmed MATURE documentation. Creating work items...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Created 2 work items/issues in repo "MainProject-Backend": 459, 440
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585129-jcavs
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent mode: "NEW_PROJECT" using [GitHub Cloud API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on NEW_PROJECT specification...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM generation failed, generating standard implementation template. Unsupported API provider: offline-test
+
+      49 |       return response.content.toString();
+      50 |     } catch (err: any) {
+    > 51 |       console.warn("LLM generation failed, generating standard implementation template.", err.message);
+         |               ^
+      52 |       return `import express, { Request, Response, NextFunction } from 'express';
+      53 | import jwt from 'jsonwebtoken';
+      54 |
+
+      at LLMCodeGenerator.generateCode (src/agents/developer/codeGenerator.ts:51:15)
+      at DeveloperAgent.run (src/agents/developer/developerAgent.ts:76:52)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:123:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent creating branch "feature/technical-specification-build-a-simple-c" in repository "MainProject-Backend"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "feature/technical-specification-build-a-simple-c"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "developerNode" | TraceID: trace-1791661585133-prcrv
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+      [LangFuse] Credentials not provided; tracing operates in mock mode.
+
+      at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM intent triage failed, applying heuristic classification. Unsupported API provider: offline-test
+
+      74 |       };
+      75 |     } catch (err: any) {
+    > 76 |       console.warn('LLM intent triage failed, applying heuristic classification.', err.message);
+         |               ^
+      77 |       return this.heuristicClassify(prompt, availableRepos);
+      78 |     }
+      79 |   }
+
+      at LLMIntentClassifier.classify (src/agents/orchestrator/intentClassifier.ts:76:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:41:50)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [DEBUG] mode.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "repository": "MainProject-Backend",
+        "options": [
+          "clone",
+          "api"
+        ]
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: For repository "MainProject-Backend", how would you like to operate?
+      1. "clone": Clone repository locally to workspace and manage code with local Git.
+      2. "api": Operate directly via GitHub Cloud APIs without local cloning.
+      👉 Please reply with "clone" or "api".
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent initiating bug triage in repository "MainProject-Backend"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Created Bug issue #478 in "MainProject-Backend". Routing directly to DeveloperAgent for fix.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585142-dztgg
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent mode: "DEBUG" using [GitHub Cloud API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on DEBUG specification...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM generation failed, generating standard implementation template. Unsupported API provider: offline-test
+
+      49 |       return response.content.toString();
+      50 |     } catch (err: any) {
+    > 51 |       console.warn("LLM generation failed, generating standard implementation template.", err.message);
+         |               ^
+      52 |       return `import express, { Request, Response, NextFunction } from 'express';
+      53 | import jwt from 'jsonwebtoken';
+      54 |
+
+      at LLMCodeGenerator.generateCode (src/agents/developer/codeGenerator.ts:51:15)
+      at DeveloperAgent.run (src/agents/developer/developerAgent.ts:76:52)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:123:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent creating branch "fix/bug-fix-the-critical-bug-in-index-js-cau" in repository "MainProject-Backend"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "fix/bug-fix-the-critical-bug-in-index-js-cau"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "developerNode" | TraceID: trace-1791661585146-srvut
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+      [LangFuse] Credentials not provided; tracing operates in mock mode.
+
+      at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM intent triage failed, applying heuristic classification. Unsupported API provider: offline-test
+
+      74 |       };
+      75 |     } catch (err: any) {
+    > 76 |       console.warn('LLM intent triage failed, applying heuristic classification.', err.message);
+         |               ^
+      77 |       return this.heuristicClassify(prompt, availableRepos);
+      78 |     }
+      79 |   }
+
+      at LLMIntentClassifier.classify (src/agents/orchestrator/intentClassifier.ts:76:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:41:50)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [CONTINUATION] mode.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "repository": "MainProject-Backend",
+        "options": [
+          "clone",
+          "api"
+        ]
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: For repository "MainProject-Backend", how would you like to operate?
+      1. "clone": Clone repository locally to workspace and manage code with local Git.
+      2. "api": Operate directly via GitHub Cloud APIs without local cloning.
+      👉 Please reply with "clone" or "api".
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM document maturity evaluation failed, falling back to heuristic evaluation. Error: Unsupported API provider: offline-test
+          at LLMFactory.getModel (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/llmFactory.ts:102:11)
+          at getLLM (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/llmFactory.ts:111:25)
+          at LLMDocumentEvaluator.evaluate (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/orchestrator/documentEvaluator.ts:43:25)
+          at OrchestratorAgent.run (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/orchestrator/orchestratorAgent.ts:170:49)
+          at RunnableCallable.func (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/graphEngine.ts:111:25)
+          at RunnableCallable.invoke (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+          at RunnableSequence.invoke (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+          at Object._runWithRetry (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+          at PregelRunner._executeTasksWithRetry (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+          at PregelRunner.tick (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+          at CompiledStateGraph._runLoop (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+          at createAndRunLoop (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+      60 |       };
+      61 |     } catch (error) {
+    > 62 |       console.warn("LLM document maturity evaluation failed, falling back to heuristic evaluation.", error);
+         |               ^
+      63 |       const hasTechStack = /node|typescript|react|postgres|docker|api|jwt|database|schema/i.test(prompt);
+      64 |       const hasArch = /architecture|component|endpoint|service|flow|module/i.test(prompt);
+      65 |       const hasReqs = /requirement|feature|user story|acceptance/i.test(prompt);
+
+      at LLMDocumentEvaluator.evaluate (src/agents/orchestrator/documentEvaluator.ts:62:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:170:49)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent: Handing off to DocGeneratorAgent for continuation specification.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585155-vh0mg
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DocGeneratorAgent starting: Transforming amateur input into a mature technical spec...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM dynamic question generation failed. Unsupported API provider: offline-test
+
+      59 |       }
+      60 |     } catch (err: any) {
+    > 61 |       console.warn("LLM dynamic question generation failed.", err.message);
+         |               ^
+      62 |     }
+      63 |
+      64 |     if (reasons && reasons.length > 0) {
+
+      at DocGeneratorAgent.generateClarificationQuestions (src/agents/docGenerator/docGeneratorAgent.ts:61:15)
+      at DocGeneratorAgent.run (src/agents/docGenerator/docGeneratorAgent.ts:76:34)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:117:25)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "questionIndex": 1,
+        "totalQuestions": 2,
+        "initialInput": "In MainProject-Backend, continue implementing payment webhook endpoints with signature validation"
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: Regarding "In MainProject-Backend, continue implementing payment webhook endpoints with signature validation": Missing explicit technology stack details. Could you clarify?
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "questionIndex": 2,
+        "totalQuestions": 2
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: Regarding "In MainProject-Backend, continue implementing payment webhook endpoints with signature validation": Missing structured feature requirements or acceptance criteria. Could you clarify?
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DocGeneratorAgent completed: Created mature documentation.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "docGeneratorNode" | TraceID: trace-1791661585159-xe5ae
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Created Feature issue #31 in existing repo "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585162-bk1hv
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent mode: "CONTINUATION" using [GitHub Cloud API] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on CONTINUATION specification...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM generation failed, generating standard implementation template. Unsupported API provider: offline-test
+
+      49 |       return response.content.toString();
+      50 |     } catch (err: any) {
+    > 51 |       console.warn("LLM generation failed, generating standard implementation template.", err.message);
+         |               ^
+      52 |       return `import express, { Request, Response, NextFunction } from 'express';
+      53 | import jwt from 'jsonwebtoken';
+      54 |
+
+      at LLMCodeGenerator.generateCode (src/agents/developer/codeGenerator.ts:51:15)
+      at DeveloperAgent.run (src/agents/developer/developerAgent.ts:76:52)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:123:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent creating branch "feat/technical-specification-in-mainprojectba" in repository "MainProject-Backend"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "feat/technical-specification-in-mainprojectba"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "developerNode" | TraceID: trace-1791661585165-0kfvm
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+      [LangFuse] Credentials not provided; tracing operates in mock mode.
+
+      at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM intent triage failed, applying heuristic classification. Unsupported API provider: offline-test
+
+      74 |       };
+      75 |     } catch (err: any) {
+    > 76 |       console.warn('LLM intent triage failed, applying heuristic classification.', err.message);
+         |               ^
+      77 |       return this.heuristicClassify(prompt, availableRepos);
+      78 |     }
+      79 |   }
+
+      at LLMIntentClassifier.classify (src/agents/orchestrator/intentClassifier.ts:76:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:41:50)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [CONTINUATION] mode.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: User requested local cloning in prompt. Operating in [CLONE] mode.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent cloning repository "MainProject-Backend" into local workspace...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Repository successfully cloned to workspace: "/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/workspaces/MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM document maturity evaluation failed, falling back to heuristic evaluation. Error: Unsupported API provider: offline-test
+          at LLMFactory.getModel (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/llmFactory.ts:102:11)
+          at getLLM (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/llmFactory.ts:111:25)
+          at LLMDocumentEvaluator.evaluate (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/orchestrator/documentEvaluator.ts:43:25)
+          at OrchestratorAgent.run (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/orchestrator/orchestratorAgent.ts:170:49)
+          at RunnableCallable.func (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/src/agents/core/graphEngine.ts:111:25)
+          at RunnableCallable.invoke (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+          at RunnableSequence.invoke (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+          at Object._runWithRetry (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+          at PregelRunner._executeTasksWithRetry (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+          at PregelRunner.tick (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+          at CompiledStateGraph._runLoop (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+          at createAndRunLoop (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+      60 |       };
+      61 |     } catch (error) {
+    > 62 |       console.warn("LLM document maturity evaluation failed, falling back to heuristic evaluation.", error);
+         |               ^
+      63 |       const hasTechStack = /node|typescript|react|postgres|docker|api|jwt|database|schema/i.test(prompt);
+      64 |       const hasArch = /architecture|component|endpoint|service|flow|module/i.test(prompt);
+      65 |       const hasReqs = /requirement|feature|user story|acceptance/i.test(prompt);
+
+      at LLMDocumentEvaluator.evaluate (src/agents/orchestrator/documentEvaluator.ts:62:15)
+      at OrchestratorAgent.run (src/agents/orchestrator/orchestratorAgent.ts:170:49)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:111:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent: Handing off to DocGeneratorAgent for continuation specification.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585173-1x93i
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DocGeneratorAgent starting: Transforming amateur input into a mature technical spec...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM dynamic question generation failed. Unsupported API provider: offline-test
+
+      59 |       }
+      60 |     } catch (err: any) {
+    > 61 |       console.warn("LLM dynamic question generation failed.", err.message);
+         |               ^
+      62 |     }
+      63 |
+      64 |     if (reasons && reasons.length > 0) {
+
+      at DocGeneratorAgent.generateClarificationQuestions (src/agents/docGenerator/docGeneratorAgent.ts:61:15)
+      at DocGeneratorAgent.run (src/agents/docGenerator/docGeneratorAgent.ts:76:34)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:117:25)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "questionIndex": 1,
+        "totalQuestions": 2,
+        "initialInput": "Please clone the repository MainProject-Backend and implement health check endpoint"
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: Regarding "Please clone the repository MainProject-Backend and implement health check endpoint": Missing explicit technology stack details. Could you clarify?
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Context: {
+        "questionIndex": 2,
+        "totalQuestions": 2
+      }
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:16:15)
+
+    console.log
+      Question: Regarding "Please clone the repository MainProject-Backend and implement health check endpoint": Missing structured feature requirements or acceptance criteria. Could you clarify?
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Sample user response for spec clarification
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DocGeneratorAgent completed: Created mature documentation.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "docGeneratorNode" | TraceID: trace-1791661585177-yhqxh
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Found 1 repos for context.
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent cloning repository "MainProject-Backend" into local workspace...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Repository successfully cloned to workspace: "/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/workspaces/MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: Created Feature issue #257 in existing repo "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "orchestratorNode" | TraceID: trace-1791661585181-gea3q
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent mode: "CONTINUATION" using [Local Git Clone] for repository "MainProject-Backend".
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/technical-specificat.ts" based on CONTINUATION specification...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.warn
+      LLM generation failed, generating standard implementation template. Unsupported API provider: offline-test
+
+      49 |       return response.content.toString();
+      50 |     } catch (err: any) {
+    > 51 |       console.warn("LLM generation failed, generating standard implementation template.", err.message);
+         |               ^
+      52 |       return `import express, { Request, Response, NextFunction } from 'express';
+      53 | import jwt from 'jsonwebtoken';
+      54 |
+
+      at LLMCodeGenerator.generateCode (src/agents/developer/codeGenerator.ts:51:15)
+      at DeveloperAgent.run (src/agents/developer/developerAgent.ts:76:52)
+      at RunnableCallable.func (src/agents/core/graphEngine.ts:123:25)
+      at RunnableCallable.invoke (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/utils.ts:85:21)
+      at RunnableSequence.invoke (node_modules/.pnpm/@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemetry+exporter-trace-otlp-proto_d6879616437e9345625ef3003815ec92/node_modules/@langchain/core/src/runnables/base.ts:1988:25)
+      at Object._runWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/retry.ts:123:18)
+      at PregelRunner._executeTasksWithRetry (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:348:27)
+      at PregelRunner.tick (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/runner.ts:149:37)
+      at CompiledStateGraph._runLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2620:9)
+      at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent creating branch "feat/technical-specification-please-clone-the" in repository "MainProject-Backend"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/technical-specificat.ts" on branch "feat/technical-specification-please-clone-the"...
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+
+      [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
+
+      at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
+
+    console.log
+      [LangFuse Mock Trace] Name: "developerNode" | TraceID: trace-1791661585185-tvtqi
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+PASS tests/taskBoardPhase2.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.456Z","level":"info","event":"run.started","runId":"run-mv2t1rtk-6brj7m","workflowId":"wf-task-mv2t1rth-hdmee8","taskId":"task-mv2t1rte-os81he"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.499Z","level":"info","event":"run.started","runId":"run-mv2t1rur-8ogjr1","workflowId":"wf-task-mv2t1ruq-8pijlz","taskId":"task-mv2t1rum-xb0e5i"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.544Z","level":"info","event":"run.started","runId":"run-mv2t1rw0-pj2xem","workflowId":"wf-alpha-1","taskId":"task-mv2t1rvz-59byft"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.556Z","level":"info","event":"run.started","runId":"run-mv2t1rwc-11gl5c","workflowId":"wf-task-mv2t1rwb-75g19h","taskId":"task-mv2t1rwa-pbw3ri"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.629Z","level":"info","event":"run.started","runId":"run-mv2t1ryc-0unr1l","workflowId":"wf-task-mv2t1ryc-8am2r2","taskId":"task-mv2t1ryb-5op7z6"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.694Z","level":"info","event":"run.started","runId":"run-mv2t1s05-7bz698","workflowId":"wf-task-mv2t1s05-ejjpyj","taskId":"task-mv2t1s04-77rbiu"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.756Z","level":"info","event":"run.started","runId":"run-mv2t1s1w-kvbx3x","workflowId":"wf-task-mv2t1s1v-iwjjgs","taskId":"task-mv2t1s1v-9n91rh"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.769Z","level":"info","event":"run.started","runId":"run-mv2t1s29-6jixi4","workflowId":"wf-task-mv2t1s29-tw8kcn","taskId":"task-mv2t1s27-u0782t"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.837Z","level":"info","event":"run.started","runId":"run-mv2t1s45-r9xz41","workflowId":"wf-task-mv2t1s45-3atuk7","taskId":"task-mv2t1s44-30t22r"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.850Z","level":"info","event":"run.started","runId":"run-mv2t1s4i-jqcgyo","workflowId":"wf-task-mv2t1s4h-pj8vy0","taskId":"task-mv2t1s4f-1swr3b"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.855Z","level":"info","event":"run.cancelled","runId":"run-mv2t1s4i-jqcgyo","workflowId":"wf-task-mv2t1s4h-pj8vy0","taskId":"task-mv2t1s4f-1swr3b","error":"Aborted","resultStatus":"blocked","code":"RUN_CANCELLED"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.867Z","level":"info","event":"run.started","runId":"run-mv2t1s4z-nnonwo","workflowId":"wf-task-mv2t1s4z-28o99x","taskId":"task-mv2t1s4y-s6hca3"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:26.870Z","level":"info","event":"run.started","runId":"run-mv2t1s52-yr4dgd","workflowId":"wf-task-mv2t1s52-2xqv2v","taskId":"task-mv2t1s4y-s6hca3"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/auth.test.ts
+PASS tests/onboarding.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:33.996Z","level":"info","event":"run.started","runId":"run-mv2t1xmz-jahx73","workflowId":"onboarding-self-test-workflow"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/ownershipAuthorization.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:36.169Z","level":"info","event":"run.started","runId":"run-mv2t1zbd-z522lq","workflowId":"wf-mv2t1zba-rchob7"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/memoryDistributedJobs.test.ts
+  ● Console
+
+    console.error
+      Studio run persistence failed: phase_12_injected_episodic_extraction_failure
+
+      144 |         this.persistenceError = error instanceof Error ? error : new Error(String(error));
+      145 |       }
+    > 146 |       console.error("Studio run persistence failed:", this.persistenceError.message);
+          |               ^
+      147 |     });
+      148 |   }
+      149 |
+
+      at apps/server/src/runtime/store/postgresRunStore.ts:146:15
+      at PostgresRunStore.flush (apps/server/src/runtime/store/postgresRunStore.ts:161:5)
+      at Object.<anonymous> (tests/memoryDistributedJobs.test.ts:110:5)
+
+PASS tests/memoryBenchmark.test.ts
+PASS tests/memoryEndToEnd.test.ts
+PASS tests/postgresMultiInstanceRecovery.test.ts
+  ● Console
+
+    console.warn
+      {"timestamp":"2026-10-10T19:46:49.448Z","level":"warn","event":"run.execution_lease_lost","runId":"run-fenced-e710b3ec-40a6-4dce-b775-868eb39c42cc","instanceId":"fence-A"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/runtime/store/postgresRunStore.ts:140:13
+      at PostgresRunStore.flush (apps/server/src/runtime/store/postgresRunStore.ts:161:5)
+      at Object.<anonymous> (tests/postgresMultiInstanceRecovery.test.ts:162:5)
+
+PASS tests/workflowRuntimeContracts.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.448Z","level":"info","event":"run.started","runId":"run-mv2t2b3s-a0b00n","workflowId":"wf-mv2t2b3q-swmpsi"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:46:51.490Z","level":"error","event":"run.failed","runId":"run-mv2t2b3s-a0b00n","workflowId":"wf-mv2t2b3q-swmpsi","error":"AGENT_OUTPUT_INVALID: node output does not match the declared output schema (1 issue)","resultStatus":"validation_failed","code":"AGENT_OUTPUT_INVALID"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.505Z","level":"info","event":"run.started","runId":"run-mv2t2b5d-90m7ts","workflowId":"wf-mv2t2b5c-xi6j0h"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:46:51.516Z","level":"error","event":"run.failed","runId":"run-mv2t2b5d-90m7ts","workflowId":"wf-mv2t2b5c-xi6j0h","error":"NODE_BLOCKED: Node \"agent-mv2t2b5c-qzhfhr\" produced a blocked structured result","resultStatus":"blocked","code":"NODE_BLOCKED"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.534Z","level":"info","event":"run.started","runId":"run-mv2t2b66-2b461s","workflowId":"wf-mv2t2b66-4tgdui"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.564Z","level":"info","event":"run.started","runId":"run-mv2t2b70-yorka8","workflowId":"wf-mv2t2b70-7pe7v1"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.587Z","level":"info","event":"run.started","runId":"run-mv2t2b7n-23o3qb","workflowId":"wf-mv2t2b7n-6ti0ci"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:46:51.596Z","level":"error","event":"run.failed","runId":"run-mv2t2b7n-23o3qb","workflowId":"wf-mv2t2b7n-6ti0ci","error":"TASK_REJECTED: policy says no","resultStatus":"failed","code":"TASK_REJECTED"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.613Z","level":"info","event":"run.started","runId":"run-mv2t2b8d-o8j9o3","workflowId":"wf-mv2t2b89-ghp1db"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.643Z","level":"info","event":"run.started","runId":"run-mv2t2b97-3tracu","workflowId":"wf-mv2t2b96-fcsvop"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.663Z","level":"info","event":"run.started","runId":"run-mv2t2b9r-sf1bwg","workflowId":"wf-mv2t2b9r-7dx1pk"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:46:51.672Z","level":"error","event":"run.failed","runId":"run-mv2t2b9r-sf1bwg","workflowId":"wf-mv2t2b9r-7dx1pk","error":"transient","resultStatus":"failed","code":"AGENT_EXECUTION_FAILED"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.674Z","level":"info","event":"run.started","runId":"run-mv2t2ba1-9gf2od","workflowId":"wf-mv2t2b9r-7dx1pk"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.724Z","level":"info","event":"run.started","runId":"run-mv2t2bbg-1edv7g","workflowId":"wf-mv2t2bbg-tyh00k"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:51.760Z","level":"info","event":"run.started","runId":"run-mv2t2bcg-253rg4","workflowId":"wf-mv2t2bcg-4qe2n1"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/localGit.test.ts
+  ● Console
+
+    console.log
+      [LocalGit] Cloning test-owner/my-repo into /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/tests/tmp_workspace/my-repo...
+
+      at LocalGitClient.cloneOrPull (src/integrations/localGit.ts:74:15)
+
+    console.log
+      [LocalGit] Cloning test-owner/repo; touch /tmp/pwned; $(whoami) into /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/tests/tmp_workspace/repo; touch /tmp/pwned; $(whoami)...
+
+      at LocalGitClient.cloneOrPull (src/integrations/localGit.ts:74:15)
+
+    console.log
+      [LocalGit] Updating existing clone at /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/tests/tmp_workspace/test-repo...
+
+      at LocalGitClient.cloneOrPull (src/integrations/localGit.ts:81:15)
+
+PASS tests/productionEpisodicMemory.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.249Z","level":"info","event":"run.started","runId":"run-mv2t2e1c-fgt4bi","workflowId":"wf-procedural"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.375Z","level":"info","event":"memory.episodic.extracted","runId":"run-mv2t2e1c-fgt4bi","created":true,"reason":"handoff_with_decisions","memoryId":"417301c3-7c1a-48ca-b097-2e8c9b9eae92"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.377Z","level":"info","event":"memory.procedural.learned","runId":"run-mv2t2e1c-fgt4bi","namespace":"tenant-a","created":0,"reinforced":0,"skipped":0,"reason":"insufficient_evidence"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.379Z","level":"info","event":"run.started","runId":"run-mv2t2e4z-j1mtcg","workflowId":"wf-procedural"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.423Z","level":"info","event":"memory.episodic.extracted","runId":"run-mv2t2e4z-j1mtcg","created":true,"reason":"handoff_with_decisions","memoryId":"d46bf251-a40d-44a6-b8be-a413b9580635"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.435Z","level":"info","event":"memory.procedural.learned","runId":"run-mv2t2e4z-j1mtcg","namespace":"tenant-a","created":1,"reinforced":0,"skipped":0,"reason":"extraction_complete"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.462Z","level":"info","event":"run.started","runId":"run-mv2t2e79-wcqyx6","workflowId":"wf-procedural"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.492Z","level":"info","event":"memory.episodic.extracted","runId":"run-mv2t2e79-wcqyx6","created":true,"reason":"handoff_with_decisions","memoryId":"78accf61-8f9c-4734-bc03-2858760d8f77"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.497Z","level":"info","event":"memory.procedural.learned","runId":"run-mv2t2e79-wcqyx6","namespace":"tenant-a","created":0,"reinforced":1,"skipped":0,"reason":"extraction_complete"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.558Z","level":"info","event":"run.started","runId":"run-mv2t2e9y-vz95kn","workflowId":"wf-meaningful"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.583Z","level":"info","event":"memory.episodic.extracted","runId":"run-mv2t2e9y-vz95kn","created":true,"reason":"handoff_with_decisions","memoryId":"2d793729-2258-40af-a718-c4df0535c74a"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.762Z","level":"info","event":"run.started","runId":"run-mv2t2efm-lt68tq","workflowId":"wf-failing"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:46:55.777Z","level":"error","event":"run.failed","runId":"run-mv2t2efm-lt68tq","workflowId":"wf-failing","error":"Database connection timeout during migration step.","resultStatus":"failed","code":"AGENT_EXECUTION_FAILED"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.778Z","level":"info","event":"memory.episodic.extracted","runId":"run-mv2t2efm-lt68tq","created":true,"reason":"meaningful_failure","memoryId":"bb0f3d4f-46f9-46ae-a4a9-881c5998f27b"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.965Z","level":"info","event":"run.started","runId":"run-mv2t2el9-671ovr","workflowId":"wf-trivial"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:55.981Z","level":"info","event":"memory.episodic.extracted","runId":"run-mv2t2el9-671ovr","created":false,"reason":"extraction_failed"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:56.171Z","level":"info","event":"run.started","runId":"run-mv2t2eqz-fp00hn","workflowId":"wf-tenant"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:56.185Z","level":"info","event":"memory.episodic.extracted","runId":"run-mv2t2eqz-fp00hn","created":true,"reason":"handoff_with_decisions","memoryId":"ff742f51-56aa-45e1-aa2f-10c9467c4765"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:56.374Z","level":"info","event":"run.started","runId":"run-mv2t2ewm-fu821d","workflowId":"wf-resilient"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.warn
+      {"timestamp":"2026-10-10T19:46:56.404Z","level":"warn","event":"memory.episodic.extraction_failed","runId":"run-mv2t2ewm-fu821d","error":"Simulated memory store disk failure"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at GraphRunner.runGraph (apps/server/src/runtime/graphRunner.ts:189:13)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:574:7)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:56.583Z","level":"info","event":"memory.episodic.extracted","runId":"durable-run-101","created":true,"reason":"meaningful_failure","memoryId":"bc729ab9-f7f4-403b-9721-218ceae1a2f6"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/operationalE2E.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:58.783Z","level":"info","event":"run.started","runId":"run-mv2t2gri-3tvvlv","workflowId":"wf-acceptance-1"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:58.916Z","level":"info","event":"run.started","runId":"run-mv2t2gv8-41rtsq","workflowId":"wf-cancel-test"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:58.927Z","level":"info","event":"run.cancelled","runId":"run-mv2t2gv8-41rtsq","workflowId":"wf-cancel-test","error":"AbortError: This operation was aborted","resultStatus":"blocked","code":"RUN_CANCELLED"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:58.941Z","level":"info","event":"run.started","runId":"run-mv2t2gvw-7b5xu6","workflowId":"wf-fail-test"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:46:58.951Z","level":"error","event":"run.failed","runId":"run-mv2t2gvw-7b5xu6","workflowId":"wf-fail-test","error":"Controlled LLM Provider Error: Rate limit 429","resultStatus":"failed","code":"AGENT_EXECUTION_FAILED"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:46:58.956Z","level":"info","event":"run.started","runId":"run-mv2t2gwc-veq543","workflowId":"alice-wf"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/agentDetail.test.ts
+PASS tests/runScheduler.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:00.942Z","level":"info","event":"run.started","runId":"run-mv2t2ifi-ilo89h","workflowId":"wf-mv2t2ifg-hbm87j"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:00.944Z","level":"info","event":"run.started","runId":"run-mv2t2ifk-oxgctq","workflowId":"wf-mv2t2ifg-x595fe"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:01.075Z","level":"info","event":"run.started","runId":"run-mv2t2ij6-oe4lw0","workflowId":"wf-mv2t2ij6-3nj3n1"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:01.075Z","level":"info","event":"run.started","runId":"run-mv2t2ij7-iv0y54","workflowId":"wf-mv2t2ij6-b9iyzf"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/taskBoardView.test.ts
+PASS tests/budgetPostgres.test.ts (5.559 s)
+PASS tests/studioPostgresRollback.test.ts
+PASS tests/proceduralMemory.test.ts
+PASS tests/dashboardSourceOfTruth.test.ts
+PASS tests/graphMappers.test.ts
+PASS tests/phase5Runtime.test.ts
+PASS tests/humanApproval.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:17.444Z","level":"info","event":"run.started","runId":"run-mv2t2v5w-kup57c","workflowId":"wf-mv2t2v5r-6pj4bt"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:17.512Z","level":"info","event":"run.started","runId":"run-mv2t2v7s-zhwn0l","workflowId":"wf-mv2t2v7s-7vfrek"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:17.557Z","level":"info","event":"run.started","runId":"run-mv2t2v91-afc6ib","workflowId":"wf-mv2t2v91-e9yh4l"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:17.626Z","level":"info","event":"run.started","runId":"run-mv2t2vay-tk83sn","workflowId":"wf-mv2t2vay-2kt0e8"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:17.690Z","level":"info","event":"run.started","runId":"run-mv2t2vcq-l6stfg","workflowId":"wf-mv2t2vcq-eod23g"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/agentRegistry.test.ts
+PASS tests/memoryStorage.test.ts
+PASS tests/workingMemoryRuntime.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:22.512Z","level":"info","event":"run.started","runId":"run-mv2t2z2n-y7ji02","workflowId":"wf-mv2t2z2m-d7dhsi"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:22.559Z","level":"info","event":"run.started","runId":"run-mv2t2z3z-jwukuq","workflowId":"wf-mv2t2z3u-f4unvn"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/memoryApi.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:23.887Z","level":"info","event":"run.started","runId":"run-mv2t304v-2bgkgy","workflowId":"wf-mv2t304s-ujuwp4"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:23.993Z","level":"info","event":"run.started","runId":"run-mv2t307t-dng556","workflowId":"wf-mv2t307s-50rwjt"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:24.082Z","level":"info","event":"run.started","runId":"run-mv2t30aa-l8v903","workflowId":"wf-mv2t30aa-wfw2zz"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/productionMemoryEvaluation.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.435Z","level":"info","event":"memory.compose","mode":"in-memory","vectorEnabled":false,"embeddingConfigured":false,"ttlDays":90,"evaluationEnabled":true,"evaluationSampleRate":1,"evaluationRetentionDays":1}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.438Z","level":"info","event":"scheduled","tenantId":"evaluation-tenant","namespace":"evaluation-project"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.440Z","level":"info","event":"completed","tenantId":"evaluation-tenant","namespace":"evaluation-project","merged":0,"candidates":1,"semanticCandidates":0,"exactDuplicates":0,"ignored":0,"keptBoth":1,"superseded":0,"judgeFailures":0,"latencyMs":2}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.440Z","level":"info","event":"scheduled","tenantId":"evaluation-tenant","namespace":"evaluation-project"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.447Z","level":"info","event":"completed","tenantId":"evaluation-tenant","namespace":"evaluation-project","merged":0,"candidates":1,"semanticCandidates":0,"exactDuplicates":0,"ignored":0,"keptBoth":1,"superseded":0,"judgeFailures":0,"latencyMs":7}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.447Z","level":"info","event":"scheduled","tenantId":"evaluation-tenant","namespace":"evaluation-project"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.448Z","level":"info","event":"memory.evaluation.retrieval","runId":"evaluation-run","invocationId":"evaluation-run:node","agentId":"agent-evaluation","nodeId":"node","candidateCount":3,"selectedCount":1,"suppressedCount":2,"conflictGroups":1,"staleConflictSuppressed":1,"disputedConflictSuppressed":1,"unauthorizedFiltered":0,"expiredFiltered":0,"supersededFiltered":0,"invalidatedFiltered":0,"securityViolations":0,"embeddingLatencyMs":0,"formattingLatencyMs":0,"fallbackMode":"lexical","latencyMs":4,"memoryTokenCount":"[redacted]","temporalMode":"current","queryTime":"2026-10-10T19:47:25.443Z","temporalMatched":3,"temporalDropped":0,"temporalOverlapUnresolved":0}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.451Z","level":"info","event":"memory.evaluation.invocation","runId":"evaluation-run","invocationId":"evaluation-run:node","agentId":"agent-evaluation","nodeId":"node","candidateCount":1,"selectedCount":1,"suppressedCount":2,"conflictGroups":1,"securityViolations":0,"latencyMs":7,"memoryTokenCount":"[redacted]","reasonCodes":"{\"conflict_weaker_reliability\":2}"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at execute.next (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.453Z","level":"info","event":"completed","tenantId":"evaluation-tenant","namespace":"evaluation-project","merged":0,"candidates":1,"semanticCandidates":0,"exactDuplicates":0,"ignored":0,"keptBoth":1,"superseded":0,"judgeFailures":0,"latencyMs":4}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:25.455Z","level":"info","event":"memory.compose","mode":"in-memory","vectorEnabled":false,"embeddingConfigured":false,"ttlDays":90,"evaluationEnabled":true,"evaluationSampleRate":1,"evaluationRetentionDays":1}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/memorySemanticVector.test.ts
+PASS tests/workflowGuardrails.test.ts
+PASS tests/executionBffRoute.test.ts
+  ● Console
+
+    console.error
+      [execution proxy] Unhandled error: Error: Connection refused
+          at Object.<anonymous> (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/tests/executionBffRoute.test.ts:151:41)
+          at Promise.then.completed (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/utils.js:298:28)
+          at new Promise (<anonymous>)
+          at callAsyncCircusFn (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/utils.js:231:10)
+          at _callCircusTest (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/run.js:316:40)
+          at _runTest (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/run.js:252:3)
+          at _runTestsForDescribeBlock (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/run.js:126:9)
+          at _runTestsForDescribeBlock (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/run.js:121:9)
+          at _runTestsForDescribeBlock (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/run.js:121:9)
+          at run (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/run.js:71:3)
+          at runAndTransformResultsToJestFormat (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+          at jestAdapter (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-circus@29.7.0/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+          at runTestInternal (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-runner@29.7.0/node_modules/jest-runner/build/runTest.js:367:16)
+          at runTest (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-runner@29.7.0/node_modules/jest-runner/build/runTest.js:444:34)
+
+       6 |     return await proxyExecution(request, `/${path.join("/")}`);
+       7 |   } catch (error) {
+    >  8 |     console.error("[execution proxy] Unhandled error:", error);
+         |             ^
+       9 |     return Response.json(
+      10 |       { error: error instanceof Error ? error.message : "Internal proxy error" },
+      11 |       { status: 500 }
+
+      at route (apps/web/src/app/api/execution/[...path]/route.ts:8:13)
+      at Object.<anonymous> (tests/executionBffRoute.test.ts:153:19)
+
+PASS tests/executionBff.test.ts
+  ● Console
+
+    console.error
+      [execution proxy] Upstream unreachable at http://localhost:4000: TypeError: fetch failed
+          at Object.<anonymous> (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/tests/executionBff.test.ts:57:19)
+          at /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-mock@29.7.0/node_modules/jest-mock/build/index.js:397:39
+          at Object.<anonymous> (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-mock@29.7.0/node_modules/jest-mock/build/index.js:404:13)
+          at Object.mockConstructor [as fetchImpl] (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/node_modules/.pnpm/jest-mock@29.7.0/node_modules/jest-mock/build/index.js:148:19)
+          at proxyExecutionWith (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/apps/web/src/lib/executionBff.ts:42:33)
+          at Object.<anonymous> (/tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/tests/executionBff.test.ts:61:20) {
+        cause: { code: 'ECONNREFUSED' }
+      }
+
+      48 |       || (error instanceof TypeError && /fetch failed/i.test(error.message));
+      49 |     if (unreachable) {
+    > 50 |       console.error(`[execution proxy] Upstream unreachable at ${base}:`, error);
+         |               ^
+      51 |       return Response.json(
+      52 |         { error: `Execution server is unreachable at ${base}. Start it with pnpm run dev:server (or pnpm run dev).` },
+      53 |         { status: 503 },
+
+      at proxyExecutionWith (apps/web/src/lib/executionBff.ts:50:15)
+      at Object.<anonymous> (tests/executionBff.test.ts:61:20)
+
+PASS tests/memoryEvalScenarios.test.ts
+PASS tests/workflowBranchRouting.test.ts
+PASS tests/phase45Hardening.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:35.619Z","level":"info","event":"run.started","runId":"run-mv2t396r-c3m6vj","workflowId":"wf-mv2t396p-7ea9eh"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:35.663Z","level":"info","event":"run.started","runId":"run-mv2t397z-642huu","workflowId":"wf-mv2t397y-0k467q","taskId":"task-linked"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:47:35.674Z","level":"error","event":"run.failed","runId":"run-mv2t397z-642huu","workflowId":"wf-mv2t397y-0k467q","taskId":"task-linked","error":"first run failed","resultStatus":"failed","code":"AGENT_EXECUTION_FAILED"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:35.675Z","level":"info","event":"run.started","runId":"run-mv2t398b-o93d7q","workflowId":"wf-mv2t397y-0k467q","taskId":"task-linked"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/clarificationResponse.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:36.924Z","level":"info","event":"run.started","runId":"run-mv2t3a6z-s3ch2z","workflowId":"wf-task-mv2t3a6x-54my53","taskId":"task-mv2t3a6u-blcscu"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:36.994Z","level":"info","event":"run.started","runId":"run-mv2t3a8y-rmhzac","workflowId":"wf-mv2t3a8y-safjxg"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:37.026Z","level":"info","event":"run.started","runId":"run-mv2t3a9u-qn1krv","workflowId":"wf-task-mv2t3a9u-bjclra","taskId":"task-mv2t3a9t-m47olv"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:37.045Z","level":"info","event":"run.started","runId":"run-mv2t3aad-lrhn4o","workflowId":"wf-task-mv2t3aac-kqcvqa","taskId":"task-mv2t3aac-vh0rit"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:37.053Z","level":"info","event":"run.started","runId":"run-mv2t3aal-b84jb6","workflowId":"wf-task-mv2t3aak-z2do4k","taskId":"task-mv2t3aac-vh0rit"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:37.091Z","level":"info","event":"run.started","runId":"run-mv2t3abn-owfmbm","workflowId":"wf-task-mv2t3abm-d8iepx","taskId":"task-mv2t3abk-q2dh09"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/memoryRuntime.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:38.558Z","level":"info","event":"run.started","runId":"run-mv2t3bgd-6wrzay","workflowId":"wf-mv2t3bgc-fgu0gj"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:38.625Z","level":"info","event":"run.started","runId":"run-mv2t3bi9-x79d57","workflowId":"wf-mv2t3bi8-njain8"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/phase4Phase5Completion.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:39.936Z","level":"info","event":"run.started","runId":"run-mv2t3cio-9dteag","workflowId":"wf-mv2t3cin-9smx5h"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:39.957Z","level":"info","event":"run.cancelled","runId":"run-mv2t3cio-9dteag","workflowId":"wf-mv2t3cin-9smx5h","error":"Aborted","resultStatus":"blocked","code":"RUN_CANCELLED"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:39.974Z","level":"info","event":"run.started","runId":"run-mv2t3cjq-qw50ji","workflowId":"wf-mv2t3cjp-y6rwt5"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-10T19:47:39.984Z","level":"error","event":"run.failed","runId":"run-mv2t3cjq-qw50ji","workflowId":"wf-mv2t3cjp-y6rwt5","error":"transient","resultStatus":"failed","code":"AGENT_EXECUTION_FAILED"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:603:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:575:28)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:39.985Z","level":"info","event":"run.started","runId":"run-mv2t3ck1-0tksg9","workflowId":"wf-mv2t3cjp-y6rwt5"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:40.016Z","level":"info","event":"run.started","runId":"run-mv2t3ckw-z1ynnx","workflowId":"wf-mv2t3cku-v722nb"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/phase9Persistence.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:41.282Z","level":"info","event":"memory.episodic.extracted","runId":"restart-run","created":true,"reason":"meaningful_failure","memoryId":"memory-1"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      Studio run persistence failed: database unavailable
+
+      144 |         this.persistenceError = error instanceof Error ? error : new Error(String(error));
+      145 |       }
+    > 146 |       console.error("Studio run persistence failed:", this.persistenceError.message);
+          |               ^
+      147 |     });
+      148 |   }
+      149 |
+
+      at apps/server/src/runtime/store/postgresRunStore.ts:146:15
+      at PostgresRunStore.flush (apps/server/src/runtime/store/postgresRunStore.ts:161:5)
+      at Object.<anonymous> (tests/phase9Persistence.test.ts:156:3)
+
+PASS tests/memoryRetrieval.test.ts
+PASS tests/notifications.test.ts
+PASS tests/workflowDelete.test.ts
+PASS tests/workerCredentials.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:45.029Z","level":"info","event":"run.started","runId":"run-mv2t3gg4-zkg371","workflowId":"wf-mv2t3gg3-zw1gyr"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/webRequestJson.test.ts
+PASS tests/cliResultContent.test.ts
+PASS tests/brokerPersistence.test.ts
+PASS tests/triggerOutbox.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:49.903Z","level":"info","event":"trigger.processed","eventId":"trig-mv2t3k7i-9oz3ux","eventType":"task_assignment","targetType":"task","targetId":"task-test","tenantId":"tenant-1"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.warn
+      {"timestamp":"2026-10-10T19:47:49.906Z","level":"warn","event":"trigger.failed","eventId":"trig-mv2t3k7l-ccz0z2","eventType":"routine_tick","tenantId":"tenant-1","retryCount":1,"maxRetries":2,"error":"RunExecutor not configured for trigger outbox processor"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at TriggerOutboxProcessor.tick (apps/server/src/triggers/triggerOutboxProcessor.ts:129:13)
+      at Object.<anonymous> (tests/triggerOutbox.test.ts:223:7)
+
+    console.warn
+      {"timestamp":"2026-10-10T19:47:49.906Z","level":"warn","event":"trigger.dead_letter","eventId":"trig-mv2t3k7l-ccz0z2","eventType":"routine_tick","tenantId":"tenant-1","retryCount":2,"maxRetries":2,"error":"RunExecutor not configured for trigger outbox processor"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at TriggerOutboxProcessor.tick (apps/server/src/triggers/triggerOutboxProcessor.ts:129:13)
+      at Object.<anonymous> (tests/triggerOutbox.test.ts:231:7)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:49.908Z","level":"info","event":"trigger.processed","eventId":"trig-mv2t3k7n-ilnlwj","eventType":"task_mention","targetType":"task","targetId":"task-assigned-to-a","tenantId":"tenant-dispatch","runId":"run-dispatched-for-b"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:47:49.909Z","level":"info","event":"trigger.processed","eventId":"trig-mv2t3k7p-5768s6","eventType":"approval_resolved","targetType":"task","targetId":"task-appr","tenantId":"tenant-appr","runId":"run-existing-123"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/pluginsAndMigration.test.ts
+PASS tests/runTimeline.test.ts
+PASS tests/costBudgets.test.ts
+PASS tests/evaluation.test.ts
+PASS tests/approvalManager.test.ts
+PASS tests/productionMemoryConsolidation.test.ts
+PASS tests/organizationProjectValidation.test.ts
+PASS tests/memoryEvaluation.test.ts
+PASS tests/workflowRunInput.test.ts
+PASS tests/memoryLiveEmbedding.test.ts
+PASS tests/routineScheduler.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:01.386Z","level":"info","event":"routine.dispatched","routineId":"routine-1","tenantId":"tenant-test","scheduledAt":"2026-10-10T19:48:00.384Z","nextRunAt":"2026-10-10T19:49:01.385Z"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:01.389Z","level":"info","event":"routine.misfire_skipped","routineId":"routine-misfire","tenantId":"tenant-test","scheduledAt":"2026-10-10T19:38:01.388Z","nextRunAt":"2026-10-10T19:49:01.389Z"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/memoryKindConflictSemantics.test.ts
+PASS tests/memorySemanticConflict.test.ts
+PASS tests/toolRegistry.test.ts
+PASS tests/ssrfProtection.test.ts
+PASS tests/agents/runtime/workerRuntime.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.562Z","level":"info","event":"worker.started","workerId":"worker-f5cc5e5b-1cd4-4d45-8cb5-199bdf42d621","runId":"run-mv2t3wad-yeh0o8","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.564Z","level":"info","event":"worker.completed","workerId":"worker-f5cc5e5b-1cd4-4d45-8cb5-199bdf42d621","runId":"run-mv2t3wad-yeh0o8","reason":"completed","exitCode":0,"durationMs":7}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.568Z","level":"info","event":"worker.started","workerId":"worker-42ca03a0-f5a1-44f7-8c33-b506dfc8e90e","runId":"run-mv2t3wao-s4zrpk","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.570Z","level":"info","event":"worker.completed","workerId":"worker-42ca03a0-f5a1-44f7-8c33-b506dfc8e90e","runId":"run-mv2t3wao-s4zrpk","reason":"failed","exitCode":1,"durationMs":2}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.573Z","level":"info","event":"worker.started","workerId":"worker-4419a56e-532b-4c44-8228-82be608cbb63","runId":"run-mv2t3was-s7n36k","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.634Z","level":"info","event":"worker.completed","workerId":"worker-4419a56e-532b-4c44-8228-82be608cbb63","runId":"run-mv2t3was-s7n36k","reason":"timeout","exitCode":null,"durationMs":62}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.637Z","level":"info","event":"worker.started","workerId":"worker-5b3e02fe-3f7e-412b-9163-d27e63cc2793","runId":"run-mv2t3wck-40dbg9","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.658Z","level":"info","event":"worker.completed","workerId":"worker-5b3e02fe-3f7e-412b-9163-d27e63cc2793","runId":"run-mv2t3wck-40dbg9","reason":"cancelled","exitCode":null,"durationMs":22}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.694Z","level":"info","event":"worker.started","workerId":"worker-bbfdd075-6762-444a-ab53-2747957cb9fc","runId":"run-mv2t3we5-xpbbbp","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.705Z","level":"info","event":"worker.completed","workerId":"worker-bbfdd075-6762-444a-ab53-2747957cb9fc","runId":"run-mv2t3we5-xpbbbp","reason":"cancelled","exitCode":null,"durationMs":12}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.709Z","level":"info","event":"worker.started","workerId":"worker-76660c86-c649-4f77-91bf-be61d89ed7d1","runId":"run-mv2t3wek-hp0dxv","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.730Z","level":"info","event":"worker.completed","workerId":"worker-76660c86-c649-4f77-91bf-be61d89ed7d1","runId":"run-mv2t3wek-hp0dxv","reason":"output_limit","exitCode":null,"durationMs":22}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.756Z","level":"info","event":"worker.started","workerId":"worker-3f7593d1-f9ef-4b8f-944d-b3cea8206d34","runId":"run-mv2t3wfv-si2b6g","agentId":"agent-1","nodeId":"node-1","executable":"/home/hossein/.nvm/versions/node/v25.2.1/bin/node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.757Z","level":"info","event":"worker.completed","workerId":"worker-3f7593d1-f9ef-4b8f-944d-b3cea8206d34","runId":"run-mv2t3wfv-si2b6g","reason":"completed","exitCode":0,"durationMs":1}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.758Z","level":"info","event":"worker.started","workerId":"worker-10f4bb76-632d-4dad-9dc4-4a822440f57e","runId":"run-mv2t3wfx-qfekc5","agentId":"agent-1","nodeId":"node-1","executable":"/home/hossein/.nvm/versions/node/v25.2.1/bin/node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.759Z","level":"info","event":"worker.completed","workerId":"worker-10f4bb76-632d-4dad-9dc4-4a822440f57e","runId":"run-mv2t3wfx-qfekc5","reason":"completed","exitCode":0,"durationMs":2}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.768Z","level":"info","event":"worker.started","workerId":"worker-dcf81532-cb02-4a01-bb22-cadee87ad768","runId":"run-mv2t3wg7-znnq2u","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.779Z","level":"info","event":"worker.completed","workerId":"worker-dcf81532-cb02-4a01-bb22-cadee87ad768","runId":"run-mv2t3wg7-znnq2u","reason":"cancelled","exitCode":null,"durationMs":12}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.781Z","level":"info","event":"worker.started","workerId":"worker-ee9e6128-f285-46aa-bdff-0af52324b4d6","runId":"run-mv2t3wgl-9vcb7g","agentId":"agent-1","nodeId":"node-1","executable":"/home/hossein/.nvm/versions/node/v25.2.1/bin/node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.783Z","level":"info","event":"worker.completed","workerId":"worker-ee9e6128-f285-46aa-bdff-0af52324b4d6","runId":"run-mv2t3wgl-9vcb7g","reason":"completed","exitCode":0,"durationMs":2}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+          at Array.forEach (<anonymous>)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.805Z","level":"info","event":"worker.started","workerId":"worker-33041bbf-98c7-4205-88c0-06226d8ffd37","runId":"run-mv2t3wgq-kcil68","agentId":"agent-1","nodeId":"node-1","executable":"node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:05.843Z","level":"info","event":"worker.completed","workerId":"worker-33041bbf-98c7-4205-88c0-06226d8ffd37","runId":"run-mv2t3wgq-kcil68","reason":"completed","exitCode":0,"durationMs":57}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+PASS tests/studioProjectsWorkspaces.test.ts
+PASS tests/webAgentDetailErrors.test.ts
+PASS tests/brokerSecurity.test.ts
+PASS tests/brokerService.test.ts
+PASS tests/webhookAgentExecutor.test.ts
+PASS tests/toolExecution.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:10.551Z","level":"info","event":"worker.started","workerId":"worker-3f73353b-ac26-4429-9f4a-4d876e93ffbb","runId":"tool-repo-tests-04a8e8f2-21ef-4f56-828e-89cec87e1f58","agentId":"tool-repo-tests","nodeId":"repo-tests","executable":"/home/hossein/.nvm/versions/node/v25.2.1/bin/node"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:10.638Z","level":"info","event":"worker.completed","workerId":"worker-3f73353b-ac26-4429-9f4a-4d876e93ffbb","runId":"tool-repo-tests-04a8e8f2-21ef-4f56-828e-89cec87e1f58","reason":"completed","exitCode":0,"durationMs":106}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:10.654Z","level":"info","event":"worker.started","workerId":"worker-a023a32d-64a3-49cf-805b-58c114b9281b","runId":"tool-repo-tests-a74743f0-0581-439b-9de5-9a32aa17001e","agentId":"tool-repo-tests","nodeId":"repo-diff","executable":"git"}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+    console.info
+      {"timestamp":"2026-10-10T19:48:10.657Z","level":"info","event":"worker.completed","workerId":"worker-a023a32d-64a3-49cf-805b-58c114b9281b","runId":"tool-repo-tests-a74743f0-0581-439b-9de5-9a32aa17001e","reason":"failed","exitCode":129,"durationMs":18}
+
+      at LocalProcessWorkerRuntime.log (src/agents/runtime/workerRuntime.ts:196:13)
+
+PASS tests/organizationBudgetRoutes.test.ts
+PASS tests/integrations.test.ts
+  ● Console
+
+    console.log
+      [LangFuse] Credentials not provided; tracing operates in mock mode.
+
+      at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
+
+    console.log
+      [LangFuse Mock Trace] Name: "test-step" | TraceID: trace-1791661692099-570td
+
+      at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
+
+PASS tests/memoryEmbedding.test.ts
+PASS tests/processAgentExecutor.test.ts
+PASS tests/memoryReliability.test.ts
+PASS tests/brokerHttp.test.ts
+PASS tests/workflowEditorStore.test.ts
+PASS tests/workflowDefinition.test.ts
+PASS tests/workingMemory.test.ts
+PASS tests/memoryConsolidation.test.ts
+PASS tests/toolValidation.test.ts
+PASS tests/organizationService.test.ts
+PASS tests/nodeContract.test.ts
+PASS tests/runReplay.test.ts
+PASS tests/episodicMemory.test.ts
+PASS tests/observability.test.ts
+PASS tests/toolBoundarySchema.test.ts
+PASS tests/realToolExecutors.test.ts
+PASS tests/memoryCandidatePrecision.test.ts
+PASS tests/workflowHistory.test.ts
+PASS tests/memoryService.test.ts
+PASS tests/memoryVocabularyRetrieval.test.ts
+PASS tests/graphRunner.test.ts
+PASS tests/brokerContract.test.ts
+PASS tests/storageUtils.test.ts
+PASS tests/internalPrincipal.test.ts
+PASS tests/adapters.test.ts
+  ● Console
+
+    console.log
+
+      ================ HUMAN QUESTION ================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
+
+    console.log
+      Question: What is your requirement?
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:20:13)
+
+    console.log
+      ================================================
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:21:13)
+
+    console.log
+      [CLI Auto-Answer]: Automated Answer Test
+
+      at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
+
+PASS tests/contextAssembler.test.ts
+PASS tests/webhookAuth.test.ts
+PASS tests/handoff.test.ts
+PASS tests/memoryTemporalSemantics.test.ts
+
+Test Suites: 104 passed, 104 total
+Tests:       1312 passed, 1312 total
+Snapshots:   0 total
+Time:        159.593 s, estimated 164 s
+Ran all test suites.
+Test results written to: ../phase0.5/baseline/jest.json

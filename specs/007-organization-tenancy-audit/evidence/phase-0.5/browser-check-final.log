@@ -1,0 +1,3 @@
+PASS: strategy without projects is disabled, required project select, create-project link
+PASS: selecting a project enables strategy and sends it through authenticated BFF; goal/task share project
+PASS: projectless delegation stays disabled until a project is selected and sends the explicit project

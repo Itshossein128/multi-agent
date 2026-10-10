@@ -193,3 +193,6 @@ git diff --check
 
 and report deltas against §2–§5. The three KNOWN-FAIL suites and the lint/jestfullcheck
 failures must be listed explicitly until fixed; they must not be counted as passing.
+
+
+Fresh verified baseline: [Phase 0.5 implementation baseline](./baseline-phase-0.5.md).

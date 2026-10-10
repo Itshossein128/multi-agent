@@ -1,0 +1,90 @@
+$ pnpm build:types
+
+> multi-agent-platform@1.0.0 build:types /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2
+> pnpm --filter @multi-agent/types build
+
+
+> @multi-agent/types@0.1.0 build /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/packages/types
+> tsc -p tsconfig.json
+
+$ npx tsc --noEmit -p tsconfig.json
+$ npx tsc --noEmit -p apps/server/tsconfig.json
+$ npx tsc --noEmit -p apps/web/tsconfig.json
+$ pnpm typecheck:tests
+
+> multi-agent-platform@1.0.0 typecheck:tests /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2
+> tsc -p tsconfig.test.json
+
+$ pnpm --filter server build
+
+> server@0.1.0 build /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/apps/server
+> tsc -p tsconfig.json
+
+$ pnpm --filter web build
+
+> web@0.1.0 build /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2/apps/web
+> next build --webpack
+
+▲ Next.js 16.3.4 (webpack)
+✓ Running next.config.ts took 98ms
+- Experiments (use with caution):
+  ⨯ useTypeScriptCli
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 15.2s
+  Running TypeScript ...
+  Finished TypeScript in 7.7s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/19) ...
+  Generating static pages using 7 workers (4/19)
+  Generating static pages using 7 workers (9/19)
+  Generating static pages using 7 workers (14/19)
+✓ Generating static pages using 7 workers (19/19) in 1099ms
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/dashboard
+├ ƒ /api/execution/[...path]
+├ ƒ /api/organizations
+├ ƒ /api/organizations/current
+├ ƒ /api/projects
+├ ƒ /api/projects/[projectId]
+├ ƒ /api/projects/[projectId]/repositories
+├ ƒ /api/projects/[projectId]/repositories/[repoId]
+├ ƒ /api/projects/[projectId]/workspaces
+├ ƒ /api/tasks
+├ ƒ /api/workspaces
+├ ƒ /api/workspaces/[workspaceId]
+├ ƒ /api/workspaces/[workspaceId]/repositories
+├ ○ /budgets
+├ ○ /login
+├ ○ /onboarding/organization
+├ ○ /org
+├ ○ /org/agents
+├ ƒ /org/agents/[agentId]
+├ ○ /org/memory
+├ ○ /org/tools
+├ ƒ /org/tools/[toolId]
+├ ○ /organization
+├ ○ /projects
+├ ƒ /projects/[projectId]
+├ ○ /register
+├ ○ /routines
+├ ○ /runs
+├ ƒ /runs/[runId]
+├ ○ /tasks
+├ ○ /webhooks
+├ ○ /workspaces
+└ ƒ /workspaces/[workspaceId]
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+$ git diff --check

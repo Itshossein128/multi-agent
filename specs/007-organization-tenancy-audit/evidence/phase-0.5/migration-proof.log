@@ -1,0 +1,29 @@
+{
+  "schema": "phase05_inventory_12bb4955760148a288398f37efc6472c",
+  "studio": [
+    "001_studio_entities.sql",
+    "002_runs.sql",
+    "003_tasks.sql",
+    "004_ownership.sql",
+    "005_users.sql",
+    "006_task_domain.sql",
+    "007_run_tool_snapshot.sql",
+    "008_run_result.sql",
+    "009_run_memory_access.sql",
+    "010_procedural_memory_status.sql",
+    "011_projects_workspaces.sql",
+    "012_event_routines_triggers.sql",
+    "013_event_routines_hardening.sql",
+    "014_organization_goals.sql",
+    "015_cost_budgets.sql",
+    "016_run_execution_leases.sql",
+    "017_project_workspace_hierarchy.sql"
+  ],
+  "memory": [
+    "001_memories.sql",
+    "002_pgvector.sql",
+    "003_temporal_validity.sql",
+    "004_memory_jobs.sql",
+    "005_memory_jobs_tenant_identity.sql"
+  ]
+}

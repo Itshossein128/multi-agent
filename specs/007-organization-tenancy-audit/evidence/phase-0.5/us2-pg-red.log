@@ -1,0 +1,94 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationUnitOfWork.test.ts tests/organizationStrategyAtomicity.test.ts
+
+PASS tests/organizationUnitOfWork.test.ts (6.428 s)
+FAIL tests/organizationStrategyAtomicity.test.ts (11.499 s)
+  ● strategy atomicity on real PostgreSQL › rolls back goal, task and event on failure at task insert
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Array [
+    -   0,
+    +   1,
+        0,
+        0,
+      ]
+
+      62 |     const before = await counts();
+      63 |     expect((await request(proposal)).status).toBeGreaterThanOrEqual(400);
+    > 64 |     expect(await counts()).toEqual(before);
+         |                            ^
+      65 |     expect(pool.totalCount - pool.idleCount).toBe(0);
+      66 |     await pool.query(`DROP TRIGGER injected ON ${table}`);
+      67 |     expect((await request(proposal)).status).toBe(201);
+
+      at tests/organizationStrategyAtomicity.test.ts:64:28
+
+  ● strategy atomicity on real PostgreSQL › rolls back goal, task and event on failure at event insert
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 400
+    Received:    201
+
+      61 |       ${stage === "commit" ? "DEFERRABLE INITIALLY DEFERRED" : ""} FOR EACH ROW EXECUTE FUNCTION inject_failure()`);
+      62 |     const before = await counts();
+    > 63 |     expect((await request(proposal)).status).toBeGreaterThanOrEqual(400);
+         |                                              ^
+      64 |     expect(await counts()).toEqual(before);
+      65 |     expect(pool.totalCount - pool.idleCount).toBe(0);
+      66 |     await pool.query(`DROP TRIGGER injected ON ${table}`);
+
+      at tests/organizationStrategyAtomicity.test.ts:63:46
+
+  ● strategy atomicity on real PostgreSQL › rolls back goal, task and event on failure at commit
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Array [
+    -   0,
+    +   1,
+        0,
+        0,
+      ]
+
+      62 |     const before = await counts();
+      63 |     expect((await request(proposal)).status).toBeGreaterThanOrEqual(400);
+    > 64 |     expect(await counts()).toEqual(before);
+         |                            ^
+      65 |     expect(pool.totalCount - pool.idleCount).toBe(0);
+      66 |     await pool.query(`DROP TRIGGER injected ON ${table}`);
+      67 |     expect((await request(proposal)).status).toBe(201);
+
+      at tests/organizationStrategyAtomicity.test.ts:64:28
+
+  ● strategy atomicity on real PostgreSQL › rejects project undefined with 400 and no writes
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 400
+    Received: 201
+
+      73 |   ])("rejects project %s with %s and no writes", async (projectId, status) => {
+      74 |     const before = await counts();
+    > 75 |     expect((await request({ ...proposal, projectId })).status).toBe(status);
+         |                                                                ^
+      76 |     expect(await counts()).toEqual(before);
+      77 |   });
+      78 |   it("commits exactly one proposed goal, assigned task and assignment event", async () => {
+
+      at tests/organizationStrategyAtomicity.test.ts:75:64
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       4 failed, 9 passed, 13 total
+Snapshots:   0 total
+Time:        18.168 s
+Ran all test suites matching /tests\/organizationUnitOfWork.test.ts|tests\/organizationStrategyAtomicity.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

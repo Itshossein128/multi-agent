@@ -1,0 +1,20 @@
+
+> multi-agent-platform@1.0.0 test /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/memoryBenchmark.test.ts
+
+PASS tests/memoryBenchmark.test.ts
+  production memory benchmark
+    ✓ catalog covers the required retrieval and budget categories (6 ms)
+    ✓ compares identical scenarios with memory disabled and full memory (3 ms)
+    ✓ records objective retrieval, cost, latency, and empty-retrieval metrics (2 ms)
+    ✓ keeps zero-tolerance security and lifecycle gates (2 ms)
+    ✓ retrieves relevant memories across vocabulary mismatch with high recall (3 ms)
+    ✓ resolves unknown-domain and generalized semantic conflicts with canonical winner selection (2 ms)
+    ✓ measures learning, consolidation, and repeated-run growth (1 ms)
+    ✓ serializes stable machine-readable and human-readable reports (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        3.375 s, estimated 4 s
+Ran all test suites matching /tests\/memoryBenchmark.test.ts/i.
