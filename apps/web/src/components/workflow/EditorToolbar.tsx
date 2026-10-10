@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { runService } from "@/services/runService";
+import { parseWorkflowRunInput, type WorkflowRunInputMode } from "@/lib/workflowRunInput";
 
 function ToolButton({
   title,
@@ -51,6 +52,11 @@ function ToolButton({
 export function EditorToolbar() {
   const router = useRouter();
   const [runInput, setRunInput] = React.useState("");
+  const [inputMode, setInputMode] = React.useState<WorkflowRunInputMode>("text");
+  const [inputError, setInputError] = React.useState<string | null>(null);
+  const [isStarting, setIsStarting] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const inputErrorId = React.useId();
   const definition = useWorkflowStore((s) => s.definition);
   const agents = useWorkflowStore((s) => s.agents);
   const tools = useWorkflowStore((s) => s.tools);
@@ -137,30 +143,56 @@ export function EditorToolbar() {
           <CircleCheck className="h-3.5 w-3.5" />
           Validate
         </Button>
+        <select
+          aria-label="Run input format"
+          value={inputMode}
+          onChange={(event) => { setInputMode(event.target.value as WorkflowRunInputMode); setInputError(null); }}
+          className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="text">Text</option>
+          <option value="json">JSON object</option>
+        </select>
+        <div className="relative">
         <input
+          ref={inputRef}
           aria-label="Run input"
+          aria-invalid={Boolean(inputError)}
+          aria-describedby={inputError ? inputErrorId : undefined}
           type="text"
           value={runInput}
-          onChange={(event) => setRunInput(event.target.value)}
-          placeholder="Run input"
+          onChange={(event) => { setRunInput(event.target.value); setInputError(null); }}
+          onBlur={() => {
+            if (inputMode !== "json") return;
+            try { parseWorkflowRunInput(runInput, inputMode); setInputError(null); }
+            catch (error) { setInputError((error as Error).message); }
+          }}
+          placeholder={inputMode === "json" ? '{"delivery_request": "..."}' : "Run input"}
           className="h-8 w-40 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         />
+        {inputError && <p id={inputErrorId} role="alert" className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-red-800 bg-zinc-950 p-2 text-xs text-red-300">{inputError}</p>}
+        </div>
         <Button
           size="sm"
-          disabled={hasErrors}
+          disabled={hasErrors || isStarting}
           onClick={async () => {
+            let input: Record<string, unknown>;
+            try { input = parseWorkflowRunInput(runInput, inputMode); setInputError(null); }
+            catch (error) { setInputError((error as Error).message); inputRef.current?.focus(); return; }
+            setIsStarting(true);
             try {
-              const { runId } = await runService.startRun(definition, agents, { input: runInput }, undefined, tools);
+              const { runId } = await runService.startRun(definition, agents, input, undefined, tools);
               sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
               router.push(`/runs/${runId}`);
             } catch (error) {
               window.alert(error instanceof Error ? error.message : String(error));
+            } finally {
+              setIsStarting(false);
             }
           }}
           className="h-8 cursor-pointer gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-500"
         >
           <Play className="h-3.5 w-3.5" />
-          Run
+          {isStarting ? "Starting…" : "Run"}
         </Button>
         <Button
           size="sm"

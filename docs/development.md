@@ -47,6 +47,67 @@ pnpm dev:docs
 
 ## Verification
 
+### Velora workbook delivery intake
+
+`scripts/velora-workbook-delivery.ts` configures the saved
+`velora-incremental-delivery` workflow for an isolated delivery workspace. It
+checks the server workspace allowlist, staged attachment SHA-256 values, the
+requested `codex/` branch and `develop` base before saving agent settings through
+the authenticated Studio API. The workflow's owner/tenant are read from the
+existing Studio database; this is a local operator script using the configured
+internal principal secret, not a public upload endpoint.
+
+Stage the original XLSX under a task directory in `workspaces/`. Extract sparse
+cells without running workbook formulas or expanding formatted empty grids:
+
+```bash
+python3 scripts/extract-workbook-context.py <staged.xlsx> <workbook-context.json>
+```
+
+Create `intake.json` with `delivery_request` (requirements and acceptance
+criteria), absolute `workspaceRoot` and `checkoutPath`, `repositoryUrl`,
+`baseRef: "develop"`, `branch: "codex/<feature>"`, and an `attachments` array of
+absolute `path` plus `sha256`. The XLSX remains untrusted reference data. Stage
+the extracted context as a second checksummed attachment when useful. Avoid
+committing customer workbooks or historical customer records.
+
+Development deliveries need enough time for repository discovery, implementation
+and independent checks. The launcher refuses to start with an agent budget below
+15 minutes or a run budget below one hour. Set bounded values such as
+`AGENT_MAX_DURATION_MS=3600000` (60 minutes per agent) and
+`RUN_MAX_DURATION_MS=21600000` (six hours per run) in
+`apps/server/.env`, then restart the execution server before launching. The
+launcher reports both budgets in its preflight result. Monitor progress with
+`--status <runId> --watch`; it prints only new significant events and stops on
+completion, failure or a pause requiring input.
+
+```bash
+# Validate only; no saved configuration changes or run launch.
+pnpm exec ts-node --transpile-only scripts/velora-workbook-delivery.ts <intake.json>
+# Back up the current workflow/agents, save configuration, and launch.
+pnpm exec ts-node --transpile-only scripts/velora-workbook-delivery.ts <intake.json> --start
+# Persist full run evidence locally and print compact progress.
+pnpm exec ts-node --transpile-only scripts/velora-workbook-delivery.ts <intake.json> --status <runId>
+```
+
+The workspace-preparer agent clones and creates the task branch from a recorded
+`origin/develop` SHA; the operator script does not edit target product source.
+Auditor/planner/reviewer agents use read-only CLI sandboxes; implementation and
+verification agents use workspace-write. All roles get the intake path so the
+original request and attachment paths survive intermediate handoffs. Backups and
+run snapshots are saved outside the target checkout. `--apply` saves settings
+without launching. These settings replace the shared Velora agents' active
+workspace, so run one Velora delivery at a time. Existing runs keep their saved
+snapshots. A completed run is not proof of delivery: inspect implementation,
+independent checks, and review findings before reporting completion.
+
+The workflow toolbar also supports an explicit **JSON object** input format.
+Paste a structured intake there to preserve named fields and attachment
+references; invalid JSON or a non-object root produces an inline error before
+any run is submitted. **Text** mode retains the original `{ input: text }`
+behavior. This selector does not upload files: references must already be
+available in the execution workspace.
+
 ```bash
 pnpm test --runInBand
 pnpm --filter server build
