@@ -31,8 +31,7 @@ server-side re-validation; see Organization Context).
 | `created_by`, `created_at`, `updated_at` | partly existing | |
 
 Invariants: ≥1 active `owner` membership while `status = active`. Deletion [D-12] is a hard delete:
-`deleting` blocks all access while the purge runs, after which the row and all owned data are gone; no
-retention period.
+`deleting` blocks normal access while the purge runs; only the authorized purge worker may continue cleanup. After completion, the row and owned application data are gone. The sole retention exception is service-only, secret-free broker audit records (plan §7 Q2); they cannot authorize access or execution.
 
 ### OrganizationMembership (new)
 
@@ -71,7 +70,7 @@ Roles are a fixed set mapped to permissions in code (no custom roles in this pro
 | `memory.org.write` / `memory.org.forget` | ✓ | ✓ | | |
 | `audit.read` | ✓ | ✓ | | |
 
-Rules: an actor cannot grant a role above their own; the last owner cannot be demoted or removed.
+Rules: authorize both the target member's current role and the requested resulting role. Admins may manage only non-owner memberships and may assign at most admin; they cannot remove, suspend, demote, or otherwise modify an owner, even when another owner remains. Only owners may grant or modify owner membership. The last active owner cannot be removed, suspended, or demoted. Evaluate these rules and update membership atomically under an organization-scoped lock, including concurrent owner changes.
 
 ### OrganizationContext (new, server-side value object)
 
@@ -96,8 +95,10 @@ Resolution (per request, server-side, never trusted from the client):
 2. Server verifies the signature, then **loads the active membership** for `(organizationId, userId)`
    (short TTL cache keyed by membership version). No membership or org not `active` → 404/403.
 3. The context is attached to the Hono request and passed to stores as today's `StudioPrincipal` shape
-   (`tenantId := organizationId`) so store predicates keep working; every store query runs inside
+   (`tenantId := organizationId`) so store predicates keep working; every organization-scoped store query runs inside
    `withOrganization(orgId)` which sets `app.tenant_id` for RLS [D-10].
+
+Global account operations, organization listing/creation and invitation acceptance must authenticate the user without requiring an existing organization membership. Define narrowly scoped user/bootstrap queries for these operations; do not manufacture an organization context or use unrestricted store access. Include a zero-membership onboarding test under RLS.
 
 `/` and post-login redirect to `users.tenant_id` (last organization) if still a member, otherwise to the
 first active membership, otherwise to organization creation.
@@ -180,7 +181,7 @@ Organization ──1:N── Memory (namespaces: organization, project, agent, w
 | Current | Target | Migration |
 |---------|--------|-----------|
 | all application data | — | **cleared by the guarded reset** (D-7); no backfill |
-| `tenant_id` columns | organization key | NOT NULL everywhere; added to run events, approvals, workspace repositories |
+| `tenant_id` columns | organization key | NOT NULL on owned rows; conditional global/system exception for agents/tools (migration-plan §2); added to run events, approvals, workspace repositories |
 | `studio_organizations` | Organization | add `status`, `slug`; creation creates owner membership |
 | `studio_organizations.owner_id` | membership(role=owner) | dropped/ignored |
 | `studio_users.tenant_id` | last-used organization (nullable) | registration stops minting tenants |

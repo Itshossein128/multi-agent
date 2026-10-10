@@ -35,7 +35,7 @@ embeddings, credential material (broker/Vault, CLI auth files), audit logs, memb
 | ID | Threat | Current exposure | Control required (phase) |
 |----|--------|------------------|--------------------------|
 | T-1 | **Cross-org read by id** (IDOR) — user of org A fetches resource of org B | Mitigated on user paths where principal is passed; risk where `principal` is omitted or id-only pre-checks leak existence ("Access denied" vs 404) | Required principal on user paths; uniform 404; route×foreign-org negative test matrix (P2) |
-| T-2 | **Cross-org write via id collision/race** — upsert on global id overwrites/claims another org's row | Present: check-then-`ON CONFLICT (id) DO UPDATE` without tenant guard | Tenant-guarded upserts (P2) |
+| T-2 | **Cross-org write via id collision/race** — upsert on global id overwrites/claims another org's row | Present: check-then-`ON CONFLICT (id) DO UPDATE` without tenant guard | Tenant-guarded upserts (P1) |
 | T-3 | **Selected-org spoofing** — client asks BFF to act in an org it is not a member of | N/A today (single tenant); becomes critical with switcher | BFF validates selection against membership; server re-verifies membership (P1/P2) |
 | T-4 | **Stale privilege** — removed/disabled member keeps access via live JWT/assertion | Present for disabled users today | Membership version check per request; short cache TTL (P1/P2) |
 | T-5 | **Privilege escalation inside org** — member sets budgets, appoints CEO agent, approves goals, captures shared agents | Present (no roles; ownership capture on save) | Role/permission gates; preserve owner on update (P2) |
@@ -88,6 +88,8 @@ embeddings, credential material (broker/Vault, CLI auth files), audit logs, memb
 6. Memory grant for org B presented with a run in org A → rejected.
 7. Two orgs enqueue identical trigger idempotency/dispatch keys → both processed independently.
 8. Reset → all data stores empty; migration 018 refuses to run on a non-empty legacy data set.
-9. Organization deletion by non-owner or with a wrong name → denied; by owner → all stores verified empty for that org; interrupted deletion resumes.
+9. Organization deletion by non-owner or with a wrong name → denied; by owner → all application stores verified empty for that org except retained service-only broker audit; interrupted deletion resumes; endpoint disabled until the full purge gate passes.
 10. URL slug of a foreign/deleted org → 404 with no data requests succeeding.
-11. Phase 5: raw SQL as `studio_app` without `app.tenant_id` → 0 rows; cross-org insert → rejected.
+11. Phase 5: raw SQL as `studio_app` without `app.tenant_id` → 0 organization-owned rows; cross-org insert → rejected. Global system definitions remain readable but cannot be inserted, updated, deleted or promoted by the app role.
+12. Admin attempts to modify any owner with two owners present → denied; concurrent owner removals preserve one active owner.
+13. Recovery rehearsal after multi-member activation never restores weaker authorization; unsafe rollback keeps the service in maintenance mode.

@@ -13,7 +13,7 @@ Principles:
 3. **Strict from the start**: because no legacy rows survive, constraints that would otherwise need a long
    migration (`NOT NULL`, tenant-qualified keys, composite FKs) are added in Phase 1.
 4. After the reset, each later schema change is additive first; there are no down migrations in this repo,
-   so rollback = previous app version on the expanded schema, or restore from backup.
+   so recovery must follow §9: a security-compatible rollback build, maintenance-mode forward-fix, or an operator backup restore for the reset.
 
 ## 1. Reset (Phase 1, once)
 
@@ -57,8 +57,8 @@ nothing needs re-seeding. Users must register again (or dev identity is recreate
 | Step | Migration (proposed) | Phase | Content |
 |------|---------------------|-------|---------|
 | S1 | `018_organization_foundation.sql` | 1 | empty-data guard; `studio_organizations`: `status` (`active|suspended|deleting`), `slug` (unique, lowercase), `created_by`; `studio_organization_memberships(organization_id, user_id, role, status, invited_by, version, timestamps)` unique `(organization_id,user_id)`; `studio_organization_audit` (append-only); `studio_users.tenant_id` → nullable "last organization" (no longer authoritative) |
-| S2 | `019_tenant_constraints.sql` | 1 | `tenant_id NOT NULL` on workflows/agents/tools/tasks/runs (with `CHECK (is_system OR tenant_id IS NOT NULL)` for agents/tools); add `tenant_id NOT NULL` to `studio_run_events`, `studio_approvals`, `studio_workspace_repositories`; `UNIQUE (tenant_id, id)` on FK targets; composite FKs for parent/child (task→project, workspace→project, comment→task, repo states/repositories→project, goal→project, memberships→organization); tenant-qualified trigger-dispatch unique index (drop global one) |
-| S3 | `020_rls_prerequisites.sql` | 1 | roles `studio_migrator`/`studio_app`/`studio_worker` (or documented manual role creation where the DB user lacks `CREATEROLE`); `CREATE POLICY org_isolation … USING (tenant_id = current_setting('app.tenant_id', true)) WITH CHECK (same)` on every organization-owned table; `studio_organizations` policy on `id`; RLS **not enabled**; SECURITY DEFINER claim functions for workers |
+| S2 | `019_tenant_constraints.sql` | 1 | `tenant_id NOT NULL` on workflows/tasks/runs; agents/tools retain nullable `tenant_id` with `is_system NOT NULL DEFAULT false` and `CHECK ((is_system AND tenant_id IS NULL) OR (NOT is_system AND tenant_id IS NOT NULL))`; add `tenant_id NOT NULL` to `studio_run_events`, `studio_approvals`, `studio_workspace_repositories`; `UNIQUE (tenant_id, id)` on FK targets; composite FKs for parent/child (task→project, workspace→project, comment→task, repo states/repositories→project, goal→project, memberships→organization); tenant-qualified trigger-dispatch unique index (drop global one) |
+| S3 | `020_rls_prerequisites.sql` | 1 | roles `studio_migrator`/`studio_app`/`studio_worker` (or documented manual role creation where the DB user lacks `CREATEROLE`); command-specific policies: tenant-owned SELECT/INSERT/UPDATE/DELETE require `tenant_id = current_setting('app.tenant_id', true)`; UPDATE checks both old and new rows. Agents/tools SELECT also permits `is_system = true`, but INSERT/UPDATE/DELETE require `NOT is_system` and tenant equality, including UPDATE `WITH CHECK`; no broad ALL policy may grant system writes. `studio_organizations` uses `id`; membership uses `organization_id`. RLS **not enabled**; tightly scoped SECURITY DEFINER claim functions for workers |
 | S4 | memory `006_*` | 1 | same `NOT NULL`/policy treatment for memory tables; optional index `(tenant_id, namespace_scope, namespace_id)` |
 | S5 | broker DDL update | 1 | policies on leases (audit stays service-only) |
 | S6 | `02x_run_initiator.sql` | 3 | `initiator_kind`, `membership_version_at_start` on runs (additive) |
@@ -66,6 +66,8 @@ nothing needs re-seeding. Users must register again (or dev identity is recreate
 
 Verification after S1–S5 (attached to the Phase 1 report): all data tables empty; all constraints and
 policies present (catalog queries); `pg_class.relrowsecurity = false` until Phase 5.
+
+Global agents/tools remain read/execute-only for organization callers under enforced RLS. Test global reads from two organizations and denied system insert/update/delete (including personal-to-system promotion); test both old-row USING and new-row WITH CHECK. Provisioning global definitions is a separate privileged operator operation, unavailable to `studio_app`.
 
 ## 3. Users and organizations after the reset
 
@@ -95,7 +97,7 @@ release to simplify tests, removed in Phase 5. Public API changes:
 |----------|--------|-------|
 | `POST /studio/organizations` | creates org + owner membership + slug | 1 |
 | `GET /studio/me/organizations`, `GET /studio/organizations/current/members` | new | 1 |
-| Web URLs | `/o/[orgSlug]/…` for all authenticated pages | 2 |
+| Web URLs | `/o/[orgSlug]/…` for organization-scoped pages; global account/onboarding routes remain outside | 2 |
 | BFF | `/api/o/[orgSlug]/execution/[...path]` etc. | 2 |
 | Members/invitations, `DELETE /studio/organizations/current` (name confirmation) | new | 2 |
 | `/studio/organization` (agent chart) | permission gates | 2 |
@@ -106,13 +108,16 @@ release to simplify tests, removed in Phase 5. Public API changes:
 |------|--------|---------|
 | `ORG_MEMBERSHIP_ENFORCEMENT` | `shadow | enforce` | Phase 2 rollout of route-level permission checks |
 | `ORG_MEMORY_SCOPE` | `false | true` | Phase 4 |
+| `ORG_DELETION_ENABLED` | `false | true` | disabled until the complete Phase 5 purge gate passes |
 | `ORG_RLS` | `off | enforce` | Phase 5 activation switch (maps to the migration + role switch) |
 
 ## 8. Organization deletion (D-12)
 
+Develop behind `ORG_DELETION_ENABLED=false`; enable only after the complete cross-store purge passes the Phase 5 gate. Disabled requests fail without mutations. Never report completion while any cleanup remains pending. Verify the broker-audit retention exception separately from application-data removal.
+
 - Location: organization settings; owner only (`org.delete`); the user must type the organization's exact
   name; server re-checks the name and permission.
-- Data is **not retained**. Procedure (idempotent, resumable):
+- Application data is **not retained**, except service-only broker audit records as specified below. Procedure (idempotent, resumable):
   1. set `status = deleting` (all access denied immediately, schedulers skip the org);
   2. cancel running runs; revoke broker leases; (Q3 default) delete the org's secrets via the broker;
   3. delete all organization rows (studio, memory incl. embeddings, jobs, budgets, goals, routines, webhooks),
@@ -125,5 +130,5 @@ release to simplify tests, removed in Phase 5. Public API changes:
 
 - **Reset**: irreversible unless the operator took `--backup`; the product retains nothing (by decision).
 - **Phase 1 schema**: forward-fix; previous app version is not supported after the reset window.
-- **Phases 2–4**: schema changes additive → previous version runs on the expanded schema; flags revert.
-- **Phase 5 RLS**: `DISABLE ROW LEVEL SECURITY` and switch the app back to the owner role.
+- **Phases 2–4**: additive schema is necessary but insufficient for rollback. After admitting members, never restore a build or flag state that weakens membership, role, tenant, lifecycle, credential or revocation enforcement. Rehearse a security-compatible rollback build against the current multi-member data; otherwise enter maintenance mode and forward-fix. Disabling organization-memory exposure must not restore stale static grants.
+- **Phase 5 RLS**: first prefer a forward-fix. An operator may disable RLS only while retaining verified application authorization and tenant-scoped queries; keep the least-privileged app role rather than switching it to the schema owner. If those guarantees cannot be verified, stop traffic and workers during recovery.

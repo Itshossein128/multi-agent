@@ -72,19 +72,17 @@ The original Phase 1 ("Organization and Membership") assumed organizations did n
 
 - **Changes**: `tests/taskBoardView.test.ts` fixture (`projectId`, `workspaceId`);
   `tests/eventRoutinesIntegration.test.ts` fixture (project row + `project_id`);
-  `OrganizationService.requestStrategyProposal`/`delegate` resolve the project **before** persisting and
-  require an explicit `projectId` (D-6), typed `ApiError(409/400)`; `tests/organizationBudgetRoutes.test.ts`
+  `OrganizationService.requestStrategyProposal`/`delegate` validate an explicit project (D-6) before writes, with typed `ApiError(409/400)`. Strategy goal and task creation share one database transaction/unit of work across both stores; failure rolls back both, rather than leaving a cancelled goal. Delegation validates the explicit project association and cannot fall back to the first active project; `tests/organizationBudgetRoutes.test.ts`
   creates a project; `tsconfig.jestfullcheck.json` actually type-checks tests.
-- **DoD**: full suite 101/101 suites green with PG; failed strategy request leaves no goal (new test);
-  test-typecheck gate passes.
+- **DoD**: one full-suite execution on an exact clean committed SHA with PG, all existing 101 suites plus added coverage passing; record actual discovered/executed/skipped counts. Missing/foreign project and injected failure after goal insert (before task completion) leave neither a new goal nor task in real PostgreSQL; in-memory behavior matches. Test-typecheck gate passes. Preserve the historical baseline and record the new reproducible baseline separately.
 
 ### Phase 1 — Organization foundation on a clean database
 
 | Item | Content |
 |------|---------|
 | Dependencies | Phase 0.5; D-1, D-2, D-3, D-7, D-10 (prereq part) |
-| Code changes | **Reset**: operator command (e.g. `pnpm db:reset -- --confirm-destroy-all-data`) that truncates studio, memory, and broker data tables (keeping migration ledgers), and empties `STUDIO_WORKSPACE_STORAGE_ROOT` working copies; refuses in non-interactive mode without the flag. **Migration 018+**: guard (abort if any tenant data exists without the new tables populated), `studio_organizations.status` + `slug` (unique), `studio_organization_memberships`, `studio_organization_audit`, `studio_users.tenant_id` dropped from authority (kept nullable as "last organization" or removed — see data-model), `tenant_id NOT NULL` everywhere incl. new columns on `studio_run_events`/`studio_approvals`/`studio_workspace_repositories`, tenant-qualified trigger dispatch index, composite `(tenant_id, id)` uniqueness for FK targets and composite FKs for parent/child, RLS policies (`USING tenant_id = current_setting('app.tenant_id')`) created but RLS disabled. **Code**: `withOrganization(orgId, fn)` DB helper (`SET LOCAL app.tenant_id`, `app.principal_kind`) used by all store queries; DB roles `studio_migrator` (owner), `studio_app` (no BYPASSRLS), `studio_worker` (cross-org claim functions); registration creates user only, organization creation is a separate step that creates the owner membership; `OrganizationMembershipStore` (in-memory + Postgres); `OrganizationContextResolver`; principal assertion v2 `{userId, organizationId}`; tenant-guarded upserts; `owner_id` preserved on update; membership read APIs |
-| Required tests | reset command refuses without flag and leaves ledgers intact; migration guard aborts on legacy data; membership store contract (both adapters); org creation creates exactly one owner membership atomically; resolver: member / non-member / suspended org / removed member; concurrent cross-org id collision per guarded upsert; shared agent edit keeps `owner_id NULL`; every store query runs inside `withOrganization` (test harness enables RLS on a scratch schema and runs the store suites → any unscoped query fails); composite FK rejects child in another org |
+| Code changes | **Reset**: operator command (e.g. `pnpm db:reset -- --confirm-destroy-all-data`) that truncates studio, memory, and broker data tables (keeping migration ledgers), and empties `STUDIO_WORKSPACE_STORAGE_ROOT` working copies; refuses in non-interactive mode without the flag. **Migration 018+**: guard (abort if any tenant data exists without the new tables populated), `studio_organizations.status` + `slug` (unique), `studio_organization_memberships`, `studio_organization_audit`, `studio_users.tenant_id` dropped from authority (kept nullable as "last organization" or removed — see data-model), non-null tenant on owned rows (conditional CHECK for global agents/tools, migration-plan §2), incl. new columns on `studio_run_events`/`studio_approvals`/`studio_workspace_repositories`, tenant-qualified trigger dispatch index, composite `(tenant_id, id)` uniqueness for FK targets and composite FKs for parent/child, command-specific RLS policies as defined in migration-plan §2 (including read-only global agents/tools), created but RLS disabled. **Code**: `withOrganization(orgId, fn)` DB helper (`SET LOCAL app.tenant_id`, `app.principal_kind`) used by organization-scoped store queries (explicit user/bootstrap paths cover global operations, data-model §1); DB roles `studio_migrator` (owner), `studio_app` (no BYPASSRLS), `studio_worker` (cross-org claim functions); registration creates user only, organization creation is a separate step that creates the owner membership; `OrganizationMembershipStore` (in-memory + Postgres); `OrganizationContextResolver`; principal assertion v2 `{userId, organizationId}`; tenant-guarded upserts; `owner_id` preserved on update; membership read APIs |
+| Required tests | reset command refuses without flag and leaves ledgers intact; migration guard aborts on legacy data; membership store contract (both adapters); org creation creates exactly one owner membership atomically; resolver: member / non-member / suspended org / removed member; concurrent cross-org id collision per guarded upsert; shared agent edit keeps `owner_id NULL`; every organization-scoped store query runs inside `withOrganization` (test harness enables RLS on a scratch schema and runs the store suites → any unscoped query fails); composite FK rejects child in another org; RLS harness permits global agent/tool reads across organizations but rejects every system mutation and promotion |
 | Security invariants | INV-1 at data level (constraints), INV-5 (no legacy rows exist), INV-8; org audit records every membership change |
 | Data migration | none — reset; verification: all data tables empty before 018; constraints present after |
 | Rollback | before reset: restore operator backup (if taken); after reset: forward-fix only (no legacy state to return to) |
@@ -95,11 +93,11 @@ The original Phase 1 ("Organization and Membership") assumed organizations did n
 | Item | Content |
 |------|---------|
 | Dependencies | Phase 1; D-2, D-4, D-8, D-11 |
-| Code changes | **URL routing** `/o/[orgSlug]/…` for all authenticated pages (existing `/org/*` org library, projects, tasks, runs, budgets, routines, webhooks, organization chart move under it); root and login redirect to the user's last/default organization or to organization creation; BFF routes `/api/o/[orgSlug]/execution/[...path]` (and other BFF routes) resolve slug → org and verify membership before signing the assertion; `OrganizationGate` replaced by an org layout; org switcher in `AppSidebar` navigates between slugs; query keys include organization; full cache reset on org change. **Server**: enforce membership + permissions on every route; permission gates on org settings, agent chart, goals, budgets, projects, credentials; admins/owners can read teammates' runs (`runs.read_all`, D-4); invitations & member management; typed errors (no raw 400s); user-path store methods require organization context; typed service principal replaces `system%`/`internal:%` checks (D-11); uniform 404 for foreign ids |
-| Required tests | route × {same org, foreign org, non-member, removed member, each role} matrix; slug of an org the user is not a member of → 404 page, no data request succeeds; manual URL edit to another slug cannot reuse cached data; removed member denied within TTL; last-owner protection; role escalation denied; Playwright: org switch + deep links + stale-cache checks |
+| Code changes | **URL routing** `/o/[orgSlug]/…` for all organization-scoped authenticated pages (global account and organization creation/listing remain outside) (existing `/org/*` org library, projects, tasks, runs, budgets, routines, webhooks, organization chart move under it); root and login redirect to the user's last/default organization or to organization creation; BFF routes `/api/o/[orgSlug]/execution/[...path]` (and other BFF routes) resolve slug → org and verify membership before signing the assertion; `OrganizationGate` replaced by an org layout; org switcher in `AppSidebar` navigates between slugs; query keys include organization; full cache reset on org change. **Server**: enforce membership + permissions on every organization-scoped route; authenticate global account/bootstrap routes independently; permission gates on org settings, agent chart, goals, budgets, projects, credentials; admins/owners can read teammates' runs (`runs.read_all`, D-4); invitations & member management; typed errors (no raw 400s); organization-scoped user-path store methods require organization context; typed service principal replaces `system%`/`internal:%` checks (D-11); uniform 404 for foreign ids |
+| Required tests | route × {same org, foreign org, non-member, removed member, each role} matrix; slug of an org the user is not a member of → 404 page, no data request succeeds; manual URL edit to another slug cannot reuse cached data; removed member denied within TTL; last-owner protection under concurrency; admin cannot modify/remove/suspend/demote any owner even with multiple owners; role escalation denied; Playwright: org switch + deep links + stale-cache checks |
 | Security invariants | INV-1, INV-2, INV-4 |
 | Data migration | none |
-| Rollback | redeploy previous version (schema unchanged in this phase) |
+| Rollback | Never restore the Phase 1 authorization behavior after admitting additional members. Use only a verified rollback build retaining membership, role, lifecycle and tenant enforcement; otherwise keep the service in maintenance mode and forward-fix. Schema compatibility alone is insufficient. |
 | DoD | matrix 100% pass; Playwright URL/switch specs green; threat-model T-1…T-6, T-13, T-14, T-19 evidenced |
 
 ### Phase 3 — Execution & Infrastructure Isolation
@@ -111,7 +109,7 @@ The original Phase 1 ("Organization and Membership") assumed organizations did n
 | Required tests | removed initiator → task kept, run stopped, no lease issued; interleaved multi-org outbox/routine/heartbeat processing; trigger key collision across orgs; memory grant mismatch rejected; path traversal / foreign-prefix rejection; broker cross-org consume rejected (existing); recovery after restart preserves org |
 | Security invariants | INV-3, INV-7 |
 | Data migration | additive columns only |
-| Rollback | additive; previous version ignores new columns |
+| Rollback | Only a verified rollback build preserving membership-revocation, execution and credential controls may serve traffic; otherwise maintenance mode and forward-fix. Additive columns alone do not establish rollback safety. |
 | DoD | all above green incl. `postgresMultiInstanceRecovery` and broker suites; T-7…T-12 evidenced |
 
 ### Phase 4 — Organization Memory
@@ -123,7 +121,7 @@ The original Phase 1 ("Organization and Membership") assumed organizations did n
 | Required tests | pgvector retrieval filters org before ranking (two orgs, identical embeddings); org memory visible only to members; precedence/conflict incl. temporal supersession; consolidation never writes into another org; eval + benchmark security metrics 0 |
 | Security invariants | INV-6 |
 | Data migration | none (fresh data); optional index `(tenant_id, namespace_scope, namespace_id)` |
-| Rollback | `ORG_MEMORY_SCOPE=false` |
+| Rollback | `ORG_MEMORY_SCOPE=false` hides organization memory while retaining membership-derived grants and tenant equality checks; never restore stale static grants for users. |
 | DoD | memory suites + eval/benchmark green, security metrics 0; precedence documented |
 
 ### Phase 5 — Final Integration, RLS Activation, Deletion Verification, Cleanup
@@ -132,22 +130,20 @@ The original Phase 1 ("Organization and Membership") assumed organizations did n
 |------|---------|
 | Dependencies | Phases 1–4 |
 | Code changes | **Enable RLS** (`ENABLE` + `FORCE ROW LEVEL SECURITY`) on all organization-owned tables; app connects as `studio_app`; workers as `studio_worker`; remove v1 assertion acceptance and `tenantId` response aliases; assertion replay hardening; docs (`architecture.md`, `production-saas-readiness-gaps.md`, `organization-and-cost-budgets.md`, `development.md`) |
-| Required tests | full suite + PG + Playwright + memory eval/benchmark **under the `studio_app` role with RLS enforced**; raw-SQL negative tests (query without `app.tenant_id` returns 0 rows; cross-org insert rejected by `WITH CHECK`); worker role can claim across orgs but handlers still execute per org; organization deletion end-to-end (below) |
+| Required tests | full suite + PG + Playwright + memory eval/benchmark **under the `studio_app` role with RLS enforced**; raw-SQL negative tests (query without `app.tenant_id` returns 0 organization-owned rows; cross-org insert rejected by `WITH CHECK`); worker role can claim across orgs but handlers still execute per org; organization deletion end-to-end (below) |
 | Security invariants | INV-1…INV-9 evidenced in one report |
 | Data migration | `ALTER TABLE … ENABLE/FORCE ROW LEVEL SECURITY` (reversible by `DISABLE`) |
-| Rollback | `DISABLE ROW LEVEL SECURITY` per table; app role switch back |
+| Rollback | Follow migration-plan §9: preserve verified application isolation and the least-privileged role; otherwise maintenance mode and forward-fix. |
 | DoD | single verification report with exact commands/results; RLS enforced in all environments; no KNOWN-FAIL items except explicitly accepted |
 
-Organization **deletion** (D-12) is implemented in Phase 2 (settings UI + API, owner only) with purge
-across studio, memory, workspaces and broker leases extended in Phases 3–4 as those domains gain
-organization ownership; Phase 5 verifies complete removal under RLS.
+Organization **deletion** (D-12) is developed behind `ORG_DELETION_ENABLED=false` from Phase 2. While disabled, the API rejects deletion without side effects and the UI does not offer it. Complete cancellation, lease revocation, Vault/secret deletion, studio/memory/job purge and filesystem cleanup in Phases 3–4. Enable only after Phase 5 verifies the full resumable purge under RLS, including a concurrent worker attempting a late write. A request may report deletion pending, but never completed until all stores are verified clean. Retain only the service-only broker audit exception (plan §7 Q2); retained rows must not have cascading organization FKs or grant access.
 
 ## 3. Cross-phase gate rules
 
 - Every phase reproduces the gate commands in [test-baseline.md](./test-baseline.md) §7 and reports deltas.
 - A test counts as passing only if it executed (PG suites require the DB up; skipped ≠ passed).
 - Every new security invariant has at least one negative test written **before** the implementation.
-- No flag moves to `enforce` without a shadow run with zero unexplained `authz.would_deny`.
+- No flag moves to `enforce` without a shadow run with zero unexplained `authz.would_deny`. Invitations and multi-member access remain disabled until route enforcement is active; shadow mode is never a supported serving mode after additional members are admitted.
 
 ## 4. Project Structure (expected touch points)
 
@@ -167,7 +163,7 @@ tests/** (new suites per phase), apps/web/e2e/** (org routing specs)
 
 ## 5. Phase 1 recommendation (final)
 
-Start Phase 1 after Phase 0.5 is merged and the open confirmations in §7 are answered. Phase 1 scope:
+Start Phase 1 after Phase 0.5 is merged and §7 outcomes (explicit answers or stated defaults) are recorded. Phase 1 scope:
 guarded reset, organization/membership/audit schema with strict constraints, RLS prerequisites (policies
 created, disabled), tenant-scoped DB helper and role split, tenant-guarded writes and ownership-capture fix,
 OrganizationContext resolver, organization creation + membership read APIs. Existing pages keep working for

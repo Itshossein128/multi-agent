@@ -122,25 +122,25 @@ registered user can create an organization and use the product.
 1. **Given** an installation with existing data, **When** the operator runs the reset without the explicit destruction confirmation, **Then** nothing is deleted.
 2. **Given** existing data that was not cleared, **When** the new organization schema is applied, **Then** it refuses to proceed.
 3. **Given** a completed reset, **When** a new user registers and creates an organization, **Then** they become its owner and no pre-reset data is visible anywhere.
-4. **Given** any later phase after the reset, **When** the previous application version is redeployed, **Then** it keeps working on the updated data.
+4. **Given** a later phase after the reset, **When** recovery is rehearsed, **Then** a security-compatible rollback build preserves authorization on current data, or the service remains unavailable until a forward-fix is verified.
 
 ---
 
 ### User Story 6 - Delete an organization (Priority: P2)
 
 An organization owner permanently deletes their organization from the organization settings by typing
-the organization's name to confirm. All of the organization's data is removed; member accounts remain.
+the organization's name to confirm. All organization-owned application data is removed; member accounts and the service-only broker audit exception remain.
 
 **Why this priority**: Required lifecycle control; data must not be kept after deletion.
 
 **Independent Test**: Create an organization with members, projects, runs, memories, and workspace files,
-delete it, and confirm no data of it remains and members can still sign in to their other organizations.
+delete it, and confirm no application data remains (verify retained broker audit separately) and members can still sign in to their other organizations.
 
 **Acceptance Scenarios**:
 
 1. **Given** an owner in organization settings, **When** they type a name that does not exactly match, **Then** deletion is not possible.
 2. **Given** an admin or member, **When** they attempt deletion, **Then** it is denied.
-3. **Given** a confirmed deletion, **When** it completes, **Then** no records, memories, files, or running executions of the organization remain, and its URL shows "not found".
+3. **Given** a confirmed deletion, **When** it completes, **Then** no application records, memories, secrets, files, leases or running executions remain, its URL shows "not found", and only the service-only broker audit exception remains.
 4. **Given** a deletion interrupted midway, **When** the system recovers, **Then** the organization stays inaccessible and the deletion completes.
 
 ### Edge Cases
@@ -177,9 +177,9 @@ delete it, and confirm no data of it remains and members can still sign in to th
 - **FR-106**: Membership removal or account disablement MUST take effect for new requests within 60 seconds.
 - **FR-107**: Organization memory MUST be retrievable only by members of that organization and MUST complement, not replace, project, agent, and run memory.
 - **FR-108**: The transition MUST start from an empty data set: an explicit, confirmed reset clears all existing application data, and the new organization schema MUST refuse to apply while legacy data exists.
-- **FR-109**: After the reset, each schema change MUST be backward compatible with the previous application version until the final cleanup phase.
-- **FR-112**: The selected organization MUST be part of every page address; opening an address for an organization the user is not a member of MUST show "not found" without revealing whether it exists.
-- **FR-113**: Owners MUST be able to delete their organization from organization settings after typing its exact name; deletion MUST remove all of the organization's data without retention and leave member accounts intact.
+- **FR-109**: After the reset, schema changes SHOULD remain additive until final cleanup; serving a previous application version is allowed only if it preserves current authorization guarantees, as required by SC-006.
+- **FR-112**: The selected organization MUST be part of every organization-scoped page address; global authentication, account settings and organization creation/listing remain available without an active organization; opening an address for an organization the user is not a member of MUST show "not found" without revealing whether it exists.
+- **FR-113**: Owners MUST be able to delete their organization from organization settings after typing its exact name; deletion MUST remove all organization-owned application data and leave member accounts intact; only secret-free, service-only broker audit records are retained to preserve the audit chain. The feature remains disabled until complete cross-store cleanup is verified.
 - **FR-114**: The data store MUST independently enforce organization isolation (defense in depth) by the final phase, with its prerequisites in place from the first phase.
 - **FR-110**: Organization membership and role changes MUST be recorded in an append-only audit trail.
 - **FR-111**: Organization-level operations that create tasks MUST NOT leave partial records when they fail.
@@ -200,12 +200,12 @@ delete it, and confirm no data of it remains and members can still sign in to th
 
 - **SC-001**: 100% of authenticated routes pass a same-organization/foreign-organization test matrix with zero cross-organization reads or writes.
 - **SC-002**: After the reset, 0 pre-existing records remain, and applying the new schema to a non-empty legacy data set fails in 100% of attempts.
-- **SC-008**: After an organization is deleted, 0 records, memories, or files of that organization remain, verified by automated checks across every data store.
+- **SC-008**: After completed deletion, 0 application records, memories, secrets, leases, jobs or files of that organization remain, verified across every store; retained service-only broker audit records are the explicit exception and cannot restore access.
 - **SC-009**: In the final phase, direct data-store queries without an organization context return 0 organization-owned rows.
 - **SC-003**: Removed members lose access within 60 seconds in 100% of tested cases.
 - **SC-004**: Memory evaluation and benchmark report 0 cross-organization leakage before and after organization memory is enabled.
 - **SC-005**: All existing end-to-end journeys (adapted to organization addresses) pass after each phase.
-- **SC-006**: Each phase can be rolled back to the previous application version without data loss (rehearsed once per phase).
+- **SC-006**: Each phase documents and rehearses safe recovery: Phase 1 reset is irreversible without an operator backup; subsequent phases use only a rollback build preserving current authorization guarantees, or maintenance mode plus forward-fix. Schema compatibility alone does not prove safe rollback.
 - **SC-007**: Switching organizations displays no data from the previously selected organization in 100% of end-to-end runs.
 
 ## Assumptions
@@ -215,9 +215,9 @@ delete it, and confirm no data of it remains and members can still sign in to th
 - Roles are a fixed set; custom roles are out of scope for this program.
 - Organizations are addressed in the URL (D-8); the last-used organization is remembered only for redirects.
 - Existing data is cleared rather than migrated (D-7); a one-time maintenance window is acceptable.
-- Organization deletion keeps no data (D-12); retention may be revisited later.
+- Organization deletion keeps no application data (D-12); secret-free, service-only broker audit records are the explicit retention exception (plan §7 Q2).
 - When a member loses access, their tasks remain in the organization (D-5).
 - Single sign-on, billing, and cross-organization sharing of resources are out of scope.
 - The current AI-agent organization chart and goals keep their meaning and are not merged with human membership.
-- PostgreSQL remains the system of record; database row-level security is optional defense in depth.
+- PostgreSQL remains the system of record; RLS prerequisites are required in Phase 1 and enforcement is required by Phase 5 (D-10).
 - The three baseline regressions are repaired in a prerequisite change before Phase 1 and are not attributed to this migration.

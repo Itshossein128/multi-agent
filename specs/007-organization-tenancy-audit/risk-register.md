@@ -32,7 +32,7 @@ Likelihood / Impact: L / M / H.
 | R-22 | Uncommitted user changes in tree at baseline time may mask or create diffs | M | L | Re-run baseline at Phase 1 start on a clean commit | P1 |
 | R-23 | Web lint failing (30 errors) prevents using lint as a gate | H | L | Baseline as known failure or fix separately | P1 prerequisite (optional) |
 | R-24 | Reset destroys data irrecoverably (wrong DB, missed backup, Vault secrets left orphaned) | M | H | Explicit flag, row-count preview, active-run refusal, optional `--backup`; runbook lists Vault cleanup as operator step | P1 |
-| R-25 | RLS prerequisite refactor is broad: every store query must run in a transaction that sets `app.tenant_id`; pooled connections must not leak settings; cross-org workers need a separate role or SECURITY DEFINER functions | H | M | `SET LOCAL` only (transaction-scoped); test harness that enables RLS on a scratch schema in Phase 1 to catch unscoped queries early; benchmark the per-query transaction overhead | P1/P5 |
+| R-25 | RLS prerequisite refactor is broad: every organization-scoped store query must run in a transaction that sets `app.tenant_id`; pooled connections must not leak settings; cross-org workers need a separate role or SECURITY DEFINER functions | H | M | `SET LOCAL` only (transaction-scoped); test harness that enables RLS on a scratch schema in Phase 1 to catch unscoped queries early; benchmark the per-query transaction overhead | P1/P5 |
 | R-26 | DB user may lack `CREATEROLE`/ownership needed to create `studio_app`/`studio_worker` roles in some deployments | M | M | Migration detects and emits a manual SQL script; docs | P1 |
 | R-27 | URL routing (`/o/[orgSlug]`) moves every authenticated page and BFF route; breaks bookmarks, e2e specs, and links in notifications | H | M | Mechanical move with redirects from old paths to the last organization; update Playwright specs in the same phase | P2 |
 | R-28 | Broker audit log is append-only and globally hash-chained; deleting one organization's rows breaks chain verification; clearing it in the reset loses security history | M | M | Decision Q2 (default: TRUNCATE at reset, retain audit rows on org deletion — they hold no secrets) | P1/P2 |
@@ -56,3 +56,8 @@ Likelihood / Impact: L / M / H.
 
 Decisions D-1 … D-12 are resolved (see [plan.md](./plan.md) §6). Remaining confirmations Q1–Q4 are in
 [plan.md](./plan.md) §7, each with a default that applies if unanswered.
+
+
+## Review corrections (2026-10-10)
+
+Documentation review identified and corrected owner-target authorization, global/system RLS rules, security-compatible rollback, staged deletion exposure, strategy-write atomicity, and baseline reproducibility. Phase 0.5 requires a fresh full-suite run on a clean committed SHA; this documentation change does not claim new test results. Deletion stays disabled until the Phase 5 cross-store gate; broker audit retention is the explicit exception to application-data deletion. Phase 1's destructive reset still requires the documented operator procedure; no reset or implementation was performed by this correction.

@@ -158,10 +158,7 @@ tasks and removed implicit default-project creation. None were modified in Phase
      an implicit default project, which hierarchy 006 removed;
   2. *production bug*: non-atomic write leaves a dangling `proposed` goal; error mis-classified as 400;
   3. *test fixture*: test never creates a project.
-- **Smallest correct fix**: resolve the project (explicit `input.projectId` or
-  `findActiveTenantProjectId`) **before** `createGoal`; if none, throw
-  `ApiError(409, "Create a project before requesting strategy")`; update the test to create a
-  project first. Same ordering applies to `delegate()`.
+- **Required repair (aligned with approved D-6)**: validate the explicitly selected project before `createGoal`; no first-active-project fallback. Return typed validation/conflict errors and update fixtures to supply the project. Persist the strategy goal and task in one shared transaction across their stores; cancellation after failure is not rollback. Add real-PG failure injection after goal insertion to prove neither new record survives, alongside missing/foreign-project tests. Apply explicit project validation to `delegate()`.
 - **Architectural implication**: organization-level work (strategy, goals) is not naturally
   project-scoped, but every task must have a project. The target design must decide whether
   organization-level tasks belong to an explicit "organization operations" project or whether
@@ -179,6 +176,8 @@ tasks and removed implicit default-project creation. None were modified in Phase
 | Multi-instance broker rate limiting | — | Rate limiters are process-local (known gap) |
 
 ## 7. Gate commands for later phases
+
+The historical 98/101 result combines the original full run with a targeted rerun on a dirty working tree; it is not a full-run result for commit `ba24f51e45b2daed132a8217199ab7b81aab6f8a`. Phase 0.5 must produce a fresh, separate baseline from a clean committed checkout: record full SHA, clean tracked working-tree status before/after, runtime and dependency-lock versions, database/migration versions, redacted environment configuration, exact commands, and durable CI/artifact log locations. Run the entire suite once with PostgreSQL enabled, not only previously failing suites; report all added tests and skips. Do not overwrite or relabel the historical evidence.
 
 Every later phase must reproduce at least:
 
