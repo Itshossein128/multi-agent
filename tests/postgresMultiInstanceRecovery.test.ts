@@ -17,11 +17,12 @@ import {
 } from "@multi-agent/types";
 
 const databaseUrl =
-  process.env.STUDIO_DATABASE_URL ||
   process.env.MEMORY_TEST_DATABASE_URL ||
-  "postgresql://studio_memory:studio_memory_local@127.0.0.1:55432/studio_memory";
+  process.env.STUDIO_DATABASE_URL;
 
-describe("PostgreSQL Multi-Instance Run Recovery & Lease Management", () => {
+const describeDb = databaseUrl ? describe : describe.skip;
+
+describeDb("PostgreSQL Multi-Instance Run Recovery & Lease Management", () => {
   let adminPool: Pool;
   let pool: Pool;
   let schema: string;

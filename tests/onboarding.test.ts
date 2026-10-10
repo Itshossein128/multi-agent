@@ -6,6 +6,7 @@ import { NotImplementedAgentExecutor } from "../src/agents/runtime/notImplemente
 
 const testDatabaseUrl =
   process.env.MEMORY_TEST_DATABASE_URL ||
+  process.env.STUDIO_DATABASE_URL ||
   "postgresql://studio_memory:studio_memory_local@127.0.0.1:55432/studio_memory";
 
 describe("Local First-Run Onboarding Assistant", () => {
@@ -113,7 +114,9 @@ describe("Local First-Run Onboarding Assistant", () => {
   });
 });
 
-describe("Onboarding Database & Persistence Integration", () => {
+const describeDb = process.env.MEMORY_TEST_DATABASE_URL || process.env.STUDIO_DATABASE_URL ? describe : describe.skip;
+
+describeDb("Onboarding Database & Persistence Integration", () => {
   let adminPool: Pool;
 
   beforeAll(async () => {
