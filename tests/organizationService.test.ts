@@ -2,6 +2,8 @@ import { createAgentRecord } from "@multi-agent/types";
 import { InMemoryStudioStore } from "../src/studio/infrastructure/in-memory-studio-store";
 import { InMemoryOrganizationStore, type OrganizationStore } from "../apps/server/src/organization/organizationStore";
 import { OrganizationService } from "../apps/server/src/organization/organizationService";
+import { createStudioRouter } from "../apps/server/src/api/studio";
+import { log } from "../apps/server/src/logging";
 
 const alice = { userId: "alice", tenantId: "tenant-a" };
 const bob = { userId: "bob", tenantId: "tenant-b" };
@@ -64,6 +66,34 @@ describe("strategy project validation and atomicity", () => {
     await expect(new OrganizationService(custom, studio).requestStrategyProposal(proposal, alice)).rejects.toMatchObject({ status: 503, message: "Atomic organization operations are not configured" });
     expect(custom.saveGoal).not.toHaveBeenCalled();
     expect(await studio.listTasks(alice)).toHaveLength(0);
+  });
+});
+
+describe("organization post-commit naming", () => {
+  it.each(["delegation", "strategy"] as const)("returns success for committed %s despite naming storage failure", async kind => {
+    const { studio, organization, service } = await setupOrganization();
+    const project = (await studio.getProject("project-org", alice))!;
+    await studio.saveProject({ ...project, name: "Untitled project", nameSource: "placeholder" }, alice);
+    const goal = kind === "delegation" ? await service.createGoal({ title: "Naming", projectId: project.id }, alice) : null;
+    const naming = jest.spyOn(studio, "claimPlaceholderProjectName").mockRejectedValueOnce(new Error("private naming diagnostic"));
+    const warning = jest.spyOn(log, "warn").mockImplementation(() => {});
+    try {
+      const app = createStudioRouter(studio, () => alice, undefined, organization);
+      const response = await app.request(kind === "delegation" ? `/organization/goals/${goal!.id}/delegate` : "/organization/strategy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(kind === "delegation" ? { agentId: "ceo" } : { title: "Naming", brief: "Improve naming", projectId: project.id }),
+      });
+      expect(response.status).toBe(201);
+      const result = await response.json();
+      const task = kind === "delegation" ? result : result.task;
+      const goalId = goal?.id ?? result.goal.id;
+      expect(naming).toHaveBeenCalledTimes(1);
+      expect(await studio.listTasks(alice)).toMatchObject([{ id: task.id, projectId: project.id, metadata: { organizationGoalId: goalId } }]);
+      expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toMatchObject([{ targetId: task.id, eventType: "task_assignment" }]);
+      expect(await organization.goals(alice.tenantId)).toMatchObject([{ id: goalId }]);
+      expect(warning).toHaveBeenCalledWith(`organization.${kind === "delegation" ? "delegate" : "strategy"}.placeholder_failed`, { goalId, taskId: task.id });
+      expect(JSON.stringify(warning.mock.calls)).not.toContain("private naming diagnostic");
+    } finally { naming.mockRestore(); warning.mockRestore(); }
   });
 });
 
@@ -131,6 +161,19 @@ describe("organization goals and delegation", () => {
 });
 
 describe("explicit project for delegation", () => {
+  it.each(["saveTask", "enqueueTriggerEvent"] as const)("preserves the goal and rolls back delegation when %s fails", async method => {
+    const { studio, organization, service } = await setupOrganization();
+    const goal = await service.createGoal({ title: "Delegate reliably", projectId: "project-org" }, alice);
+    jest.spyOn(studio, method).mockRejectedValueOnce(new Error("injected delegation failure"));
+    await expect(service.delegate(goal.id, { agentId: "ceo" }, alice)).rejects.toThrow("injected delegation failure");
+    expect(await organization.goals(alice.tenantId)).toEqual([goal]);
+    expect(await studio.listTasks(alice)).toHaveLength(0);
+    expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+    const task = await service.delegate(goal.id, { agentId: "ceo" }, alice);
+    expect(task.metadata?.organizationGoalId).toBe(goal.id);
+    expect(await studio.listTasks(alice)).toHaveLength(1);
+    expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(1);
+  });
   it.each([
     { goalProject: null, bodyProject: undefined, status: 400, message: "projectId is required" },
     { goalProject: "project-org", bodyProject: "other", status: 400, message: "projectId must match the goal's project" },

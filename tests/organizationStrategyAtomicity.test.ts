@@ -75,6 +75,33 @@ const proposal = { title: "Reliability", brief: "Reduce failed runs", projectId:
     expect((await request({ ...proposal, projectId })).status).toBe(status);
     expect(await counts()).toEqual(before);
   });
+  it.each([
+    ["task insert", "studio_tasks", "BEFORE INSERT"],
+    ["event insert", "studio_trigger_events", "BEFORE INSERT"],
+    ["commit", "studio_tasks", "AFTER INSERT"],
+  ])("preserves the goal and rejects delegation failure at %s", async (stage, table, timing) => {
+    const created = await app.request("/organization/goals", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Delegation", projectId: "project" }) });
+    expect(created.status).toBe(201);
+    const goal = await created.json();
+    const delegate = () => app.request(`/organization/goals/${goal.id}/delegate`, { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentId: "ceo" }) });
+    await pool.query(`CREATE FUNCTION inject_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected'; END $$`);
+    await pool.query(`CREATE ${stage === "commit" ? "CONSTRAINT " : ""}TRIGGER injected ${timing} ON ${table}
+      ${stage === "commit" ? "DEFERRABLE INITIALLY DEFERRED" : ""} FOR EACH ROW EXECUTE FUNCTION inject_failure()`);
+    const before = await counts();
+    expect(before).toEqual([1, 0, 0]);
+    expect((await delegate()).status).toBeGreaterThanOrEqual(400);
+    expect(await counts()).toEqual(before);
+    expect(await organization.goals(principal.tenantId)).toEqual([goal]);
+    expect(pool.totalCount - pool.idleCount).toBe(0);
+    await pool.query(`DROP TRIGGER injected ON ${table}`);
+    const response = await delegate();
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ projectId: "project", metadata: { organizationGoalId: goal.id } });
+    expect(await counts()).toEqual([1, 1, 1]);
+    expect(pool.waitingCount).toBe(0);
+  });
   it("commits exactly one proposed goal, assigned task and assignment event", async () => {
     const response = await request(proposal);
     expect(response.status).toBe(201);

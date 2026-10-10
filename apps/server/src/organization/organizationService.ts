@@ -129,11 +129,15 @@ export class OrganizationService {
     }
     if (goal.projectId && input.projectId !== undefined && input.projectId !== goal.projectId) throw new ApiError(400, "projectId must match the goal's project");
     const project = await requireActiveProject(this.studio, goal.projectId ?? input.projectId, principal);
-    const task = await new TaskService(this.studio, this.executor).create({
+    const tasks = new TaskService(this.studio, this.executor);
+    const preparedTask = await tasks.prepareCreate({
       title: input.title === undefined ? goal.title : text(input.title, "title", 200), description: goal.description,
       assignedAgent: agentId, parentTaskId: input.parentTaskId === null || input.parentTaskId === undefined ? null : text(input.parentTaskId, "parentTaskId", 200),
       projectId: project.id, workspaceId: null, metadata: { organizationGoalId: goal.id },
     }, principal);
+    const task = await this.studio.transaction(studio => tasks.persistNew(preparedTask, principal, studio));
+    try { await tasks.derivePlaceholderNamesBestEffort(task, principal); }
+    catch { log.warn("organization.delegate.placeholder_failed", { goalId: goal.id, taskId: task.id }); }
     return task;
   }
 
