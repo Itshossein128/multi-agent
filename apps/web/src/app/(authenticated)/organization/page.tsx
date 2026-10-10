@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 
 interface Agent { id: string; name: string }
 interface Line { agentId: string; managerAgentId: string | null; role: "ceo" | "manager" | "member" }
@@ -65,7 +66,7 @@ export default function OrganizationPage() {
         <select aria-label="Parent goal" value={parentGoalId} onChange={event => setParentGoalId(event.target.value)} className="rounded bg-zinc-900 p-2"><option value="">Company goal</option>{data.goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select>
         <select aria-label="Project" required={ceoProposal} value={projectId} onChange={event => setProjectId(event.target.value)} className="rounded bg-zinc-900 p-2"><option value="" disabled={ceoProposal}>{ceoProposal ? "Select project" : "No project"}</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={ceoProposal} disabled={!data.reportingLines.some(line => line.role === "ceo")} onChange={event => setCeoProposal(event.target.checked)} />CEO strategy proposal</label>
-        {ceoProposal && projects.length === 0 && <p className="text-sm text-zinc-400"><a href="/projects" className="text-indigo-300 underline">Create a project</a> to request a strategy proposal.</p>}
+        {ceoProposal && projects.length === 0 && <p className="text-sm text-zinc-400"><Link href="/projects" className="text-indigo-300 underline">Create a project</Link> to request a strategy proposal.</p>}
         <button disabled={busy || (ceoProposal && !projectId)} className="rounded bg-indigo-600 p-2 disabled:opacity-50">Create goal</button>
       </form>
     </section>
@@ -76,7 +77,7 @@ export default function OrganizationPage() {
           <div className="flex gap-2">{goal.status === "proposed" && <button disabled={busy || !strategyReady(goal.id)} title={!strategyReady(goal.id) ? "The CEO strategy task must finish first" : undefined} className="rounded bg-emerald-700 px-2 py-1 text-xs disabled:opacity-50" onClick={() => void apply(() => request(`/goals/${encodeURIComponent(goal.id)}`, "PATCH", { status: "active" }))}>Approve</button>}
             {goal.status === "active" && <><select aria-label={`Delegate ${goal.title}`} id={`delegate-${goal.id}`} className="rounded bg-zinc-900 p-1 text-xs"><option value="">Select agent</option>{data.agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>
               {!goal.projectId && <select aria-label={`Project for ${goal.title}`} value={delegationProjects[goal.id] ?? ""} onChange={event => setDelegationProjects(current => ({ ...current, [goal.id]: event.target.value }))} className="rounded bg-zinc-900 p-1 text-xs"><option value="" disabled>Select project</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>}
-              {!goal.projectId && projects.length === 0 && <a href="/projects" className="text-xs text-indigo-300 underline">Create a project</a>}
+              {!goal.projectId && projects.length === 0 && <Link href="/projects" className="text-xs text-indigo-300 underline">Create a project</Link>}
               <button disabled={busy || (!goal.projectId && !delegationProjects[goal.id])} className="rounded bg-indigo-600 px-2 py-1 text-xs" onClick={() => void apply(() => request(`/goals/${encodeURIComponent(goal.id)}/delegate`, "POST", { agentId: (document.getElementById(`delegate-${goal.id}`) as HTMLSelectElement).value, ...(!goal.projectId ? { projectId: delegationProjects[goal.id] } : {}) }))}>Delegate to task</button><button disabled={busy} className="rounded bg-zinc-700 px-2 py-1 text-xs" onClick={() => void apply(() => request(`/goals/${encodeURIComponent(goal.id)}`, "PATCH", { status: "completed" }))}>Complete</button></>}</div>
         </div><p className="mt-1 text-sm text-zinc-400">{goal.description}</p>
         {goal.status === "proposed" && !strategyReady(goal.id) && <p className="mt-1 text-xs text-amber-300">Complete the CEO strategy task before approving this goal.</p>}
