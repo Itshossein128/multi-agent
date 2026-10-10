@@ -23,6 +23,7 @@ import { TriggerOutboxProcessor } from "./triggers/triggerOutboxProcessor";
 import { HeartbeatScheduler } from "./triggers/heartbeatScheduler";
 import { RoutineScheduler } from "./triggers/routineScheduler";
 import { InMemoryOrganizationStore, PostgresOrganizationStore } from "./organization/organizationStore";
+import { PostgresOrganizationUnitOfWork } from "./organization/organizationUnitOfWork";
 import { InMemoryBudgetStore, PostgresBudgetStore } from "./budgets/budgetStore";
 import { RunBudgetController } from "./budgets/runBudgetController";
 import { BudgetedAgentRuntime } from "./budgets/budgetedAgentRuntime";
@@ -127,7 +128,8 @@ async function main() {
 
   if (studio.store) {
     const organizationStore = studio.pool ? new PostgresOrganizationStore(studio.pool) : new InMemoryOrganizationStore();
-    app.route("/studio", createStudioRouter(studio.store, undefined, executor, organizationStore, budgetStore));
+    app.route("/studio", createStudioRouter(studio.store, undefined, executor, organizationStore, budgetStore,
+      studio.pool ? new PostgresOrganizationUnitOfWork(studio.pool) : undefined));
     app.route("/api/webhooks", createInboundWebhookRouter(studio.store));
 
     outboxProcessor = new TriggerOutboxProcessor(studio.store, executor);

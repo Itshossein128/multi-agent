@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": ["jest", "node"],
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["apps/web/src/*"],
+      "@multi-agent/types": ["packages/types/src/index.ts"],
+      "next-auth": ["apps/web/node_modules/next-auth"],
+      "next-auth/*": ["apps/web/node_modules/next-auth/*"]
+    }
+  },
+  "include": ["tests/**/*.ts", "src/**/*.test.ts"]
+}

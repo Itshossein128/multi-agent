@@ -16,6 +16,7 @@
     "dev:docs": "pnpm --filter docs dev",
     "dev:cli": "ts-node src/cli/index.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
     "dev:server": "pnpm run build:types && pnpm --filter server dev",
     "dev:all": "pnpm run build:types && pnpm --parallel --filter web --filter server run dev",
     "build:docs": "pnpm --filter docs build",

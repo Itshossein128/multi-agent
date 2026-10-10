@@ -4,8 +4,10 @@ import type { RequestPrincipal } from "../auth/principal";
 import type { RunExecutor } from "../runtime/runExecutor";
 import { ApiError } from "../api/shared/http";
 import { TaskService } from "../api/studio/taskService";
-import { ensureTenantProjectWorkspaceDefaults } from "../api/studio/tenantDefaults";
 import type { GoalStatus, OrganizationGoal, OrganizationStore, ReportingLine } from "./organizationStore";
+import { requireActiveProject } from "./projectValidation";
+import { defaultOrganizationUnitOfWork, type OrganizationUnitOfWork } from "./organizationUnitOfWork";
+import { log } from "../logging";
 
 const roles = new Set(["ceo", "manager", "member"]);
 const statuses = new Set(["proposed", "active", "completed", "cancelled"]);
@@ -15,7 +17,10 @@ function text(value: unknown, name: string, max: number): string {
 }
 
 export class OrganizationService {
-  constructor(private readonly organization: OrganizationStore, private readonly studio: StudioStore, private readonly executor?: RunExecutor) {}
+  private readonly unitOfWork: OrganizationUnitOfWork;
+  constructor(private readonly organization: OrganizationStore, private readonly studio: StudioStore, private readonly executor?: RunExecutor, unitOfWork?: OrganizationUnitOfWork) {
+    this.unitOfWork = unitOfWork ?? defaultOrganizationUnitOfWork(studio, organization);
+  }
 
   async overview(principal: RequestPrincipal) {
     const [goals, reportingLines, agents, tasks] = await Promise.all([
@@ -60,13 +65,17 @@ export class OrganizationService {
   }
 
   async createGoal(input: Partial<OrganizationGoal>, principal: RequestPrincipal): Promise<OrganizationGoal> {
+    return this.organization.saveGoal(await this.prepareGoal(input, principal));
+  }
+
+  async prepareGoal(input: Partial<OrganizationGoal>, principal: RequestPrincipal): Promise<OrganizationGoal> {
     const goals = await this.organization.goals(principal.tenantId);
     const title = text(input.title, "title", 200);
     const description = typeof input.description === "string" && input.description.length <= 4000 ? input.description : "";
     const parentGoalId = input.parentGoalId ?? null;
     if (parentGoalId && !goals.some(goal => goal.id === parentGoalId)) throw new ApiError(400, "Parent goal not found");
     const projectId = input.projectId ?? null;
-    if (projectId && !await this.studio.getProject(projectId, principal)) throw new ApiError(400, "Project not found");
+    if (input.projectId !== undefined && input.projectId !== null) await requireActiveProject(this.studio, input.projectId, principal);
     const ownerAgentId = input.ownerAgentId ?? null;
     if (ownerAgentId && !await this.studio.getAgent(ownerAgentId, principal)) throw new ApiError(400, "Owner agent not found");
     const proposedByAgentId = input.proposedByAgentId ?? null;
@@ -75,7 +84,7 @@ export class OrganizationService {
       if (!ceo || ceo.agentId !== proposedByAgentId) throw new ApiError(403, "Only the CEO agent can propose strategy goals");
     }
     const stamp = nowIso();
-    return this.organization.saveGoal({ id: uid("goal"), tenantId: principal.tenantId, title, description, status: proposedByAgentId ? "proposed" : "active", parentGoalId, projectId, ownerAgentId, proposedByAgentId, createdBy: principal.userId, createdAt: stamp, updatedAt: stamp });
+    return { id: uid("goal"), tenantId: principal.tenantId, title, description, status: proposedByAgentId ? "proposed" : "active", parentGoalId, projectId, ownerAgentId, proposedByAgentId, createdBy: principal.userId, createdAt: stamp, updatedAt: stamp };
   }
 
   async updateGoal(id: string, input: { status?: unknown; ownerAgentId?: unknown }, principal: RequestPrincipal): Promise<OrganizationGoal> {
@@ -104,7 +113,7 @@ export class OrganizationService {
     return this.organization.saveGoal({ ...existing, status: status as GoalStatus, ownerAgentId, updatedAt: nowIso() });
   }
 
-  async delegate(goalId: string, input: { agentId?: unknown; title?: unknown; parentTaskId?: unknown }, principal: RequestPrincipal) {
+  async delegate(goalId: string, input: { agentId?: unknown; title?: unknown; parentTaskId?: unknown; projectId?: unknown }, principal: RequestPrincipal) {
     const goal = (await this.organization.goals(principal.tenantId)).find(item => item.id === goalId);
     if (!goal) throw new ApiError(404, "Goal not found");
     if (goal.status !== "active") throw new ApiError(409, "Only active goals can be delegated");
@@ -118,11 +127,12 @@ export class OrganizationService {
       while (cursor && cursor !== goal.ownerAgentId && !seen.has(cursor)) { seen.add(cursor); cursor = parents.get(cursor) ?? null; }
       if (cursor !== goal.ownerAgentId) throw new ApiError(403, "Delegate must report through the goal owner");
     }
-    const defaults = await ensureTenantProjectWorkspaceDefaults(this.studio, principal);
-    const task = await new TaskService(this.studio).create({
+    if (goal.projectId && input.projectId !== undefined && input.projectId !== goal.projectId) throw new ApiError(400, "projectId must match the goal's project");
+    const project = await requireActiveProject(this.studio, goal.projectId ?? input.projectId, principal);
+    const task = await new TaskService(this.studio, this.executor).create({
       title: input.title === undefined ? goal.title : text(input.title, "title", 200), description: goal.description,
       assignedAgent: agentId, parentTaskId: input.parentTaskId === null || input.parentTaskId === undefined ? null : text(input.parentTaskId, "parentTaskId", 200),
-      projectId: goal.projectId ?? defaults.projectId, workspaceId: null, metadata: { organizationGoalId: goal.id },
+      projectId: project.id, workspaceId: null, metadata: { organizationGoalId: goal.id },
     }, principal);
     return task;
   }
@@ -134,19 +144,21 @@ export class OrganizationService {
     if (!ceo) throw new ApiError(409, "Configure a CEO agent before requesting strategy");
     const agent = await this.studio.getAgent(ceo.agentId, principal);
     if (!agent) throw new ApiError(404, "CEO agent not found");
-    const goal = await this.createGoal({ title, description: brief, projectId: input.projectId ?? null, ownerAgentId: ceo.agentId, proposedByAgentId: ceo.agentId }, principal);
-    const defaults = await ensureTenantProjectWorkspaceDefaults(this.studio, principal);
-    try {
-      const task = await new TaskService(this.studio).create({
-        title: `Strategy proposal: ${title}`.slice(0, 200),
-        description: `Propose a concrete strategy for this organization goal. Include measurable outcomes, a delegation plan, and risks. Brief: ${brief}`.slice(0, 2000),
-        assignedAgent: ceo.agentId, projectId: goal.projectId ?? defaults.projectId, workspaceId: null,
-        metadata: { organizationGoalId: goal.id, strategyProposal: true },
-      }, principal);
-      return { goal, task };
-    } catch (error) {
-      await this.organization.saveGoal({ ...goal, status: "cancelled", updatedAt: nowIso() });
-      throw error;
-    }
+    const project = await requireActiveProject(this.studio, input.projectId, principal);
+    const goal = await this.prepareGoal({ title, description: brief, projectId: project.id, ownerAgentId: ceo.agentId, proposedByAgentId: ceo.agentId }, principal);
+    const tasks = new TaskService(this.studio, this.executor);
+    const preparedTask = await tasks.prepareCreate({
+      title: `Strategy proposal: ${title}`.slice(0, 200),
+      description: `Propose a concrete strategy for this organization goal. Include measurable outcomes, a delegation plan, and risks. Brief: ${brief}`.slice(0, 2000),
+      assignedAgent: ceo.agentId, projectId: project.id, workspaceId: null,
+      metadata: { organizationGoalId: goal.id, strategyProposal: true },
+    }, principal, { forbidInlineProject: true });
+    const result = await this.unitOfWork.run(async stores => ({
+      goal: await stores.organization.saveGoal(goal),
+      task: await tasks.persistNew(preparedTask, principal, stores.studio),
+    }));
+    try { await tasks.derivePlaceholderNamesBestEffort(result.task, principal); }
+    catch { log.warn("organization.strategy.placeholder_failed", { goalId: result.goal.id, taskId: result.task.id }); }
+    return result;
   }
 }

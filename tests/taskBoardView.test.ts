@@ -9,6 +9,8 @@ import type { Task, TaskStatus } from "../apps/web/src/lib/taskStatus";
 function task(overrides: Partial<Task> = {}): Task {
   return {
     id: "t1",
+    projectId: "project-1",
+    workspaceId: null,
     title: "Task",
     description: "",
     priority: "medium",

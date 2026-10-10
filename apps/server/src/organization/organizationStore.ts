@@ -1,4 +1,4 @@
-import type { PgPool } from "../../../../src/memory/infrastructure";
+import type { PgPool, PgClient } from "../../../../src/memory/infrastructure";
 
 export type GoalStatus = "proposed" | "active" | "completed" | "cancelled";
 export interface OrganizationGoal {
@@ -27,6 +27,15 @@ export interface OrganizationStore {
 export class InMemoryOrganizationStore implements OrganizationStore {
   private readonly goalRows = new Map<string, OrganizationGoal>();
   private readonly lineRows = new Map<string, ReportingLine>();
+  snapshot() {
+    return structuredClone({ goalRows: [...this.goalRows], lineRows: [...this.lineRows] });
+  }
+  restore(snapshot: ReturnType<InMemoryOrganizationStore["snapshot"]>) {
+    this.goalRows.clear();
+    this.lineRows.clear();
+    for (const [id, goal] of structuredClone(snapshot.goalRows)) this.goalRows.set(id, goal);
+    for (const [id, line] of structuredClone(snapshot.lineRows)) this.lineRows.set(id, line);
+  }
   async goals(tenantId: string) { return [...this.goalRows.values()].filter(g => g.tenantId === tenantId).map(g => structuredClone(g)); }
   async saveGoal(goal: OrganizationGoal) {
     const existing = this.goalRows.get(goal.id);
@@ -62,13 +71,14 @@ function goalFromRow(row: Record<string, unknown>): OrganizationGoal {
 }
 
 export class PostgresOrganizationStore implements OrganizationStore {
-  constructor(private readonly pool: PgPool) {}
+  constructor(private readonly pool: PgPool, private readonly client?: PgClient) {}
+  private query(text: string, values?: unknown[]) { return (this.client ?? this.pool).query(text, values); }
   async goals(tenantId: string): Promise<OrganizationGoal[]> {
-    const result = await this.pool.query("SELECT * FROM studio_organization_goals WHERE tenant_id=$1 ORDER BY created_at", [tenantId]);
+    const result = await this.query("SELECT * FROM studio_organization_goals WHERE tenant_id=$1 ORDER BY created_at", [tenantId]);
     return result.rows.map(goalFromRow);
   }
   async saveGoal(goal: OrganizationGoal): Promise<OrganizationGoal> {
-    const result = await this.pool.query(
+    const result = await this.query(
       `INSERT INTO studio_organization_goals (id,tenant_id,title,description,status,parent_goal_id,project_id,owner_agent_id,proposed_by_agent_id,created_by,created_at,updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,status=EXCLUDED.status,
@@ -80,10 +90,11 @@ export class PostgresOrganizationStore implements OrganizationStore {
     return goalFromRow(result.rows[0]);
   }
   async reportingLines(tenantId: string): Promise<ReportingLine[]> {
-    const result = await this.pool.query("SELECT tenant_id,agent_id,manager_agent_id,role FROM studio_agent_reporting WHERE tenant_id=$1", [tenantId]);
+    const result = await this.query("SELECT tenant_id,agent_id,manager_agent_id,role FROM studio_agent_reporting WHERE tenant_id=$1", [tenantId]);
     return result.rows.map(row => ({ tenantId: String(row.tenant_id), agentId: String(row.agent_id), managerAgentId: row.manager_agent_id as string | null, role: row.role as ReportingLine["role"] }));
   }
   async saveReportingLine(line: ReportingLine): Promise<ReportingLine> {
+    if (this.client) throw new Error("Reporting-line updates are not supported inside an organization unit of work");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
