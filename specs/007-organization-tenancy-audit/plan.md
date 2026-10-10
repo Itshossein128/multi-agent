@@ -70,6 +70,8 @@ The original Phase 1 ("Organization and Membership") assumed organizations did n
 
 ### Phase 0.5 — Baseline repair (prerequisite, not part of the org program)
 
+Detailed plan: [phase-0.5/plan.md](./phase-0.5/plan.md) (research, contract, data model, quickstart in the same directory).
+
 - **Changes**: `tests/taskBoardView.test.ts` fixture (`projectId`, `workspaceId`);
   `tests/eventRoutinesIntegration.test.ts` fixture (project row + `project_id`);
   `OrganizationService.requestStrategyProposal`/`delegate` validate an explicit project (D-6) before writes, with typed `ApiError(409/400)`. Strategy goal and task creation share one database transaction/unit of work across both stores; failure rolls back both, rather than leaving a cancelled goal. Delegation validates the explicit project association and cannot fall back to the first active project; `tests/organizationBudgetRoutes.test.ts`
