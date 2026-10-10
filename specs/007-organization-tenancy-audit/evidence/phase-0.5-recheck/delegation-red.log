@@ -1,0 +1,47 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationService.test.ts tests/organizationStrategyAtomicity.test.ts
+
+FAIL tests/organizationStrategyAtomicity.test.ts (16.534 s)
+  ● strategy atomicity on real PostgreSQL › preserves the goal and rejects delegation failure at event insert
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 400
+    Received:    201
+
+      92 |     const before = await counts();
+      93 |     expect(before).toEqual([1, 0, 0]);
+    > 94 |     expect((await delegate()).status).toBeGreaterThanOrEqual(400);
+         |                                       ^
+      95 |     expect(await counts()).toEqual(before);
+      96 |     expect(await organization.goals(principal.tenantId)).toEqual([goal]);
+      97 |     expect(pool.totalCount - pool.idleCount).toBe(0);
+
+      at tests/organizationStrategyAtomicity.test.ts:94:39
+
+FAIL tests/organizationService.test.ts
+  ● explicit project for delegation › preserves the goal and rolls back delegation when enqueueTriggerEvent fails
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"assignedAgent": "ceo", "assignedAgents": ["ceo"], "completedAt": null, "createdAt": "2026-10-10T19:57:15.995Z", "dependencies": [], "description": "", "id": "task-mv2tfp0b-kk9ncc", "lastError": null, "metadata": {"organizationGoalId": "goal-mv2tfp0b-gsndp0"}, "output": null, "ownerId": "alice", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "project-org", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "tenant-a", "title": "Delegate reliably", "updatedAt": "2026-10-10T19:57:15.995Z", "workflowId": null, "workspaceId": null}
+
+      136 |     const goal = await service.createGoal({ title: "Delegate reliably", projectId: "project-org" }, alice);
+      137 |     jest.spyOn(studio, method).mockRejectedValueOnce(new Error("injected delegation failure"));
+    > 138 |     await expect(service.delegate(goal.id, { agentId: "ceo" }, alice)).rejects.toThrow("injected delegation failure");
+          |           ^
+      139 |     expect(await organization.goals(alice.tenantId)).toEqual([goal]);
+      140 |     expect(await studio.listTasks(alice)).toHaveLength(0);
+      141 |     expect(await studio.listTriggerEvents({ tenantId: alice.tenantId })).toHaveLength(0);
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:138:11
+
+Test Suites: 2 failed, 2 total
+Tests:       2 failed, 29 passed, 31 total
+Snapshots:   0 total
+Time:        17.48 s
+Ran all test suites matching /tests\/organizationService.test.ts|tests\/organizationStrategyAtomicity.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

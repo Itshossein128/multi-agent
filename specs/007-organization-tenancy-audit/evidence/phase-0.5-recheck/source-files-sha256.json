@@ -1,0 +1,23 @@
+{
+  "apps/server/src/organization/organizationService.ts": "756bf30401d9becd00551748faaa80d9951acbacf0a62c0149708c5cf13d2c63",
+  "apps/server/src/organization/organizationStore.ts": "d298c75381f21ad2f6a5df29fc307169f9b8575daf8e2e39aed6fba470384665",
+  "apps/server/src/organization/organizationUnitOfWork.ts": "5a3c87bda27266e0c97f350cf393894f6fa243b241c9151523352426f7e2b664",
+  "apps/server/src/organization/projectValidation.ts": "9f2a97046c5106a23426872b5965771c87f14f48db317ae9aa601853f6c3af51",
+  "apps/server/src/api/studio/taskService.ts": "2da6b874e09a9d20ac8a03c5b3cbe6a6d5cd06bd94574feb206fd8f7670480b6",
+  "apps/server/src/api/studio.ts": "5efea1666ba094f9395349f960dd96956eef3ab97a8939239a10493ecaec2eab",
+  "apps/server/src/index.ts": "9d07ae56e3c6c7cb8470f6830e68be67e08c9beff6f79aac8ee67fd38c193387",
+  "apps/web/src/app/(authenticated)/organization/page.tsx": "83af6639ea884c190d7487345153098beb66d90daa933b1d5c1ac281fac33de2",
+  "tests/taskBoardView.test.ts": "077c48c590d105c4a90f6375247ecce48579323a5c59fce70d2479769c8c0b6e",
+  "tests/eventRoutinesIntegration.test.ts": "a768a9809afea539ec3668176a07651ec3fac68ed7c74017f488216b9e509b79",
+  "tests/organizationBudgetRoutes.test.ts": "9ab791f18bf1cefcd475ab56891686f5e58f7faad31fc3993c40fa0555ffe1bc",
+  "tests/organizationService.test.ts": "6cf281e3bbb4a69392e710f7a7cf8e0b6ddc20d5bd2e115938a3be7ecbabb52b",
+  "tests/organizationUnitOfWork.test.ts": "a0d163751c0fce282606649be4a9f201ae5c5175a03f0759b1dfb2be4696bccf",
+  "tests/organizationStrategyAtomicity.test.ts": "02ca4122e7cf3b2f873a7a140a0280d1c894464dc1ba10d74cd3806f3effe8d7",
+  "tests/organizationProjectValidation.test.ts": "0651fd70f4d0fae0fa0376cf7f46d42a3f28f16a1b2af89ecfd0a3062d032c57",
+  "tsconfig.test.json": "6fd54ae5260f044f7a238102e797ad6b8abd5ca73169400156f7f7baa659f556",
+  "tsconfig.jestfullcheck.json": null,
+  "jest.config.js": "36137f99b73ae86dce9c45b0dde70b256f2104728830ccbab913d658f69ba3f7",
+  "package.json": "4872bd09328ea9524afbc3d9c050b501655cbb4b4c866062f77a4c0f7f6a424f",
+  ".gitignore": "02656a0e77d56ddbd4361767e808ad6ed5a5b8b0410602612fcb7d7fef6127fd",
+  ".dockerignore": "058a9ca676734e31fac8feb8b671b0240e802574b1b9cb19896f9c6a18b36c32"
+}

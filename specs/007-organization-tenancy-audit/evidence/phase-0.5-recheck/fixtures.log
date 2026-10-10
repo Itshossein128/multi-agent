@@ -1,0 +1,52 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/taskBoardView.test.ts tests/eventRoutinesIntegration.test.ts
+
+PASS tests/eventRoutinesIntegration.test.ts (7.761 s)
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:54:31.071Z","level":"info","event":"run.started","runId":"run-mv2tc5r2-zoqkq9","workflowId":"wf-task-mv2tc5r0-cndagl"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:54:31.166Z","level":"info","event":"run.deduplicated_trigger_dispatch","runId":"run-mv2tc5r2-zoqkq9","triggerDispatchKey":"trigger:evt-unique-boundary-3cebd6ab-abe4-43cb-85f4-a44fd60e64f0"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:54:33.110Z","level":"info","event":"run.started","runId":"run-mv2tc7bq-ir4bxh","workflowId":"wf-task-mv2tc7bp-aysbma"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 0)
+
+    console.info
+      {"timestamp":"2026-10-10T19:54:33.110Z","level":"info","event":"run.started","runId":"run-mv2tc7bq-x9dq9e","workflowId":"wf-task-mv2tc7bp-aysbma"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 1)
+
+    console.info
+      {"timestamp":"2026-10-10T19:54:33.132Z","level":"info","event":"run.duplicate_trigger_dispatch_key_suppressed","runId":"run-mv2tc7bq-x9dq9e","triggerDispatchKey":"trigger:evt-race-spy-0a5d28cd-ad6d-4d7d-9ddb-5a48d1ecdbfe"}
+
+      at write (apps/server/src/logging.ts:16:17)
+          at async Promise.all (index 1)
+
+    console.info
+      {"timestamp":"2026-10-10T19:54:33.133Z","level":"info","event":"run.suppressed_duplicate_execution","runId":"run-mv2tc7bq-x9dq9e","triggerDispatchKey":"trigger:evt-race-spy-0a5d28cd-ad6d-4d7d-9ddb-5a48d1ecdbfe"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:54:33.250Z","level":"info","event":"run.deduplicated_trigger_dispatch","runId":"run-mv2tc7bq-ir4bxh","triggerDispatchKey":"trigger:evt-race-spy-0a5d28cd-ad6d-4d7d-9ddb-5a48d1ecdbfe"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/taskBoardView.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       27 passed, 27 total
+Snapshots:   0 total
+Time:        8.111 s
+Ran all test suites matching /tests\/taskBoardView.test.ts|tests\/eventRoutinesIntegration.test.ts/i.

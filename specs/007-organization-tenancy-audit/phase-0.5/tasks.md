@@ -237,3 +237,63 @@ Then:    T010 + T011 + T015 tests/organizationService.test.ts (one editor)
 | US4 | T031–T033 | 3 |
 | Final | T034–T041 | 8 |
 | **Total** | | **41** |
+
+## Phase 8: Recheck setup
+
+**Workflow**: tasks → implement → converge → implement, requested 2026-10-10.
+The historical T001–T041 ledger and deferred optional T040 are retained. New tasks
+revalidate current behavior; a checked audit task does not certify convergence.
+The phase-local `spec.md` consolidates the existing plan/contract intent, and
+`.specify/feature.json` now resolves this complete artifact set. PowerShell is unavailable;
+perform the installed scripts' path/file/template validation directly and record the fallback.
+
+- [X] T042 Validate `specs/007-organization-tenancy-audit/phase-0.5/spec.md`, `plan.md`, `tasks.md`, `.specify/feature.json`, the task template, inherited read-only checklist status, and absent extension hooks; record context in `specs/007-organization-tenancy-audit/phase-0.5/recheck.md`.
+
+## Phase 9: Recheck foundation
+
+- [X] T043 Verify `.gitignore`/`.dockerignore`, PostgreSQL availability, `apps/server/src/organization/projectValidation.ts`, UoW composition, and `phase-0.5/data-model.md` write boundaries; record source evidence in `phase-0.5/recheck.md` without expanding Phase 0.5 scope.
+
+## Phase 10: Recheck US1 — Fixtures (P1)
+
+**Independent test**: both fixture suites pass with PostgreSQL and zero skipped tests.
+
+- [X] T044 [US1] Execute `tests/taskBoardView.test.ts` and `tests/eventRoutinesIntegration.test.ts` with explicit PostgreSQL environment and retain `specs/007-organization-tenancy-audit/evidence/phase-0.5-recheck/fixtures.log`; verify fixture fields/project seed per FR-001.
+
+## Phase 11: Recheck US2 — Strategy (P1)
+
+**Independent test**: project/status matrix, in-memory and PostgreSQL atomicity, mixed-store fail-closed wiring, and strategy UI project selection.
+
+- [X] T045 [US2] Execute `tests/organizationProjectValidation.test.ts`, `tests/organizationService.test.ts`, `tests/organizationUnitOfWork.test.ts`, `tests/organizationStrategyAtomicity.test.ts`, and `tests/organizationBudgetRoutes.test.ts`; inspect `organizationService.ts`/`organizationStore.ts`/`organizationUnitOfWork.ts` and `apps/web/src/app/(authenticated)/organization/page.tsx` against US2/AC1–AC8; retain `evidence/phase-0.5-recheck/organization.log` and findings in `phase-0.5/recheck.md`.
+
+## Phase 12: Recheck US3 — Delegation (P2)
+
+**Independent test**: projectless/mismatched/foreign/retired cases, goal project reuse, and project-picker behavior.
+
+- [X] T046 [US3] Inspect executed delegation cases in `tests/organizationService.test.ts` and the delegation path in `apps/server/src/organization/organizationService.ts`/`api/studio/taskService.ts`, including task/event failure and post-commit behavior; record the US3/FR-111 evidence and uncovered paths in `phase-0.5/recheck.md` for convergence.
+
+## Phase 13: Recheck US4 — Typecheck (P2)
+
+**Independent test**: strict test typecheck passes and Jest uses the same config; previous negative fixture proof remains valid if the config is unchanged.
+
+- [X] T047 [US4] Run `pnpm typecheck:tests`, verify `tsconfig.test.json`/`jest.config.js`/`package.json` and absent `tsconfig.jestfullcheck.json`, and validate the retained negative fixture proof; retain `evidence/phase-0.5-recheck/typecheck-tests.log` per FR-007.
+
+## Phase 14: Recheck first-pass evidence
+
+- [X] T048 Write `specs/007-organization-tenancy-audit/phase-0.5/recheck.md` with story/requirement/gate coverage, command exits, scoped findings, hook disposition, and optional T040 deferral; complete the first implement pass before the append-only convergence assessment. If convergence changes source, run G6 again on the new clean committed SHA and save evidence separately.
+
+**Dependencies**: T042 → T043 → T044–T047 → T048 → convergence → appended remediation tasks.
+**Parallel opportunities**: fixture inspection and test-config inspection are independent; PostgreSQL gates run sequentially to avoid resource interference. No additional agents are needed.
+**MVP**: US1 fixture revalidation, followed by strategy, delegation, typecheck, then convergence.
+**Recheck task counts**: setup 1, foundation 1, US1 1, US2 1, US3 1, US4 1, evidence 1 = 7.
+
+## Phase 15: Convergence
+
+**Assessment**: 10 functional requirements, 18 acceptance scenarios, 4 success criteria,
+11 research/plan decisions and G1–G7; constitution skipped (unfilled template).
+Four partial findings: 2 HIGH, 2 MEDIUM; missing/contradicts/unrequested findings: 0.
+Optional R-12/T040 remains deferred. Convergence itself changes only this append.
+
+- [X] T049 [US3] HIGH — Reproduce delegation assignment-event failure in `tests/organizationService.test.ts` and real PostgreSQL task/event/deferred-COMMIT failures in `tests/organizationStrategyAtomicity.test.ts`; repair `apps/server/src/organization/organizationService.ts` to prepare the task, then strictly persist task plus assignment event in one studio transaction without changing normal `TaskService.create`; require non-success and no new task/event on failure, preserve the existing goal, prove retry/client release, and retain red/green logs per FR-111, US3/AC4, data-model: delegation write set (partial; F1).
+- [X] T050 [US3] HIGH — Inject an actual placeholder project-name storage failure after delegation commit in `tests/organizationService.test.ts`; repair `apps/server/src/organization/organizationService.ts` to keep the committed delegation successful with best-effort naming and structured ID-only logging; prove the returned task/event exists and no internal diagnostic is logged per FR-111, plan: post-commit failure boundary (partial; F2).
+- [X] T051 [US2] MEDIUM — Add a direct post-commit strategy naming-failure assertion to `tests/organizationService.test.ts`, checking success, committed goal/task/event, and ID-only warning; retain proof in `specs/007-organization-tenancy-audit/evidence/phase-0.5-recheck/` per FR-006, US2/AC6, research R-3 (partial; F3).
+- [X] T052 MEDIUM — After T049–T051, commit source changes, run the complete `phase-0.5/quickstart.md` clean-SHA baseline with explicit PostgreSQL environment and all named gates, retain each complete run separately, update `phase-0.5/recheck.md` with exact SHA/counts/exits and requirement coverage, commit new evidence separately without changing historical baseline sections, remove the scratch worktree, and push per FR-009, SC-003, G6 (partial; F4).

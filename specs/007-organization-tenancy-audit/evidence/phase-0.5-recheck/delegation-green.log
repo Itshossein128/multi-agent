@@ -1,0 +1,12 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationService.test.ts tests/organizationStrategyAtomicity.test.ts
+
+PASS tests/organizationStrategyAtomicity.test.ts (17.48 s)
+PASS tests/organizationService.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       31 passed, 31 total
+Snapshots:   0 total
+Time:        18.374 s
+Ran all test suites matching /tests\/organizationService.test.ts|tests\/organizationStrategyAtomicity.test.ts/i.

@@ -1,0 +1,56 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationService.test.ts
+
+FAIL tests/organizationService.test.ts (8.318 s)
+  goal project validation
+    ✓ rejects unknown before saving a goal (6 ms)
+    ✓ rejects foreign before saving a goal (1 ms)
+    ✓ rejects retired before saving a goal (1 ms)
+    ✓ still allows a goal without a project (1 ms)
+  strategy project validation and atomicity
+    ✓ rejects project undefined without any writes (2 ms)
+    ✓ rejects project foreign without any writes (1 ms)
+    ✓ rejects project retired without any writes (1 ms)
+    ✓ rolls back when saveTask fails (12 ms)
+    ✓ rolls back when enqueueTriggerEvent fails (3 ms)
+    ✓ fails closed on mixed stores before saving a goal (2 ms)
+  organization post-commit naming
+    ✕ returns success for committed delegation despite naming storage failure (32 ms)
+    ✓ returns success for committed strategy despite naming storage failure (5 ms)
+  organization goals and delegation
+    ✓ keeps one CEO, rejects reporting cycles, and links delegated tasks to goals (10 ms)
+    ✓ keeps the in-memory reporting graph acyclic when updates race (1 ms)
+  explicit project for delegation
+    ✓ preserves the goal and rolls back delegation when saveTask fails (2 ms)
+    ✓ preserves the goal and rolls back delegation when enqueueTriggerEvent fails (2 ms)
+    ✓ rejects invalid delegation project (undefined) (1 ms)
+    ✓ rejects invalid delegation project (other) (1 ms)
+    ✓ rejects invalid delegation project (foreign)
+    ✓ rejects invalid delegation project (retired) (1 ms)
+    ✓ uses the explicit project with goal project null (1 ms)
+    ✓ uses the explicit project with goal project project-org
+
+  ● organization post-commit naming › returns success for committed delegation despite naming storage failure
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 400
+
+      84 |         body: JSON.stringify(kind === "delegation" ? { agentId: "ceo" } : { title: "Naming", brief: "Improve naming", projectId: project.id }),
+      85 |       });
+    > 86 |       expect(response.status).toBe(201);
+         |                               ^
+      87 |       const result = await response.json();
+      88 |       const task = kind === "delegation" ? result : result.task;
+      89 |       const goalId = goal?.id ?? result.goal.id;
+
+      at tests/organizationService.test.ts:86:31
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 21 passed, 22 total
+Snapshots:   0 total
+Time:        8.578 s
+Ran all test suites matching /tests\/organizationService.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

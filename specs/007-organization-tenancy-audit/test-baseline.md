@@ -196,3 +196,5 @@ failures must be listed explicitly until fixed; they must not be counted as pass
 
 
 Fresh verified baseline: [Phase 0.5 implementation baseline](./baseline-phase-0.5.md).
+
+Second workflow verification: [Phase 0.5 recheck](./phase-0.5/recheck.md).
