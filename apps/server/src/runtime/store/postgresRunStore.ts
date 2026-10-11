@@ -449,9 +449,9 @@ export class PostgresRunStore implements RunStoreContract {
         if (this.hasLeaseColumns !== false) {
           try {
             await this.pool.query(
-              `INSERT INTO studio_run_events (run_id, sequence, event)
-               SELECT $1, $2, $3::jsonb FROM studio_runs
-                WHERE id = $1 AND execution_owner_id = $4 AND execution_lease_expires_at > now()
+              `INSERT INTO studio_run_events (run_id, sequence, event, tenant_id)
+               SELECT $1, $2, $3::jsonb, r.tenant_id FROM studio_runs r
+                WHERE r.id = $1 AND r.execution_owner_id = $4 AND r.execution_lease_expires_at > now()
                ON CONFLICT (run_id, sequence) DO NOTHING`,
               [runId, next.sequence, JSON.stringify(next), this.instanceId],
             );
@@ -463,7 +463,8 @@ export class PostgresRunStore implements RunStoreContract {
           }
         }
         await this.pool.query(
-          `INSERT INTO studio_run_events (run_id, sequence, event) VALUES ($1, $2, $3::jsonb)
+          `INSERT INTO studio_run_events (run_id, sequence, event, tenant_id)
+           SELECT $1, $2, $3::jsonb, tenant_id FROM studio_runs WHERE id = $1
            ON CONFLICT (run_id, sequence) DO NOTHING`,
           [runId, next.sequence, JSON.stringify(next)],
         );
@@ -788,10 +789,10 @@ export class PostgresRunStore implements RunStoreContract {
       if (this.hasLeaseColumns !== false) {
         try {
           const inserted = await this.pool.query(
-            `INSERT INTO studio_approvals (id, run_id, node_id, status, message, requested_at, resolved_at, context, response, metadata, timeout_seconds)
-             SELECT $1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8::jsonb,$9,$10::jsonb,$11
-               FROM studio_runs WHERE id=$2 AND execution_owner_id=$12 AND execution_lease_expires_at > now()
-                 AND status IN ('queued','running','waiting_for_human')
+            `INSERT INTO studio_approvals (id, run_id, node_id, status, message, requested_at, resolved_at, context, response, metadata, timeout_seconds, tenant_id)
+             SELECT $1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8::jsonb,$9,$10::jsonb,$11, r.tenant_id
+               FROM studio_runs r WHERE r.id=$2 AND r.execution_owner_id=$12 AND r.execution_lease_expires_at > now()
+                 AND r.status IN ('queued','running','waiting_for_human')
              ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, resolved_at = EXCLUDED.resolved_at, response = EXCLUDED.response, metadata = EXCLUDED.metadata`,
             [...values, this.instanceId],
           );
@@ -804,8 +805,9 @@ export class PostgresRunStore implements RunStoreContract {
         }
       }
       await this.pool.query(
-        `INSERT INTO studio_approvals (id, run_id, node_id, status, message, requested_at, resolved_at, context, response, metadata, timeout_seconds)
-         VALUES ($1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8::jsonb,$9,$10::jsonb,$11)
+        `INSERT INTO studio_approvals (id, run_id, node_id, status, message, requested_at, resolved_at, context, response, metadata, timeout_seconds, tenant_id)
+         SELECT $1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8::jsonb,$9,$10::jsonb,$11, tenant_id
+           FROM studio_runs WHERE id=$2
          ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, resolved_at = EXCLUDED.resolved_at, response = EXCLUDED.response, metadata = EXCLUDED.metadata`,
         values,
       );

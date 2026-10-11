@@ -6,6 +6,8 @@
  */
 require("ts-node/register");
 const { Pool } = require("pg");
+const { readFileSync } = require("node:fs");
+const { resolve } = require("node:path");
 const { LEASE_TABLE_DDL } = require("../../src/broker/leaseStore");
 const { AUDIT_TABLE_DDL } = require("../../src/broker/audit");
 
@@ -18,6 +20,8 @@ async function main() {
   try {
     await pool.query(LEASE_TABLE_DDL);
     await pool.query(AUDIT_TABLE_DDL);
+    const rlsSql = readFileSync(resolve(__dirname, "rls_prerequisites.sql"), "utf8");
+    await pool.query(rlsSql);
     console.log("Credential broker migrations already current or applied");
   } finally {
     await pool.end();

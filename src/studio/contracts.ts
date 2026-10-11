@@ -48,15 +48,66 @@ export type StudioEntityStatus = "active" | "retired";
 /** Controls whether a project/workspace name may still be derived from its first task. */
 export type StudioNameSource = "placeholder" | "derived" | "manual";
 
-/** Tenant organization profile (id equals tenantId). Distinct from agent goals `/organization`. */
+export type OrganizationStatus = "active" | "suspended" | "deleting";
+export type OrganizationMembershipRole = "owner" | "admin" | "member" | "viewer";
+export type OrganizationMembershipStatus = "invited" | "active" | "suspended" | "removed";
+
+export type OrganizationPermission =
+  | "org.read"
+  | "org.update"
+  | "org.delete"
+  | "org.transfer_ownership"
+  | "members.manage"
+  | "budgets.manage"
+  | "agent_org.manage"
+  | "goals.create"
+  | "goals.delegate"
+  | "strategy.request"
+  | "projects.manage"
+  | "resources.write"
+  | "resources.read"
+  | "runs.execute"
+  | "runs.read_all"
+  | "credentials.manage"
+  | "memory.org.read"
+  | "memory.org.write"
+  | "memory.org.forget"
+  | "audit.read";
+
+/** Tenant organization profile (id equals tenantId / organization key). Distinct from agent goals `/organization`. */
 export interface OrganizationProfile {
   id: string;
   name: string;
   description: string;
   config: Record<string, unknown>;
   ownerId: string;
+  status: OrganizationStatus;
+  slug: string;
+  createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OrganizationMembership {
+  organizationId: string;
+  userId: string;
+  role: OrganizationMembershipRole;
+  status: OrganizationMembershipStatus;
+  invitedBy?: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  removedAt?: string | null;
+}
+
+export interface OrganizationAuditEntry {
+  id?: string;
+  organizationId: string;
+  actorUserId?: string | null;
+  action: string;
+  targetUserId?: string | null;
+  details?: Record<string, unknown>;
+  createdAt?: string;
 }
 
 /** First-class project entity (distinct from memory namespace "project"). */
@@ -234,10 +285,19 @@ export interface StudioStore {
   ): Promise<boolean>;
 
   getOrganizationProfile(principal: StudioPrincipal): Promise<OrganizationProfile | null>;
+  getOrganizationBySlug(slug: string): Promise<OrganizationProfile | null>;
   createOrganizationProfile(
     profile: OrganizationProfile,
     principal: StudioPrincipal,
   ): Promise<OrganizationProfile>;
+  /** List organizations where the user has an active membership. */
+  listOrganizationsForUser(userId: string): Promise<OrganizationProfile[]>;
+  getMembership(organizationId: string, userId: string): Promise<OrganizationMembership | null>;
+  listMemberships(organizationId: string): Promise<OrganizationMembership[]>;
+  saveMembership(membership: OrganizationMembership): Promise<OrganizationMembership>;
+  appendOrganizationAudit(entry: OrganizationAuditEntry): Promise<void>;
+  /** Set studio_users.tenant_id last-used organization pointer (nullable). */
+  setUserLastOrganization(userId: string, organizationId: string | null): Promise<void>;
 
   listProjectRepositories(projectId: string, principal?: StudioPrincipal): Promise<ProjectRepository[]>;
   getProjectRepository(id: string, principal?: StudioPrincipal): Promise<ProjectRepository | null>;

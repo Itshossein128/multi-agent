@@ -85,26 +85,54 @@ export const authConfig: NextAuthConfig = {
     signIn: "/login",
   },
   callbacks: {
-    jwt: ({ token, user }) => ({
-      ...token,
-      tenantId: (user as { tenantId?: string } | undefined)?.tenantId ?? token.tenantId
-    }),
+    jwt: ({ token, user, trigger, session }) => {
+      if (user) {
+        token.tenantId = (user as { tenantId?: string }).tenantId ?? token.tenantId;
+      }
+      if (trigger === "update" && session && typeof session === "object" && "tenantId" in session) {
+        const next = (session as { tenantId?: string | null }).tenantId;
+        if (typeof next === "string" && next.trim()) {
+          token.tenantId = next;
+        } else if (next === null) {
+          delete token.tenantId;
+        }
+      }
+      return token;
+    },
     session: ({ session, token }) => ({
       ...session,
       user: {
         ...session.user,
         id: token.sub as string,
-        tenantId: token.tenantId as string
-      }
-    })
-  }
+        tenantId: token.tenantId as string | undefined,
+      },
+    }),
+  },
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 
 export type AuthenticatedPrincipal = { userId: string; tenantId: string };
 
+/** Session user id only (may have no organization yet after registration). */
+export async function getSessionUserId(): Promise<string | null> {
+  const user = (await auth())?.user as { id?: string } | undefined;
+  return user?.id ?? null;
+}
+
 export async function getAuthenticatedPrincipal(): Promise<AuthenticatedPrincipal | null> {
-  const user = (await auth())?.user as { id?: string; tenantId?: string } | undefined;
-  return user?.id && user.tenantId ? { userId: user.id, tenantId: user.tenantId } : null;
+  const user = (await auth())?.user as { id?: string; tenantId?: string | null } | undefined;
+  if (!user?.id) return null;
+  if (user.tenantId) return { userId: user.id, tenantId: user.tenantId };
+
+  // Refresh last-organization pointer from DB (set after org create / seed).
+  try {
+    const pool = getDbPool();
+    const result = await pool.query("SELECT tenant_id FROM studio_users WHERE id = $1", [user.id]);
+    const tenantId = result.rows[0]?.tenant_id as string | null | undefined;
+    if (tenantId) return { userId: user.id, tenantId };
+  } catch {
+    /* fall through */
+  }
+  return null;
 }

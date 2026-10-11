@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { orgPath } from "@/lib/orgRoute";
 
 const NAME_MAX = 120;
 const DRAFT_KEY = "studio.org.wizard.draft";
@@ -64,7 +65,8 @@ export default function OrganizationOnboardingPage() {
       try {
         const res = await fetch("/api/organizations/current");
         if (res.ok) {
-          router.replace("/projects");
+          const org = (await res.json().catch(() => ({}))) as { slug?: string };
+          router.replace(org.slug ? orgPath(org.slug, "/projects") : "/");
           return;
         }
       } finally {
@@ -106,10 +108,11 @@ export default function OrganizationOnboardingPage() {
           },
         }),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = (await res.json().catch(() => ({}))) as { error?: string; slug?: string };
       if (!res.ok) throw new Error(body.error ?? "Could not create organization");
       sessionStorage.removeItem(DRAFT_KEY);
-      router.replace("/projects");
+      if (!body.slug) throw new Error("Organization created without slug");
+      router.replace(orgPath(body.slug, "/projects"));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create organization");
     } finally {

@@ -16,6 +16,8 @@ import {
 import type {
   AcceptWebhookDeliveryParams,
   AcceptWebhookDeliveryResult,
+  OrganizationAuditEntry,
+  OrganizationMembership,
   OrganizationProfile,
   ProjectRepository,
   StudioEntityStatusFilter,
@@ -29,6 +31,21 @@ import type {
   WorkspaceRepositoryState,
 } from "../contracts";
 import { prepareInMemoryCommit } from "./in-memory-transaction";
+
+function slugifyOrganizationName(name: string, fallbackId: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  if (base) return base;
+  return fallbackId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "org";
+}
+
+function membershipKey(organizationId: string, userId: string): string {
+  return `${organizationId}:${userId}`;
+}
 
 function matchesStatus(status: StudioProject["status"], filter: StudioEntityStatusFilter = "active"): boolean {
   if (filter === "all") return true;
@@ -56,6 +73,9 @@ export class InMemoryStudioStore implements StudioStore {
   private projects = new Map<string, StudioProject>();
   private workspaces = new Map<string, StudioWorkspace>();
   private organizations = new Map<string, OrganizationProfile>();
+  private memberships = new Map<string, OrganizationMembership>();
+  private organizationAudit = new Map<string, OrganizationAuditEntry>();
+  private userLastOrganization = new Map<string, string | null>();
   private projectRepositories = new Map<string, ProjectRepository>();
   private workspaceRepositories = new Map<string, WorkspaceRepositoryMembership>(); // key: `${workspaceId}:${repoId}`
   private workspaceRepoStates = new Map<string, WorkspaceRepositoryState>(); // key: `${tenantId}|${projectId}|${workspaceId??''}|${repoId}`
@@ -74,6 +94,8 @@ export class InMemoryStudioStore implements StudioStore {
     return {
       workflows: this.workflows, agents: this.agents, tools: this.tools, tasks: this.tasks,
       projects: this.projects, workspaces: this.workspaces, organizations: this.organizations,
+      memberships: this.memberships, organizationAudit: this.organizationAudit,
+      userLastOrganization: this.userLastOrganization,
       projectRepositories: this.projectRepositories, workspaceRepositories: this.workspaceRepositories,
       workspaceRepoStates: this.workspaceRepoStates, comments: this.comments, triggerEvents: this.triggerEvents,
       routines: this.routines, routineHistory: this.routineHistory, webhookTriggers: this.webhookTriggers,
@@ -434,6 +456,12 @@ export class InMemoryStudioStore implements StudioStore {
     return profile ? structuredClone(profile) : null;
   }
 
+  async getOrganizationBySlug(slug: string): Promise<OrganizationProfile | null> {
+    const normalized = slug.trim().toLowerCase();
+    const profile = [...this.organizations.values()].find((org) => org.slug === normalized);
+    return profile ? structuredClone(profile) : null;
+  }
+
   async createOrganizationProfile(
     profile: OrganizationProfile,
     principal: StudioPrincipal,
@@ -441,17 +469,85 @@ export class InMemoryStudioStore implements StudioStore {
     if (profile.id !== principal.tenantId) {
       throw new Error("Organization profile id must equal tenant id");
     }
-    const existing = await this.getOrganizationProfile(principal);
-    if (existing) throw new Error("Organization already exists for this tenant");
-    const record: OrganizationProfile = {
-      ...profile,
-      id: principal.tenantId,
-      ownerId: profile.ownerId || principal.userId,
-      description: profile.description ?? "",
-      config: profile.config ?? {},
-    };
-    this.organizations.set(record.id, structuredClone(record));
+    return this.transaction(async (store) => {
+      const existing = await store.getOrganizationProfile(principal);
+      if (existing) throw new Error("Organization already exists for this tenant");
+      const stamp = profile.createdAt;
+      const record: OrganizationProfile = {
+        ...profile,
+        id: principal.tenantId,
+        ownerId: profile.ownerId || principal.userId,
+        description: profile.description ?? "",
+        config: profile.config ?? {},
+        status: profile.status ?? "active",
+        slug: profile.slug?.trim()
+          ? profile.slug.trim().toLowerCase()
+          : slugifyOrganizationName(profile.name, principal.tenantId),
+        createdBy: profile.createdBy ?? principal.userId,
+      };
+      (store as InMemoryStudioStore).organizations.set(record.id, structuredClone(record));
+      await store.saveMembership({
+        organizationId: record.id,
+        userId: principal.userId,
+        role: "owner",
+        status: "active",
+        invitedBy: principal.userId,
+        version: 1,
+        createdAt: stamp,
+        updatedAt: stamp,
+        removedAt: null,
+      });
+      await store.appendOrganizationAudit({
+        organizationId: record.id,
+        actorUserId: principal.userId,
+        action: "organization.created",
+        targetUserId: principal.userId,
+        details: { role: "owner", slug: record.slug },
+        createdAt: stamp,
+      });
+      await store.setUserLastOrganization(principal.userId, record.id);
+      return structuredClone(record);
+    });
+  }
+
+  async listOrganizationsForUser(userId: string): Promise<OrganizationProfile[]> {
+    return [...this.memberships.values()]
+      .filter((m) => m.userId === userId && m.status === "active")
+      .map((m) => this.organizations.get(m.organizationId))
+      .filter((org): org is OrganizationProfile => Boolean(org && org.status === "active"))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+      .map((org) => structuredClone(org));
+  }
+
+  async getMembership(organizationId: string, userId: string): Promise<OrganizationMembership | null> {
+    const membership = this.memberships.get(membershipKey(organizationId, userId));
+    return membership ? structuredClone(membership) : null;
+  }
+
+  async listMemberships(organizationId: string): Promise<OrganizationMembership[]> {
+    return [...this.memberships.values()]
+      .filter((m) => m.organizationId === organizationId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.userId.localeCompare(b.userId))
+      .map((m) => structuredClone(m));
+  }
+
+  async saveMembership(membership: OrganizationMembership): Promise<OrganizationMembership> {
+    const record = structuredClone(membership);
+    this.memberships.set(membershipKey(record.organizationId, record.userId), record);
     return structuredClone(record);
+  }
+
+  async appendOrganizationAudit(entry: OrganizationAuditEntry): Promise<void> {
+    const id = entry.id ?? uid("org-audit");
+    this.organizationAudit.set(id, {
+      ...structuredClone(entry),
+      id,
+      createdAt: entry.createdAt ?? nowIso(),
+    });
+  }
+
+  async setUserLastOrganization(userId: string, organizationId: string | null): Promise<void> {
+    this.userLastOrganization.set(userId, organizationId);
   }
 
   async listProjectRepositories(projectId: string, principal?: StudioPrincipal): Promise<ProjectRepository[]> {

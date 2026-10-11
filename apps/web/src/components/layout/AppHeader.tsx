@@ -7,6 +7,8 @@ import { useStudioStore } from "@/store/useStudioStore";
 import { Layers, Menu, PanelLeftClose, PanelLeftOpen, Radio, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
+import { orgPath } from "@/lib/orgRoute";
 import { UserMenu } from "./UserMenu";
 
 type AppHeaderProps = {
@@ -24,6 +26,8 @@ export function AppHeader({
 }: AppHeaderProps) {
   const { isLive } = useStudioStore();
   const { enqueueTask, isMutating } = useDashboardQuery();
+  const org = useOptionalOrg();
+  const homeHref = org ? orgPath(org.org.slug, "/") : "/";
   const [modalOpen, setModalOpen] = useState(false);
   const [taskPrompt, setTaskPrompt] = useState("");
 
@@ -75,7 +79,7 @@ export function AppHeader({
             </Button>
 
             <Link
-              href="/"
+              href={homeHref}
               className="flex min-w-0 items-center gap-3 hover:opacity-80 transition-opacity"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md shadow-indigo-500/20">

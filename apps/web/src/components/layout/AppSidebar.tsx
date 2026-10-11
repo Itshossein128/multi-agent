@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { OrgSwitcher } from "@/components/organization/OrgSwitcher";
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
+import { orgPath } from "@/lib/orgRoute";
 
 type NavItem = {
   href: string;
@@ -58,11 +61,6 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-function isActive(pathname: string, item: NavItem): boolean {
-  if (item.match === "exact") return pathname === item.href;
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
-}
-
 type AppSidebarProps = {
   open: boolean;
   collapsed: boolean;
@@ -77,10 +75,10 @@ export function AppSidebar({
   onCollapsedChange,
 }: AppSidebarProps) {
   const pathname = usePathname();
+  const org = useOptionalOrg();
 
   return (
     <>
-      {/* Mobile scrim */}
       <button
         type="button"
         aria-label="Close navigation"
@@ -102,12 +100,15 @@ export function AppSidebar({
         )}
       >
         <div className="flex h-16 shrink-0 items-center border-b border-zinc-800/80 px-4 lg:hidden">
-          <span className="text-sm font-semibold tracking-tight text-white">
-            Navigation
-          </span>
+          <span className="text-sm font-semibold tracking-tight text-white">Navigation</span>
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 sticky top-0 max-h-screen">
+          {org && !collapsed ? (
+            <div className="mb-4 px-1">
+              <OrgSwitcher />
+            </div>
+          ) : null}
           <div className={cn("space-y-6", collapsed && "lg:space-y-3")}>
             {NAV_GROUPS.map((group) => (
               <div key={group.label}>
@@ -121,12 +122,17 @@ export function AppSidebar({
                 </p>
                 <ul className="space-y-0.5">
                   {group.items.map((item) => {
-                    const active = isActive(pathname, item);
+                    const relative = item.href === "/" ? "" : item.href;
+                    const href = org ? orgPath(org.org.slug, relative) : item.href;
+                    const active =
+                      item.match === "exact"
+                        ? pathname === href || Boolean(org && /^\/o\/[^/]+\/?$/.test(pathname) && item.href === "/")
+                        : pathname === href || pathname.startsWith(`${href}/`);
                     const Icon = item.icon;
                     return (
                       <li key={item.href}>
                         <Link
-                          href={item.href}
+                          href={href}
                           onClick={onNavigate}
                           title={item.label}
                           aria-label={item.label}
@@ -146,9 +152,7 @@ export function AppSidebar({
                             )}
                             aria-hidden
                           />
-                          <span className={cn(collapsed && "lg:hidden")}>
-                            {item.label}
-                          </span>
+                          <span className={cn(collapsed && "lg:hidden")}>{item.label}</span>
                         </Link>
                       </li>
                     );

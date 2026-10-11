@@ -1,9 +1,8 @@
 /** Studio persistence client. Entities live on the execution server; activeWorkflowId stays local. */
 import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, deserializeWorkflowDefinition, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, serializeWorkflowDefinition, uid, type AgentDiagnostics, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
+import { executionApiBase } from "@/lib/orgRoute";
 import { ApiRequestError, requestJson } from "./requestJson";
-
-const API_URL = "/api/execution";
 const ACTIVE_WORKFLOW_KEY = "agent-studio.active-workflow.v1";
 const WORKSPACE_KEY = "agent-studio.workspace.v3";
 const LEGACY_WORKSPACE_V2_KEY = "agent-studio.workspace.v2";
@@ -73,11 +72,11 @@ export interface CreateAgentInput { name?: string; model?: string; provider?: st
  */
 export function createWorkflowService(dependencies: WorkflowServiceDependencies = {}) {
   const fetchImpl = dependencies.fetch ?? globalThis.fetch;
-  const apiUrl = dependencies.apiUrl ?? API_URL;
   const storage = () => dependencies.storage ?? (typeof window === "undefined" ? undefined : window.localStorage);
   let importPromise: Promise<void> | null = null;
 
   function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const apiUrl = dependencies.apiUrl ?? executionApiBase();
     return requestJson<T>(path, init, { apiUrl: `${apiUrl}/studio`, fetchImpl });
   }
 

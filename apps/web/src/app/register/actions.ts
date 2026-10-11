@@ -36,13 +36,13 @@ export async function registerUser(formData: FormData) {
     }
 
     const userId = randomUUID();
-    const tenantId = randomUUID(); // Provision a new private tenant
     const passwordHash = await bcrypt.hash(password, 12); // Work factor 12
 
+    // Registration creates a user only — no implicit private tenant (org migration D-7 / FR-108).
     await pool.query(
       `INSERT INTO studio_users (id, email, password_hash, display_name, tenant_id, status)
-       VALUES ($1, $2, $3, $4, $5, 'active')`,
-      [userId, normalizedEmail, passwordHash, displayName || null, tenantId]
+       VALUES ($1, $2, $3, $4, NULL, 'active')`,
+      [userId, normalizedEmail, passwordHash, displayName || null]
     );
 
     // Auto sign-in the newly created user so they land directly on the home page

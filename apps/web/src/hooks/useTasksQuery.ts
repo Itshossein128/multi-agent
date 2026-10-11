@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
 import { TaskBoardData, TaskPriority, TaskStatus } from "@/lib/taskStatus";
 
 export interface CreateTaskInput {
@@ -73,14 +74,16 @@ async function postTaskAction<T = unknown>(body: Record<string, unknown>): Promi
 
 export function useTasksQuery() {
   const queryClient = useQueryClient();
+  const orgId = useOptionalOrg()?.org.id ?? "none";
+  const tasksKey = ["org", orgId, "tasks"] as const;
 
   const query = useQuery({
-    queryKey: ["tasks"],
+    queryKey: tasksKey,
     queryFn: fetchBoard,
     refetchInterval: 3000,
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: tasksKey });
 
   const createMutation = useMutation({
     mutationFn: (input: CreateTaskInput) => postTaskAction({ action: "create", ...input }),
@@ -92,9 +95,9 @@ export function useTasksQuery() {
     mutationFn: (vars: { taskId: string; toStatus: TaskStatus }) =>
       postTaskAction({ action: "move", taskId: vars.taskId, toStatus: vars.toStatus }),
     onMutate: async ({ taskId, toStatus }) => {
-      await queryClient.cancelQueries({ queryKey: ["tasks"] });
-      const previous = queryClient.getQueryData<TaskBoardData>(["tasks"]);
-      queryClient.setQueryData<TaskBoardData>(["tasks"], (old) =>
+      await queryClient.cancelQueries({ queryKey: tasksKey });
+      const previous = queryClient.getQueryData<TaskBoardData>(tasksKey);
+      queryClient.setQueryData<TaskBoardData>(tasksKey, (old) =>
         old
           ? {
               ...old,
@@ -110,7 +113,7 @@ export function useTasksQuery() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(["tasks"], context.previous);
+        queryClient.setQueryData(tasksKey, context.previous);
       }
     },
     onSettled: invalidate,

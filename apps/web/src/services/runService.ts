@@ -1,11 +1,11 @@
 import type { AgentRecord, ApprovalDecision, ApprovalRequest, ClarificationPackage, ClarificationSubmitResponse, Run, RunEvent, RunCreateRequest, RunCreateResponse, RunStatus, WorkflowDefinition } from "@multi-agent/types";
+import { executionApiBase } from "@/lib/orgRoute";
 import { requestJson } from "./requestJson";
 
-const API_URL = "/api/execution";
 const TASKS_API_URL = "/api/tasks";
 
 function request<T>(path: string, init?: RequestInit): Promise<T> {
-  return requestJson<T>(path, init, { apiUrl: API_URL });
+  return requestJson<T>(path, init, { apiUrl: executionApiBase() });
 }
 
 function tasksAction<T>(body: Record<string, unknown>): Promise<T> {

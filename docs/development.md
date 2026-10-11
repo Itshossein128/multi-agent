@@ -45,6 +45,32 @@ pnpm dev:docs
 
 `MEMORY_DATABASE_URL` به دیتابیس ایزوله‌ی Studio اشاره می‌کند و `STUDIO_STORE=postgres` persistence را فعال می‌کند. migrationها با `pnpm db:migrate` و خارج از startup اجرا می‌شوند. در production، storage volatile نباید فعال باشد. تنظیمات سرور از `apps/server/.env` و وب از `apps/web/.env.local` خوانده می‌شوند؛ کاتالوگ متغیرها در `.env.example` است.
 
+## Organization migration (Phases 1–5)
+
+Phase 0 decisions Q1–Q4 (defaults accepted 2026-10-11): removed-member runs stop at the next checkpoint; reset `TRUNCATE`s broker audit while organization deletion keeps audit rows; deletion also cancels runs and removes Vault secrets; org slugs are editable by owner/admin with no redirects.
+
+Feature flags (server env; safe defaults keep later phases off):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ORG_MEMBERSHIP_ENFORCEMENT` | `shadow` | Route-level membership/permission checks (`shadow` \| `enforce`) |
+| `ORG_MEMORY_SCOPE` | `false` | Organization memory namespace exposure |
+| `ORG_DELETION_ENABLED` | `false` | Hard-delete organization API/UI |
+| `ORG_RLS` | `off` | Activate Postgres RLS + least-privilege app role (`off` \| `enforce`) |
+
+### Database reset runbook (maintenance window)
+
+One-time clean start before organization foundation migrations (`018+`). Irreversible unless the operator passed `--backup`.
+
+1. Stop schedulers/workers; drain or cancel running runs (reset refuses if the execution server reports active runs).
+2. `pnpm db:reset -- --confirm-destroy-all-data` (optional `--backup <file.dump>`). Prints per-table counts, truncates studio/memory/broker data (keeps migration ledgers), clears `STUDIO_WORKSPACE_STORAGE_ROOT` working copies. Refuses without the confirmation flag.
+3. `pnpm db:migrate` (applies `018+`; migration `018` aborts if legacy tenant data exists without membership tables).
+4. Deploy execution server, then web/BFF.
+5. Register the first user (user only — no private tenant), create an organization (owner membership), or `pnpm db:seed:dev` for non-production `AUTH_DEV_*` identity.
+6. Run gate commands from `specs/007-organization-tenancy-audit/test-baseline.md` §7.
+
+Vault/secret-store entries are **not** cleared by reset (operator task).
+
 ## Verification
 
 ### Velora workbook delivery intake

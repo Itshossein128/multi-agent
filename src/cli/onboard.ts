@@ -65,6 +65,15 @@ const KNOWN_STUDIO_MIGRATIONS = [
   "009_run_memory_access.sql",
   "010_procedural_memory_status.sql",
   "011_projects_workspaces.sql",
+  "012_event_routines_triggers.sql",
+  "013_event_routines_hardening.sql",
+  "014_organization_goals.sql",
+  "015_cost_budgets.sql",
+  "016_run_execution_leases.sql",
+  "017_project_workspace_hierarchy.sql",
+  "018_organization_foundation.sql",
+  "019_tenant_constraints.sql",
+  "020_rls_prerequisites.sql",
 ];
 
 const KNOWN_MEMORY_MIGRATIONS = [
@@ -73,6 +82,7 @@ const KNOWN_MEMORY_MIGRATIONS = [
   "003_temporal_validity.sql",
   "004_memory_jobs.sql",
   "005_memory_jobs_tenant_identity.sql",
+  "006_organization_tenant_rls.sql",
 ];
 
 export async function runOnboarding(options: OnboardingOptions = {}): Promise<OnboardingReport> {

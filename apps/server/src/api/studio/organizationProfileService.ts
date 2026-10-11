@@ -1,10 +1,12 @@
 import { nowIso } from "@multi-agent/types";
+import { randomUUID } from "crypto";
 import type { OrganizationProfile, StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 import { ApiError } from "../shared/http";
 
 const NAME_MAX = 120;
 const DESCRIPTION_MAX = 2000;
+const SLUG_MAX = 80;
 
 function normalizeName(value: unknown): string {
   if (typeof value !== "string") throw new ApiError(400, "name must be a string");
@@ -31,6 +33,23 @@ function normalizeConfig(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function normalizeSlug(value: unknown, name: string, orgId: string): string {
+  if (value === undefined || value === null || value === "") {
+    const fromName = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, SLUG_MAX);
+    return fromName || orgId.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, SLUG_MAX) || "org";
+  }
+  if (typeof value !== "string") throw new ApiError(400, "slug must be a string");
+  const slug = value.trim().toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > SLUG_MAX) {
+    throw new ApiError(400, "slug must be lowercase URL-safe (a-z, 0-9, hyphen) and at most 80 characters");
+  }
+  return slug;
+}
+
 export class OrganizationProfileService {
   constructor(private readonly store: StudioStore) {}
 
@@ -40,22 +59,47 @@ export class OrganizationProfileService {
     return profile;
   }
 
+  async listMine(principal: RequestPrincipal): Promise<OrganizationProfile[]> {
+    return this.store.listOrganizationsForUser(principal.userId);
+  }
+
+  async listMembers(principal: RequestPrincipal) {
+    const profile = await this.getCurrent(principal);
+    return this.store.listMemberships(profile.id);
+  }
+
+  /**
+   * Create an organization for the caller.
+   * - If the principal already has a tenantId that matches an existing org → 409
+   * - Otherwise uses principal.tenantId as the organization id (caller/BFF allocates UUID)
+   *   and atomically creates owner membership + audit + last-organization pointer.
+   */
   async create(
-    body: { name?: unknown; description?: unknown; config?: unknown },
+    body: { name?: unknown; description?: unknown; config?: unknown; slug?: unknown },
     principal: RequestPrincipal,
   ): Promise<OrganizationProfile> {
+    if (!principal.userId) throw new ApiError(401, "Unauthorized");
+    if (!principal.tenantId?.trim()) {
+      throw new ApiError(400, "organization id (tenantId) is required to create an organization");
+    }
+
     const existing = await this.store.getOrganizationProfile(principal);
     if (existing) throw new ApiError(409, "Organization already exists for this tenant");
 
+    const name = normalizeName(body.name);
     const stamp = nowIso();
+    const orgId = principal.tenantId;
     try {
       return await this.store.createOrganizationProfile(
         {
-          id: principal.tenantId,
-          name: normalizeName(body.name),
+          id: orgId,
+          name,
           description: normalizeDescription(body.description),
           config: normalizeConfig(body.config),
           ownerId: principal.userId,
+          status: "active",
+          slug: normalizeSlug(body.slug, name, orgId),
+          createdBy: principal.userId,
           createdAt: stamp,
           updatedAt: stamp,
         },
@@ -66,7 +110,15 @@ export class OrganizationProfileService {
       if (message.includes("already exists")) {
         throw new ApiError(409, "Organization already exists for this tenant");
       }
+      if (message.includes("studio_organizations_slug") || message.toLowerCase().includes("duplicate key")) {
+        throw new ApiError(409, "Organization slug already in use");
+      }
       throw error;
     }
+  }
+
+  /** Allocate a fresh organization id for bootstrap create (used by web BFF when user has no tenant). */
+  static allocateOrganizationId(): string {
+    return randomUUID();
   }
 }

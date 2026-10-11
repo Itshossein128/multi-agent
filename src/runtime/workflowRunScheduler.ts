@@ -100,11 +100,16 @@ export async function executeOfflineWorkflowRun(
   const runStore = new PostgresRunStore(pool);
   const executor = new RunExecutor(runStore, runtime);
 
-  const runId = executor.start({
-    workflow,
-    agents: [agent],
-    input: { task: "Verify persistent scheduling and execution" },
-  });
+  const runId = executor.start(
+    {
+      workflow,
+      agents: [agent],
+      input: { task: "Verify persistent scheduling and execution" },
+    },
+    undefined,
+    // Organization foundation requires non-null tenant_id on runs (migration 019).
+    { userId: "onboarding-self-test", tenantId: "onboarding-self-test" },
+  );
 
   // Wait for RunExecutor to drain through pumpQueue and reach terminal status
   const start = Date.now();

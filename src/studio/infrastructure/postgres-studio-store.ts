@@ -167,16 +167,51 @@ function decodeNameSource(value: unknown): StudioNameSource {
   return "manual";
 }
 
+function decodeOrganizationStatus(value: unknown): OrganizationProfile["status"] {
+  if (value === "suspended" || value === "deleting" || value === "active") return value;
+  return "active";
+}
+
 function decodeOrganization(row: Record<string, unknown>): OrganizationProfile {
+  const id = String(row.id);
+  const slugRaw = row.slug != null ? String(row.slug) : id;
   return {
-    id: String(row.id),
+    id,
     name: String(row.name),
     description: String(row.description ?? ""),
     config: decodeSettings(row.config),
     ownerId: String(row.owner_id),
+    status: decodeOrganizationStatus(row.status),
+    slug: slugRaw.toLowerCase(),
+    createdBy: row.created_by != null ? String(row.created_by) : null,
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
   };
+}
+
+function decodeMembership(row: Record<string, unknown>): import("../contracts").OrganizationMembership {
+  return {
+    organizationId: String(row.organization_id),
+    userId: String(row.user_id),
+    role: row.role as import("../contracts").OrganizationMembershipRole,
+    status: row.status as import("../contracts").OrganizationMembershipStatus,
+    invitedBy: row.invited_by != null ? String(row.invited_by) : null,
+    version: Number(row.version ?? 1),
+    createdAt: asIso(row.created_at),
+    updatedAt: asIso(row.updated_at),
+    removedAt: row.removed_at != null ? asIso(row.removed_at) : null,
+  };
+}
+
+function slugifyOrganizationName(name: string, fallbackId: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  if (base) return base;
+  return fallbackId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "org";
 }
 
 function decodeProject(row: Record<string, unknown>): StudioProject {
@@ -845,6 +880,13 @@ export class PostgresStudioStore implements StudioStore {
     return result.rows[0] ? decodeOrganization(result.rows[0]) : null;
   }
 
+  async getOrganizationBySlug(slug: string): Promise<OrganizationProfile | null> {
+    const result = await this.query("SELECT * FROM studio_organizations WHERE slug = $1", [
+      slug.trim().toLowerCase(),
+    ]);
+    return result.rows[0] ? decodeOrganization(result.rows[0]) : null;
+  }
+
   async createOrganizationProfile(
     profile: OrganizationProfile,
     principal: StudioPrincipal,
@@ -852,24 +894,145 @@ export class PostgresStudioStore implements StudioStore {
     if (profile.id !== principal.tenantId) {
       throw new Error("Organization profile id must equal tenant id");
     }
+    if (this.client) {
+      return this.createOrganizationProfileInTx(profile, principal);
+    }
+    return this.transaction((store) =>
+      (store as PostgresStudioStore).createOrganizationProfileInTx(profile, principal),
+    );
+  }
+
+  private async createOrganizationProfileInTx(
+    profile: OrganizationProfile,
+    principal: StudioPrincipal,
+  ): Promise<OrganizationProfile> {
     const existing = await this.getOrganizationProfile(principal);
     if (existing) throw new Error("Organization already exists for this tenant");
+    const stamp = profile.createdAt;
     const record: OrganizationProfile = {
       ...profile,
       id: principal.tenantId,
       ownerId: profile.ownerId || principal.userId,
       description: profile.description ?? "",
       config: profile.config ?? {},
+      status: profile.status ?? "active",
+      slug: profile.slug?.trim()
+        ? profile.slug.trim().toLowerCase()
+        : slugifyOrganizationName(profile.name, principal.tenantId),
+      createdBy: profile.createdBy ?? principal.userId,
     };
     await this.query(
-      `INSERT INTO studio_organizations (id, name, description, config, owner_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4::jsonb, $5, $6::timestamptz, $7::timestamptz)`,
+      `INSERT INTO studio_organizations
+         (id, name, description, config, owner_id, status, slug, created_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9::timestamptz, $10::timestamptz)`,
       [
         record.id, record.name, record.description, JSON.stringify(record.config),
-        record.ownerId, record.createdAt, record.updatedAt,
+        record.ownerId, record.status, record.slug, record.createdBy,
+        stamp, record.updatedAt,
       ],
     );
+    await this.saveMembership({
+      organizationId: record.id,
+      userId: principal.userId,
+      role: "owner",
+      status: "active",
+      invitedBy: principal.userId,
+      version: 1,
+      createdAt: stamp,
+      updatedAt: stamp,
+      removedAt: null,
+    });
+    await this.appendOrganizationAudit({
+      organizationId: record.id,
+      actorUserId: principal.userId,
+      action: "organization.created",
+      targetUserId: principal.userId,
+      details: { role: "owner", slug: record.slug },
+      createdAt: stamp,
+    });
+    await this.setUserLastOrganization(principal.userId, record.id);
     return record;
+  }
+
+  async listOrganizationsForUser(userId: string): Promise<OrganizationProfile[]> {
+    const result = await this.query(
+      `SELECT o.* FROM studio_organizations o
+         INNER JOIN studio_organization_memberships m
+           ON m.organization_id = o.id
+        WHERE m.user_id = $1 AND m.status = 'active' AND o.status = 'active'
+        ORDER BY o.name ASC, o.id ASC`,
+      [userId],
+    );
+    return result.rows.map(decodeOrganization);
+  }
+
+  async getMembership(organizationId: string, userId: string) {
+    const result = await this.query(
+      `SELECT * FROM studio_organization_memberships
+        WHERE organization_id = $1 AND user_id = $2`,
+      [organizationId, userId],
+    );
+    return result.rows[0] ? decodeMembership(result.rows[0]) : null;
+  }
+
+  async listMemberships(organizationId: string) {
+    const result = await this.query(
+      `SELECT * FROM studio_organization_memberships
+        WHERE organization_id = $1
+        ORDER BY created_at ASC, user_id ASC`,
+      [organizationId],
+    );
+    return result.rows.map(decodeMembership);
+  }
+
+  async saveMembership(membership: import("../contracts").OrganizationMembership) {
+    await this.query(
+      `INSERT INTO studio_organization_memberships (
+         organization_id, user_id, role, status, invited_by, version, created_at, updated_at, removed_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, $9::timestamptz)
+       ON CONFLICT (organization_id, user_id) DO UPDATE SET
+         role = EXCLUDED.role,
+         status = EXCLUDED.status,
+         invited_by = EXCLUDED.invited_by,
+         version = EXCLUDED.version,
+         updated_at = EXCLUDED.updated_at,
+         removed_at = EXCLUDED.removed_at`,
+      [
+        membership.organizationId,
+        membership.userId,
+        membership.role,
+        membership.status,
+        membership.invitedBy ?? null,
+        membership.version,
+        membership.createdAt,
+        membership.updatedAt,
+        membership.removedAt ?? null,
+      ],
+    );
+    return membership;
+  }
+
+  async appendOrganizationAudit(entry: import("../contracts").OrganizationAuditEntry): Promise<void> {
+    await this.query(
+      `INSERT INTO studio_organization_audit
+         (organization_id, actor_user_id, action, target_user_id, details, created_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, COALESCE($6::timestamptz, now()))`,
+      [
+        entry.organizationId,
+        entry.actorUserId ?? null,
+        entry.action,
+        entry.targetUserId ?? null,
+        JSON.stringify(entry.details ?? {}),
+        entry.createdAt ?? null,
+      ],
+    );
+  }
+
+  async setUserLastOrganization(userId: string, organizationId: string | null): Promise<void> {
+    await this.query(`UPDATE studio_users SET tenant_id = $2, updated_at = now() WHERE id = $1`, [
+      userId,
+      organizationId,
+    ]);
   }
 
   async listProjectRepositories(projectId: string, principal?: StudioPrincipal): Promise<ProjectRepository[]> {

@@ -7,6 +7,10 @@ export function registerOrganizationProfileRoutes(
   profiles: OrganizationProfileService,
 ) {
   app.get("/organizations/current", async (c) => c.json(await profiles.getCurrent(c.get("principal"))));
+  app.get("/organizations/current/members", async (c) =>
+    c.json(await profiles.listMembers(c.get("principal"))),
+  );
+  app.get("/me/organizations", async (c) => c.json(await profiles.listMine(c.get("principal"))));
   app.post("/organizations", async (c) =>
     c.json(await profiles.create(await c.req.json().catch(() => ({})), c.get("principal")), 201),
   );

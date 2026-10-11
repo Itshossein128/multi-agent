@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
 import { StudioDashboardData, TimeFilter } from "@/lib/dashboard/types";
 import { useStudioStore } from "@/store/useStudioStore";
 import { useEffect } from "react";
@@ -17,10 +18,11 @@ async function fetchDashboardData(timeFilter: TimeFilter): Promise<StudioDashboa
 
 export function useDashboardQuery() {
   const queryClient = useQueryClient();
+  const orgId = useOptionalOrg()?.org.id ?? "none";
   const { timeFilter, syncWithBackend } = useStudioStore();
 
   const query = useQuery({
-    queryKey: ["dashboard", timeFilter],
+    queryKey: ["org", orgId, "dashboard", timeFilter],
     queryFn: () => fetchDashboardData(timeFilter),
     refetchInterval: 3000,
   });
@@ -42,8 +44,8 @@ export function useDashboardQuery() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["org", orgId, "dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["org", orgId, "tasks"] });
     },
   });
 
@@ -57,8 +59,8 @@ export function useDashboardQuery() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["org", orgId, "dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["org", orgId, "tasks"] });
     },
   });
 
@@ -72,8 +74,8 @@ export function useDashboardQuery() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["org", orgId, "dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["org", orgId, "tasks"] });
     },
   });
 

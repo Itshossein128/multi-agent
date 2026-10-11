@@ -1,17 +1,17 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { getAuthenticatedPrincipal } from "@/auth";
+import { getAuthenticatedPrincipal, getSessionUserId } from "@/auth";
 import { StudioEntityError, createOrganization } from "@/lib/projectsWorkspaces";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const body = (await request.json()) as {
       name?: string;
       description?: string;
       config?: Record<string, unknown>;
+      slug?: string;
     };
     if (!body.name?.trim()) {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -19,12 +19,22 @@ export async function POST(request: Request) {
     if (body.name.trim().length > 120) {
       return NextResponse.json({ error: "name must be at most 120 characters" }, { status: 400 });
     }
+
+    let principal = await getAuthenticatedPrincipal();
+    if (!principal) {
+      const userId = await getSessionUserId();
+      if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      // Bootstrap: allocate organization id that becomes tenant_id / org key.
+      principal = { userId, tenantId: randomUUID() };
+    }
+
     return NextResponse.json(
       await createOrganization(
         {
           name: body.name.trim(),
           description: body.description,
           config: body.config,
+          ...(body.slug ? { slug: body.slug } : {}),
         },
         principal,
       ),

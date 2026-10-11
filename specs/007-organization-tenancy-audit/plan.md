@@ -190,9 +190,9 @@ the (new) single-organization users until Phase 2 introduces URL routing.
 
 ## 7. Open confirmations (small; do not block Phase 0.5)
 
-| # | Question | Default if unanswered |
-|---|----------|-----------------------|
-| Q1 | D-5: is the interpretation right that in-flight runs of a removed member **stop** (task kept, re-runnable by others), rather than continue to completion? | stop at next checkpoint |
-| Q2 | D-7/D-12: the credential broker audit log is append-only and hash-chained across all tenants. Clear it in the reset? Delete an organization's audit rows on deletion (breaks chain verification) or keep them as security records outside "organization data"? | reset: clear (TRUNCATE); deletion: keep audit rows (no secrets stored) |
-| Q3 | D-12: also delete the organization's secrets in Vault/secret store and cancel its running executions automatically? | yes, both |
-| Q4 | D-8: may an organization's slug be changed after creation (old URLs then 404), or is it fixed at creation? | editable by owner/admin, no redirects |
+| # | Question | Default if unanswered | Outcome (Phase 1 start, 2026-10-11) |
+|---|----------|-----------------------|-------------------------------------|
+| Q1 | D-5: is the interpretation right that in-flight runs of a removed member **stop** (task kept, re-runnable by others), rather than continue to completion? | stop at next checkpoint | **Accepted default**: stop at next checkpoint |
+| Q2 | D-7/D-12: the credential broker audit log is append-only and hash-chained across all tenants. Clear it in the reset? Delete an organization's audit rows on deletion (breaks chain verification) or keep them as security records outside "organization data"? | reset: clear (TRUNCATE); deletion: keep audit rows (no secrets stored) | **Accepted default**: reset clears (`TRUNCATE`); deletion retains audit rows |
+| Q3 | D-12: also delete the organization's secrets in Vault/secret store and cancel its running executions automatically? | yes, both | **Accepted default**: yes, both |
+| Q4 | D-8: may an organization's slug be changed after creation (old URLs then 404), or is it fixed at creation? | editable by owner/admin, no redirects | **Accepted default**: editable by owner/admin, no redirects |

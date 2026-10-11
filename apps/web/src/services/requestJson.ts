@@ -1,5 +1,7 @@
 /** Shared JSON-over-HTTP client for browser services. Single error contract. */
 
+import { executionApiBase } from "@/lib/orgRoute";
+
 const API_URL = "/api/execution";
 
 /**
@@ -20,7 +22,7 @@ export async function requestJson<T>(
   options?: { apiUrl?: string; fetchImpl?: typeof fetch }
 ): Promise<T> {
   const fetchImpl = options?.fetchImpl ?? globalThis.fetch;
-  const base = options?.apiUrl ?? API_URL;
+  const base = options?.apiUrl ?? executionApiBase() ?? API_URL;
   let response: Response;
   try {
     response = await fetchImpl(`${base}${path}`, {

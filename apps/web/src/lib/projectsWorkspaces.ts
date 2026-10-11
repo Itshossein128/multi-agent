@@ -15,6 +15,9 @@ export interface OrganizationProfileDto {
   description: string;
   config: Record<string, unknown>;
   ownerId: string;
+  status?: "active" | "suspended" | "deleting";
+  slug?: string;
+  createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -144,10 +147,14 @@ export function getOrganizationCurrent(principal: AuthenticatedPrincipal) {
   return studioRequest<OrganizationProfileDto>("/organizations/current", undefined, principal);
 }
 export function createOrganization(
-  body: { name: string; description?: string; config?: Record<string, unknown> },
+  body: { name: string; description?: string; config?: Record<string, unknown>; slug?: string },
   principal: AuthenticatedPrincipal,
 ) {
   return studioRequest<OrganizationProfileDto>("/organizations", { method: "POST", body: JSON.stringify(body) }, principal);
+}
+
+export function listMyOrganizations(principal: AuthenticatedPrincipal) {
+  return studioRequest<OrganizationProfileDto[]>("/me/organizations", undefined, principal);
 }
 
 export function createProject(body: { name?: string; description?: string }, principal: AuthenticatedPrincipal) {

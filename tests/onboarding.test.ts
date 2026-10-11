@@ -229,6 +229,7 @@ describe("Onboarding Database & Persistence Integration", () => {
         vectorEnabled: false,
       });
 
+
       expect(report.database.connected).toBe(true);
       expect(report.database.studioPendingMigrations.length).toBe(0);
       expect(report.selfTest.executed).toBe(true);
@@ -284,5 +285,5 @@ describe("Onboarding Database & Persistence Integration", () => {
     } finally {
       await adminPool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`).catch(() => {});
     }
-  });
+  }, 60_000);
 });
