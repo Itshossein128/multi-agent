@@ -23,6 +23,7 @@ import { OrganizationProfileService } from "./studio/organizationProfileService"
 import { registerOrganizationProfileRoutes } from "./studio/organizationProfileRoutes";
 import { InMemoryOrganizationStore, type OrganizationStore } from "../organization/organizationStore";
 import { OrganizationService } from "../organization/organizationService";
+import type { OrganizationUnitOfWork } from "../organization/organizationUnitOfWork";
 import { registerOrganizationRoutes } from "../organization/organizationRoutes";
 import { InMemoryBudgetStore, type BudgetStore } from "../budgets/budgetStore";
 import { BudgetService } from "../budgets/budgetService";
@@ -36,6 +37,7 @@ export function createStudioRouter(
   executor?: RunExecutor,
   organizationStore: OrganizationStore = new InMemoryOrganizationStore(),
   budgetStore: BudgetStore = new InMemoryBudgetStore(),
+  organizationUnitOfWork?: OrganizationUnitOfWork,
 ) {
   const app = new Hono<{ Variables: PrincipalVariables }>();
   const workflows = new WorkflowService(store);
@@ -61,7 +63,7 @@ export function createStudioRouter(
   registerTaskCommentRoutes(app, store);
   registerRoutineRoutes(app, store);
   registerWebhookTriggerRoutes(app, store);
-  registerOrganizationRoutes(app, new OrganizationService(organizationStore, store, executor));
+  registerOrganizationRoutes(app, new OrganizationService(organizationStore, store, executor, organizationUnitOfWork));
   registerBudgetRoutes(app, new BudgetService(budgetStore, store));
 
   return app;

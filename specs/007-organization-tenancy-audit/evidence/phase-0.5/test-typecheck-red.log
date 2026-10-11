@@ -1,0 +1,9 @@
+
+> multi-agent-platform@1.0.0 typecheck:tests /home/hossein/Desktop/projects/multi-agent
+> tsc -p tsconfig.test.json
+
+tests/taskBoardView.test.ts(10,3): error TS2322: Type '{ id: string; title: string; description: string; priority: TaskPriority; status: TaskStatus; assignedAgent: string | null; assignedAgents?: string[] | undefined; workflowId?: string | null | undefined; ... 13 more ...; workspaceId: string | null; }' is not assignable to type 'Task'.
+  Types of property 'projectId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+ ELIFECYCLE  Command failed with exit code 2.

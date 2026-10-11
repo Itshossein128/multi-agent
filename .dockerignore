@@ -15,5 +15,6 @@ graphify-out
 workspaces
 *.log
 *.tmp
+.env*
 tmp-*
 

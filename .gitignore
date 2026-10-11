@@ -3,6 +3,7 @@ node_modules/
 
 # Build outputs (any package; was incorrectly only /dist/ at repo root)
 dist/
+build/
 *.tsbuildinfo
 
 # Accidental tsc emit beside TypeScript sources
@@ -23,6 +24,17 @@ test-results/
 .env
 .env.local
 .env.*.local
+.env*
+!.env.example
+!.env.*.example
+
+# Editor and OS artifacts
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.idea/
+.vscode/
 
 # Isolated agent provider credentials (never the developer ~/.codex / ~/.claude homes)
 .local/

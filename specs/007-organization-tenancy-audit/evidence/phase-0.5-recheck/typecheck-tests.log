@@ -1,0 +1,3 @@
+
+> multi-agent-platform@1.0.0 typecheck:tests /home/hossein/Desktop/projects/multi-agent
+> tsc -p tsconfig.test.json

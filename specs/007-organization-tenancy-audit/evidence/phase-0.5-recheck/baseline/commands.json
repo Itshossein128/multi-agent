@@ -1,0 +1,206 @@
+[
+  {
+    "command": [
+      "git",
+      "worktree",
+      "add",
+      "--detach",
+      "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+      "987bee4e4aa604b51cb4a8de1de68bd4cd83d01c"
+    ],
+    "cwd": "/home/hossein/Desktop/projects/multi-agent",
+    "startedAt": "2026-10-10T20:00:14.772741+00:00",
+    "seconds": 0.477,
+    "exit": 0,
+    "log": "setup.log"
+  },
+  {
+    "command": [
+      "git",
+      "status",
+      "--porcelain",
+      "--untracked-files=no"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:00:15.250024+00:00",
+    "seconds": 0.234,
+    "exit": 0,
+    "log": "command-transcript.log"
+  },
+  {
+    "command": [
+      "node",
+      "--version"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:00:15.484300+00:00",
+    "seconds": 0.005,
+    "exit": 0,
+    "log": "command-transcript.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "--version"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:00:15.489702+00:00",
+    "seconds": 0.972,
+    "exit": 0,
+    "log": "command-transcript.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "install",
+      "--frozen-lockfile"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:00:16.463027+00:00",
+    "seconds": 4.982,
+    "exit": 0,
+    "log": "setup.log"
+  },
+  {
+    "command": [
+      "psql",
+      "$MEMORY_TEST_DATABASE_URL",
+      "-Atc",
+      "select version(); select extversion from pg_extension where extname='vector';"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:00:21.444833+00:00",
+    "seconds": 0.3,
+    "exit": 0,
+    "log": "command-transcript.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "build:types"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:00:21.745307+00:00",
+    "seconds": 2.746,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "test",
+      "--runInBand",
+      "--json",
+      "--outputFile=/tmp/phase0.5-recheck/baseline/jest.json"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:00:24.491752+00:00",
+    "seconds": 172.371,
+    "exit": 0,
+    "log": "jest.log"
+  },
+  {
+    "command": [
+      "npx",
+      "tsc",
+      "--noEmit",
+      "-p",
+      "tsconfig.json"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:03:16.889210+00:00",
+    "seconds": 4.402,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "npx",
+      "tsc",
+      "--noEmit",
+      "-p",
+      "apps/server/tsconfig.json"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:03:21.291360+00:00",
+    "seconds": 5.242,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "npx",
+      "tsc",
+      "--noEmit",
+      "-p",
+      "apps/web/tsconfig.json"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:03:26.533560+00:00",
+    "seconds": 6.314,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "typecheck:tests"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:03:32.847845+00:00",
+    "seconds": 8.982,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "--filter",
+      "server",
+      "build"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:03:41.830039+00:00",
+    "seconds": 7.39,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "pnpm",
+      "--filter",
+      "web",
+      "build"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:03:49.220679+00:00",
+    "seconds": 49.917,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:04:39.144820+00:00",
+    "seconds": 0.706,
+    "exit": 0,
+    "log": "gates.log"
+  },
+  {
+    "command": [
+      "git",
+      "status",
+      "--porcelain",
+      "--untracked-files=no"
+    ],
+    "cwd": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+    "startedAt": "2026-10-10T20:04:39.851834+00:00",
+    "seconds": 0.02,
+    "exit": 0,
+    "log": "command-transcript.log"
+  }
+]

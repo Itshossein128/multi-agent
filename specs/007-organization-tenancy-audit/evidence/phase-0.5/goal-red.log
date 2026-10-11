@@ -1,0 +1,86 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationService.test.ts -t 'goal project validation'
+
+FAIL tests/organizationService.test.ts
+  goal project validation
+    ✕ rejects unknown before saving a goal (9 ms)
+    ✕ rejects foreign before saving a goal (2 ms)
+    ✕ rejects retired before saving a goal (1 ms)
+    ✓ still allows a goal without a project
+  organization goals and delegation
+    ○ skipped keeps one CEO, rejects reporting cycles, and links delegated tasks to goals
+    ○ skipped keeps the in-memory reporting graph acyclic when updates race
+
+  ● goal project validation › rejects unknown before saving a goal
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 1
+
+      Object {
+    -   "message": "Project not found",
+    -   "status": 404,
+    +   "status": 400,
+      }
+
+      28 |   ])("rejects %s before saving a goal", async (projectId, status, message) => {
+      29 |     const { service, organization } = await setupOrganization();
+    > 30 |     await expect(service.createGoal({ title: "Goal", projectId: projectId as string }, alice)).rejects.toMatchObject({ status, message });
+         |                                                                                                        ^
+      31 |     expect(await organization.goals(alice.tenantId)).toHaveLength(0);
+      32 |   });
+      33 |   it("still allows a goal without a project", async () => {
+
+      at Object.toMatchObject (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at tests/organizationService.test.ts:30:104
+
+  ● goal project validation › rejects foreign before saving a goal
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 1
+
+      Object {
+    -   "message": "Project not found",
+    -   "status": 404,
+    +   "status": 400,
+      }
+
+      28 |   ])("rejects %s before saving a goal", async (projectId, status, message) => {
+      29 |     const { service, organization } = await setupOrganization();
+    > 30 |     await expect(service.createGoal({ title: "Goal", projectId: projectId as string }, alice)).rejects.toMatchObject({ status, message });
+         |                                                                                                        ^
+      31 |     expect(await organization.goals(alice.tenantId)).toHaveLength(0);
+      32 |   });
+      33 |   it("still allows a goal without a project", async () => {
+
+      at Object.toMatchObject (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at tests/organizationService.test.ts:30:104
+
+  ● goal project validation › rejects retired before saving a goal
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-10T19:23:48.079Z", "createdBy": "alice", "description": "", "id": "goal-mv2s8nov-9acdkm", "ownerAgentId": null, "parentGoalId": null, "projectId": "retired", "proposedByAgentId": null, "status": "active", "tenantId": "tenant-a", "title": "Goal", "updatedAt": "2026-10-10T19:23:48.079Z"}
+
+      28 |   ])("rejects %s before saving a goal", async (projectId, status, message) => {
+      29 |     const { service, organization } = await setupOrganization();
+    > 30 |     await expect(service.createGoal({ title: "Goal", projectId: projectId as string }, alice)).rejects.toMatchObject({ status, message });
+         |           ^
+      31 |     expect(await organization.goals(alice.tenantId)).toHaveLength(0);
+      32 |   });
+      33 |   it("still allows a goal without a project", async () => {
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationService.test.ts:30:11
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 2 skipped, 1 passed, 6 total
+Snapshots:   0 total
+Time:        3.15 s
+Ran all test suites matching /tests\/organizationService.test.ts/i with tests matching "goal project validation".
+ ELIFECYCLE  Test failed. See above for more details.

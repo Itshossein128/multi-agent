@@ -28,6 +28,7 @@ import type {
   WorkspaceRepositoryMembership,
   WorkspaceRepositoryState,
 } from "../contracts";
+import { prepareInMemoryCommit } from "./in-memory-transaction";
 
 function matchesStatus(status: StudioProject["status"], filter: StudioEntityStatusFilter = "active"): boolean {
   if (filter === "all") return true;
@@ -69,50 +70,27 @@ export class InMemoryStudioStore implements StudioStore {
   private heartbeats = new Map<string, AgentHeartbeatSettings>(); // key: `${tenantId}:${agentId}`
   private busyAgents = new Set<string>(); // key: `${tenantId}:${agentId}`
 
-  async transaction<T>(operation: (store: StudioStore) => Promise<T>): Promise<T> {
-    const snapshot = {
-      workflows: new Map(structuredClone([...this.workflows])),
-      agents: new Map(structuredClone([...this.agents])),
-      tools: new Map(structuredClone([...this.tools])),
-      tasks: new Map(structuredClone([...this.tasks])),
-      projects: new Map(structuredClone([...this.projects])),
-      workspaces: new Map(structuredClone([...this.workspaces])),
-      organizations: new Map(structuredClone([...this.organizations])),
-      projectRepositories: new Map(structuredClone([...this.projectRepositories])),
-      workspaceRepositories: new Map(structuredClone([...this.workspaceRepositories])),
-      workspaceRepoStates: new Map(structuredClone([...this.workspaceRepoStates])),
-      comments: new Map(structuredClone([...this.comments])),
-      triggerEvents: new Map(structuredClone([...this.triggerEvents])),
-      routines: new Map(structuredClone([...this.routines])),
-      routineHistory: new Map(structuredClone([...this.routineHistory])),
-      webhookTriggers: new Map(structuredClone([...this.webhookTriggers])),
-      webhookDeliveries: new Map(structuredClone([...this.webhookDeliveries])),
-      heartbeats: new Map(structuredClone([...this.heartbeats])),
-      busyAgents: new Set(this.busyAgents),
+  private transactionState() {
+    return {
+      workflows: this.workflows, agents: this.agents, tools: this.tools, tasks: this.tasks,
+      projects: this.projects, workspaces: this.workspaces, organizations: this.organizations,
+      projectRepositories: this.projectRepositories, workspaceRepositories: this.workspaceRepositories,
+      workspaceRepoStates: this.workspaceRepoStates, comments: this.comments, triggerEvents: this.triggerEvents,
+      routines: this.routines, routineHistory: this.routineHistory, webhookTriggers: this.webhookTriggers,
+      webhookDeliveries: this.webhookDeliveries, heartbeats: this.heartbeats, busyAgents: this.busyAgents,
     };
-    try {
-      return await operation(this);
-    } catch (error) {
-      this.workflows = snapshot.workflows;
-      this.agents = snapshot.agents;
-      this.tools = snapshot.tools;
-      this.tasks = snapshot.tasks;
-      this.projects = snapshot.projects;
-      this.workspaces = snapshot.workspaces;
-      this.organizations = snapshot.organizations;
-      this.projectRepositories = snapshot.projectRepositories;
-      this.workspaceRepositories = snapshot.workspaceRepositories;
-      this.workspaceRepoStates = snapshot.workspaceRepoStates;
-      this.comments = snapshot.comments;
-      this.triggerEvents = snapshot.triggerEvents;
-      this.routines = snapshot.routines;
-      this.routineHistory = snapshot.routineHistory;
-      this.webhookTriggers = snapshot.webhookTriggers;
-      this.webhookDeliveries = snapshot.webhookDeliveries;
-      this.heartbeats = snapshot.heartbeats;
-      this.busyAgents = snapshot.busyAgents;
-      throw error;
-    }
+  }
+
+  async transaction<T>(operation: (store: StudioStore) => Promise<T>, commitParticipant?: () => void): Promise<T> {
+    const before = structuredClone(this.transactionState());
+    // Preserve subclass behavior and instance overrides while isolating all persisted collections.
+    const staged: InMemoryStudioStore = Object.assign(Object.create(Object.getPrototypeOf(this)), this, structuredClone(before));
+    const result = await operation(staged);
+    const commit = prepareInMemoryCommit(this.transactionState(), before, staged.transactionState());
+    // Both validation and participant commit are synchronous; nothing can interleave here.
+    commitParticipant?.();
+    commit();
+    return result;
   }
 
   async listWorkflows(principal?: StudioPrincipal) {

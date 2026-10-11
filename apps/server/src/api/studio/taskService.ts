@@ -165,11 +165,23 @@ export class TaskService {
   }
 
   async create(
+    body: Partial<StudioTask> & { createProject?: { name?: string; description?: string } },
+    principal: RequestPrincipal,
+  ): Promise<StudioTask> {
+    const task = await this.prepareCreate(body, principal);
+    const saved = await this.store.transaction(tx => this.persistNew(task, principal, tx, { requireAssignmentTrigger: false }));
+    await this.derivePlaceholderNames(saved, principal);
+    return saved;
+  }
+
+  async prepareCreate(
     body: Partial<StudioTask> & {
       createProject?: { name?: string; description?: string };
     },
     principal: RequestPrincipal,
+    options: { forbidInlineProject?: boolean } = {},
   ): Promise<StudioTask> {
+    if (options.forbidInlineProject && body.createProject !== undefined) throw new ApiError(400, "Inline project creation is not allowed");
     const title = boundedText(body.title ?? "", TITLE_MAX, "Task title").trim();
     if (!title) throw new ApiError(400, "Task title is required");
 
@@ -248,13 +260,19 @@ export class TaskService {
       projectId,
     };
 
-    const saved = await this.store.transaction(async (tx) => {
-      const savedTask = await tx.saveTask(task, principal);
-      await this.enqueueAssignmentTrigger(savedTask, principal, undefined, tx);
-      return savedTask;
-    });
-    await this.derivePlaceholderNames(saved, principal);
+    return task;
+  }
+
+  async persistNew(task: StudioTask, principal: RequestPrincipal, store: StudioStore,
+    options: { requireAssignmentTrigger?: boolean } = {},
+  ): Promise<StudioTask> {
+    const saved = await store.saveTask(task, principal);
+    await this.enqueueAssignmentTrigger(saved, principal, undefined, store, options.requireAssignmentTrigger ?? true);
     return saved;
+  }
+
+  async derivePlaceholderNamesBestEffort(task: StudioTask, principal: RequestPrincipal): Promise<void> {
+    await this.derivePlaceholderNames(task, principal);
   }
 
   async save(id: string, body: StudioTask, principal: RequestPrincipal): Promise<StudioTask> {
@@ -1301,6 +1319,7 @@ export class TaskService {
     principal: RequestPrincipal,
     previousAgent?: string | null,
     store: StudioStore = this.store,
+    requireAssignmentTrigger = false,
   ): Promise<void> {
     const currentAgent = task.assignedAgent ?? task.assignedAgents?.[0];
     if (!currentAgent) return;
@@ -1308,7 +1327,7 @@ export class TaskService {
     if (!["backlog", "ready", "todo"].includes(canonical)) return;
     if (previousAgent && previousAgent === currentAgent) return;
 
-    await store.enqueueTriggerEvent({
+    const pending = store.enqueueTriggerEvent({
       tenantId: principal.tenantId,
       eventType: "task_assignment",
       targetType: "task",
@@ -1321,7 +1340,9 @@ export class TaskService {
         assignedAgents: task.assignedAgents,
         status: task.status,
       },
-    }).catch(() => {});
+    });
+    if (requireAssignmentTrigger) await pending;
+    else await pending.catch(() => {});
   }
 }
 

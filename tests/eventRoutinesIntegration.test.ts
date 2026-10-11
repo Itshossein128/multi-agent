@@ -65,8 +65,14 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
   describe("Task Comments", () => {
     it("saves, lists, and isolates task comments by tenant", async () => {
       await pool.query(
-        `INSERT INTO studio_tasks (id, tenant_id, workspace_id, title, description, priority, status, dependencies, retry_count, paused, created_at, updated_at)
-         VALUES ('task-100', $1, 'ws-test', 'Test Task 100', '', 'medium', 'running', '[]'::jsonb, 0, false, NOW(), NOW())
+        `INSERT INTO studio_projects (id, tenant_id, owner_id, name, name_source, description, status, settings, created_at, updated_at)
+         VALUES ('project-test', $1, 'user-a', 'Test project', 'manual', '', 'active', '{}'::jsonb, NOW(), NOW())
+         ON CONFLICT (id) DO NOTHING`,
+        [tenantA],
+      );
+      await pool.query(
+        `INSERT INTO studio_tasks (id, tenant_id, project_id, workspace_id, title, description, priority, status, dependencies, retry_count, paused, created_at, updated_at)
+         VALUES ('task-100', $1, 'project-test', 'ws-test', 'Test Task 100', '', 'medium', 'running', '[]'::jsonb, 0, false, NOW(), NOW())
          ON CONFLICT (id) DO NOTHING`,
         [tenantA],
       );

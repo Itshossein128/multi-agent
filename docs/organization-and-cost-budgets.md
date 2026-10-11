@@ -14,9 +14,15 @@ task to the CEO agent. Review the CEO task output in the goal view, then approve
 goal before delegating implementation tasks. A strategy proposal cannot be approved
 until the CEO task completes with a nonempty output.
 
+Strategy proposals require an explicit active project. Delegation uses the goal's
+project; if the goal has none, select an active project before delegating. A supplied
+delegation project must match the goal's project. Unknown or foreign projects return
+404, retired projects return 409, and missing required projects return 400. Strategy
+validation or transaction failures leave no new goal, task, or assignment event.
+
 All organization records are scoped to a tenant. The organization and budget UI use
 the authenticated execution proxy; direct server endpoints require a trusted principal.
-PostgreSQL deployments require studio migrations through 016; run `pnpm db:migrate`
+PostgreSQL deployments require studio migrations through 017; run `pnpm db:migrate`
 before starting the server. Local development can use the in-memory adapters.
 
 ## Monthly budgets

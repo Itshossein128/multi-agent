@@ -1,0 +1,348 @@
+{
+  "raw_with_retained_endpoints": {
+    "node_count": 8658,
+    "unverified_node_count": 0,
+    "raw_edge_count": 4978,
+    "non_object_edges": 0,
+    "missing_endpoint_edges": 0,
+    "dangling_endpoint_edges": 517,
+    "self_loop_edges": 0,
+    "valid_candidate_edges": 4461,
+    "exact_duplicate_edges": 5,
+    "directed_unique_endpoint_pairs": 4351,
+    "directed_same_endpoint_collapsed_edges": 110,
+    "undirected_unique_endpoint_pairs": 4347,
+    "undirected_same_endpoint_collapsed_edges": 114,
+    "same_endpoint_group_count": 88,
+    "relation_variant_groups": 48,
+    "source_file_variant_groups": 0,
+    "source_location_variant_groups": 28,
+    "context_variant_groups": 20,
+    "post_build_graph_type": "Graph",
+    "post_build_node_count": 8657,
+    "post_build_edge_count": 4345,
+    "post_build_error": "",
+    "producer_suppression": {
+      "path": "/home/hossein/.local/lib/python3.12/site-packages/graphify/extract.py",
+      "total_sites": 12,
+      "sites": [
+        {
+          "line": 1154,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+        },
+        {
+          "line": 1420,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+        },
+        {
+          "line": 1422,
+          "name": "seen_doc_refs",
+          "tuple_arity": 0,
+          "sample": "seen_doc_refs: set[str] = set()"
+        },
+        {
+          "line": 1782,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = {n[\"id\"] for n in nodes}"
+        },
+        {
+          "line": 1929,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids = {n.get(\"id\") for n in nodes}"
+        },
+        {
+          "line": 2362,
+          "name": "seen_keys",
+          "tuple_arity": 0,
+          "sample": "seen_keys: set[tuple] = set()"
+        },
+        {
+          "line": 2531,
+          "name": "seen_keys",
+          "tuple_arity": 0,
+          "sample": "seen_keys: set[tuple] = set()"
+        },
+        {
+          "line": 3937,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4045,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4124,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4639,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4640,
+          "name": "seen_edges",
+          "tuple_arity": 4,
+          "sample": "seen_edges: set[tuple[str, str, str, str | None]] = set()"
+        }
+      ],
+      "error": ""
+    },
+    "examples": [
+      {
+        "source": "tests_productionepisodicmemory_test",
+        "target": "tests_productionepisodicmemory_test_execute",
+        "edge_count": 8,
+        "relations": [
+          "contains"
+        ],
+        "source_files": [
+          "tests/productionEpisodicMemory.test.ts"
+        ],
+        "source_locations": [
+          "L111",
+          "L129",
+          "L203",
+          "L250",
+          "L330",
+          "L397",
+          "L476",
+          "L91"
+        ],
+        "contexts": [
+          ""
+        ]
+      },
+      {
+        "source": "tests_phase45hardening_test",
+        "target": "tests_phase45hardening_test_execute",
+        "edge_count": 6,
+        "relations": [
+          "contains"
+        ],
+        "source_files": [
+          "tests/phase45Hardening.test.ts"
+        ],
+        "source_locations": [
+          "L122",
+          "L163",
+          "L225",
+          "L249",
+          "L38",
+          "L66"
+        ],
+        "contexts": [
+          ""
+        ]
+      },
+      {
+        "source": "tests_ownershipauthorization_test",
+        "target": "src_auth_internalprincipal",
+        "edge_count": 4,
+        "relations": [
+          "imports_from"
+        ],
+        "source_files": [
+          "tests/ownershipAuthorization.test.ts"
+        ],
+        "source_locations": [
+          "L20",
+          "L298",
+          "L414",
+          "L65"
+        ],
+        "contexts": [
+          "import"
+        ]
+      },
+      {
+        "source": "apps_server_src_api_dashboard",
+        "target": "apps_server_src_api_dashboard_models",
+        "edge_count": 3,
+        "relations": [
+          "imports_from",
+          "re_exports"
+        ],
+        "source_files": [
+          "apps/server/src/api/dashboard.ts"
+        ],
+        "source_locations": [
+          "L12",
+          "L8"
+        ],
+        "contexts": [
+          "export",
+          "import",
+          "re-export"
+        ]
+      },
+      {
+        "source": "apps_server_src_runtime_runexecutor",
+        "target": "src_memory_contracts",
+        "edge_count": 3,
+        "relations": [
+          "dynamic_import",
+          "imports_from"
+        ],
+        "source_files": [
+          "apps/server/src/runtime/runExecutor.ts"
+        ],
+        "source_locations": [
+          "",
+          "L2",
+          "L32"
+        ],
+        "contexts": [
+          "",
+          "import"
+        ]
+      }
+    ]
+  },
+  "merged": {
+    "node_count": 8587,
+    "unverified_node_count": 0,
+    "raw_edge_count": 16080,
+    "non_object_edges": 0,
+    "missing_endpoint_edges": 0,
+    "dangling_endpoint_edges": 0,
+    "self_loop_edges": 0,
+    "valid_candidate_edges": 16080,
+    "exact_duplicate_edges": 0,
+    "directed_unique_endpoint_pairs": 16080,
+    "directed_same_endpoint_collapsed_edges": 0,
+    "undirected_unique_endpoint_pairs": 16080,
+    "undirected_same_endpoint_collapsed_edges": 0,
+    "same_endpoint_group_count": 0,
+    "relation_variant_groups": 0,
+    "source_file_variant_groups": 0,
+    "source_location_variant_groups": 0,
+    "context_variant_groups": 0,
+    "post_build_graph_type": "Graph",
+    "post_build_node_count": 8587,
+    "post_build_edge_count": 16080,
+    "post_build_error": "",
+    "producer_suppression": {
+      "path": "/home/hossein/.local/lib/python3.12/site-packages/graphify/extract.py",
+      "total_sites": 12,
+      "sites": [
+        {
+          "line": 1154,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+        },
+        {
+          "line": 1420,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+        },
+        {
+          "line": 1422,
+          "name": "seen_doc_refs",
+          "tuple_arity": 0,
+          "sample": "seen_doc_refs: set[str] = set()"
+        },
+        {
+          "line": 1782,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = {n[\"id\"] for n in nodes}"
+        },
+        {
+          "line": 1929,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids = {n.get(\"id\") for n in nodes}"
+        },
+        {
+          "line": 2362,
+          "name": "seen_keys",
+          "tuple_arity": 0,
+          "sample": "seen_keys: set[tuple] = set()"
+        },
+        {
+          "line": 2531,
+          "name": "seen_keys",
+          "tuple_arity": 0,
+          "sample": "seen_keys: set[tuple] = set()"
+        },
+        {
+          "line": 3937,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4045,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4124,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4639,
+          "name": "seen_ids",
+          "tuple_arity": 0,
+          "sample": "seen_ids: set[str] = set()"
+        },
+        {
+          "line": 4640,
+          "name": "seen_edges",
+          "tuple_arity": 4,
+          "sample": "seen_edges: set[tuple[str, str, str, str | None]] = set()"
+        }
+      ],
+      "error": ""
+    },
+    "examples": []
+  },
+  "failed_sources": [
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-styling/scripts/tests/coverage-ui.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/data/catalog-summary.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/data/data-provenance.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/data/google-font-licenses.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/data/phosphor-icons-upstream.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/google-api.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/google-catalog.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/google-metadata.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/google-overrides.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/phosphor-core.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/phosphor-package.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/phosphor-react-exports.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/catalogs/phosphor-react-package.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/relevance-baseline.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/relevance-cases.json",
+    "/home/hossein/Desktop/projects/multi-agent/.agents/skills/ui-ux-pro-max/scripts/tests/fixtures/relevance-thresholds.json",
+    "/home/hossein/Desktop/projects/multi-agent/.specify/init-options.json",
+    "/home/hossein/Desktop/projects/multi-agent/.specify/integration.json",
+    "/home/hossein/Desktop/projects/multi-agent/.specify/integrations/cursor-agent.manifest.json",
+    "/home/hossein/Desktop/projects/multi-agent/.specify/integrations/speckit.manifest.json",
+    "/home/hossein/Desktop/projects/multi-agent/.specify/memory/.constitution-template.json",
+    "/home/hossein/Desktop/projects/multi-agent/.specify/workflows/workflow-registry.json",
+    "/home/hossein/Desktop/projects/multi-agent/.vscode/settings.json",
+    "/home/hossein/Desktop/projects/multi-agent/LIVE_EMBEDDING_REPORT.json",
+    "/home/hossein/Desktop/projects/multi-agent/apps/web/public/workspaces/pisa-organization-workflow.json",
+    "/home/hossein/Desktop/projects/multi-agent/examples/workspaces/pisa-organization-workflow.json",
+    "/home/hossein/Desktop/projects/multi-agent/examples/workspaces/velora-development-workflow.json"
+  ]
+}

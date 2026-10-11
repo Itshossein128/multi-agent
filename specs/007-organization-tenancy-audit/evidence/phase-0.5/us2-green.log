@@ -1,0 +1,84 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationStrategyAtomicity.test.ts tests/organizationUnitOfWork.test.ts tests/organizationService.test.ts tests/organizationBudgetRoutes.test.ts tests/taskBoardPhase2.test.ts tests/studioProjectsWorkspaces.test.ts tests/organizationProjectValidation.test.ts
+
+PASS tests/organizationStrategyAtomicity.test.ts (14.403 s)
+PASS tests/organizationService.test.ts
+PASS tests/organizationUnitOfWork.test.ts
+PASS tests/taskBoardPhase2.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:34.899Z","level":"info","event":"run.started","runId":"run-mv2sdipe-ln1p7m","workflowId":"wf-task-mv2sdiow-d1lwl5","taskId":"task-mv2sdios-z096pw"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:34.947Z","level":"info","event":"run.started","runId":"run-mv2sdiqr-vpti8v","workflowId":"wf-task-mv2sdiqn-xyy1c5","taskId":"task-mv2sdiqj-vzgy88"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:34.991Z","level":"info","event":"run.started","runId":"run-mv2sdiry-ltmkic","workflowId":"wf-alpha-1","taskId":"task-mv2sdirx-5prpvj"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.007Z","level":"info","event":"run.started","runId":"run-mv2sdisf-k7derj","workflowId":"wf-task-mv2sdisc-wtugmu","taskId":"task-mv2sdisb-2oox5k"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.078Z","level":"info","event":"run.started","runId":"run-mv2sdiue-u9lxyw","workflowId":"wf-task-mv2sdiud-slhh4t","taskId":"task-mv2sdiuc-ikj16o"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.143Z","level":"info","event":"run.started","runId":"run-mv2sdiw7-gi3p24","workflowId":"wf-task-mv2sdiw6-dyf846","taskId":"task-mv2sdiw5-pe9kj4"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.220Z","level":"info","event":"run.started","runId":"run-mv2sdiyc-n573nx","workflowId":"wf-task-mv2sdixy-l7191g","taskId":"task-mv2sdixx-ex51rl"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.236Z","level":"info","event":"run.started","runId":"run-mv2sdiys-8hp7vv","workflowId":"wf-task-mv2sdiyq-xlys0i","taskId":"task-mv2sdiyo-yyaicc"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.305Z","level":"info","event":"run.started","runId":"run-mv2sdj0p-sdvttv","workflowId":"wf-task-mv2sdj0o-6xfylp","taskId":"task-mv2sdj0n-9vk5m6"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.318Z","level":"info","event":"run.started","runId":"run-mv2sdj12-vzjda4","workflowId":"wf-task-mv2sdj10-v6hals","taskId":"task-mv2sdj0y-2uh0g1"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.322Z","level":"info","event":"run.cancelled","runId":"run-mv2sdj12-vzjda4","workflowId":"wf-task-mv2sdj10-v6hals","taskId":"task-mv2sdj0y-2uh0g1","error":"Aborted","resultStatus":"blocked","code":"RUN_CANCELLED"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.335Z","level":"info","event":"run.started","runId":"run-mv2sdj1i-mel8ih","workflowId":"wf-task-mv2sdj1i-dygeg9","taskId":"task-mv2sdj1h-1umjb9"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-10T19:27:35.343Z","level":"info","event":"run.started","runId":"run-mv2sdj1r-peejno","workflowId":"wf-task-mv2sdj1l-pghmkn","taskId":"task-mv2sdj1h-1umjb9"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/organizationProjectValidation.test.ts
+PASS tests/organizationBudgetRoutes.test.ts
+PASS tests/studioProjectsWorkspaces.test.ts
+
+Test Suites: 7 passed, 7 total
+Tests:       72 passed, 72 total
+Snapshots:   0 total
+Time:        21.999 s, estimated 33 s
+Ran all test suites matching /tests\/organizationStrategyAtomicity.test.ts|tests\/organizationUnitOfWork.test.ts|tests\/organizationService.test.ts|tests\/organizationBudgetRoutes.test.ts|tests\/taskBoardPhase2.test.ts|tests\/studioProjectsWorkspaces.test.ts|tests\/organizationProjectValidation.test.ts/i.

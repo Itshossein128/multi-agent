@@ -1,0 +1,53 @@
+$ git worktree add --detach /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2 5bb28b41af0357a726845f5d110473a996ab56f2
+Preparing worktree (detached HEAD 5bb28b4)
+HEAD is now at 5bb28b4 fix(web): use Next links for organization project navigation
+$ pnpm install --frozen-lockfile
+Scope: all 5 workspace projects
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +881
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 881, reused 873, downloaded 0, added 17
+Progress: resolved 881, reused 873, downloaded 0, added 881, done
+
+dependencies:
++ @hono/node-server 1.19.17
++ @langchain/anthropic 0.3.34
++ @langchain/core 1.2.9
++ @langchain/google-genai 0.2.18
++ @langchain/langgraph 1.4.14
++ @langchain/openai 0.4.9
++ @langfuse/tracing 5.11.0
++ @multi-agent/types 0.1.0 <- packages/types
++ @opentelemetry/api 1.9.1
++ axios 1.20.0
++ commander 13.1.0
++ dotenv 16.6.1
++ hono 4.13.7
++ inquirer 9.3.8
++ langfuse 3.38.20
++ langfuse-langchain 3.38.20
++ pg 8.23.0
++ undici 8.10.2
+
+devDependencies:
++ @types/bcryptjs 3.0.0
++ @types/inquirer 9.0.10
++ @types/jest 29.5.14
++ @types/node 20.19.43
++ @types/pg 8.23.1
++ bcryptjs 3.0.3
++ jest 29.7.0
++ ts-jest 29.4.12
++ ts-node 10.9.2
++ typescript 5.9.3
+
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: esbuild, protobufjs, unrs-resolver.                 │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Done in 3.1s using pnpm v10.17.0

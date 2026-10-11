@@ -1,0 +1,41 @@
+$ git worktree add --detach /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2 5bb28b41af0357a726845f5d110473a996ab56f2
+EXIT 0 (0.435s)
+$ git status --porcelain --untracked-files=no
+EXIT 0 (0.217s)
+$ node --version
+v25.2.1
+EXIT 0 (0.004s)
+$ pnpm --version
+10.17.0
+EXIT 0 (0.143s)
+$ pnpm install --frozen-lockfile
+EXIT 0 (3.224s)
+$ psql $MEMORY_TEST_DATABASE_URL -Atc select version(); select extversion from pg_extension where extname='vector';
+PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+0.8.6
+EXIT 0 (0.089s)
+$ pnpm build:types
+EXIT 0 (1.681s)
+$ pnpm test --runInBand --json --outputFile=/tmp/phase0.5/baseline/jest.json
+EXIT 0 (161.01s)
+$ npx tsc --noEmit -p tsconfig.json
+EXIT 0 (5.835s)
+$ npx tsc --noEmit -p apps/server/tsconfig.json
+EXIT 0 (5.651s)
+$ npx tsc --noEmit -p apps/web/tsconfig.json
+EXIT 0 (6.423s)
+$ pnpm typecheck:tests
+EXIT 0 (8.471s)
+$ pnpm --filter server build
+EXIT 0 (6.543s)
+$ pnpm --filter web build
+EXIT 0 (39.875s)
+$ git diff --check
+EXIT 0 (0.004s)
+$ git status --porcelain --untracked-files=no
+EXIT 0 (0.004s)
+$ sha256sum pnpm-lock.yaml
+9370e0b172d9d61e40c6351df99c753aacf698981b24eed5609450dc5b5a75df  pnpm-lock.yaml
+EXIT 0
+$ git worktree remove /tmp/ma-baseline-5bb28b41af0357a726845f5d110473a996ab56f2
+EXIT 0

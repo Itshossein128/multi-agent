@@ -1,0 +1,16 @@
+{
+  "sha": "987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+  "worktree": "/tmp/ma-baseline-987bee4e4aa604b51cb4a8de1de68bd4cd83d01c",
+  "startedAt": "2026-10-10T20:00:14.772671+00:00",
+  "environment": {
+    "MEMORY_TEST_DATABASE_URL": "postgresql://[redacted]@127.0.0.1:55432/studio_memory",
+    "dotenv": "absent; no environment files copied"
+  },
+  "trackedBefore": "",
+  "node": "v25.2.1",
+  "pnpm": "10.17.0",
+  "lockfileSha256": "9370e0b172d9d61e40c6351df99c753aacf698981b24eed5609450dc5b5a75df",
+  "database": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit\n0.8.6",
+  "trackedAfter": "",
+  "finishedAt": "2026-10-10T20:04:39.872351+00:00"
+}

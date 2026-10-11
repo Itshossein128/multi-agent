@@ -1,0 +1,24 @@
+
+/home/hossein/Desktop/projects/multi-agent/apps/web/src/app/(authenticated)/organization/page.tsx
+  36:26  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/home/hossein/Desktop/projects/multi-agent/apps/web/src/app/(authenticated)/organization/page.tsx:36:26
+  34 |     catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load organization"); }
+  35 |   }, []);
+> 36 |   useEffect(() => { void reload(); void fetch("/api/execution/studio/projects").then(r => r.json()).then(items => setProjects(Array.isArray(items) ? items : [])).catch(() => {}); }, [reload]);
+     |                          ^^^^^^ Avoid calling setState() directly within an effect
+  37 |   const apply = async (action: () => Promise<unknown>) => {
+  38 |     setBusy(true); setError("");
+  39 |     try { await action(); await reload(); }  react-hooks/set-state-in-effect
+
+✖ 1 problem (1 error, 0 warnings)
+
+undefined
+/home/hossein/Desktop/projects/multi-agent/apps/web:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: eslint src/app/(authenticated)/organization/page.tsx
