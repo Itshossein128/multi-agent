@@ -27,13 +27,8 @@ export class PostgresOrganizationUnitOfWork implements OrganizationUnitOfWork {
 export class InMemoryOrganizationUnitOfWork implements OrganizationUnitOfWork {
   constructor(private readonly studio: InMemoryStudioStore, private readonly organization: InMemoryOrganizationStore) {}
   async run<T>(operation: Operation<T>): Promise<T> {
-    const snapshot = this.organization.snapshot();
-    try {
-      return await this.studio.transaction(studio => operation({ studio, organization: this.organization }));
-    } catch (error) {
-      this.organization.restore(snapshot);
-      throw error;
-    }
+    const staged = this.organization.stageTransaction();
+    return this.studio.transaction(studio => operation({ studio, organization: staged.store }), staged.commit);
   }
 }
 

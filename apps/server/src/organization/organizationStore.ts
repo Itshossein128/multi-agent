@@ -1,4 +1,5 @@
 import type { PgPool, PgClient } from "../../../../src/memory/infrastructure";
+import { prepareInMemoryCommit } from "../../../../src/studio/infrastructure/in-memory-transaction";
 
 export type GoalStatus = "proposed" | "active" | "completed" | "cancelled";
 export interface OrganizationGoal {
@@ -27,14 +28,14 @@ export interface OrganizationStore {
 export class InMemoryOrganizationStore implements OrganizationStore {
   private readonly goalRows = new Map<string, OrganizationGoal>();
   private readonly lineRows = new Map<string, ReportingLine>();
-  snapshot() {
-    return structuredClone({ goalRows: [...this.goalRows], lineRows: [...this.lineRows] });
-  }
-  restore(snapshot: ReturnType<InMemoryOrganizationStore["snapshot"]>) {
-    this.goalRows.clear();
-    this.lineRows.clear();
-    for (const [id, goal] of structuredClone(snapshot.goalRows)) this.goalRows.set(id, goal);
-    for (const [id, line] of structuredClone(snapshot.lineRows)) this.lineRows.set(id, line);
+  stageTransaction(): { store: InMemoryOrganizationStore; commit: () => void } {
+    const current = { goalRows: this.goalRows, lineRows: this.lineRows };
+    const before = structuredClone(current);
+    const draft = structuredClone(before);
+    const store: InMemoryOrganizationStore = Object.assign(Object.create(Object.getPrototypeOf(this)), this, draft);
+    // Match the PostgreSQL UoW: reporting changes require their own graph validation boundary.
+    store.saveReportingLine = async () => { throw new Error("Reporting-line updates are not supported inside an organization unit of work"); };
+    return { store, commit: () => prepareInMemoryCommit(current, before, draft)() };
   }
   async goals(tenantId: string) { return [...this.goalRows.values()].filter(g => g.tenantId === tenantId).map(g => structuredClone(g)); }
   async saveGoal(goal: OrganizationGoal) {
