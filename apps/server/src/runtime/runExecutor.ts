@@ -428,7 +428,49 @@ export class RunExecutor {
       this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
       return true;
     }
-    return this.store.cancel(runId);
+    // Abort any in-process listener first.
+    this.store.cancel(runId);
+    // Active local execution observes the abort and terminalizes via fail().
+    if (this.activeRuns.has(runId)) return true;
+    // Post-restart zombies have no listener. Only force-terminalize when this
+    // instance owns the lease or the lease has already expired (orphan).
+    if (!this.isLocallyOwnedOrOrphaned(entry.run)) return false;
+    this.finalizeCancelledRun(runId, "Run was cancelled.");
+    return true;
+  }
+
+  /** True when this instance may safely mutate a run that is not locally executing. */
+  private isLocallyOwnedOrOrphaned(run: Run): boolean {
+    const owner = run.executionOwnerId;
+    if (!owner || owner === this.instanceId) return true;
+    const lease = run.executionLeaseExpiresAt;
+    if (!lease) return true;
+    return Date.parse(lease) <= Date.now();
+  }
+
+  private finalizeCancelledRun(runId: string, message: string) {
+    const entry = this.store.get(runId);
+    if (!entry || ["completed", "failed", "cancelled"].includes(entry.run.status)) return;
+    this.pausedContext.delete(runId);
+    this.checkpointers.delete(runId);
+    this.branchControllers.delete(runId);
+    this.store.setPausedContext?.(runId, null);
+    const result = createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message, retryable: false } });
+    this.store.update(runId, { status: "cancelled", completedAt: nowIso(), error: message, result });
+    if (entry.memoryAccess) this.store.markEpisodicMemoryPending?.(runId);
+    this.store.append(runId, {
+      id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0,
+      payload: { cancelled: true, error: message },
+    });
+    log.info("run.cancelled", {
+      runId,
+      workflowId: entry.run.workflowId,
+      taskId: entry.run.taskId,
+      orphaned: true,
+    });
+    if (this.episodeService) {
+      void this.processTerminalEpisodicMemory(runId, { succeeded: false, error: message, cancelled: true });
+    }
   }
 
   /** Cancel one named conditional branch without aborting the whole run. */

@@ -188,6 +188,41 @@ test("cancellation has a terminal status and a distinct terminal event", async (
   expect(executor.cancel(runId)).toBe(false);
 });
 
+test("cancel force-terminalizes orphaned running runs with no local execution", () => {
+  const store = new RunStore();
+  const executor = new RunExecutor(store);
+  const runId = "run-zombie-orphan";
+  store.create({
+    id: runId,
+    workflowId: "wf-zombie",
+    status: "running",
+    startedAt: nowIso(),
+    metadata: {},
+    executionOwnerId: "dead-instance",
+    executionLeaseExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+  });
+  expect(executor.cancel(runId)).toBe(true);
+  expect(store.get(runId)?.run.status).toBe("cancelled");
+  expect(store.events(runId).some((event) => event.type === "run.cancelled")).toBe(true);
+});
+
+test("cancel does not steal a live run owned by another replica", () => {
+  const store = new RunStore();
+  const executor = new RunExecutor(store);
+  const runId = "run-live-elsewhere";
+  store.create({
+    id: runId,
+    workflowId: "wf-live",
+    status: "running",
+    startedAt: nowIso(),
+    metadata: {},
+    executionOwnerId: "replica-A",
+    executionLeaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  expect(executor.cancel(runId)).toBe(false);
+  expect(store.get(runId)?.run.status).toBe("running");
+});
+
 test("failed runs can be retried from their immutable definition snapshot", async () => {
   const store = new RunStore();
   const agent = createAgentRecord();

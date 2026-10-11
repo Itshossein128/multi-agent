@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Network } from "lucide-react";
 import { workflowService } from "@/services/workflowService";
 import { graphNodeTypes } from "./graph/GraphAgentNode";
-import { sampleGraph, workflowToGraph } from "./graph/graphMappers";
+import { workflowToGraph } from "./graph/graphMappers";
 
 // Evaluated once at module load (not during render) so the preview picks a
 // random workflow per page load while keeping render pure.
@@ -40,60 +40,56 @@ export function GraphFlowPreview() {
   }, [workflowsQuery.data]);
 
   const graph = useMemo(() => {
-    if (!workflow) return sampleGraph();
+    if (!workflow) return null;
     return workflowToGraph(workflow, agentsQuery.data ?? []);
   }, [workflow, agentsQuery.data]);
 
-  const isLiveWorkflow = !!workflow;
+  if (!workflow || !graph) return null;
 
   return (
-    <Card className="border-zinc-800/80 bg-zinc-900/40 overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-              <Network className="h-5 w-5 text-indigo-400" />
-              {isLiveWorkflow ? workflow.name : "Live Workflow Graph (React Flow)"}
-            </CardTitle>
-            <Badge
-              variant="outline"
-              className={
-                isLiveWorkflow
-                  ? "text-emerald-400 border-emerald-500/30 bg-emerald-950/30 text-[11px]"
-                  : "text-indigo-400 border-indigo-500/30 bg-indigo-950/30 text-[11px]"
-              }
-            >
-              {isLiveWorkflow ? "Saved Workflow" : "Preview"}
-            </Badge>
+    <section>
+      <Card className="border-zinc-800/80 bg-zinc-900/40 overflow-hidden">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+                <Network className="h-5 w-5 text-indigo-400" />
+                {workflow.name}
+              </CardTitle>
+              <Badge
+                variant="outline"
+                className="text-emerald-400 border-emerald-500/30 bg-emerald-950/30 text-[11px]"
+              >
+                Saved Workflow
+              </Badge>
+            </div>
+            <CardDescription className="text-xs text-zinc-400 mt-1">
+              Random saved workflow from your organization studio.
+            </CardDescription>
           </div>
-          <CardDescription className="text-xs text-zinc-400 mt-1">
-            {isLiveWorkflow
-              ? "Random saved workflow from your organization studio."
-              : "No saved workflows yet — showing a sample topology until you create one."}
-          </CardDescription>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
-      <CardContent className="p-0">
-        <div className="h-[390px] w-full bg-zinc-950/90 relative">
-          <ReactFlowProvider>
-            <ReactFlow
-              key={workflow?.id ?? "preview"}
-              nodes={graph.nodes}
-              edges={graph.edges}
-              nodeTypes={graphNodeTypes}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              fitView
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background color="#27272a" gap={16} size={1} />
-              <Controls className="!bg-zinc-900 !border-zinc-800 !text-zinc-300 fill-zinc-300 [&>button]:!border-zinc-800" />
-            </ReactFlow>
-          </ReactFlowProvider>
-        </div>
-      </CardContent>
-    </Card>
+        <CardContent className="p-0">
+          <div className="h-[390px] w-full bg-zinc-950/90 relative">
+            <ReactFlowProvider>
+              <ReactFlow
+                key={workflow.id}
+                nodes={graph.nodes}
+                edges={graph.edges}
+                nodeTypes={graphNodeTypes}
+                nodesDraggable={false}
+                nodesConnectable={false}
+                elementsSelectable={false}
+                fitView
+                proOptions={{ hideAttribution: true }}
+              >
+                <Background color="#27272a" gap={16} size={1} />
+                <Controls className="!bg-zinc-900 !border-zinc-800 !text-zinc-300 fill-zinc-300 [&>button]:!border-zinc-800" />
+              </ReactFlow>
+            </ReactFlowProvider>
+          </div>
+        </CardContent>
+      </Card>
+    </section>
   );
 }

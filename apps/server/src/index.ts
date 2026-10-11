@@ -120,6 +120,25 @@ async function main() {
   if (recovery.restored.length || recovery.failed.length) {
     console.log(`Run recovery: restored=${recovery.restored.length} failed=${recovery.failed.length}`);
   }
+  // Startup can race a still-valid lease from the previous process. Re-run once
+  // after the lease window so orphans left by that race are claimed.
+  if (runStore instanceof PostgresRunStore) {
+    const retryMs = runStore.leaseDurationMs + 1_000;
+    const timer = setTimeout(() => {
+      void recoverInterruptedRuns(executor, runStore, checkpointer, { instanceId }).then(async (second) => {
+        if (second.restored.length || second.failed.length) {
+          console.log(`Run recovery (deferred): restored=${second.restored.length} failed=${second.failed.length}`);
+        }
+        await budgetController.recover(await budgetStore.openReservations(), async runId => {
+          const status = await runStore.getDurableStatus(runId);
+          return !status || status === "completed" || status === "failed" || status === "cancelled";
+        });
+      }).catch((error) => {
+        console.error("Deferred run recovery failed:", error instanceof Error ? error.message : error);
+      });
+    }, retryMs);
+    timer.unref?.();
+  }
 
   let outboxProcessor: TriggerOutboxProcessor | undefined;
   let heartbeatScheduler: HeartbeatScheduler | undefined;

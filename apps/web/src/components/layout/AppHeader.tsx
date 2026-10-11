@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useDashboardQuery } from "@/hooks/useDashboardQuery";
 import { useStudioStore } from "@/store/useStudioStore";
-import { Layers, Menu, Radio, Sparkles, X } from "lucide-react";
+import { Layers, Menu, PanelLeftClose, PanelLeftOpen, Radio, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserMenu } from "./UserMenu";
@@ -12,9 +12,16 @@ import { UserMenu } from "./UserMenu";
 type AppHeaderProps = {
   onMenuClick?: () => void;
   menuOpen?: boolean;
+  onCollapseClick?: () => void;
+  collapsed?: boolean;
 };
 
-export function AppHeader({ onMenuClick, menuOpen = false }: AppHeaderProps) {
+export function AppHeader({
+  onMenuClick,
+  menuOpen = false,
+  onCollapseClick,
+  collapsed = false,
+}: AppHeaderProps) {
   const { isLive } = useStudioStore();
   const { enqueueTask, isMutating } = useDashboardQuery();
   const [modalOpen, setModalOpen] = useState(false);
@@ -48,6 +55,23 @@ export function AppHeader({ onMenuClick, menuOpen = false }: AppHeaderProps) {
               className="h-9 w-9 shrink-0 p-0 text-zinc-300 hover:bg-zinc-800 hover:text-white lg:hidden"
             >
               {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onCollapseClick}
+              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+              aria-expanded={!collapsed}
+              aria-controls="app-sidebar"
+              className="hidden h-9 w-9 shrink-0 p-0 text-zinc-300 hover:bg-zinc-800 hover:text-white lg:inline-flex"
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
             </Button>
 
             <Link

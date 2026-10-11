@@ -259,6 +259,37 @@ describe("PostgreSQL Multi-Instance Run Recovery & Lease Management", () => {
     storeB.close();
   });
 
+  test("cancel reclaim-terminalizes an orphaned running run with an expired lease", async () => {
+    const runId = "run-orphan-cancel";
+    const pastStamp = new Date(Date.now() - 60_000).toISOString();
+    await pool.query(
+      `INSERT INTO studio_runs (
+         id, workflow_id, status, started_at, metadata, tenant_id, owner_id,
+         execution_owner_id, execution_lease_expires_at, execution_heartbeat_at
+       ) VALUES ($1, $2, 'running', $3::timestamptz, '{}'::jsonb, $4, 'user-dead', 'replica-dead', $3::timestamptz, $3::timestamptz)`,
+      [runId, workflow.id, pastStamp, tenantId]
+    );
+
+    const storeB = new PostgresRunStore(pool, {
+      instanceId: "replica-cancel-B",
+      leaseDurationMs: 30_000,
+      leaseRenewalIntervalMs: 0,
+    });
+    await storeB.hydrate();
+    const executorB = new RunExecutor(storeB, new OfflineTestAgentExecutor());
+
+    expect(executorB.cancel(runId)).toBe(true);
+    expect(storeB.get(runId)?.run.status).toBe("cancelled");
+    await storeB.flush();
+
+    const row = (await pool.query("SELECT status, execution_owner_id, error FROM studio_runs WHERE id = $1", [runId])).rows[0];
+    expect(row.status).toBe("cancelled");
+    expect(row.execution_owner_id).toBe("replica-cancel-B");
+    expect(row.error).toMatch(/cancelled/i);
+
+    storeB.close();
+  });
+
   test("recovers orphaned queued runs and waiting_for_human runs, while preserving active ones", async () => {
     const futureDate = new Date(Date.now() + 60_000).toISOString();
     const pastDate = new Date(Date.now() - 60_000).toISOString();

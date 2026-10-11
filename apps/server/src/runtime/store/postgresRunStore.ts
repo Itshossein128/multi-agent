@@ -151,6 +151,20 @@ export class PostgresRunStore implements RunStoreContract {
     if (result.rowCount === 0) throw new RunLeaseLostError(runId);
   }
 
+  /**
+   * Terminal writes may proceed when this instance still holds a live lease, or
+   * when the lease is already expired/null (orphan reclaim after a crash).
+   * Live leases owned by another replica stay fenced.
+   */
+  private terminalLeasePredicate(ownerParam: string): string {
+    return `(
+      (execution_owner_id = ${ownerParam} AND execution_lease_expires_at > now())
+      OR execution_lease_expires_at IS NULL
+      OR execution_lease_expires_at <= now()
+    )
+      AND (status IN ('queued','running','waiting_for_human') OR status = $2)`;
+  }
+
   assertHealthy(): void {
     if (this.persistenceError) {
       throw new Error(`Studio run persistence is unavailable: ${this.persistenceError.message}`);
@@ -499,10 +513,10 @@ export class PostgresRunStore implements RunStoreContract {
                 const updated = await client.query(
                   `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
                    result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb,
+                   execution_owner_id = $10,
                    execution_lease_expires_at = now() + ($11 || ' milliseconds')::interval,
                    execution_heartbeat_at = now(), updated_at = now()
-                   WHERE id = $1 AND execution_owner_id = $10 AND execution_lease_expires_at > now()
-                     AND (status IN ('queued','running','waiting_for_human') OR status = $2)`,
+                   WHERE id = $1 AND ${this.terminalLeasePredicate("$10")}`,
                   [runId, run.status, run.completedAt ?? null, run.input ? JSON.stringify(run.input) : null, run.output ? JSON.stringify(run.output) : null, run.result ? JSON.stringify(run.result) : null, run.error ?? null, run.currentNodeId ?? null, JSON.stringify(run.metadata ?? {}), this.instanceId, this.leaseDurationMs],
                 );
                 this.requireOwnedUpdate(runId, updated);
@@ -542,10 +556,10 @@ export class PostgresRunStore implements RunStoreContract {
               const updated = await this.pool.query(
                 `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
                    result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb,
+                   execution_owner_id = $10,
                    execution_lease_expires_at = now() + ($11 || ' milliseconds')::interval,
                    execution_heartbeat_at = now(), updated_at = now()
-                 WHERE id = $1 AND execution_owner_id = $10 AND execution_lease_expires_at > now()
-                   AND (status IN ('queued','running','waiting_for_human') OR status = $2)`,
+                 WHERE id = $1 AND ${this.terminalLeasePredicate("$10")}`,
                 [
                   runId,
                   run.status,

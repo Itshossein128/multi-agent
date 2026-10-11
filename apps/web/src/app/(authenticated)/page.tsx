@@ -22,10 +22,8 @@ export default function DashboardPage() {
           <StatCards />
         </section>
 
-        {/* 2. Interactive React Flow Canvas */}
-        <section>
-          <GraphFlowPreview />
-        </section>
+        {/* 2. Interactive React Flow Canvas (hidden when no saved workflows) */}
+        <GraphFlowPreview />
 
         {/* 3. Active Running Agents */}
         <section>
