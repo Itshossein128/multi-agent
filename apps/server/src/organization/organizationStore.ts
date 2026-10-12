@@ -59,6 +59,14 @@ export class InMemoryOrganizationStore implements OrganizationStore {
     }
     this.lineRows.set(`${line.tenantId}:${line.agentId}`, structuredClone(line)); return structuredClone(line);
   }
+  purgeTenantGoals(tenantId: string): void {
+    for (const [id, goal] of Array.from(this.goalRows.entries())) {
+      if (goal.tenantId === tenantId) this.goalRows.delete(id);
+    }
+    for (const [key, line] of Array.from(this.lineRows.entries())) {
+      if (line.tenantId === tenantId) this.lineRows.delete(key);
+    }
+  }
 }
 
 function goalFromRow(row: Record<string, unknown>): OrganizationGoal {

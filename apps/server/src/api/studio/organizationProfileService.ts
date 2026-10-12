@@ -3,6 +3,8 @@ import { randomUUID } from "crypto";
 import type { OrganizationProfile, StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 import { ApiError } from "../shared/http";
+import { orgFeatureFlagsFromEnvironment } from "../../organization/orgFeatureFlags";
+import { OrganizationPurgeWorker } from "../../organization/organizationPurgeWorker";
 
 const NAME_MAX = 120;
 const DESCRIPTION_MAX = 2000;
@@ -51,12 +53,40 @@ function normalizeSlug(value: unknown, name: string, orgId: string): string {
 }
 
 export class OrganizationProfileService {
-  constructor(private readonly store: StudioStore) {}
+  private readonly purgeWorker: OrganizationPurgeWorker;
+
+  constructor(
+    private readonly store: StudioStore,
+    purgeWorker?: OrganizationPurgeWorker,
+  ) {
+    this.purgeWorker = purgeWorker ?? new OrganizationPurgeWorker({ studioStore: store });
+  }
 
   async getCurrent(principal: RequestPrincipal): Promise<OrganizationProfile> {
     const profile = await this.store.getOrganizationProfile(principal);
     if (!profile) throw new ApiError(404, "Organization not found");
     return profile;
+  }
+
+  async deleteCurrent(
+    body: { name?: unknown; confirmationName?: unknown },
+    principal: RequestPrincipal,
+  ) {
+    const { deletionEnabled } = orgFeatureFlagsFromEnvironment();
+    if (!deletionEnabled) {
+      throw new ApiError(403, "Organization deletion is disabled");
+    }
+    const profile = await this.getCurrent(principal);
+    const confirmation =
+      typeof body.confirmationName === "string"
+        ? body.confirmationName.trim()
+        : typeof body.name === "string"
+        ? body.name.trim()
+        : "";
+    if (confirmation !== profile.name) {
+      throw new ApiError(400, "Organization name confirmation mismatch");
+    }
+    return this.purgeWorker.purgeOrganization(profile.id);
   }
 
   async listMine(principal: RequestPrincipal): Promise<OrganizationProfile[]> {

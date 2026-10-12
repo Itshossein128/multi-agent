@@ -70,6 +70,14 @@ export class InMemoryBudgetStore implements BudgetStore {
   }
   async alerts(tenantId: string) { return this.notifications.filter(row => row.tenantId === tenantId).map(row => structuredClone(row)); }
   async openReservations() { return [...this.reservations.keys()]; }
+  purgeTenantBudgets(tenantId: string): void {
+    for (const [key, record] of Array.from(this.records.entries())) {
+      if (record.tenantId === tenantId) this.records.delete(key);
+    }
+    for (const [key] of Array.from(this.reservations.entries())) {
+      this.reservations.delete(key);
+    }
+  }
 }
 
 function decode(row: Record<string, unknown>): BudgetRecord {

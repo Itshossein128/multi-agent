@@ -19,6 +19,7 @@ import type {
   OrganizationAuditEntry,
   OrganizationMembership,
   OrganizationProfile,
+  OrganizationStatus,
   ProjectRepository,
   StudioEntityStatusFilter,
   StudioPrincipal,
@@ -90,6 +91,7 @@ export class InMemoryStudioStore implements StudioStore {
   private webhookDeliveries = new Map<string, WebhookDeliveryRecord>();
   private heartbeats = new Map<string, AgentHeartbeatSettings>(); // key: `${tenantId}:${agentId}`
   private busyAgents = new Set<string>(); // key: `${tenantId}:${agentId}`
+  private deletedOrganizations = new Set<string>();
 
   private transactionState() {
     return {
@@ -101,6 +103,7 @@ export class InMemoryStudioStore implements StudioStore {
       workspaceRepoStates: this.workspaceRepoStates, comments: this.comments, triggerEvents: this.triggerEvents,
       routines: this.routines, routineHistory: this.routineHistory, webhookTriggers: this.webhookTriggers,
       webhookDeliveries: this.webhookDeliveries, heartbeats: this.heartbeats, busyAgents: this.busyAgents,
+      deletedOrganizations: this.deletedOrganizations,
     };
   }
 
@@ -143,6 +146,16 @@ export class InMemoryStudioStore implements StudioStore {
     principal?: StudioPrincipal,
     personal = false,
   ): void {
+    const tenantId = principal?.tenantId ?? record.tenantId;
+    if (tenantId && !record.isSystem) {
+      if (this.deletedOrganizations.has(tenantId)) {
+        throw new Error(`Organization ${tenantId} does not exist or has been deleted`);
+      }
+      const org = this.organizations.get(tenantId);
+      if (org && org.status !== "active") {
+        throw new Error(`Organization ${tenantId} is not active (${org.status})`);
+      }
+    }
     if (!existing) return;
     if ((existing.tenantId ?? null) !== (principal?.tenantId ?? record.tenantId ?? null)) throw new Error("Access denied to resource");
     if (!principal && ((personal && (existing.ownerId ?? null) !== (record.ownerId ?? null)) || Boolean(existing.isSystem) !== Boolean(record.isSystem))) {
@@ -537,6 +550,82 @@ export class InMemoryStudioStore implements StudioStore {
       .filter((org): org is OrganizationProfile => Boolean(org && org.status === "active"))
       .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
       .map((org) => structuredClone(org));
+  }
+
+  async updateOrganizationStatus(organizationId: string, status: OrganizationStatus): Promise<void> {
+    const org = this.organizations.get(organizationId);
+    if (!org) throw new Error("Organization not found");
+    org.status = status;
+    org.updatedAt = nowIso();
+  }
+
+  async purgeOrganizationData(organizationId: string): Promise<void> {
+    for (const [id, wf] of Array.from(this.workflows.entries())) {
+      if (wf.tenantId === organizationId) this.workflows.delete(id);
+    }
+    for (const [id, agent] of Array.from(this.agents.entries())) {
+      if (agent.tenantId === organizationId && !agent.isSystem) this.agents.delete(id);
+    }
+    for (const [id, tool] of Array.from(this.tools.entries())) {
+      if (tool.tenantId === organizationId && !tool.isSystem) this.tools.delete(id);
+    }
+    for (const [id, task] of Array.from(this.tasks.entries())) {
+      if (task.tenantId === organizationId) this.tasks.delete(id);
+    }
+    for (const [id, comment] of Array.from(this.comments.entries())) {
+      if (comment.tenantId === organizationId) this.comments.delete(id);
+    }
+    for (const [id, project] of Array.from(this.projects.entries())) {
+      if (project.tenantId === organizationId) this.projects.delete(id);
+    }
+    const orgWorkspaceIds = new Set<string>();
+    for (const [id, ws] of Array.from(this.workspaces.entries())) {
+      if (ws.tenantId === organizationId) {
+        orgWorkspaceIds.add(id);
+        this.workspaces.delete(id);
+      }
+    }
+    for (const [id, repo] of Array.from(this.projectRepositories.entries())) {
+      if (repo.tenantId === organizationId) this.projectRepositories.delete(id);
+    }
+    for (const [key, wsRepo] of Array.from(this.workspaceRepositories.entries())) {
+      if (orgWorkspaceIds.has(wsRepo.workspaceId)) this.workspaceRepositories.delete(key);
+    }
+    for (const [key, state] of Array.from(this.workspaceRepoStates.entries())) {
+      if (state.tenantId === organizationId) this.workspaceRepoStates.delete(key);
+    }
+    for (const [id, event] of Array.from(this.triggerEvents.entries())) {
+      if (event.tenantId === organizationId) this.triggerEvents.delete(id);
+    }
+    for (const [id, routine] of Array.from(this.routines.entries())) {
+      if (routine.tenantId === organizationId) this.routines.delete(id);
+    }
+    for (const [id, hist] of Array.from(this.routineHistory.entries())) {
+      if (hist.tenantId === organizationId) this.routineHistory.delete(id);
+    }
+    for (const [id, trig] of Array.from(this.webhookTriggers.entries())) {
+      if (trig.tenantId === organizationId) this.webhookTriggers.delete(id);
+    }
+    for (const [id, deliv] of Array.from(this.webhookDeliveries.entries())) {
+      if (deliv.tenantId === organizationId) this.webhookDeliveries.delete(id);
+    }
+    for (const key of Array.from(this.heartbeats.keys())) {
+      if (key.startsWith(`${organizationId}:`)) this.heartbeats.delete(key);
+    }
+    for (const key of Array.from(this.busyAgents.keys())) {
+      if (key.startsWith(`${organizationId}:`)) this.busyAgents.delete(key);
+    }
+    for (const [key, mem] of Array.from(this.memberships.entries())) {
+      if (mem.organizationId === organizationId) this.memberships.delete(key);
+    }
+    for (const [id, entry] of Array.from(this.organizationAudit.entries())) {
+      if (entry.organizationId === organizationId) this.organizationAudit.delete(id);
+    }
+    for (const [userId, lastOrg] of Array.from(this.userLastOrganization.entries())) {
+      if (lastOrg === organizationId) this.userLastOrganization.set(userId, null);
+    }
+    this.organizations.delete(organizationId);
+    this.deletedOrganizations.add(organizationId);
   }
 
   async organizationTransaction<T>(organizationId: string, operation: (store: StudioStore) => Promise<T>): Promise<T> {

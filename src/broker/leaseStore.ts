@@ -56,6 +56,7 @@ export interface LeaseStore {
   /** Idempotent: repeated revoke of the same lease succeeds. */
   revoke(leaseId: string, reason: string, now: number): Promise<void>;
   deleteExpired(before: number): Promise<number>;
+  deleteTenantLeases?(tenantId: string): Promise<number>;
   /** Idempotent issue lookup: returns the lease previously issued with this key. */
   findIdempotent(tenantId: string, idempotencyKey: string): Promise<CredentialLeaseRecord | null>;
 }
@@ -121,6 +122,17 @@ export class InMemoryLeaseStore implements LeaseStore {
       if (record.expiresAt < before) {
         this.leases.delete(leaseId);
         removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  async deleteTenantLeases(tenantId: string): Promise<number> {
+    let removed = 0;
+    for (const [leaseId, record] of Array.from(this.leases.entries())) {
+      if (record.tenantId === tenantId) {
+        this.leases.delete(leaseId);
+        removed++;
       }
     }
     return removed;
@@ -283,6 +295,14 @@ export class PostgresLeaseStore implements LeaseStore {
     const result = await this.pool.query({
       text: `DELETE FROM credential_broker_leases WHERE expires_at < to_timestamp($1 / 1000.0)`,
       values: [before],
+    });
+    return result.rowCount ?? 0;
+  }
+
+  async deleteTenantLeases(tenantId: string): Promise<number> {
+    const result = await this.pool.query({
+      text: `DELETE FROM credential_broker_leases WHERE tenant_id = $1`,
+      values: [tenantId],
     });
     return result.rowCount ?? 0;
   }

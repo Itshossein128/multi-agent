@@ -249,4 +249,14 @@ export class InMemoryRunStore implements RunStoreContract {
   }
 
   close(): void {}
+
+  purgeTenantRuns(tenantId: string): void {
+    for (const [runId, entry] of Array.from(this.entries.entries())) {
+      if (entry.run.tenantId === tenantId) {
+        try { entry.abort.abort(); } catch {}
+        entry.run.status = "cancelled";
+        this.entries.delete(runId);
+      }
+    }
+  }
 }

@@ -32,6 +32,46 @@ export default function OrganizationSettings() {
     finally { setBusy(false); }
   }
   const ownerCount = members.filter(m => m.role === "owner" && m.status === "active").length;
+  const deletionEnabled = process.env.NEXT_PUBLIC_ORG_DELETION_ENABLED === "true";
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteStatus, setDeleteStatus] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteOrg(e: React.FormEvent) {
+    e.preventDefault();
+    if (deleteConfirmName !== org.name) {
+      setDeleteError(`Please type the exact organization name: "${org.name}"`);
+      return;
+    }
+    setDeleting(true);
+    setDeleteError("");
+    setDeleteStatus("Purging organization data...");
+    try {
+      const response = await fetch(
+        `/api/o/${encodeURIComponent(org.slug)}/execution/studio/organizations/current`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmationName: deleteConfirmName }),
+        }
+      );
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error ?? "Failed to delete organization.");
+      }
+      setDeleteStatus("Organization deleted successfully. Redirecting...");
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 500);
+    } catch (err) {
+      setDeleteStatus(null);
+      setDeleteError(err instanceof Error ? err.message : "Deletion failed.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return <main className="mx-auto w-full max-w-5xl space-y-6 p-6">
     <div><h1 className="text-2xl font-semibold">Organization settings</h1><p className="mt-2 text-sm text-zinc-400">Manage membership in {org.name}. Your role: {org.role}.</p></div>
     {(error || loadError) && <p role="alert" className="text-sm text-red-400">{error || loadError?.message}</p>}
@@ -53,5 +93,39 @@ export default function OrganizationSettings() {
         </>}{protectedOwner && <span className="text-xs text-zinc-500">Protected owner</span>}</td></tr>;
       })}
     </tbody></table></div>
+
+    {deletionEnabled && org.role === "owner" && (
+      <div className="rounded-lg border border-red-900/50 bg-red-950/10 p-4 space-y-3">
+        <h2 className="text-lg font-medium text-red-400">Danger Zone</h2>
+        <p className="text-sm text-zinc-400">
+          Permanently delete <strong>{org.name}</strong> and all associated projects, tasks,
+          runs, memories, and secrets. This action cannot be undone.
+        </p>
+        {deleteError && <p role="alert" className="text-sm text-red-400">{deleteError}</p>}
+        {deleteStatus && <p role="status" className="text-sm text-zinc-300">{deleteStatus}</p>}
+        <form onSubmit={handleDeleteOrg} className="space-y-3">
+          <label className="block text-sm text-zinc-300">
+            Type <span className="font-semibold text-zinc-100">{org.name}</span> to confirm:
+            <input
+              type="text"
+              aria-label="Confirm organization name"
+              value={deleteConfirmName}
+              onChange={(e) => setDeleteConfirmName(e.target.value)}
+              disabled={deleting}
+              className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-950 p-2 text-sm text-zinc-100"
+              placeholder={org.name}
+              required
+            />
+          </label>
+          <Button
+            type="submit"
+            variant="destructive"
+            disabled={deleting || deleteConfirmName !== org.name}
+          >
+            {deleting ? "Deleting organization..." : "Delete this organization"}
+          </Button>
+        </form>
+      </div>
+    )}
   </main>;
 }

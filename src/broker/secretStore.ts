@@ -25,6 +25,7 @@ export interface SecretStore {
   getSecret(input: SecretStoreInput): Promise<StoredSecret>;
   revoke?(input: SecretStoreInput): Promise<void>;
   rotate?(input: SecretStoreInput): Promise<{ version?: string }>;
+  deleteTenantSecrets?(tenantId: string): Promise<void>;
 }
 
 /** Marks an explicitly shared/global credential. Deny-by-default: unset means tenant-only. */
@@ -98,6 +99,15 @@ export class InMemorySecretStore implements SecretStore {
     const version = `v${Math.random().toString(36).slice(2, 10)}`;
     this.tenantSecrets.set(key, { ...existing, version });
     return { version };
+  }
+
+  async deleteTenantSecrets(tenantId: string): Promise<void> {
+    const prefix = `${tenantId}\u0000`;
+    for (const key of Array.from(this.tenantSecrets.keys())) {
+      if (key.startsWith(prefix)) {
+        this.tenantSecrets.delete(key);
+      }
+    }
   }
 
   private key(input: SecretStoreInput): string {

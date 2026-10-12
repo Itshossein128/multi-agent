@@ -88,6 +88,11 @@ export class PostgresMemoryStore implements MemoryStore {
     validateScope(tenantId);
     await this.query("DELETE FROM studio_memories WHERE tenant_id = $1 AND id = $2", [tenantId, id]);
   }
+  async deleteTenantMemories(tenantId: string): Promise<void> {
+    validateScope(tenantId);
+    await this.query("DELETE FROM studio_memories WHERE tenant_id = $1", [tenantId]);
+    await this.query("DELETE FROM studio_memory_jobs WHERE tenant_id = $1", [tenantId]);
+  }
   async search(query: MemoryStoreQuery): Promise<Memory[]> {
     validateScope(query.tenantId, query.namespaces);
     const { limit, offset } = bounds(query); validateEmbedding(query.embedding, query.embeddingMetadata);

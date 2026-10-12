@@ -305,6 +305,8 @@ export interface StudioStore {
   appendOrganizationAudit(entry: OrganizationAuditEntry): Promise<void>;
   /** Set studio_users.tenant_id last-used organization pointer (nullable). */
   setUserLastOrganization(userId: string, organizationId: string | null): Promise<void>;
+  updateOrganizationStatus(organizationId: string, status: OrganizationStatus): Promise<void>;
+  purgeOrganizationData(organizationId: string): Promise<void>;
 
   listProjectRepositories(projectId: string, principal?: StudioPrincipal): Promise<ProjectRepository[]>;
   getProjectRepository(id: string, principal?: StudioPrincipal): Promise<ProjectRepository | null>;

@@ -43,6 +43,16 @@ export class InMemoryMemoryStore implements MemoryStore {
   }
   async get(tenantId: string, id: string): Promise<Memory | null> { validateScope(tenantId); return this.run(() => structuredClone(this.records.get(this.key(tenantId, id)) ?? null)); }
   async delete(tenantId: string, id: string): Promise<void> { validateScope(tenantId); return this.run(() => { this.records.delete(this.key(tenantId, id)); }); }
+  async deleteTenantMemories(tenantId: string): Promise<void> {
+    validateScope(tenantId);
+    return this.run(() => {
+      for (const [key, mem] of Array.from(this.records.entries())) {
+        if (mem.tenantId === tenantId || (mem.namespace.scope === "organization" && mem.namespace.id === tenantId)) {
+          this.records.delete(key);
+        }
+      }
+    });
+  }
   async search(query: MemoryStoreQuery): Promise<Memory[]> {
     validateScope(query.tenantId, query.namespaces);
     return this.run(() => {

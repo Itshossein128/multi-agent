@@ -19,6 +19,7 @@ import type {
   AcceptWebhookDeliveryParams,
   AcceptWebhookDeliveryResult,
   OrganizationProfile,
+  OrganizationStatus,
   ProjectRepository,
   StudioEntityStatusFilter,
   StudioNameSource,
@@ -1000,6 +1001,57 @@ export class PostgresStudioStore implements StudioStore {
       [userId],
     );
     return result.rows.map(decodeOrganization);
+  }
+
+  async updateOrganizationStatus(organizationId: string, status: OrganizationStatus): Promise<void> {
+    const result = await this.query(
+      "UPDATE studio_organizations SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
+      [status, organizationId],
+    );
+    if ((result.rowCount ?? 0) === 0) throw new Error("Organization not found");
+  }
+
+  async purgeOrganizationData(organizationId: string): Promise<void> {
+    const client = this.client ?? await this.pool.connect();
+    const ownsClient = !this.client;
+    try {
+      if (ownsClient) await client.query("BEGIN");
+      await client.query("DELETE FROM studio_organization_audit WHERE organization_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_organization_memberships WHERE organization_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_workspace_repo_states WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_workspace_repositories WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_project_repositories WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_task_comments WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_trigger_events WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_routine_history WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_routines WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_webhook_deliveries WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_webhook_triggers WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_agent_heartbeats WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_approvals WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_run_events WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_run_execution_leases WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_runs WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_tasks WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_workspaces WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_projects WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_organization_goals WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_agent_reporting WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_budget_alerts WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_budget_reservations WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_budgets WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_workflows WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_agents WHERE tenant_id = $1 AND NOT is_system", [organizationId]);
+      await client.query("DELETE FROM studio_tools WHERE tenant_id = $1 AND NOT is_system", [organizationId]);
+      await client.query("UPDATE studio_users SET tenant_id = NULL WHERE tenant_id = $1", [organizationId]);
+      await client.query("DELETE FROM studio_organizations WHERE id = $1", [organizationId]);
+      if (ownsClient) await client.query("COMMIT");
+    } catch (err) {
+      if (ownsClient) await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      if (ownsClient) client.release();
+    }
   }
 
   async organizationTransaction<T>(organizationId: string, operation: (store: StudioStore) => Promise<T>): Promise<T> {

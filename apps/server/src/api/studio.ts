@@ -29,6 +29,7 @@ import { registerOrganizationRoutes } from "../organization/organizationRoutes";
 import { InMemoryBudgetStore, type BudgetStore } from "../budgets/budgetStore";
 import { BudgetService } from "../budgets/budgetService";
 import { registerBudgetRoutes } from "../budgets/budgetRoutes";
+import type { OrganizationPurgeWorker } from "../organization/organizationPurgeWorker";
 
 import type { RunExecutor } from "../runtime/runExecutor";
 
@@ -39,6 +40,7 @@ export function createStudioRouter(
   organizationStore: OrganizationStore = new InMemoryOrganizationStore(),
   budgetStore: BudgetStore = new InMemoryBudgetStore(),
   organizationUnitOfWork?: OrganizationUnitOfWork,
+  purgeWorker?: OrganizationPurgeWorker,
 ) {
   const app = new Hono<{ Variables: PrincipalVariables }>();
   const workflows = new WorkflowService(store);
@@ -48,7 +50,7 @@ export function createStudioRouter(
   const workspace = new WorkspaceService(store);
   const projects = new ProjectService(store);
   const workspaceEntities = new WorkspaceEntityService(store);
-  const organizationProfiles = new OrganizationProfileService(store);
+  const organizationProfiles = new OrganizationProfileService(store, purgeWorker);
   app.use("/*", requirePrincipal(resolvePrincipal));
   app.use("/*", requireOrganizationContext(store));
   app.onError(respondWithApiError);
