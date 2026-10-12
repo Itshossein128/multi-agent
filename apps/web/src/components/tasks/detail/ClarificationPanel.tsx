@@ -1,5 +1,7 @@
 "use client";
 
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
+
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ClarificationPackage } from "@multi-agent/types";
@@ -14,6 +16,7 @@ const labelClass = "text-[11px] font-semibold uppercase tracking-wider text-zinc
  * Distinct from ApprovalPanel Approve/Reject.
  */
 export function ClarificationPanel({ task }: { task: Task }) {
+  const orgId = useOptionalOrg()?.org.id ?? "none";
   const queryClient = useQueryClient();
   const canonical = toCanonicalStatus(task.status);
   const eligible =
@@ -87,7 +90,7 @@ export function ClarificationPanel({ task }: { task: Task }) {
               ? `Follow-up run started: ${result.followUpRunId}`
               : "Answers submitted; run continuing.",
         );
-        await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        await queryClient.invalidateQueries({ queryKey: ["org", orgId, "tasks"] });
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : String(err));

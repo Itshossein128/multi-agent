@@ -5,8 +5,8 @@ import { StudioEntityError, removeProjectRepository } from "@/lib/projectsWorksp
 export const dynamic = "force-dynamic";
 
 export async function DELETE(request: Request, context: { params: Promise<{ projectId: string; repoId: string }> }) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal) return NextResponse.json({ error: new URL(request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   const { projectId, repoId } = await context.params;
   try {
     let confirmDiscardChanges = false;

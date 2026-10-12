@@ -5,8 +5,8 @@ import { StudioEntityError, getProject, getProjectDashboard, patchProject, retir
 export const dynamic = "force-dynamic";
 
 export async function GET(_request: Request, context: { params: Promise<{ projectId: string }> }) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(_request);
+  if (!principal) return NextResponse.json({ error: new URL(_request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(_request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   const { projectId } = await context.params;
   const dashboard = new URL(_request.url).searchParams.get("dashboard") === "1";
   try {
@@ -18,8 +18,8 @@ export async function GET(_request: Request, context: { params: Promise<{ projec
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ projectId: string }> }) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal) return NextResponse.json({ error: new URL(request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   const { projectId } = await context.params;
   try {
     const body = await request.json() as { name?: string; description?: string; settings?: Record<string, unknown>; action?: string };

@@ -1,0 +1,23 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationShadowSafety.test.ts
+
+FAIL tests/organizationShadowSafety.test.ts
+  ● Test suite failed to run
+
+    [96mtests/organizationShadowSafety.test.ts[0m:[93m5[0m:[93m10[0m - [91merror[0m[90m TS2724: [0m'"../src/auth/internalPrincipal"' has no exported member named 'signInternalPrincipalAssertion'. Did you mean 'verifyInternalPrincipalAssertion'?
+
+    [7m5[0m import { signInternalPrincipalAssertion } from '../src/auth/internalPrincipal';
+    [7m [0m [91m         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+      [96msrc/auth/internalPrincipal.ts[0m:[93m61[0m:[93m17[0m
+        [7m61[0m export function verifyInternalPrincipalAssertion(
+        [7m  [0m [96m                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+        'verifyInternalPrincipalAssertion' is declared here.
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        2.963 s
+Ran all test suites matching /tests\/organizationShadowSafety.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

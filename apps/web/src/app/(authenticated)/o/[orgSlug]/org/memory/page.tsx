@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Memory, MemoryKind, MemoryNamespace } from "@multi-agent/types";
@@ -18,6 +20,7 @@ function readToken(): string {
 }
 
 export default function MemoryExplorer() {
+  const orgUrl = useOrgPath();
   const [token, setToken] = useState("");
   const [scope, setScope] = useState<MemoryNamespace["scope"]>("agent");
   const [namespaceId, setNamespaceId] = useState("");
@@ -65,7 +68,7 @@ export default function MemoryExplorer() {
   };
 
   return <main className="min-h-screen space-y-6 bg-zinc-950 p-6 text-zinc-100">
-    <Link className="text-indigo-300 underline" href="/org">Back to Graph Editor</Link>
+    <Link className="text-indigo-300 underline" href={orgUrl("/org")}>Back to Graph Editor</Link>
     <h1 className="text-2xl font-semibold">Memory explorer</h1>
     <p className="text-zinc-400">Inspects and manages long-term backend memory. Requires a server-provisioned bearer token (MEMORY_PRINCIPALS) with read/delete grants for the namespace you query.</p>
 

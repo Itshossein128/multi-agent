@@ -789,7 +789,7 @@ export interface RunCreateResponse {
 
 export interface AgentTestRequest { agent: AgentRecord; input: Record<string, unknown> }
 
-export { assertNoCredentials, credentialIssues, validateAgent, modelSettingsSchema, API_PROVIDER_SCHEMAS, removeAgentNodes } from "./agentConfiguration";
+export { ConfigurationValidationError, assertNoCredentials, credentialIssues, validateAgent, modelSettingsSchema, API_PROVIDER_SCHEMAS, removeAgentNodes } from "./agentConfiguration";
 
 export interface RunEvent {
   id: string;

@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import React, { useState } from "react";
 import { useStudioStore } from "@/store/useStudioStore";
 import { useDashboardQuery } from "@/hooks/useDashboardQuery";
@@ -20,6 +22,7 @@ import { matchesTimeFilter } from "@/lib/dashboardFilters";
 import Link from "next/link";
 
 export function QueueAndFailedSection() {
+  const orgUrl = useOrgPath();
   const { queue, failedTasks, timeFilter } = useStudioStore();
   const { retryTask, cancelTask, enqueueTask, isMutating } = useDashboardQuery();
 
@@ -146,7 +149,7 @@ export function QueueAndFailedSection() {
               <p className="text-sm font-medium text-zinc-300">Queue is currently clear</p>
               <p className="text-xs text-zinc-500">
                 Board Todo/Planning tasks and queued runs for this period appear here.{" "}
-                <Link href="/tasks" className="text-blue-300 hover:underline">Open task board</Link>
+                <Link href={orgUrl("/tasks")} className="text-blue-300 hover:underline">Open task board</Link>
               </p>
             </div>
           ) : (
@@ -169,11 +172,11 @@ export function QueueAndFailedSection() {
                     </div>
                     <p className="text-sm font-medium text-zinc-200 truncate">
                       {task.source === "run" ? (
-                        <Link href={`/runs/${encodeURIComponent(task.id)}`} className="hover:text-indigo-300 hover:underline">
+                        <Link href={orgUrl(`/runs/${encodeURIComponent(task.id)}`)} className="hover:text-indigo-300 hover:underline">
                           {task.title}
                         </Link>
                       ) : (
-                        <Link href="/tasks" className="hover:text-indigo-300 hover:underline">
+                        <Link href={orgUrl("/tasks")} className="hover:text-indigo-300 hover:underline">
                           {task.title}
                         </Link>
                       )}
@@ -228,8 +231,8 @@ export function QueueAndFailedSection() {
               <ShieldCheck className="h-8 w-8 text-emerald-500/80 mb-2" />
               <p className="text-sm font-medium text-zinc-300">Zero failures in this period</p>
               <p className="text-xs text-zinc-500">
-                Board failures show on <Link href="/tasks" className="text-rose-300 hover:underline">/tasks</Link>;
-                run failures on <Link href="/runs?status=failed" className="text-rose-300 hover:underline">/runs</Link>.
+                Board failures show on <Link href={orgUrl("/tasks")} className="text-rose-300 hover:underline">/tasks</Link>;
+                run failures on <Link href={orgUrl("/runs?status=failed")} className="text-rose-300 hover:underline">/runs</Link>.
               </p>
             </div>
           ) : (
@@ -253,11 +256,11 @@ export function QueueAndFailedSection() {
                       </div>
                       <h5 className="text-sm font-semibold text-zinc-200 mt-1">
                         {task.source === "run" ? (
-                          <Link href={`/runs/${encodeURIComponent(task.id)}`} className="hover:text-indigo-300 hover:underline">
+                          <Link href={orgUrl(`/runs/${encodeURIComponent(task.id)}`)} className="hover:text-indigo-300 hover:underline">
                             {task.title}
                           </Link>
                         ) : (
-                          <Link href="/tasks" className="hover:text-indigo-300 hover:underline">
+                          <Link href={orgUrl("/tasks")} className="hover:text-indigo-300 hover:underline">
                             {task.title}
                           </Link>
                         )}

@@ -91,3 +91,19 @@ export function authorizeToolOrAgent(
   // Legacy / unowned fails closed.
   return false;
 }
+
+/** Permissions come from the server-resolved context, never the request body or role hint. */
+export function requirePermission(
+  context: { permissions: readonly import('../../../../src/studio/contracts').OrganizationPermission[] } | null | undefined,
+  permission: import('../../../../src/studio/contracts').OrganizationPermission,
+): void {
+  if (!context?.permissions.includes(permission)) throw new PermissionDeniedError(permission);
+}
+
+export class PermissionDeniedError extends Error {
+  readonly status = 403;
+  readonly code = 'ORGANIZATION_PERMISSION_DENIED';
+  constructor(readonly permission: import('../../../../src/studio/contracts').OrganizationPermission) {
+    super('Permission denied');
+  }
+}

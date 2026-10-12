@@ -265,7 +265,7 @@ describe("memory-enabled run route authority (real executor/store; controlled ru
       for (const token of [undefined, "invalid", principals[1].token, principals[2].token, principals[3].token]) {
         for (const [suffix, method] of [["", "GET"], ["/history", "GET"], ["/events", "GET"], ["/cancel", "POST"]]) {
           const response = await app.fetch(request(`/${runId}${suffix}`, method, undefined, token));
-          expect(response.status).toBe(404); expect(await response.json()).toEqual({ error: "Run not found" });
+          expect(response.status).toBe(404); expect(await response.json()).toEqual({ error: "Not found" });
         }
         expect(await (await app.fetch(request("/", "GET", undefined, token))).json()).toEqual([]);
         expect(await (await app.fetch(request(`/?agentId=${ns.id}`, "GET", undefined, token))).json()).toEqual([]);

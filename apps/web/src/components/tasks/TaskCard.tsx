@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import React from "react";
 import Link from "next/link";
 import {
@@ -55,6 +57,7 @@ export function TaskCard({
   onDragStart,
   onDragEnd,
 }: TaskCardProps) {
+  const orgUrl = useOrgPath();
   const blockers = getDependencyBlockers(task, tasksById);
   const canonical = toCanonicalStatus(task.status);
   const isTerminal = canonical === "completed" || canonical === "failed" || canonical === "cancelled";
@@ -132,7 +135,7 @@ export function TaskCard({
         <div className="flex flex-wrap gap-1 text-[10px] text-zinc-400" onClick={(e) => e.stopPropagation()}>
           {(projectName || task.projectId) && (
             <Link
-              href={`/projects/${encodeURIComponent(task.projectId)}`}
+              href={orgUrl(`/projects/${encodeURIComponent(task.projectId)}`)}
               className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem] hover:border-indigo-500/60 hover:text-indigo-300"
               title={projectName ?? task.projectId}
             >
@@ -141,7 +144,7 @@ export function TaskCard({
           )}
           {(workspaceName || task.workspaceId) && task.workspaceId && (
             <Link
-              href={`/workspaces/${encodeURIComponent(task.workspaceId)}`}
+              href={orgUrl(`/workspaces/${encodeURIComponent(task.workspaceId)}`)}
               className="rounded border border-zinc-700 bg-zinc-900/80 px-1.5 py-0.5 truncate max-w-[10rem] hover:border-indigo-500/60 hover:text-indigo-300"
               title={workspaceName ?? task.workspaceId}
             >
@@ -167,7 +170,7 @@ export function TaskCard({
         >
           <Activity className="h-3 w-3 flex-shrink-0" />
           <Link
-            href={`/runs/${task.runId}`}
+            href={orgUrl(`/runs/${task.runId}`)}
             className="flex items-center gap-1 hover:underline truncate"
             title="Open backend run execution"
           >

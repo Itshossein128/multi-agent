@@ -7,6 +7,7 @@ test("execution-side verifier rejects forged, unsigned, and expired assertions",
     userId: "user-a",
     tenantId: "tenant-a",
     organizationId: "tenant-a",
+    principalKind: "user",
   });
   expect(verifyInternalPrincipalAssertion(assertion, "wrong-secret", 2_000)).toBeNull(); // forged with another secret
   const [body] = assertion.split(".");
@@ -22,5 +23,6 @@ test("server principal resolver rejects browser-supplied identity and accepts on
     userId: "a",
     tenantId: "b",
     organizationId: "b",
+    principalKind: "user",
   });
 });

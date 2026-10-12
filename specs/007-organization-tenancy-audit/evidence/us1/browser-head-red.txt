@@ -1,0 +1,42 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 [chrome] › e2e/organization-routing.spec.ts:17:5 › one account switches organizations, preserves URL scope, and clears old data (20.4s)
+
+
+  1) [chrome] › e2e/organization-routing.spec.ts:17:5 › one account switches organizations, preserves URL scope, and clears old data 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 409
+
+      20 |   const a = await registerAndCreateOrg(page, suffix, `Acme ${suffix}`);
+      21 |   const second = await page.request.post("/api/organizations", { data: { name: `Beta ${suffix}` } });
+    > 22 |   expect(second.status()).toBe(201);
+         |                           ^
+      23 |   const b = (await second.json()).slug as string;
+      24 |   expect(b).not.toBe(a);
+      25 |   const projectA = `A-only-${suffix}`, projectB = `B-only-${suffix}`;
+        at /tmp/us1-red-checkout/apps/web/e2e/organization-routing.spec.ts:22:27
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/organization-routing-one-a-997bf-L-scope-and-clears-old-data-chrome/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/organization-routing-one-a-997bf-L-scope-and-clears-old-data-chrome/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/organization-routing-one-a-997bf-L-scope-and-clears-old-data-chrome/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/organization-routing-one-a-997bf-L-scope-and-clears-old-data-chrome/trace.zip
+    Usage:
+
+        pnpm exec playwright show-trace test-results/organization-routing-one-a-997bf-L-scope-and-clears-old-data-chrome/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chrome] › e2e/organization-routing.spec.ts:17:5 › one account switches organizations, preserves URL scope, and clears old data 

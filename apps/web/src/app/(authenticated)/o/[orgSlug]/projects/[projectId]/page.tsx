@@ -1,5 +1,9 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -42,6 +46,7 @@ const inputClass =
   "w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100";
 
 export default function ProjectDashboardPage() {
+  const orgUrl = useOrgPath();
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const [data, setData] = useState<DashboardPayload | null>(null);
@@ -60,7 +65,7 @@ export default function ProjectDashboardPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}?dashboard=1`);
+      const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}?dashboard=1`));
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Failed to load project dashboard");
       setData(body);
@@ -78,7 +83,7 @@ export default function ProjectDashboardPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+      const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description }),
@@ -100,7 +105,7 @@ export default function ProjectDashboardPage() {
     if (!window.confirm("Retire this project?")) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+      const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "retire" }),
@@ -133,7 +138,7 @@ export default function ProjectDashboardPage() {
         }));
         payload.repositories = chosen;
       }
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workspaces`, {
+      const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}/workspaces`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -157,7 +162,7 @@ export default function ProjectDashboardPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/repositories`, {
+      const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}/repositories`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -185,8 +190,7 @@ export default function ProjectDashboardPage() {
     setError(null);
     try {
       const attempt = async (confirmDiscardChanges: boolean) =>
-        fetch(
-          `/api/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repoId)}`,
+        fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repoId)}`),
           {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
@@ -226,7 +230,7 @@ export default function ProjectDashboardPage() {
       <div className="container mx-auto max-w-4xl px-4 py-8 space-y-3">
         <p role="alert" className="text-sm text-red-300">{error}</p>
         <Button onClick={() => void load()}>Retry</Button>
-        <Link href="/projects" className="text-sm text-indigo-300 hover:underline block">← Projects</Link>
+        <Link href={orgUrl("/projects")} className="text-sm text-indigo-300 hover:underline block">← Projects</Link>
       </div>
     );
   }
@@ -242,7 +246,7 @@ export default function ProjectDashboardPage() {
     <div className="container mx-auto max-w-4xl px-4 py-8 space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/projects" className="text-xs text-indigo-300 hover:underline">← Projects</Link>
+          <Link href={orgUrl("/projects")} className="text-xs text-indigo-300 hover:underline">← Projects</Link>
           <h1 className="text-xl font-semibold text-white mt-1">{data.project.name}</h1>
           <p className="text-xs text-zinc-500 break-all">{data.project.id} · {data.project.status}</p>
         </div>
@@ -265,7 +269,7 @@ export default function ProjectDashboardPage() {
           <ul className="space-y-1">
             {workspaces.map((ws) => (
               <li key={ws.id} className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm">
-                <Link href={`/workspaces/${encodeURIComponent(ws.id)}`} className="text-indigo-300 hover:underline">
+                <Link href={orgUrl(`/workspaces/${encodeURIComponent(ws.id)}`)} className="text-indigo-300 hover:underline">
                   {ws.name}
                 </Link>
                 {(ws.overriddenKeys?.length ?? 0) > 0 && (
@@ -392,7 +396,7 @@ export default function ProjectDashboardPage() {
           <ul className="space-y-1">
             {data.tasks.map((task) => (
               <li key={task.id} className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm">
-                <Link href={`/tasks?taskId=${encodeURIComponent(task.id)}`} className="text-indigo-300 hover:underline">{task.title}</Link>
+                <Link href={orgUrl(`/tasks?taskId=${encodeURIComponent(task.id)}`)} className="text-indigo-300 hover:underline">{task.title}</Link>
                 <span className="text-zinc-500 text-xs ml-2">{task.status} · {task.priority}</span>
               </li>
             ))}

@@ -35,13 +35,13 @@ export class RunApiService {
     return access?.principalId && access.tenantId ? { userId: access.principalId, tenantId: access.tenantId } : null;
   }
 
-  canAccess(principal: RequestPrincipal | undefined, runId: string): boolean {
+  canAccess(principal: RequestPrincipal | undefined, runId: string, readOnly = false): boolean {
     if (!principal) return false;
     const entry = this.store.get(runId);
     if (!entry) return false;
     const ownerId = entry.run.ownerId ?? entry.memoryOwner?.principalId;
     const tenantId = entry.run.tenantId ?? entry.memoryOwner?.tenantId;
-    return Boolean(ownerId && tenantId && ownerId === principal.userId && tenantId === principal.tenantId);
+    return Boolean(ownerId && tenantId && (ownerId === principal.userId || (readOnly && principal.permissions?.includes("runs.read_all"))) && tenantId === principal.tenantId);
   }
 
   list(query: RunListQuery, principal?: RequestPrincipal) {

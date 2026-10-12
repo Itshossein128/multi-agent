@@ -217,7 +217,7 @@ export class RunExecutor {
   startAgentTest(request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     const errors = validateAgent(request.agent);
     if (request.agent.enabled === false) errors.push("Agent is disabled. Enable it before execution.");
-    if (errors.length) throw new Error(errors.join(" "));
+    if (errors.length) throw new ContractViolationError("AGENT_CONFIGURATION_INVALID", errors.join(" "));
     const id = uid("run");
     const stamp = nowIso();
     const ownerId = principal?.userId;
@@ -269,7 +269,7 @@ export class RunExecutor {
   start(request: RunCreateRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     const issues = validateWorkflow(request.workflow, request.agents, this.guardrails, request.tools);
     const errors = issues.filter(issue => issue.level === "error");
-    if (errors.length) throw new Error(errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
+    if (errors.length) throw new ContractViolationError("WORKFLOW_CONFIGURATION_INVALID", errors.map(issue => `${issue.code}: ${issue.message}`).join(" "));
     this.assertRunInputContract(request);
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;

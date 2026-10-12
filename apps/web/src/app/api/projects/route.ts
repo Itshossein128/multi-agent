@@ -5,8 +5,8 @@ import { StudioEntityError, createProject, listProjects, retireProject } from "@
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal) return NextResponse.json({ error: new URL(request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   const status = new URL(request.url).searchParams.get("status") ?? "active";
   try {
     return NextResponse.json(await listProjects(principal, status));
@@ -17,8 +17,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal) return NextResponse.json({ error: new URL(request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   try {
     const body = await request.json() as { action?: string; id?: string; name?: string; description?: string };
     if (body.action === "retire") {

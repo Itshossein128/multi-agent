@@ -1,3 +1,4 @@
+import { ToolInputValidationError } from "./errors";
 import { Pool } from "pg";
 import type { CredentialGateway } from "../security/credentialGateway";
 import { credentialEnvironmentName, credentialGatewayFromEnvironment } from "../security/credentialGateway";
@@ -17,9 +18,9 @@ export class DatabaseToolExecutor implements ToolExecutor {
     const alias = serverAlias(tool.configuration.connection ?? tool.configuration.provider);
     const query = String(input.query ?? tool.configuration.query ?? "").trim();
     const parameters = input.parameters === undefined ? [] : input.parameters;
-    if (!query) throw new Error(`Database tool "${tool.name}" requires input.query or configuration.query.`);
+    if (!query) throw new ToolInputValidationError(`Database tool "${tool.name}" requires input.query or configuration.query.`);
     if (!credentialPrincipal || !runId) throw new Error("Database tool requires an authenticated run context.");
-    if (!Array.isArray(parameters) || parameters.length > 100 || parameters.some((value) => !isSqlParameter(value))) throw new Error("Database parameters must be at most 100 scalar values.");
+    if (!Array.isArray(parameters) || parameters.length > 100 || parameters.some((value) => !isSqlParameter(value))) throw new ToolInputValidationError("Database parameters must be at most 100 scalar values.");
     assertReadOnlyQuery(query);
     const maxRows = boundedRows(tool.configuration.maxRows);
     const lease = await this.gateway.issue({ provider: "database", alias, tenantId: credentialPrincipal.tenantId, principalId: credentialPrincipal.principalId, runId, toolId: tool.id, purpose: "database" });
@@ -49,13 +50,13 @@ export class DatabaseToolExecutor implements ToolExecutor {
 
 function serverAlias(value: string | number | boolean | undefined): string {
   const alias = String(value ?? "").trim();
-  if (!/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(alias)) throw new Error("Database tool requires a safe server-owned configuration.connection alias.");
+  if (!/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(alias)) throw new ToolInputValidationError("Database tool requires a safe server-owned configuration.connection alias.");
   return alias;
 }
 
 function assertReadOnlyQuery(query: string) {
   if (query.includes("\0") || query.includes(";") || /(?:^|\s)(?:insert|update|delete|merge|upsert|drop|alter|create|truncate|grant|revoke|copy|call|do|listen|notify|set|begin|commit|rollback|vacuum|refresh|lock|for\s+update)(?:\s|$)/i.test(query) || !/^(select|with)\b/i.test(query)) {
-    throw new Error("Database tool only permits a single read-only SELECT/WITH query.");
+    throw new ToolInputValidationError("Database tool only permits a single read-only SELECT/WITH query.");
   }
 }
 

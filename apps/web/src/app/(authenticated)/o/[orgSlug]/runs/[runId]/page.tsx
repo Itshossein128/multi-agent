@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import { use, useEffect, useState } from "react";
 import { ArrowLeft, Ban, CheckCircle2, Circle, CircleDot, Clock3, Loader2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -13,6 +15,7 @@ import { ApprovalPanel } from "@/components/runs/ApprovalPanel";
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["queued", "running", "waiting_for_human"];
 
 export default function RunPage({ params }: { params: Promise<{ runId: string }> }) {
+  const orgUrl = useOrgPath();
   const { runId } = use(params);
   const router = useRouter();
   const run = useRunStore((state) => state.run);
@@ -42,12 +45,12 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
 
   return <main className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
     <header className="flex h-14 items-center gap-3 border-b border-zinc-800 px-4">
-      <Button variant="ghost" size="icon" onClick={() => router.push("/runs")}><ArrowLeft className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" onClick={() => router.push(orgUrl("/runs"))}><ArrowLeft className="h-4 w-4" /></Button>
       <div><h1 className="text-sm font-semibold">Run {runId}</h1><p className="text-[10px] uppercase tracking-widest text-zinc-500">{run?.status ?? status}</p></div>
       <div className="ml-auto flex items-center gap-2">
         {(run?.status === "failed" || run?.status === "cancelled") && <Button variant="outline" size="sm" disabled={retrying} onClick={async () => {
           setRetrying(true); setControlError(null);
-          try { const retried = await runService.retryRun(runId); router.push(`/runs/${encodeURIComponent(retried.runId)}`); }
+          try { const retried = await runService.retryRun(runId); router.push(orgUrl(`/runs/${encodeURIComponent(retried.runId)}`)); }
           catch (error) { setControlError(error instanceof Error ? error.message : "Unable to retry run."); setRetrying(false); }
         }}>{retrying ? "Retrying…" : "Retry run"}</Button>}
         {runActive && <Button variant="destructive" size="sm" onClick={() => void runService.cancelRun(runId)}><Ban className="mr-1.5 h-3.5 w-3.5" />Cancel</Button>}

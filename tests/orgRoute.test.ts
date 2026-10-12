@@ -15,3 +15,11 @@ describe("orgRoute helpers", () => {
     expect(executionApiBase("other")).toBe("/api/o/other/execution");
   });
 });
+
+test("the browser URL determines the first request before provider effects run", () => {
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/o/beta/projects" } } });
+  try {
+    setCurrentOrgSlug("acme");
+    expect(executionApiBase()).toBe("/api/o/beta/execution");
+  } finally { delete (globalThis as { window?: unknown }).window; setCurrentOrgSlug(null); }
+});

@@ -62,12 +62,8 @@ export class OrganizationContextResolver {
     const key = this.cacheKey(organizationId, userId);
     const hit = this.cache.get(key);
     const now = this.now();
-    if (hit && hit.expiresAt > now) {
-      return hit.context;
-    }
-
     const profile = await this.store.getOrganizationProfile({ userId, tenantId: organizationId });
-    if (!profile || profile.status !== "active") {
+    if (!profile || profile.status !== "active" || !await this.store.isOrganizationUserActive(userId)) {
       throw new OrganizationContextDeniedError("Organization access denied");
     }
 
@@ -76,6 +72,9 @@ export class OrganizationContextResolver {
       throw new OrganizationContextDeniedError("Organization access denied");
     }
 
+    if (hit && hit.expiresAt > now && hit.context.membershipVersion === membership.version) {
+      return hit.context;
+    }
     const context: OrganizationContext = {
       organizationId,
       userId,

@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Network,
   Wallet,
+  Settings,
   Webhook,
   Workflow,
   type LucideIcon,
@@ -57,6 +58,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/budgets", label: "Budgets", icon: Wallet },
       { href: "/webhooks", label: "Webhooks", icon: Webhook },
+      { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];

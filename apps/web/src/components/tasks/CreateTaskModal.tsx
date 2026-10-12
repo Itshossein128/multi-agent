@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useEffect, useState } from "react";
 import { Link2, Sparkles, X } from "lucide-react";
 import {
@@ -80,7 +82,7 @@ export function CreateTaskModal({
     let cancelled = false;
     (async () => {
       try {
-        const projRes = await fetch("/api/projects");
+        const projRes = await fetch(scopedApiPath("/api/projects"));
         const projBody = await projRes.json();
         if (!projRes.ok) throw new Error(projBody.error ?? "Failed to load projects");
         if (cancelled) return;
@@ -104,7 +106,7 @@ export function CreateTaskModal({
     setLoadingWorkspaces(true);
     (async () => {
       try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workspaces`);
+        const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}/workspaces`));
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? "Failed to load workspaces");
         if (cancelled) return;

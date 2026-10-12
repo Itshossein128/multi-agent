@@ -1,5 +1,9 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -13,6 +17,7 @@ interface EntityRow {
 }
 
 export default function ProjectsPage() {
+  const orgUrl = useOrgPath();
   const [items, setItems] = useState<EntityRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,7 +31,7 @@ export default function ProjectsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/projects");
+      const res = await fetch(scopedApiPath("/api/projects"));
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Failed to load projects");
       setItems(body);
@@ -46,7 +51,7 @@ export default function ProjectsPage() {
     setError(null);
     try {
       const value = (explicitName ?? name).trim();
-      const res = await fetch("/api/projects", {
+      const res = await fetch(scopedApiPath("/api/projects"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(value ? { name: value } : {}),
@@ -71,7 +76,7 @@ export default function ProjectsPage() {
     if (!window.confirm("Retire this project? It will leave the active list and cannot receive new tasks.")) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/projects", {
+      const res = await fetch(scopedApiPath("/api/projects"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "retire", id }),
@@ -91,7 +96,7 @@ export default function ProjectsPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
+      const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(id)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: renameValue.trim() }),
@@ -146,7 +151,7 @@ export default function ProjectsPage() {
             <Button type="button" size="sm" disabled={busy} onClick={() => void createProjectRequest()}>
               Create project
             </Button>
-            <Link href="/tasks" className="inline-flex">
+            <Link href={orgUrl("/tasks")} className="inline-flex">
               <Button type="button" variant="ghost" size="sm">Create a task</Button>
             </Link>
           </div>
@@ -174,7 +179,7 @@ export default function ProjectsPage() {
                   </form>
                 ) : (
                   <>
-                    <Link href={`/projects/${encodeURIComponent(item.id)}`} className="font-medium text-indigo-300 hover:underline">
+                    <Link href={orgUrl(`/projects/${encodeURIComponent(item.id)}`)} className="font-medium text-indigo-300 hover:underline">
                       {item.name}
                     </Link>
                     <p className="text-xs text-zinc-500 break-all">{item.id}</p>

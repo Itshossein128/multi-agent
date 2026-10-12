@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import React from "react";
 import {
   CircleCheck,
@@ -50,6 +52,7 @@ function ToolButton({
 }
 
 export function EditorToolbar() {
+  const orgUrl = useOrgPath();
   const router = useRouter();
   const [runInput, setRunInput] = React.useState("");
   const [inputMode, setInputMode] = React.useState<WorkflowRunInputMode>("text");
@@ -182,7 +185,7 @@ export function EditorToolbar() {
             try {
               const { runId } = await runService.startRun(definition, agents, input, undefined, tools);
               sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
-              router.push(`/runs/${runId}`);
+              router.push(orgUrl(`/runs/${runId}`));
             } catch (error) {
               window.alert(error instanceof Error ? error.message : String(error));
             } finally {

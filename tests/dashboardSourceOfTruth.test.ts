@@ -442,6 +442,13 @@ describe("Authoritative Dashboard Source of Truth", () => {
       pgRunStore1.create(durableRun, undefined, undefined, alice);
       await pgRunStore1.flush();
 
+      const stamp = nowIso();
+      await pgStudioStore1.saveProject({
+        id: "project-default", name: "Durable project", nameSource: "manual",
+        description: "", status: "active", settings: {},
+        tenantId: alice.tenantId, ownerId: alice.userId,
+        createdAt: stamp, updatedAt: stamp,
+      }, alice);
       const durableTask: StudioTask = {
         id: "pg-durable-task-1",
         title: "Durable Postgres Task",
@@ -454,7 +461,7 @@ describe("Authoritative Dashboard Source of Truth", () => {
         retryCount: 0,
         paused: false,
         createdAt: nowIso(),
-        workspaceId: "workspace-default",
+        workspaceId: null,
         projectId: "project-default",
       };
       await pgStudioStore1.saveTask(durableTask, alice);

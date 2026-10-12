@@ -144,6 +144,7 @@ export class TriggerOutboxProcessor {
   private async processEvent(event: TriggerEvent): Promise<string | undefined> {
     const principal: StudioPrincipal = {
       tenantId: event.tenantId,
+      principalKind: "service",
       userId: (event.payload?.userId as string) ?? "system-trigger",
     };
 

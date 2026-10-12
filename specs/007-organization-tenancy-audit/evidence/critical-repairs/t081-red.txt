@@ -1,0 +1,388 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationWriteIsolation.test.ts
+
+FAIL tests/organizationWriteIsolation.test.ts (6.235 s)
+  T081 memory writes preserve the organization boundary
+    ✓ workflow refuses a foreign ID without modifying the stored record (28 ms)
+    ✓ agent refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ tool refuses a foreign ID without modifying the stored record (3 ms)
+    ✓ project refuses a foreign ID without modifying the stored record (4 ms)
+    ✓ task refuses a foreign ID without modifying the stored record (5 ms)
+    ✓ workspace refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ repository refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ comment refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ routine refuses a foreign ID without modifying the stored record (3 ms)
+    ✓ webhook refuses a foreign ID without modifying the stored record (2 ms)
+    ✕ workflow import rejects foreign/private/system collisions atomically through HTTP (26 ms)
+    ✕ agent import rejects foreign/private/system collisions atomically through HTTP (7 ms)
+    ✕ tool import rejects foreign/private/system collisions atomically through HTTP (7 ms)
+    ✓ valid imports create personal copies and update only their own IDs (6 ms)
+  T081 postgres writes preserve the organization boundary
+    ✓ workflow refuses a foreign ID without modifying the stored record (101 ms)
+    ✓ agent refuses a foreign ID without modifying the stored record (63 ms)
+    ✓ tool refuses a foreign ID without modifying the stored record (65 ms)
+    ✓ project refuses a foreign ID without modifying the stored record (79 ms)
+    ✓ task refuses a foreign ID without modifying the stored record (66 ms)
+    ✓ workspace refuses a foreign ID without modifying the stored record (62 ms)
+    ✓ repository refuses a foreign ID without modifying the stored record (58 ms)
+    ✕ comment refuses a foreign ID without modifying the stored record (76 ms)
+    ✕ routine refuses a foreign ID without modifying the stored record (67 ms)
+    ✕ webhook refuses a foreign ID without modifying the stored record (69 ms)
+    ✕ workflow import rejects foreign/private/system collisions atomically through HTTP (71 ms)
+    ✕ agent import rejects foreign/private/system collisions atomically through HTTP (87 ms)
+    ✕ tool import rejects foreign/private/system collisions atomically through HTTP (79 ms)
+    ✓ valid imports create personal copies and update only their own IDs (115 ms)
+    ✕ workflow concurrently created with one ID cannot move between organizations (88 ms)
+    ✕ agent concurrently created with one ID cannot move between organizations (70 ms)
+    ✕ tool concurrently created with one ID cannot move between organizations (56 ms)
+    ✕ project concurrently created with one ID cannot move between organizations (76 ms)
+    ✕ task concurrently created with one ID cannot move between organizations (92 ms)
+    ✕ workspace concurrently created with one ID cannot move between organizations (69 ms)
+    ✕ repository concurrently created with one ID cannot move between organizations (64 ms)
+    ✕ comment concurrently created with one ID cannot move between organizations (76 ms)
+    ✕ routine concurrently created with one ID cannot move between organizations (59 ms)
+    ✕ webhook concurrently created with one ID cannot move between organizations (59 ms)
+
+  ● T081 memory writes preserve the organization boundary › workflow import rejects foreign/private/system collisions atomically through HTTP
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      83 |         const app = createStudioRouter(store, () => ({ userId: 'member', tenantId: a.principal.tenantId }));
+      84 |         const response = await app.request('/workspace/import', jsonRequest('POST', { [collection]: [{ ...original, id: freeId }, { ...original, name: 'Overwrite' }] }));
+    > 85 |         expect(response.status).toBe(404);
+         |                                 ^
+      86 |         expect(await response.json()).toEqual({ error: 'Not found' });
+      87 |         expect(await c.read(store, id)).toEqual(original);
+      88 |         expect(await c.read(store, freeId)).toBeNull();
+
+      at tests/organizationWriteIsolation.test.ts:85:33
+
+  ● T081 memory writes preserve the organization boundary › agent import rejects foreign/private/system collisions atomically through HTTP
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      83 |         const app = createStudioRouter(store, () => ({ userId: 'member', tenantId: a.principal.tenantId }));
+      84 |         const response = await app.request('/workspace/import', jsonRequest('POST', { [collection]: [{ ...original, id: freeId }, { ...original, name: 'Overwrite' }] }));
+    > 85 |         expect(response.status).toBe(404);
+         |                                 ^
+      86 |         expect(await response.json()).toEqual({ error: 'Not found' });
+      87 |         expect(await c.read(store, id)).toEqual(original);
+      88 |         expect(await c.read(store, freeId)).toBeNull();
+
+      at tests/organizationWriteIsolation.test.ts:85:33
+
+  ● T081 memory writes preserve the organization boundary › tool import rejects foreign/private/system collisions atomically through HTTP
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      83 |         const app = createStudioRouter(store, () => ({ userId: 'member', tenantId: a.principal.tenantId }));
+      84 |         const response = await app.request('/workspace/import', jsonRequest('POST', { [collection]: [{ ...original, id: freeId }, { ...original, name: 'Overwrite' }] }));
+    > 85 |         expect(response.status).toBe(404);
+         |                                 ^
+      86 |         expect(await response.json()).toEqual({ error: 'Not found' });
+      87 |         expect(await c.read(store, id)).toEqual(original);
+      88 |         expect(await c.read(store, freeId)).toBeNull();
+
+      at tests/organizationWriteIsolation.test.ts:85:33
+
+  ● T081 postgres writes preserve the organization boundary › comment refuses a foreign ID without modifying the stored record
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"authorId": "owner", "authorType": "user", "content": "Original", "createdAt": "2026-10-11T19:56:42.719Z", "id": "27c9a522-a766-4ddc-a64a-50ff9719edf5", "mentions": [], "metadata": {}, "taskId": "3acc80a6-40a7-4929-8aa8-26d553db7976", "tenantId": "a-b0bdde17-a258-42be-907f-a856a15b7d65", "updatedAt": "2026-10-11T19:56:42.746Z"}
+
+      64 |     test.each(cases)('$name refuses a foreign ID without modifying the stored record', async c => {
+      65 |       const id = randomUUID(); await c.write(store, id, a); const original = await c.read(store, id);
+    > 66 |       await expect(c.write(store, id, b)).rejects.toThrow('Access denied');
+         |             ^
+      67 |       expect(await c.read(store, id)).toEqual(original);
+      68 |       await expect(c.write(store, id, a)).resolves.toBeDefined();
+      69 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:66:13
+
+  ● T081 postgres writes preserve the organization boundary › routine refuses a foreign ID without modifying the stored record
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-11T19:56:42.781Z", "description": "", "enabled": false, "id": "3aecdd47-25b9-4b41-ac99-0ce37d175fac", "inputPayload": {}, "lastError": null, "lastRunAt": null, "lastStatus": null, "misfirePolicy": "skip", "name": "Original", "nextRunAt": null, "ownerId": "owner", "scheduleExpr": "60", "scheduleType": "interval", "targetId": "agent", "targetType": "agent", "tenantId": "a-2a058a26-0b9d-467b-946e-3df8f3cc1f5a", "timezone": "UTC", "updatedAt": "2026-10-11T19:56:42.811Z"}
+
+      64 |     test.each(cases)('$name refuses a foreign ID without modifying the stored record', async c => {
+      65 |       const id = randomUUID(); await c.write(store, id, a); const original = await c.read(store, id);
+    > 66 |       await expect(c.write(store, id, b)).rejects.toThrow('Access denied');
+         |             ^
+      67 |       expect(await c.read(store, id)).toEqual(original);
+      68 |       await expect(c.write(store, id, a)).resolves.toBeDefined();
+      69 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:66:13
+
+  ● T081 postgres writes preserve the organization boundary › webhook refuses a foreign ID without modifying the stored record
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-11T19:56:42.845Z", "description": "", "enabled": false, "id": "8b56ebc7-3c70-4abf-a481-29a543520ddb", "name": "Original", "ownerId": "owner", "rateLimitPerMinute": 10, "secretHash": "hash", "targetId": "agent", "targetType": "agent", "tenantId": "a-f0041e15-3dde-449b-a77c-d3622d5b9ce6", "updatedAt": "2026-10-11T19:56:42.877Z"}
+
+      64 |     test.each(cases)('$name refuses a foreign ID without modifying the stored record', async c => {
+      65 |       const id = randomUUID(); await c.write(store, id, a); const original = await c.read(store, id);
+    > 66 |       await expect(c.write(store, id, b)).rejects.toThrow('Access denied');
+         |             ^
+      67 |       expect(await c.read(store, id)).toEqual(original);
+      68 |       await expect(c.write(store, id, a)).resolves.toBeDefined();
+      69 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:66:13
+
+  ● T081 postgres writes preserve the organization boundary › workflow import rejects foreign/private/system collisions atomically through HTTP
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      83 |         const app = createStudioRouter(store, () => ({ userId: 'member', tenantId: a.principal.tenantId }));
+      84 |         const response = await app.request('/workspace/import', jsonRequest('POST', { [collection]: [{ ...original, id: freeId }, { ...original, name: 'Overwrite' }] }));
+    > 85 |         expect(response.status).toBe(404);
+         |                                 ^
+      86 |         expect(await response.json()).toEqual({ error: 'Not found' });
+      87 |         expect(await c.read(store, id)).toEqual(original);
+      88 |         expect(await c.read(store, freeId)).toBeNull();
+
+      at tests/organizationWriteIsolation.test.ts:85:33
+
+  ● T081 postgres writes preserve the organization boundary › agent import rejects foreign/private/system collisions atomically through HTTP
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      83 |         const app = createStudioRouter(store, () => ({ userId: 'member', tenantId: a.principal.tenantId }));
+      84 |         const response = await app.request('/workspace/import', jsonRequest('POST', { [collection]: [{ ...original, id: freeId }, { ...original, name: 'Overwrite' }] }));
+    > 85 |         expect(response.status).toBe(404);
+         |                                 ^
+      86 |         expect(await response.json()).toEqual({ error: 'Not found' });
+      87 |         expect(await c.read(store, id)).toEqual(original);
+      88 |         expect(await c.read(store, freeId)).toBeNull();
+
+      at tests/organizationWriteIsolation.test.ts:85:33
+
+  ● T081 postgres writes preserve the organization boundary › tool import rejects foreign/private/system collisions atomically through HTTP
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      83 |         const app = createStudioRouter(store, () => ({ userId: 'member', tenantId: a.principal.tenantId }));
+      84 |         const response = await app.request('/workspace/import', jsonRequest('POST', { [collection]: [{ ...original, id: freeId }, { ...original, name: 'Overwrite' }] }));
+    > 85 |         expect(response.status).toBe(404);
+         |                                 ^
+      86 |         expect(await response.json()).toEqual({ error: 'Not found' });
+      87 |         expect(await c.read(store, id)).toEqual(original);
+      88 |         expect(await c.read(store, freeId)).toBeNull();
+
+      at tests/organizationWriteIsolation.test.ts:85:33
+
+  ● T081 postgres writes preserve the organization boundary › workflow concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"edges": [], "id": "1f8bf0f7-a170-4be2-aa3f-913ead720ff4", "name": "Original", "nodes": [], "ownerId": "owner", "tenantId": "a-546b12d7-113f-4998-a987-6f61b63a50e6", "updatedAt": "2026-10-11T19:56:43.270Z"}}, {"status": "fulfilled", "value": {"edges": [], "id": "1f8bf0f7-a170-4be2-aa3f-913ead720ff4", "name": "Original", "nodes": [], "ownerId": "owner", "tenantId": "b-50fb3709-1e0a-44b0-9068-a55d012df039", "updatedAt": "2026-10-11T19:56:43.300Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › agent concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"backend": {"model": "gpt-4o", "provider": "openai", "type": "api"}, "createdAt": "2026-10-11T19:56:43.401Z", "description": "", "enabled": true, "id": "c79a9daf-3a1b-417e-bfac-38f23f17c952", "isSystem": false, "metadata": {}, "name": "Original", "ownerId": "owner", "systemPrompt": "", "tenantId": "a-c926fb6a-af61-46b0-a2f5-d49b5dfde45b", "tools": [], "updatedAt": "2026-10-11T19:56:43.401Z"}}, {"status": "fulfilled", "value": {"backend": {"model": "gpt-4o", "provider": "openai", "type": "api"}, "createdAt": "2026-10-11T19:56:43.401Z", "description": "", "enabled": true, "id": "c79a9daf-3a1b-417e-bfac-38f23f17c952", "isSystem": false, "metadata": {}, "name": "Original", "ownerId": "owner", "systemPrompt": "", "tenantId": "b-f4f8731f-2fa5-4b2d-b457-16a1f5842488", "tools": [], "updatedAt": "2026-10-11T19:56:43.401Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › tool concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"category": "function", "configuration": {}, "createdAt": "2026-10-11T19:56:43.457Z", "description": "", "enabled": true, "executionPolicy": {"idempotency": "optional", "requiresApproval": false, "retryable": true}, "id": "91a72c46-996e-4dfc-a2fe-4a8a5a210595", "impact": "read-only", "inputSchema": {"properties": {}, "type": "object"}, "isSystem": false, "metadata": {}, "name": "Original", "outputSchema": {"properties": {}, "type": "object"}, "ownerId": "owner", "tenantId": "a-339e1e5d-f869-412e-a29b-f991228c1814", "updatedAt": "2026-10-11T19:56:43.457Z"}}, {"status": "fulfilled", "value": {"category": "function", "configuration": {}, "createdAt": "2026-10-11T19:56:43.457Z", "description": "", "enabled": true, "executionPolicy": {"idempotency": "optional", "requiresApproval": false, "retryable": true}, "id": "91a72c46-996e-4dfc-a2fe-4a8a5a210595", "impact": "read-only", "inputSchema": {"properties": {}, "type": "object"}, "isSystem": false, "metadata": {}, "name": "Original", "outputSchema": {"properties": {}, "type": "object"}, "ownerId": "owner", "tenantId": "b-aa4165f1-7a45-40a5-a52f-be9346300fa5", "updatedAt": "2026-10-11T19:56:43.457Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › project concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.496Z", "description": "", "id": "45a5708c-5798-4060-bf85-5fac5ca0d67f", "name": "Original", "nameSource": "manual", "ownerId": "owner", "settings": {}, "status": "active", "tenantId": "a-8ff3b069-26fa-4722-8ecf-27843191e0ef", "updatedAt": "2026-10-11T19:56:43.496Z"}}, {"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.525Z", "description": "", "id": "45a5708c-5798-4060-bf85-5fac5ca0d67f", "name": "Original", "nameSource": "manual", "ownerId": "owner", "settings": {}, "status": "active", "tenantId": "b-fc6169bc-e75b-4ed3-bfa2-48a902a54583", "updatedAt": "2026-10-11T19:56:43.525Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › task concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"assignedAgent": null, "assignedAgents": [], "completedAt": null, "createdAt": "2026-10-11T19:56:43.566Z", "dependencies": [], "description": "", "id": "dbc866eb-8a5b-4d60-89fb-cae796ddf3e0", "lastError": null, "metadata": {}, "output": null, "ownerId": "owner", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "01100f7a-833d-446c-a846-b632f3c49c8a", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "a-814aebaa-875e-47c7-a97e-07a8f51efb15", "title": "Original", "updatedAt": "2026-10-11T19:56:43.566Z", "workflowId": null, "workspaceId": null}}, {"status": "fulfilled", "value": {"assignedAgent": null, "assignedAgents": [], "completedAt": null, "createdAt": "2026-10-11T19:56:43.619Z", "dependencies": [], "description": "", "id": "dbc866eb-8a5b-4d60-89fb-cae796ddf3e0", "lastError": null, "metadata": {}, "output": null, "ownerId": "owner", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "4fe2d5c7-61a2-415f-9956-85e499cea3bc", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "b-ac5a39f0-e36f-4f34-9c83-5fdf504f1058", "title": "Original", "updatedAt": "2026-10-11T19:56:43.619Z", "workflowId": null, "workspaceId": null}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › workspace concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.659Z", "description": "", "effectiveSettings": {}, "id": "03e21346-aa80-4856-bffe-41f19ce38234", "name": "Original", "nameSource": "manual", "overriddenKeys": [], "ownerId": "owner", "projectId": "68392ce8-0364-44a7-85c1-c655b9f4fa86", "settings": {}, "settingsOverrides": {}, "status": "active", "tenantId": "a-2d23ae66-cdfe-4ad0-bedd-788a5f67af1a", "updatedAt": "2026-10-11T19:56:43.659Z"}}, {"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.682Z", "description": "", "effectiveSettings": {}, "id": "03e21346-aa80-4856-bffe-41f19ce38234", "name": "Original", "nameSource": "manual", "overriddenKeys": [], "ownerId": "owner", "projectId": "72f0753c-6eed-45c4-a889-f47794f5f468", "settings": {}, "settingsOverrides": {}, "status": "active", "tenantId": "b-0f9e483a-ff52-4d18-86c4-6d57ce974d45", "updatedAt": "2026-10-11T19:56:43.682Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › repository concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.727Z", "defaultBranch": "main", "id": "3d041e0f-2ee3-4f25-a56d-41b78b4705bc", "name": "Original", "projectId": "e78bb865-fac1-45db-a8d9-b2cf53b33980", "source": "https://example.test/repo", "status": "active", "tenantId": "a-cc22b1e5-2356-481b-a853-66106abee007", "updatedAt": "2026-10-11T19:56:43.727Z"}}, {"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.752Z", "defaultBranch": "main", "id": "3d041e0f-2ee3-4f25-a56d-41b78b4705bc", "name": "Original", "projectId": "51243a1c-a2dd-403d-90b6-496d7fed2d70", "source": "https://example.test/repo", "status": "active", "tenantId": "b-93268df9-2021-4076-93d7-b66bfabf5e49", "updatedAt": "2026-10-11T19:56:43.752Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › comment concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"authorId": "owner", "authorType": "user", "content": "Original", "createdAt": "2026-10-11T19:56:43.786Z", "id": "d321caf0-b32a-49dd-b2fa-3b9f2d64ec5c", "mentions": [], "metadata": {}, "taskId": "d0a39764-a21a-4200-90d3-e675fbbab352", "tenantId": "a-94cc2661-315e-4c76-bc91-09810990d9de", "updatedAt": "2026-10-11T19:56:43.786Z"}}, {"status": "fulfilled", "value": {"authorId": "owner", "authorType": "user", "content": "Original", "createdAt": "2026-10-11T19:56:43.786Z", "id": "d321caf0-b32a-49dd-b2fa-3b9f2d64ec5c", "mentions": [], "metadata": {}, "taskId": "d0a39764-a21a-4200-90d3-e675fbbab352", "tenantId": "a-94cc2661-315e-4c76-bc91-09810990d9de", "updatedAt": "2026-10-11T19:56:43.824Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › routine concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.883Z", "description": "", "enabled": false, "id": "031cd1cb-cfeb-4d8d-97a9-b5d2241f2ba1", "inputPayload": {}, "lastError": null, "lastRunAt": null, "lastStatus": null, "misfirePolicy": "skip", "name": "Original", "nextRunAt": null, "ownerId": "owner", "scheduleExpr": "60", "scheduleType": "interval", "targetId": "agent", "targetType": "agent", "tenantId": "b-221b4dff-982b-4051-a56c-b00c8264d82c", "timezone": "UTC", "updatedAt": "2026-10-11T19:56:43.858Z"}}, {"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.883Z", "description": "", "enabled": false, "id": "031cd1cb-cfeb-4d8d-97a9-b5d2241f2ba1", "inputPayload": {}, "lastError": null, "lastRunAt": null, "lastStatus": null, "misfirePolicy": "skip", "name": "Original", "nextRunAt": null, "ownerId": "owner", "scheduleExpr": "60", "scheduleType": "interval", "targetId": "agent", "targetType": "agent", "tenantId": "b-221b4dff-982b-4051-a56c-b00c8264d82c", "timezone": "UTC", "updatedAt": "2026-10-11T19:56:43.883Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+  ● T081 postgres writes preserve the organization boundary › webhook concurrently created with one ID cannot move between organizations
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 2
+    Received array:  [{"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.941Z", "description": "", "enabled": false, "id": "63ae8595-25d8-430b-a20c-cf4eace851cf", "name": "Original", "ownerId": "owner", "rateLimitPerMinute": 10, "secretHash": "hash", "targetId": "agent", "targetType": "agent", "tenantId": "b-897be9f4-b3fa-4f91-9cff-61d51379aa23", "updatedAt": "2026-10-11T19:56:43.919Z"}}, {"status": "fulfilled", "value": {"createdAt": "2026-10-11T19:56:43.941Z", "description": "", "enabled": false, "id": "63ae8595-25d8-430b-a20c-cf4eace851cf", "name": "Original", "ownerId": "owner", "rateLimitPerMinute": 10, "secretHash": "hash", "targetId": "agent", "targetType": "agent", "tenantId": "b-897be9f4-b3fa-4f91-9cff-61d51379aa23", "updatedAt": "2026-10-11T19:56:43.941Z"}}]
+
+      114 |         const concurrent = new PostgresStudioStore(racingPool);
+      115 |         const results = await Promise.allSettled([c.write(concurrent, id, a), c.write(concurrent, id, b)]);
+    > 116 |         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+          |                                                               ^
+      117 |         const failure = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
+      118 |         expect(failure.reason.message).toContain('Access denied');
+      119 |         const winner = results[0].status === 'fulfilled' ? a : b;
+
+      at tests/organizationWriteIsolation.test.ts:116:63
+
+Test Suites: 1 failed, 1 total
+Tests:       19 failed, 19 passed, 38 total
+Snapshots:   0 total
+Time:        6.449 s
+Ran all test suites matching /tests\/organizationWriteIsolation.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

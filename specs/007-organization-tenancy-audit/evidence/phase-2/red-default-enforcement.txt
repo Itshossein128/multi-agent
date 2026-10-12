@@ -1,0 +1,40 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/orgFeatureFlags.test.ts
+
+FAIL tests/orgFeatureFlags.test.ts
+  orgFeatureFlagsFromEnvironment
+    ✕ defaults enforce Phase 2 membership while keeping later phases off (12 ms)
+    ✓ parses explicit values
+
+  ● orgFeatureFlagsFromEnvironment › defaults enforce Phase 2 membership while keeping later phases off
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "deletionEnabled": false,
+    -   "membershipEnforcement": "enforce",
+    +   "membershipEnforcement": "shadow",
+        "memoryScope": false,
+        "rls": "off",
+      }
+
+      3 | describe("orgFeatureFlagsFromEnvironment", () => {
+      4 |   it("defaults enforce Phase 2 membership while keeping later phases off", () => {
+    > 5 |     expect(orgFeatureFlagsFromEnvironment({})).toEqual({
+        |                                                ^
+      6 |       membershipEnforcement: "enforce",
+      7 |       memoryScope: false,
+      8 |       deletionEnabled: false,
+
+      at Object.<anonymous> (tests/orgFeatureFlags.test.ts:5:48)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        2.562 s
+Ran all test suites matching /tests\/orgFeatureFlags.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

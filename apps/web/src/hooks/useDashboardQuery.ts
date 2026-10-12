@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useOptionalOrg } from "@/components/organization/OrgProvider";
 import { StudioDashboardData, TimeFilter } from "@/lib/dashboard/types";
@@ -7,7 +9,7 @@ import { useStudioStore } from "@/store/useStudioStore";
 import { useEffect } from "react";
 
 async function fetchDashboardData(timeFilter: TimeFilter): Promise<StudioDashboardData> {
-  const res = await fetch(`/api/dashboard?filter=${timeFilter}`, {
+  const res = await fetch(scopedApiPath(`/api/dashboard?filter=${timeFilter}`), {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -36,7 +38,7 @@ export function useDashboardQuery() {
 
   const retryMutation = useMutation({
     mutationFn: async (taskId: string) => {
-      const res = await fetch("/api/dashboard", {
+      const res = await fetch(scopedApiPath("/api/dashboard"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "retry", taskId }),
@@ -51,7 +53,7 @@ export function useDashboardQuery() {
 
   const cancelMutation = useMutation({
     mutationFn: async (taskId: string) => {
-      const res = await fetch("/api/dashboard", {
+      const res = await fetch(scopedApiPath("/api/dashboard"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "cancel", taskId }),
@@ -66,7 +68,7 @@ export function useDashboardQuery() {
 
   const enqueueMutation = useMutation({
     mutationFn: async (data: { title: string; role: string; priority?: string }) => {
-      const res = await fetch("/api/dashboard", {
+      const res = await fetch(scopedApiPath("/api/dashboard"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "enqueue", ...data }),

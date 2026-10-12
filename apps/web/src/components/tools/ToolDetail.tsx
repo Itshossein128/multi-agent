@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { assertNoCredentials, TOOL_CATEGORIES, TOOL_IMPACTS, validateTool, type ToolRecord } from "@multi-agent/types";
@@ -14,6 +16,7 @@ import { formatDateTime } from "@/lib/formatDateTime";
 const sections = ["Overview", "Configuration", "Agents", "Workflows", "Test"] as const;
 
 export function ToolDetail({ toolId }: { toolId: string }) {
+  const orgUrl = useOrgPath();
   const router = useRouter();
   const detail = useToolDetail(toolId);
   const [draft, setDraft] = useState<ToolRecord | null>(null);
@@ -35,7 +38,7 @@ export function ToolDetail({ toolId }: { toolId: string }) {
   }, [dirty]);
   useEffect(() => { if (errors.length) errorRef.current?.focus(); }, [errors]);
 
-  const navigate = (url: string) => { if (!dirty || window.confirm("Discard unsaved tool changes?")) router.push(url); };
+  const navigate = (url: string) => { if (!dirty || window.confirm("Discard unsaved tool changes?")) router.push(orgUrl(url)); };
   const update = (patch: Partial<ToolRecord>) => {
     try { assertNoCredentials(patch); if (draft) setDraft({ ...draft, ...patch }); setNotice(""); }
     catch (error) { setErrors([error instanceof Error ? error.message : String(error)]); }
@@ -71,14 +74,14 @@ export function ToolDetail({ toolId }: { toolId: string }) {
             <div className="min-w-0 space-y-2"><p className="text-xs uppercase tracking-widest text-amber-300">Tool control</p><h1 className="break-words text-2xl font-semibold">{tool.name}</h1><p className="max-w-3xl whitespace-pre-wrap text-sm text-zinc-300">{tool.description || "No description yet."}</p><p className="break-all font-mono text-xs text-zinc-400">{tool.id}</p></div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" disabled={busy || dirty} onClick={async () => {
-                try { const copy = await workflowService.duplicateTool(toolId); router.push(`/org/tools/${copy.id}`); }
+                try { const copy = await workflowService.duplicateTool(toolId); router.push(orgUrl(`/org/tools/${copy.id}`)); }
                 catch (error) { setErrors([error instanceof Error ? error.message : String(error)]); }
               }}>Duplicate</Button>
               <Button variant="outline" onClick={() => setSection("Test")}>Test tool</Button>
               {!editing ? <Button onClick={beginEdit} disabled={busy}>Edit tool</Button> : <><Button disabled={busy || !dirty} onClick={() => void save()}>{detail.save.isPending ? "Saving…" : "Save"}</Button><Button variant="outline" disabled={busy} onClick={() => { if (!dirty || window.confirm("Discard unsaved tool changes?")) { setDraft(null); setEditing(false); setErrors([]); } }}>Cancel editing</Button></>}
               <Button variant="destructive" disabled={busy || detail.workflows.isPending || detail.workflows.isError} onClick={async () => {
                 if (!window.confirm(`Delete tool “${tool.name}”?${dirty ? " Your unsaved edits in this form will be discarded." : ""}`)) return;
-                try { await detail.remove.mutateAsync(); router.push("/org/tools"); } catch (error) { setErrors([error instanceof Error ? error.message : "Unable to delete tool."]); }
+                try { await detail.remove.mutateAsync(); router.push(orgUrl("/org/tools")); } catch (error) { setErrors([error instanceof Error ? error.message : "Unable to delete tool."]); }
               }}>Delete</Button>
             </div>
           </div>

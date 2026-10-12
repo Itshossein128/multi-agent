@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 interface Budget { tenantId: string; scope: "company" | "agent" | "project"; scopeId: string; limitUsd: number; thresholdPercent: number; spentUsd: number; reservedUsd: number; periodStart: string; periodEnd: string }
@@ -17,14 +19,14 @@ export default function BudgetsPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const reload = useCallback(async () => {
-    const response = await fetch("/api/execution/studio/budgets");
+    const response = await fetch(scopedApiPath("/api/execution/studio/budgets"));
     const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? "Unable to load budgets");
     setData(body);
   }, []);
   useEffect(() => {
     void reload().catch(cause => setError(cause instanceof Error ? cause.message : "Unable to load budgets"));
-    void Promise.all([fetch("/api/execution/studio/agents"), fetch("/api/execution/studio/projects")]).then(async ([a,p]) => {
+    void Promise.all([fetch(scopedApiPath("/api/execution/studio/agents")), fetch(scopedApiPath("/api/execution/studio/projects"))]).then(async ([a,p]) => {
       const [agentRows, projectRows] = await Promise.all([a.json(), p.json()]);
       setAgents(Array.isArray(agentRows) ? agentRows : []); setProjects(Array.isArray(projectRows) ? projectRows : []);
     }).catch(() => {});
@@ -32,7 +34,7 @@ export default function BudgetsPage() {
   const configure = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError("");
     try {
-      const response = await fetch("/api/execution/studio/budgets", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope, scopeId: scope === "company" ? undefined : scopeId, limitUsd: Number(limitUsd), thresholdPercent: Number(thresholdPercent) }) });
+      const response = await fetch(scopedApiPath("/api/execution/studio/budgets"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope, scopeId: scope === "company" ? undefined : scopeId, limitUsd: Number(limitUsd), thresholdPercent: Number(thresholdPercent) }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Unable to save budget");
       await reload();

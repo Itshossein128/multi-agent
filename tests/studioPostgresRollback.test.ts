@@ -240,7 +240,7 @@ describePostgres("Studio Postgres persistence and rollback", () => {
     // rewrites and the agent deletion.
     const failingStore = new FailingWorkflowWriteStore(pool, 2);
     const serviceOnFailingStore = browserService(studioApp(failingStore));
-    await expect(serviceOnFailingStore.deleteAgent(agent.id, { removeReferences: true })).rejects.toThrow(/simulated graph write failure/);
+    await expect(serviceOnFailingStore.deleteAgent(agent.id, { removeReferences: true })).rejects.toThrow(/Internal server error/);
 
     expect(await store.getAgent(agent.id, alice)).toEqual(beforeAgent);
     expect(deserializeWorkflowDefinition(await store.getWorkflow(first.id, alice))).toEqual(beforeFirst);

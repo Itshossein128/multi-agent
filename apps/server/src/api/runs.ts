@@ -7,11 +7,11 @@ import type { MemoryAccessResolver } from "../memory/access";
 import { resolveRequestPrincipal } from "../auth/principal";
 import type { RequestPrincipal } from "../auth/principal";
 import type { PrincipalResolver } from "../auth/authorization";
-import { respondWithApiError } from "./shared/http";
+import { requireOrganizationContext, respondWithApiError, type PrincipalVariables } from "./shared/http";
 import { streamRunEvents } from "./runs/eventStream";
 import { RunApiService } from "./runs/runApiService";
 
-interface RunVariables { principal: RequestPrincipal | undefined }
+type RunVariables = PrincipalVariables;
 
 export function createRunsRouter(
   executor = new RunExecutor(),
@@ -23,13 +23,14 @@ export function createRunsRouter(
   const service = new RunApiService(executor, resolveMemoryAccess, studioStore, resolvePrincipal);
   app.use("*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "Run request is too large." }, 413) }));
   app.use("*", async (c, next) => { const principal = await service.principalFor(c.req.raw); if (principal) c.set("principal", principal); await next(); });
+  if (studioStore) app.use("*", requireOrganizationContext(studioStore, "/runs"));
   app.onError(respondWithApiError);
 
   app.post("/agent-test", async (c) => c.json({ runId: await service.startAgentTest(await c.req.json<AgentTestRequest>(), c.req.raw, c.get("principal")) }, 202));
   const authorizeRun: MiddlewareHandler<{ Variables: RunVariables }> = async (c, next) => {
     const runId = c.req.param("runId")!;
     if (runId === "agent-test") return next();
-    if (!service.canAccess(c.get("principal"), runId)) return c.json({ error: "Run not found" }, 404);
+    if (!service.canAccess(c.get("principal"), runId, c.req.method === "GET" || c.req.method === "HEAD")) return c.json({ error: "Not found" }, 404);
     await next();
   };
   app.use("/:runId", authorizeRun);

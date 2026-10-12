@@ -1,5 +1,9 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -44,6 +48,7 @@ const inputClass =
   "w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100";
 
 export default function WorkspaceDashboardPage() {
+  const orgUrl = useOrgPath();
   const params = useParams<{ workspaceId: string }>();
   const workspaceId = params.workspaceId;
   const [data, setData] = useState<DashboardPayload | null>(null);
@@ -58,7 +63,7 @@ export default function WorkspaceDashboardPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}?dashboard=1`);
+      const res = await fetch(scopedApiPath(`/api/workspaces/${encodeURIComponent(workspaceId)}?dashboard=1`));
       const body = (await res.json()) as DashboardPayload;
       if (!res.ok) throw new Error((body as unknown as { error?: string }).error ?? "Failed to load workspace dashboard");
       setData(body);
@@ -69,7 +74,7 @@ export default function WorkspaceDashboardPage() {
 
       const projectId = body.workspace.projectId ?? body.project?.id;
       if (projectId) {
-        const repoRes = await fetch(`/api/projects/${encodeURIComponent(projectId)}/repositories`);
+        const repoRes = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}/repositories`));
         const repoBody = await repoRes.json();
         if (repoRes.ok) setProjectRepos(repoBody as ProjectRepo[]);
       }
@@ -96,7 +101,7 @@ export default function WorkspaceDashboardPage() {
       } catch {
         throw new Error("Settings overrides must be valid JSON");
       }
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}`, {
+      const res = await fetch(scopedApiPath(`/api/workspaces/${encodeURIComponent(workspaceId)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description, settingsOverrides }),
@@ -120,7 +125,7 @@ export default function WorkspaceDashboardPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}`, {
+      const res = await fetch(scopedApiPath(`/api/workspaces/${encodeURIComponent(workspaceId)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clearOverrideKeys: data.workspace.overriddenKeys }),
@@ -139,7 +144,7 @@ export default function WorkspaceDashboardPage() {
     if (!window.confirm("Retire this workspace?")) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}`, {
+      const res = await fetch(scopedApiPath(`/api/workspaces/${encodeURIComponent(workspaceId)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "retire" }),
@@ -180,7 +185,7 @@ export default function WorkspaceDashboardPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/repositories`, {
+      const res = await fetch(scopedApiPath(`/api/workspaces/${encodeURIComponent(workspaceId)}/repositories`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -206,7 +211,7 @@ export default function WorkspaceDashboardPage() {
       <div className="container mx-auto max-w-4xl px-4 py-8 space-y-3">
         <p role="alert" className="text-sm text-red-300">{error}</p>
         <Button onClick={() => void load()}>Retry</Button>
-        <Link href="/workspaces" className="text-sm text-indigo-300 hover:underline block">← Workspaces</Link>
+        <Link href={orgUrl("/workspaces")} className="text-sm text-indigo-300 hover:underline block">← Workspaces</Link>
       </div>
     );
   }
@@ -221,13 +226,13 @@ export default function WorkspaceDashboardPage() {
     <div className="container mx-auto max-w-4xl px-4 py-8 space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/workspaces" className="text-xs text-indigo-300 hover:underline">← Workspaces</Link>
+          <Link href={orgUrl("/workspaces")} className="text-xs text-indigo-300 hover:underline">← Workspaces</Link>
           <h1 className="text-xl font-semibold text-white mt-1">{data.workspace.name}</h1>
           <p className="text-xs text-zinc-500 break-all">{data.workspace.id} · {data.workspace.status}</p>
           {projectId && (
             <p className="text-xs text-zinc-400 mt-1">
               Project:{" "}
-              <Link href={`/projects/${encodeURIComponent(projectId)}`} className="text-indigo-300 hover:underline">
+              <Link href={orgUrl(`/projects/${encodeURIComponent(projectId)}`)} className="text-indigo-300 hover:underline">
                 {projectName ?? projectId}
               </Link>
             </p>
@@ -269,7 +274,7 @@ export default function WorkspaceDashboardPage() {
           <p className="text-sm text-zinc-500">
             No project repositories yet.{" "}
             {projectId && (
-              <Link href={`/projects/${encodeURIComponent(projectId)}`} className="text-indigo-300 hover:underline">
+              <Link href={orgUrl(`/projects/${encodeURIComponent(projectId)}`)} className="text-indigo-300 hover:underline">
                 Attach on the project
               </Link>
             )}
@@ -350,7 +355,7 @@ export default function WorkspaceDashboardPage() {
           <ul className="space-y-1">
             {data.tasks.map((task) => (
               <li key={task.id} className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm">
-                <Link href={`/tasks?taskId=${encodeURIComponent(task.id)}`} className="text-indigo-300 hover:underline">{task.title}</Link>
+                <Link href={orgUrl(`/tasks?taskId=${encodeURIComponent(task.id)}`)} className="text-indigo-300 hover:underline">{task.title}</Link>
                 <span className="text-zinc-500 text-xs ml-2">{task.status} · {task.priority}</span>
               </li>
             ))}

@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useEffect, useState } from "react";
 import {
   CalendarClock,
@@ -193,7 +195,7 @@ export default function RoutinesPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/execution/studio/routines");
+      const res = await fetch(scopedApiPath("/api/execution/studio/routines"));
       if (!res.ok) throw new Error(t.loadError);
       const data = await res.json();
       setRoutines(Array.isArray(data) ? data : []);
@@ -211,7 +213,7 @@ export default function RoutinesPage() {
   const handlePreview = async () => {
     try {
       setFormError(null);
-      const res = await fetch("/api/execution/studio/routines/preview", {
+      const res = await fetch(scopedApiPath("/api/execution/studio/routines/preview"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -240,7 +242,7 @@ export default function RoutinesPage() {
     try {
       setCreating(true);
       setFormError(null);
-      const res = await fetch("/api/execution/studio/routines", {
+      const res = await fetch(scopedApiPath("/api/execution/studio/routines"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -277,8 +279,7 @@ export default function RoutinesPage() {
   const handleTogglePause = async (routine: Routine) => {
     try {
       const action = routine.enabled ? "pause" : "resume";
-      const res = await fetch(
-        `/api/execution/studio/routines/${encodeURIComponent(routine.id)}/${encodeURIComponent(action)}`,
+      const res = await fetch(scopedApiPath(`/api/execution/studio/routines/${encodeURIComponent(routine.id)}/${encodeURIComponent(action)}`),
         {
           method: "POST",
         }
@@ -296,8 +297,7 @@ export default function RoutinesPage() {
       return;
     }
     try {
-      const res = await fetch(
-        `/api/execution/studio/routines/${encodeURIComponent(routineId)}`,
+      const res = await fetch(scopedApiPath(`/api/execution/studio/routines/${encodeURIComponent(routineId)}`),
         {
           method: "DELETE",
         }
@@ -314,8 +314,7 @@ export default function RoutinesPage() {
     setHistoryRoutine(routine);
     try {
       setHistoryLoading(true);
-      const res = await fetch(
-        `/api/execution/studio/routines/${encodeURIComponent(routine.id)}/history`
+      const res = await fetch(scopedApiPath(`/api/execution/studio/routines/${encodeURIComponent(routine.id)}/history`)
       );
       if (res.ok) {
         const data = await res.json();

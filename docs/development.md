@@ -53,10 +53,17 @@ Feature flags (server env; safe defaults keep later phases off):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ORG_MEMBERSHIP_ENFORCEMENT` | `shadow` | Route-level membership/permission checks (`shadow` \| `enforce`) |
+| `ORG_MEMBERSHIP_ENFORCEMENT` | `enforce` | Route-level membership/permission checks; `shadow` runs diagnostics under maintenance |
 | `ORG_MEMORY_SCOPE` | `false` | Organization memory namespace exposure |
 | `ORG_DELETION_ENABLED` | `false` | Hard-delete organization API/UI |
 | `ORG_RLS` | `off` | Activate Postgres RLS + least-privilege app role (`off` \| `enforce`) |
+
+`shadow` evaluates authorization and logs `authz.would_deny`, but every organization-scoped request
+returns 503 without executing its handler. It is a diagnostic maintenance mode, including for valid
+owners and single-member organizations; removing members or restarting cannot restore weaker access.
+Authenticated bootstrap routes remain independent. Invitations require `enforce`.
+Legacy domain tests use an explicit Jest middleware mock, not production shadow serving; enforcement
+suites use the actual boundary, and shadow-safety suites explicitly unmock it.
 
 ### Database reset runbook (maintenance window)
 

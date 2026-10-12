@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 [chrome] › e2e/organization-routing.spec.ts:17:5 › one account switches organizations, preserves URL scope, and clears old data (8.1s)
+
+  1 passed (8.8s)

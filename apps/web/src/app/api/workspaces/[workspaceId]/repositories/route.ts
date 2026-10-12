@@ -5,8 +5,8 @@ import { StudioEntityError, putWorkspaceRepositories } from "@/lib/projectsWorks
 export const dynamic = "force-dynamic";
 
 export async function PUT(request: Request, context: { params: Promise<{ workspaceId: string }> }) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal) return NextResponse.json({ error: new URL(request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   const { workspaceId } = await context.params;
   try {
     const body = await request.json() as {

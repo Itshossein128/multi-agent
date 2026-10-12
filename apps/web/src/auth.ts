@@ -120,19 +120,37 @@ export async function getSessionUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
-export async function getAuthenticatedPrincipal(): Promise<AuthenticatedPrincipal | null> {
+export async function getAuthenticatedPrincipal(request?: Request): Promise<AuthenticatedPrincipal | null> {
   const user = (await auth())?.user as { id?: string; tenantId?: string | null } | undefined;
   if (!user?.id) return null;
-  if (user.tenantId) return { userId: user.id, tenantId: user.tenantId };
-
-  // Refresh last-organization pointer from DB (set after org create / seed).
+  const scoped = request && new URL(request.url).pathname.match(/^\/api\/o\/([^/]+)\//);
+  if (scoped) {
+    const slug = decodeURIComponent(scoped[1]);
+    const result = await getDbPool().query(
+      `SELECT o.id FROM studio_organizations o
+       JOIN studio_organization_memberships m ON m.organization_id = o.id
+       JOIN studio_users u ON u.id = m.user_id
+       WHERE o.slug = $1 AND m.user_id = $2 AND m.status = 'active'
+         AND o.status = 'active' AND u.status = 'active' LIMIT 1`,
+      [slug, user.id],
+    );
+    if (!result.rows[0]) return null;
+    return { userId: user.id, tenantId: String(result.rows[0].id) };
+  }
+  // The session value is a last-org hint. Verify it before signing legacy BFF calls too.
   try {
-    const pool = getDbPool();
-    const result = await pool.query("SELECT tenant_id FROM studio_users WHERE id = $1", [user.id]);
-    const tenantId = result.rows[0]?.tenant_id as string | null | undefined;
-    if (tenantId) return { userId: user.id, tenantId };
+    const result = await getDbPool().query(
+      `SELECT o.id FROM studio_users u
+       JOIN studio_organization_memberships m ON m.user_id = u.id
+         AND m.organization_id = COALESCE($1::text, u.tenant_id)
+       JOIN studio_organizations o ON o.id = m.organization_id
+       WHERE u.id = $2 AND u.status = 'active' AND m.status = 'active'
+         AND o.status = 'active' LIMIT 1`,
+      [user.tenantId ?? null, user.id],
+    );
+    if (result.rows[0]) return { userId: user.id, tenantId: String(result.rows[0].id) };
   } catch {
-    /* fall through */
+    /* fail closed */
   }
   return null;
 }

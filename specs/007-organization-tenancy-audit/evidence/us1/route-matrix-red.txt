@@ -1,0 +1,31 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationRouteMatrix.test.ts
+
+FAIL tests/organizationRouteMatrix.test.ts (10.123 s)
+  organization route matrix smoke
+    ✕ same-org succeeds, foreign-org and non-member cannot read cross-org project data (33 ms)
+
+  ● organization route matrix smoke › same-org succeeds, foreign-org and non-member cannot read cross-org project data
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      101 |     for (const path of ["/projects", "/projects/proj-b", "/budgets", "/organization"]) {
+      102 |       const denied = await appFor(principalFor("org-b", "alice")).request(path);
+    > 103 |       expect(denied.status).toBe(404);
+          |                             ^
+      104 |       expect(await denied.json()).toEqual({ error: "Not found" });
+      105 |     }
+      106 |
+
+      at Object.<anonymous> (tests/organizationRouteMatrix.test.ts:103:29)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 total
+Snapshots:   0 total
+Time:        10.335 s
+Ran all test suites matching /tests\/organizationRouteMatrix.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

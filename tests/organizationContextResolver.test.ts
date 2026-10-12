@@ -80,7 +80,7 @@ describe("OrganizationContextResolver", () => {
     const spy = jest.spyOn(store, "getMembership");
     const cached = await resolver.resolve("org-a", "user-1");
     expect(cached.membershipVersion).toBe(1);
-    expect(spy).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledWith("org-a", "user-1");
 
     const stamp = nowIso();
     await store.saveMembership({
@@ -100,4 +100,26 @@ describe("OrganizationContextResolver", () => {
     expect(bumped.membershipVersion).toBe(3);
     spy.mockRestore();
   });
+  it("rechecks membership version without an explicit local invalidation", async () => {
+    const store = new InMemoryStudioStore();
+    await seedOrg(store, "org-a", "acme", "user-1");
+    const resolver = new OrganizationContextResolver(store);
+    await resolver.resolve("org-a", "user-1");
+    const membership = (await store.getMembership("org-a", "user-1"))!;
+    await store.saveMembership({ ...membership, role: "viewer", version: 2 });
+    expect(await resolver.resolve("org-a", "user-1")).toMatchObject({ role: "viewer", membershipVersion: 2 });
+    await store.saveMembership({ ...membership, status: "removed", version: 3 });
+    await expect(resolver.resolve("org-a", "user-1")).rejects.toBeInstanceOf(OrganizationContextDeniedError);
+  });
+
+  it("denies a suspended organization even when context was cached", async () => {
+    const store = new InMemoryStudioStore();
+    await seedOrg(store, "org-a", "acme", "user-1");
+    const resolver = new OrganizationContextResolver(store);
+    await resolver.resolve("org-a", "user-1");
+    const profile = (await store.getOrganizationProfile({ userId: "user-1", tenantId: "org-a" }))!;
+    jest.spyOn(store, "getOrganizationProfile").mockResolvedValue({ ...profile, status: "suspended" });
+    await expect(resolver.resolve("org-a", "user-1")).rejects.toBeInstanceOf(OrganizationContextDeniedError);
+  });
+
 });

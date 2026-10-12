@@ -1,5 +1,9 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BoardAgent, BoardWorkflow, Task, TaskPriority, TASK_PRIORITIES, toCanonicalStatus } from "@/lib/taskStatus";
@@ -51,6 +55,7 @@ interface TaskFieldsProps {
  * project/workspace, description, and the read-only execution output.
  */
 export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }: TaskFieldsProps) {
+  const orgUrl = useOrgPath();
   const canonical = toCanonicalStatus(task.status);
   const isTerminal = canonical === "completed" || canonical === "failed" || canonical === "cancelled";
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -77,8 +82,8 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
     (async () => {
       try {
         const [projRes, retiredRes] = await Promise.all([
-          fetch("/api/projects"),
-          fetch("/api/projects?status=retired"),
+          fetch(scopedApiPath("/api/projects")),
+          fetch(scopedApiPath("/api/projects?status=retired")),
         ]);
         const [projBody, retiredBody] = await Promise.all([projRes.json(), retiredRes.json()]);
         if (!projRes.ok) throw new Error(projBody.error ?? "Failed to load projects");
@@ -101,7 +106,7 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workspaces`);
+        const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}/workspaces`));
         const body = await res.json();
         if (!res.ok) throw new Error(body.error ?? "Failed to load workspaces");
         if (cancelled) return;
@@ -229,7 +234,7 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
         </p>
         {draft.projectId && (
           <Link
-            href={`/projects/${encodeURIComponent(draft.projectId)}`}
+            href={orgUrl(`/projects/${encodeURIComponent(draft.projectId)}`)}
             className="text-[11px] text-indigo-300 hover:underline"
             onClick={(e) => e.stopPropagation()}
           >
@@ -258,7 +263,7 @@ export function TaskFields({ task, tasks, agents, workflows, isMutating, draft }
           </select>
           {draft.workspaceId && (
             <Link
-              href={`/workspaces/${encodeURIComponent(draft.workspaceId)}`}
+              href={orgUrl(`/workspaces/${encodeURIComponent(draft.workspaceId)}`)}
               className="text-[11px] text-indigo-300 hover:underline"
               onClick={(e) => e.stopPropagation()}
             >

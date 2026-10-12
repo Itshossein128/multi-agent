@@ -42,10 +42,7 @@ export function registerTaskCommentRoutes(
     if (!content) throw new ApiError(400, "Comment content is required");
     if (content.length > 10_000) throw new ApiError(400, "Comment exceeds 10,000 character limit");
 
-    const internalSecret = process.env.INTERNAL_PRINCIPAL_SECRET;
-    const isInternalWorker =
-      (Boolean(internalSecret) && c.req.header("x-internal-worker-secret") === internalSecret) ||
-      principal.userId.startsWith("internal:agent:");
+    const isInternalWorker = principal.principalKind === "service";
 
     let authorType: "user" | "agent" | "system" = "user";
     let authorId = principal.userId;

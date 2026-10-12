@@ -18,7 +18,11 @@ const forwardedHeaders = new Set([
 export async function proxyExecution(request: Request, path: string): Promise<Response> {
   const base = process.env.EXECUTION_SERVER_URL ?? "http://localhost:4000";
   const secret = process.env.INTERNAL_PRINCIPAL_SECRET;
-  return proxyExecutionWith(request, path, { principal: getAuthenticatedPrincipal, fetchImpl: fetch, secret, base });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal && new URL(request.url).pathname.startsWith("/api/o/")) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  return proxyExecutionWith(request, path, { principal: async () => principal, fetchImpl: fetch, secret, base });
 }
 export async function proxyExecutionWith(request: Request, path: string, deps: { principal: typeof getAuthenticatedPrincipal; fetchImpl: typeof fetch; secret?: string; base?: string }): Promise<Response> {
   const principal = await deps.principal();

@@ -1,11 +1,14 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import Link from "next/link";
 import { Activity, ExternalLink } from "lucide-react";
 import { Task } from "@/lib/taskStatus";
 
 /** Cyan inspection card linking to the backend run powering this task. */
 export function LinkedRunCard({ runId }: { runId: Task["runId"] }) {
+  const orgUrl = useOrgPath();
   if (!runId) return null;
   return (
     <div className="rounded-lg border border-cyan-800/40 bg-cyan-950/20 p-3 space-y-1.5">
@@ -15,7 +18,7 @@ export function LinkedRunCard({ runId }: { runId: Task["runId"] }) {
           Linked Runtime Run
         </span>
         <Link
-          href={`/runs/${runId}`}
+          href={orgUrl(`/runs/${runId}`)}
           className="flex items-center gap-1 text-xs text-cyan-400 hover:underline"
         >
           View Details

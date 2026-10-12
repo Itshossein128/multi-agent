@@ -1,5 +1,9 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -19,6 +23,7 @@ interface ProjectRow {
 }
 
 export default function WorkspacesPage() {
+  const orgUrl = useOrgPath();
   const [items, setItems] = useState<WorkspaceRow[]>([]);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +39,7 @@ export default function WorkspacesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [wsRes, projRes] = await Promise.all([fetch("/api/workspaces"), fetch("/api/projects")]);
+      const [wsRes, projRes] = await Promise.all([fetch(scopedApiPath("/api/workspaces")), fetch(scopedApiPath("/api/projects"))]);
       const [wsBody, projBody] = await Promise.all([wsRes.json(), projRes.json()]);
       if (!wsRes.ok) throw new Error(wsBody.error ?? "Failed to load workspaces");
       if (!projRes.ok) throw new Error(projBody.error ?? "Failed to load projects");
@@ -78,7 +83,7 @@ export default function WorkspacesPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/workspaces`, {
+      const res = await fetch(scopedApiPath(`/api/projects/${encodeURIComponent(projectId)}/workspaces`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(name.trim() ? { name: name.trim() } : {}),
@@ -98,7 +103,7 @@ export default function WorkspacesPage() {
     if (!window.confirm("Retire this workspace? It will leave the active list and cannot receive new tasks.")) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/workspaces", {
+      const res = await fetch(scopedApiPath("/api/workspaces"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "retire", id }),
@@ -118,7 +123,7 @@ export default function WorkspacesPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/workspaces/${encodeURIComponent(id)}`, {
+      const res = await fetch(scopedApiPath(`/api/workspaces/${encodeURIComponent(id)}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: renameValue.trim() }),
@@ -183,7 +188,7 @@ export default function WorkspacesPage() {
         <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/40 p-8 text-center space-y-2">
           <p className="text-sm text-zinc-300">No active workspaces yet.</p>
           <p className="text-xs text-zinc-500">Create one above under a project, or start from a project dashboard.</p>
-          <Link href="/projects" className="inline-block text-xs text-indigo-300 hover:underline">Go to Projects →</Link>
+          <Link href={orgUrl("/projects")} className="inline-block text-xs text-indigo-300 hover:underline">Go to Projects →</Link>
         </div>
       )}
 
@@ -193,7 +198,7 @@ export default function WorkspacesPage() {
             {groupProjectId === "unknown" ? (
               "Unknown project"
             ) : (
-              <Link href={`/projects/${encodeURIComponent(groupProjectId)}`} className="text-indigo-300 hover:underline">
+              <Link href={orgUrl(`/projects/${encodeURIComponent(groupProjectId)}`)} className="text-indigo-300 hover:underline">
                 {projectNameById.get(groupProjectId) ?? groupProjectId}
               </Link>
             )}
@@ -218,7 +223,7 @@ export default function WorkspacesPage() {
                     </form>
                   ) : (
                     <>
-                      <Link href={`/workspaces/${encodeURIComponent(item.id)}`} className="font-medium text-indigo-300 hover:underline">
+                      <Link href={orgUrl(`/workspaces/${encodeURIComponent(item.id)}`)} className="font-medium text-indigo-300 hover:underline">
                         {item.name}
                       </Link>
                       <p className="text-xs text-zinc-500 break-all">{item.id}</p>

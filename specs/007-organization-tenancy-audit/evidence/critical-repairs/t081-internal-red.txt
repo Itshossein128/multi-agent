@@ -1,0 +1,308 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationWriteIsolation.test.ts -t 'internal writes'
+
+FAIL tests/organizationWriteIsolation.test.ts (5.228 s)
+  T081 memory writes preserve the organization boundary
+    ✕ workflow internal writes with explicit record tenant cannot overwrite a foreign ID (6 ms)
+    ✕ agent internal writes with explicit record tenant cannot overwrite a foreign ID (2 ms)
+    ✕ tool internal writes with explicit record tenant cannot overwrite a foreign ID (2 ms)
+    ✕ project internal writes with explicit record tenant cannot overwrite a foreign ID (2 ms)
+    ✕ task internal writes with explicit record tenant cannot overwrite a foreign ID (2 ms)
+    ✕ workspace internal writes with explicit record tenant cannot overwrite a foreign ID (2 ms)
+    ✕ repository internal writes with explicit record tenant cannot overwrite a foreign ID (1 ms)
+    ✕ comment internal writes with explicit record tenant cannot overwrite a foreign ID (1 ms)
+    ✕ routine internal writes with explicit record tenant cannot overwrite a foreign ID (1 ms)
+    ✕ webhook internal writes with explicit record tenant cannot overwrite a foreign ID (1 ms)
+    ○ skipped workflow refuses a foreign ID without modifying the stored record
+    ○ skipped agent refuses a foreign ID without modifying the stored record
+    ○ skipped tool refuses a foreign ID without modifying the stored record
+    ○ skipped project refuses a foreign ID without modifying the stored record
+    ○ skipped task refuses a foreign ID without modifying the stored record
+    ○ skipped workspace refuses a foreign ID without modifying the stored record
+    ○ skipped repository refuses a foreign ID without modifying the stored record
+    ○ skipped comment refuses a foreign ID without modifying the stored record
+    ○ skipped routine refuses a foreign ID without modifying the stored record
+    ○ skipped webhook refuses a foreign ID without modifying the stored record
+    ○ skipped workflow import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped agent import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped tool import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped valid imports create personal copies and update only their own IDs
+    ○ skipped concurrent HTTP imports reject the losing organization uniformly and roll back its batch
+  T081 postgres writes preserve the organization boundary
+    ✕ workflow internal writes with explicit record tenant cannot overwrite a foreign ID (102 ms)
+    ✕ agent internal writes with explicit record tenant cannot overwrite a foreign ID (79 ms)
+    ✕ tool internal writes with explicit record tenant cannot overwrite a foreign ID (78 ms)
+    ✓ project internal writes with explicit record tenant cannot overwrite a foreign ID (96 ms)
+    ✓ task internal writes with explicit record tenant cannot overwrite a foreign ID (118 ms)
+    ✓ workspace internal writes with explicit record tenant cannot overwrite a foreign ID (67 ms)
+    ✓ repository internal writes with explicit record tenant cannot overwrite a foreign ID (84 ms)
+    ✓ comment internal writes with explicit record tenant cannot overwrite a foreign ID (67 ms)
+    ✓ routine internal writes with explicit record tenant cannot overwrite a foreign ID (65 ms)
+    ✓ webhook internal writes with explicit record tenant cannot overwrite a foreign ID (57 ms)
+    ○ skipped workflow refuses a foreign ID without modifying the stored record
+    ○ skipped agent refuses a foreign ID without modifying the stored record
+    ○ skipped tool refuses a foreign ID without modifying the stored record
+    ○ skipped project refuses a foreign ID without modifying the stored record
+    ○ skipped task refuses a foreign ID without modifying the stored record
+    ○ skipped workspace refuses a foreign ID without modifying the stored record
+    ○ skipped repository refuses a foreign ID without modifying the stored record
+    ○ skipped comment refuses a foreign ID without modifying the stored record
+    ○ skipped routine refuses a foreign ID without modifying the stored record
+    ○ skipped webhook refuses a foreign ID without modifying the stored record
+    ○ skipped workflow import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped agent import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped tool import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped valid imports create personal copies and update only their own IDs
+    ○ skipped concurrent HTTP imports reject the losing organization uniformly and roll back its batch
+    ○ skipped workflow concurrently created with one ID cannot move between organizations
+    ○ skipped agent concurrently created with one ID cannot move between organizations
+    ○ skipped tool concurrently created with one ID cannot move between organizations
+    ○ skipped project concurrently created with one ID cannot move between organizations
+    ○ skipped task concurrently created with one ID cannot move between organizations
+    ○ skipped workspace concurrently created with one ID cannot move between organizations
+    ○ skipped repository concurrently created with one ID cannot move between organizations
+    ○ skipped comment concurrently created with one ID cannot move between organizations
+    ○ skipped routine concurrently created with one ID cannot move between organizations
+    ○ skipped webhook concurrently created with one ID cannot move between organizations
+
+  ● T081 memory writes preserve the organization boundary › workflow internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"edges": [], "id": "1db15d0b-05cd-4838-915b-400df75987ce", "name": "Original", "nodes": [], "ownerId": "owner", "tenantId": "b-6407ea67-3baa-40b8-9f44-331f4305be25", "updatedAt": "2026-10-11T20:14:40.412Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › agent internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"backend": {"model": "gpt-4o", "provider": "openai", "type": "api"}, "createdAt": "2026-10-11T20:14:40.429Z", "description": "", "enabled": true, "id": "886c6f5c-c1e9-4ed7-81b1-1b706d0fb153", "metadata": {}, "name": "Original", "ownerId": "owner", "systemPrompt": "", "tenantId": "b-dccc1570-2cd1-40df-83ed-67c56732ef10", "tools": [], "updatedAt": "2026-10-11T20:14:40.429Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › tool internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"category": "function", "configuration": {}, "createdAt": "2026-10-11T20:14:40.432Z", "description": "", "enabled": true, "executionPolicy": {"idempotency": "optional", "requiresApproval": false, "retryable": true}, "id": "2b86f8b7-bfb2-4afe-81a4-6cfd277edc3c", "impact": "read-only", "inputSchema": {"properties": {}, "type": "object"}, "metadata": {}, "name": "Original", "outputSchema": {"properties": {}, "type": "object"}, "ownerId": "owner", "tenantId": "b-1ad5e0f8-a9e8-4176-ad2d-6cd3f8182dd0", "updatedAt": "2026-10-11T20:14:40.432Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › project internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-11T20:14:40.433Z", "description": "", "id": "d5da17ba-fe84-4398-9325-c75507368007", "name": "Original", "nameSource": "manual", "ownerId": "owner", "settings": {}, "status": "active", "tenantId": "b-7da4c79d-1160-4ba5-b874-9c6da109ca16", "updatedAt": "2026-10-11T20:14:40.433Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › task internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"assignedAgent": null, "assignedAgents": [], "completedAt": null, "createdAt": "2026-10-11T20:14:40.435Z", "dependencies": [], "description": "", "id": "365cf6cb-1429-47d4-9942-7d6e9e5965b9", "lastError": null, "metadata": {}, "output": null, "ownerId": "owner", "parentTaskId": null, "paused": false, "priority": "medium", "projectId": "225cd9b5-7e6d-4416-8150-855f85ab31cd", "retryCount": 0, "runId": null, "startedAt": null, "status": "backlog", "tenantId": "b-b6cfe3bf-ff9d-43eb-a78e-46eeaa7ef474", "title": "Original", "updatedAt": "2026-10-11T20:14:40.435Z", "workflowId": null, "workspaceId": null}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › workspace internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-11T20:14:40.437Z", "description": "", "effectiveSettings": {}, "id": "682dcb11-92d5-43db-842c-8825943df58f", "name": "Original", "nameSource": "manual", "overriddenKeys": [], "ownerId": "owner", "projectId": "7b912ab1-28e9-4f76-999c-6a461915aaf2", "settings": {}, "settingsOverrides": {}, "status": "active", "tenantId": "b-d57dd2ab-dcf9-4f0d-8404-c38f00f08b36", "updatedAt": "2026-10-11T20:14:40.437Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › repository internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-11T20:14:40.439Z", "defaultBranch": "main", "id": "c0a186eb-cb64-466b-b57b-f4efd095c6e5", "name": "Original", "ownerId": "owner", "projectId": "4171550f-2b9c-4f97-b740-9a39fb8c957e", "source": "https://example.test/repo", "status": "active", "tenantId": "b-497660d9-fe89-49fd-ac89-2728b5dffeb3", "updatedAt": "2026-10-11T20:14:40.439Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › comment internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"authorId": "owner", "authorType": "user", "content": "Original", "createdAt": "2026-10-11T20:14:40.441Z", "id": "55eacd96-435b-449c-814d-97400b8885a0", "mentions": [], "ownerId": "owner", "taskId": "d89b95b6-03c7-44e5-a980-086961c8e03d", "tenantId": "b-15c0c47e-1c02-470d-a6cb-9dbc6fe399fa", "updatedAt": "2026-10-11T20:14:40.441Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › routine internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-11T20:14:40.442Z", "description": "", "enabled": false, "id": "035def88-5c85-4469-9114-9f42ec613944", "inputPayload": {}, "misfirePolicy": "skip", "name": "Original", "ownerId": "owner", "scheduleExpr": "60", "scheduleType": "interval", "targetId": "agent", "targetType": "agent", "tenantId": "b-57885b4e-171a-4976-9538-9ca4f445b1c0", "timezone": "UTC", "updatedAt": "2026-10-11T20:14:40.442Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 memory writes preserve the organization boundary › webhook internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"createdAt": "2026-10-11T20:14:40.445Z", "description": "", "enabled": false, "id": "99a0682f-e4b5-403d-9c19-6a693b414571", "name": "Original", "ownerId": "owner", "rateLimitPerMinute": 10, "secretHash": "hash", "targetId": "agent", "targetType": "agent", "tenantId": "b-17e90a0f-b37e-416d-a217-0a1986e273e0", "updatedAt": "2026-10-11T20:14:40.445Z"}
+
+      79 |         },
+      80 |       });
+    > 81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+         |             ^
+      82 |       expect(await c.read(store, id)).toEqual(original);
+      83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+      84 |     });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:81:13
+
+  ● T081 postgres writes preserve the organization boundary › workflow internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).resolves.toBeDefined()
+
+    Received promise rejected instead of resolved
+    Rejected to value: [error: null value in column "tenant_id" of relation "studio_workflows" violates not-null constraint]
+
+      81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+      82 |       expect(await c.read(store, id)).toEqual(original);
+    > 83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+         |             ^
+      84 |     });
+      85 |
+      86 |     test.each(['workflow', 'agent', 'tool'])('%s import rejects foreign/private/system collisions atomically through HTTP', async kind => {
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:83:13
+
+  ● T081 postgres writes preserve the organization boundary › agent internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).resolves.toBeDefined()
+
+    Received promise rejected instead of resolved
+    Rejected to value: [error: new row for relation "studio_agents" violates check constraint "studio_agents_tenant_system_check"]
+
+      81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+      82 |       expect(await c.read(store, id)).toEqual(original);
+    > 83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+         |             ^
+      84 |     });
+      85 |
+      86 |     test.each(['workflow', 'agent', 'tool'])('%s import rejects foreign/private/system collisions atomically through HTTP', async kind => {
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:83:13
+
+  ● T081 postgres writes preserve the organization boundary › tool internal writes with explicit record tenant cannot overwrite a foreign ID
+
+    expect(received).resolves.toBeDefined()
+
+    Received promise rejected instead of resolved
+    Rejected to value: [error: new row for relation "studio_tools" violates check constraint "studio_tools_tenant_system_check"]
+
+      81 |       await expect(c.write(internal, id, b)).rejects.toThrow();
+      82 |       expect(await c.read(store, id)).toEqual(original);
+    > 83 |       await expect(c.write(internal, id, a)).resolves.toBeDefined();
+         |             ^
+      84 |     });
+      85 |
+      86 |     test.each(['workflow', 'agent', 'tool'])('%s import rejects foreign/private/system collisions atomically through HTTP', async kind => {
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at tests/organizationWriteIsolation.test.ts:83:13
+
+Test Suites: 1 failed, 1 total
+Tests:       13 failed, 40 skipped, 7 passed, 60 total
+Snapshots:   0 total
+Time:        5.446 s
+Ran all test suites matching /tests\/organizationWriteIsolation.test.ts/i with tests matching "internal writes".
+ ELIFECYCLE  Test failed. See above for more details.

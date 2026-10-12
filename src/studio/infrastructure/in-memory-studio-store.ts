@@ -66,6 +66,7 @@ function workspaceRepoStateKey(
 }
 
 export class InMemoryStudioStore implements StudioStore {
+  private readonly organizationLocks = new Map<string, Promise<void>>();
   private workflows = new Map<string, WorkflowDefinition>();
   private agents = new Map<string, AgentRecord>();
   private tools = new Map<string, ToolRecord>();
@@ -119,7 +120,7 @@ export class InMemoryStudioStore implements StudioStore {
     return [...this.workflows.values()]
       .filter((wf) => {
         if (!principal) return true;
-        const isSystem = principal.userId.startsWith("system") || principal.userId.startsWith("internal:");
+        const isSystem = principal.principalKind === "service";
         return Boolean(wf.tenantId && wf.tenantId === principal.tenantId && (isSystem || !wf.ownerId || wf.ownerId === principal.userId));
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -129,14 +130,28 @@ export class InMemoryStudioStore implements StudioStore {
     const wf = this.workflows.get(id);
     if (!wf) return null;
     if (principal) {
-      const isSystem = principal.userId.startsWith("system") || principal.userId.startsWith("internal:");
+      const isSystem = principal.principalKind === "service";
       if (!wf.tenantId || wf.tenantId !== principal.tenantId) return null;
       if (!isSystem && wf.ownerId && wf.ownerId !== principal.userId) return null;
     }
     return structuredClone(wf);
   }
 
+  private assertWriteIdentity(
+    existing: { tenantId?: string | null; ownerId?: string | null; isSystem?: boolean } | undefined,
+    record: { tenantId?: string | null; ownerId?: string | null; isSystem?: boolean },
+    principal?: StudioPrincipal,
+    personal = false,
+  ): void {
+    if (!existing) return;
+    if ((existing.tenantId ?? null) !== (principal?.tenantId ?? record.tenantId ?? null)) throw new Error("Access denied to resource");
+    if (!principal && ((personal && (existing.ownerId ?? null) !== (record.ownerId ?? null)) || Boolean(existing.isSystem) !== Boolean(record.isSystem))) {
+      throw new Error("Access denied to resource");
+    }
+  }
+
   async saveWorkflow(definition: WorkflowDefinition, principal?: StudioPrincipal) {
+    this.assertWriteIdentity(this.workflows.get(definition.id), definition, principal, true);
     if (principal) {
       const existing = this.workflows.get(definition.id);
       if (existing && (!existing.tenantId || !existing.ownerId || existing.tenantId !== principal.tenantId || existing.ownerId !== principal.userId)) {
@@ -163,7 +178,7 @@ export class InMemoryStudioStore implements StudioStore {
       .filter((agent) => {
         if (!principal) return true;
         if (agent.isSystem) return true;
-        const isSystem = principal.userId.startsWith("system") || principal.userId.startsWith("internal:");
+        const isSystem = principal.principalKind === "service";
         return Boolean(agent.tenantId && agent.tenantId === principal.tenantId && (isSystem || !agent.ownerId || agent.ownerId === principal.userId));
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -175,13 +190,14 @@ export class InMemoryStudioStore implements StudioStore {
     if (principal) {
       if (agent.isSystem) return structuredClone(agent);
       if (!agent.tenantId || agent.tenantId !== principal.tenantId) return null;
-      const isSystem = principal.userId.startsWith("system") || principal.userId.startsWith("internal:");
+      const isSystem = principal.principalKind === "service";
       if (!isSystem && agent.ownerId && agent.ownerId !== principal.userId) return null;
     }
     return structuredClone(agent);
   }
 
   async saveAgent(agent: AgentRecord, principal?: StudioPrincipal) {
+    this.assertWriteIdentity(this.agents.get(agent.id), agent, principal, true);
     if (principal) {
       const existing = this.agents.get(agent.id);
       if (existing) {
@@ -231,6 +247,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveTool(tool: ToolRecord, principal?: StudioPrincipal) {
+    this.assertWriteIdentity(this.tools.get(tool.id), tool, principal, true);
     if (principal) {
       const existing = this.tools.get(tool.id);
       if (existing) {
@@ -286,6 +303,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveTask(task: StudioTask, principal?: StudioPrincipal) {
+    this.assertWriteIdentity(this.tasks.get(task.id), task, principal, false);
     const assignedAgents = Array.isArray(task.assignedAgents)
       ? task.assignedAgents
       : task.assignedAgent
@@ -350,6 +368,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveProject(project: StudioProject, principal?: StudioPrincipal) {
+    this.assertWriteIdentity(this.projects.get(project.id), project, principal, false);
     if (principal) {
       const existing = this.projects.get(project.id);
       if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to project");
@@ -412,6 +431,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveWorkspace(workspace: StudioWorkspace, principal?: StudioPrincipal) {
+    this.assertWriteIdentity(this.workspaces.get(workspace.id), workspace, principal, false);
     if (!workspace.projectId?.trim()) throw new Error("Workspace projectId is required");
     if (principal) {
       const existing = this.workspaces.get(workspace.id);
@@ -519,6 +539,32 @@ export class InMemoryStudioStore implements StudioStore {
       .map((org) => structuredClone(org));
   }
 
+  async organizationTransaction<T>(organizationId: string, operation: (store: StudioStore) => Promise<T>): Promise<T> {
+    const previous = this.organizationLocks.get(organizationId) ?? Promise.resolve();
+    let release!: () => void;
+    const lock = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => lock);
+    this.organizationLocks.set(organizationId, tail);
+    await previous;
+    try { return await this.transaction(operation); }
+    finally { release(); if (this.organizationLocks.get(organizationId) === tail) this.organizationLocks.delete(organizationId); }
+  }
+
+  async listOrganizationAudit(organizationId: string): Promise<OrganizationAuditEntry[]> {
+    return [...this.organizationAudit.values()].filter(e => e.organizationId === organizationId).map(e => structuredClone(e));
+  }
+
+  async listInvitationsForUser(userId: string): Promise<OrganizationMembership[]> {
+    return [...this.memberships.values()].filter(m => m.userId === userId && m.status === "invited" && this.organizations.get(m.organizationId)?.status === "active").map(m => structuredClone(m));
+  }
+
+  async findOrganizationUser(identifier: { userId?: string; email?: string }): Promise<string | null> {
+    // This adapter has no account directory. Test/development identities are explicit ids.
+    return identifier.userId ?? null;
+  }
+
+  async isOrganizationUserActive(_userId: string): Promise<boolean> { return true; }
+
   async getMembership(organizationId: string, userId: string): Promise<OrganizationMembership | null> {
     const membership = this.memberships.get(membershipKey(organizationId, userId));
     return membership ? structuredClone(membership) : null;
@@ -539,6 +585,7 @@ export class InMemoryStudioStore implements StudioStore {
 
   async appendOrganizationAudit(entry: OrganizationAuditEntry): Promise<void> {
     const id = entry.id ?? uid("org-audit");
+    if (this.organizationAudit.has(id)) throw new Error("Organization audit is append-only.");
     this.organizationAudit.set(id, {
       ...structuredClone(entry),
       id,
@@ -569,6 +616,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveProjectRepository(repo: ProjectRepository, principal?: StudioPrincipal): Promise<ProjectRepository> {
+    this.assertWriteIdentity(this.projectRepositories.get(repo.id), repo, principal, false);
     if (principal) {
       const existing = this.projectRepositories.get(repo.id);
       if (existing && existing.tenantId !== principal.tenantId) {
@@ -702,24 +750,29 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal) {
-    for (const workflow of workspace.workflows) {
-      const definition = principal
-        ? { ...workflow, ownerId: principal.userId, tenantId: principal.tenantId }
-        : workflow;
-      this.workflows.set(definition.id, structuredClone(definition));
-    }
-    for (const agent of workspace.agents) {
-      const record = principal
-        ? { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false }
-        : agent;
-      this.agents.set(record.id, structuredClone(record));
-    }
-    for (const tool of workspace.tools) {
-      const record = principal
-        ? { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false }
-        : tool;
-      this.tools.set(record.id, structuredClone(record));
-    }
+    await this.transaction(async store => {
+      // Imports may update personal records, but cannot claim existing shared/system IDs.
+      for (const [records, read] of [
+        [workspace.workflows, store.getWorkflow.bind(store)],
+        [workspace.agents, store.getAgent.bind(store)],
+        [workspace.tools, store.getTool.bind(store)],
+      ] as const) {
+        for (const record of records) {
+          const existing = await read(record.id);
+          if (principal && existing && (existing.tenantId !== principal.tenantId || existing.ownerId !== principal.userId || ('isSystem' in existing && existing.isSystem))) {
+            throw new Error('Access denied to imported resource');
+          }
+        }
+      }
+      for (const workflow of workspace.workflows) await store.saveWorkflow(workflow, principal);
+      for (const agent of workspace.agents) await store.saveAgent(agent, principal);
+      for (const tool of workspace.tools) await store.saveTool(tool, principal);
+    }).catch(error => {
+      if (error instanceof Error && error.message === 'In-memory transaction conflict') {
+        throw new Error('Access denied to imported resource');
+      }
+      throw error;
+    });
   }
 
   // --- Task Comments ---
@@ -739,6 +792,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveComment(comment: TaskComment, principal?: StudioPrincipal): Promise<TaskComment> {
+    this.assertWriteIdentity(this.comments.get(comment.id), comment, principal, false);
     if (principal) {
       const existing = this.comments.get(comment.id);
       if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to task comment");
@@ -860,6 +914,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveRoutine(routine: RoutineRecord, principal?: StudioPrincipal): Promise<RoutineRecord> {
+    this.assertWriteIdentity(this.routines.get(routine.id), routine, principal, false);
     if (principal) {
       const existing = this.routines.get(routine.id);
       if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to routine");
@@ -914,6 +969,7 @@ export class InMemoryStudioStore implements StudioStore {
   }
 
   async saveWebhookTrigger(trigger: WebhookTriggerRecord, principal?: StudioPrincipal): Promise<WebhookTriggerRecord> {
+    this.assertWriteIdentity(this.webhookTriggers.get(trigger.id), trigger, principal, false);
     if (principal) {
       const existing = this.webhookTriggers.get(trigger.id);
       if (existing && existing.tenantId !== principal.tenantId) throw new Error("Access denied to webhook trigger");

@@ -1,0 +1,86 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationServicePrincipal.test.ts
+
+FAIL tests/organizationServicePrincipal.test.ts
+  ✕ identity name system-imposter cannot read another user workflow (5 ms)
+  ✕ identity name internal:agent:imposter cannot read another user workflow (3 ms)
+  ✕ service kind is signed, explicit and tenant-bound; an ordinary assertion never infers kind from its name (4 ms)
+  ✕ typed service can read a same-org private workflow but not another organization (1 ms)
+
+  ● identity name system-imposter cannot read another user workflow
+
+    expect(received).toBeNull()
+
+    Received: {"edges": [], "id": "private", "name": "Private", "nodes": [], "ownerId": "owner", "tenantId": "org-a", "updatedAt": "2026-10-11T18:26:37.377Z"}
+
+       7 |   const store = new InMemoryStudioStore(); await seedUs2(store);
+       8 |   await store.saveWorkflow({ id: 'private', name: 'Private', nodes: [], edges: [], updatedAt: new Date().toISOString(), ownerId: 'owner', tenantId: 'org-a' } as Parameters<typeof store.saveWorkflow>[0]);
+    >  9 |   expect(await store.getWorkflow('private', { userId, tenantId: 'org-a' })).toBeNull();
+         |                                                                             ^
+      10 | });
+      11 | test('service kind is signed, explicit and tenant-bound; an ordinary assertion never infers kind from its name', () => {
+      12 |   const service = { userId: 'worker', tenantId: 'org-a', principalKind: 'service' as const };
+
+      at tests/organizationServicePrincipal.test.ts:9:77
+
+  ● identity name internal:agent:imposter cannot read another user workflow
+
+    expect(received).toBeNull()
+
+    Received: {"edges": [], "id": "private", "name": "Private", "nodes": [], "ownerId": "owner", "tenantId": "org-a", "updatedAt": "2026-10-11T18:26:37.386Z"}
+
+       7 |   const store = new InMemoryStudioStore(); await seedUs2(store);
+       8 |   await store.saveWorkflow({ id: 'private', name: 'Private', nodes: [], edges: [], updatedAt: new Date().toISOString(), ownerId: 'owner', tenantId: 'org-a' } as Parameters<typeof store.saveWorkflow>[0]);
+    >  9 |   expect(await store.getWorkflow('private', { userId, tenantId: 'org-a' })).toBeNull();
+         |                                                                             ^
+      10 | });
+      11 | test('service kind is signed, explicit and tenant-bound; an ordinary assertion never infers kind from its name', () => {
+      12 |   const service = { userId: 'worker', tenantId: 'org-a', principalKind: 'service' as const };
+
+      at tests/organizationServicePrincipal.test.ts:9:77
+
+  ● service kind is signed, explicit and tenant-bound; an ordinary assertion never infers kind from its name
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+    -   "principalKind": "service",
+        "tenantId": "org-a",
+      }
+
+      11 | test('service kind is signed, explicit and tenant-bound; an ordinary assertion never infers kind from its name', () => {
+      12 |   const service = { userId: 'worker', tenantId: 'org-a', principalKind: 'service' as const };
+    > 13 |   expect(verifyInternalPrincipalAssertion(createInternalPrincipalAssertion(service, 'secret'), 'secret')).toMatchObject({ principalKind: 'service', tenantId: 'org-a' });
+         |                                                                                                           ^
+      14 |   expect(verifyInternalPrincipalAssertion(createInternalPrincipalAssertion({ userId: 'system-fake', tenantId: 'org-a' }, 'secret'), 'secret')).toMatchObject({ principalKind: 'user' });
+      15 | });
+      16 | test('typed service can read a same-org private workflow but not another organization', async () => {
+
+      at Object.<anonymous> (tests/organizationServicePrincipal.test.ts:13:107)
+
+  ● typed service can read a same-org private workflow but not another organization
+
+    expect(received).not.toBeNull()
+
+    Received: null
+
+      18 |   await store.saveWorkflow({ id: 'private', name: 'Private', nodes: [], edges: [], updatedAt: new Date().toISOString(), ownerId: 'owner', tenantId: 'org-a' } as Parameters<typeof store.saveWorkflow>[0]);
+      19 |   const service = { userId: 'worker', tenantId: 'org-a', principalKind: 'service' } as StudioPrincipal;
+    > 20 |   expect(await store.getWorkflow('private', service)).not.toBeNull();
+         |                                                           ^
+      21 |   expect(await store.getWorkflow('private', { ...service, tenantId: 'org-b' })).toBeNull();
+      22 | });
+      23 |
+
+      at Object.<anonymous> (tests/organizationServicePrincipal.test.ts:20:59)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 4 total
+Snapshots:   0 total
+Time:        2.905 s
+Ran all test suites matching /tests\/organizationServicePrincipal.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

@@ -1,0 +1,149 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationWriteIsolation.test.ts tests/organizationCredentialMutations.test.ts tests/organizationShadowSafety.test.ts tests/organizationShadowGate.test.ts
+
+PASS tests/organizationWriteIsolation.test.ts (9.256 s)
+PASS tests/organizationCredentialMutations.test.ts
+PASS tests/organizationShadowGate.test.ts
+PASS tests/organizationShadowSafety.test.ts
+  ● Console
+
+    console.warn
+      {"timestamp":"2026-10-11T20:16:45.731Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"member","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at tests/organizationShadowSafety.test.ts:31:13
+
+    console.warn
+      {"timestamp":"2026-10-11T20:16:45.733Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"member","method":"POST","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at tests/organizationShadowSafety.test.ts:32:19
+
+    console.warn
+      {"timestamp":"2026-10-11T20:16:45.739Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"member","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at tests/organizationShadowSafety.test.ts:31:13
+
+    console.warn
+      {"timestamp":"2026-10-11T20:16:45.740Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"member","method":"POST","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at tests/organizationShadowSafety.test.ts:32:19
+
+    console.warn
+      {"timestamp":"2026-10-11T20:16:45.747Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"owner","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at Object.<anonymous> (tests/organizationShadowSafety.test.ts:54:49)
+
+    console.warn
+      {"timestamp":"2026-10-11T20:16:45.748Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"owner","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at Object.<anonymous> (tests/organizationShadowSafety.test.ts:57:51)
+
+    console.warn
+      {"timestamp":"2026-10-11T20:16:45.750Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"owner","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at Object.<anonymous> (tests/organizationShadowSafety.test.ts:59:48)
+
+
+Test Suites: 4 passed, 4 total
+Tests:       183 passed, 183 total
+Snapshots:   0 total
+Time:        15.057 s
+Ran all test suites matching /tests\/organizationWriteIsolation.test.ts|tests\/organizationCredentialMutations.test.ts|tests\/organizationShadowSafety.test.ts|tests\/organizationShadowGate.test.ts/i.

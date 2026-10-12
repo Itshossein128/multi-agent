@@ -1,0 +1,164 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationShadowSafety.test.ts
+
+  console.warn
+    {"timestamp":"2026-10-11T20:02:51.831Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"member","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at tests/organizationShadowSafety.test.ts:31:13
+
+  console.warn
+    {"timestamp":"2026-10-11T20:02:51.869Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"member","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at tests/organizationShadowSafety.test.ts:31:13
+
+  console.warn
+    {"timestamp":"2026-10-11T20:02:51.887Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"owner","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at Object.<anonymous> (tests/organizationShadowSafety.test.ts:54:49)
+
+  console.warn
+    {"timestamp":"2026-10-11T20:02:51.891Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"owner","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at Object.<anonymous> (tests/organizationShadowSafety.test.ts:57:51)
+
+  console.warn
+    {"timestamp":"2026-10-11T20:02:51.896Z","level":"warn","event":"authz.would_deny","organizationId":"org-a","userId":"owner","method":"GET","path":"/projects"}
+
+      14 |   const record = { timestamp: new Date().toISOString(), level, event, ...safeContext };
+      15 |   // One line per event keeps local and hosted log collectors machine-readable.
+    > 16 |   console[level](JSON.stringify(record));
+         |                 ^
+      17 | }
+      18 |
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/api/shared/http.ts:106:11
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at apps/server/src/api/shared/http.ts:39:5
+      at dispatch (node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/compose.js:43:17)
+      at node_modules/.pnpm/hono@4.13.7/node_modules/hono/dist/cjs/hono-base.js:329:25
+      at Object.<anonymous> (tests/organizationShadowSafety.test.ts:59:48)
+
+FAIL tests/organizationShadowSafety.test.ts
+  T082 shadow mode is diagnostics under maintenance, never weaker serving
+    ✕ restart/config downgrade after removed members cannot reopen reads or writes (47 ms)
+    ✕ restart/config downgrade after suspended members cannot reopen reads or writes (6 ms)
+    ✕ valid owner traffic is diagnosed but cannot mutate data in shadow, even before another member joins (13 ms)
+    ✓ disabled accounts, suspended organizations and absent organizations all fail closed in shadow (13 ms)
+    ✓ enforce still serves authorized requests and denies stale signed assertions immediately (6 ms)
+
+  ● T082 shadow mode is diagnostics under maintenance, never weaker serving › restart/config downgrade after removed members cannot reopen reads or writes
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 503
+    Received: 200
+
+      29 |     process.env.ORG_MEMBERSHIP_ENFORCEMENT = 'shadow';
+      30 |     const downgraded = signedApp('member');
+    > 31 |     expect((await downgraded.app.request('/projects', { headers: downgraded.headers })).status).toBe(503);
+         |                                                                                                 ^
+      32 |     const write = await downgraded.app.request('/projects', { ...jsonRequest('POST', { name: 'Unauthorized' }), headers: { ...downgraded.headers, 'content-type': 'application/json' } });
+      33 |     expect(write.status).toBe(503);
+      34 |     expect(await store.listProjects()).toEqual([]);
+
+      at tests/organizationShadowSafety.test.ts:31:97
+
+  ● T082 shadow mode is diagnostics under maintenance, never weaker serving › restart/config downgrade after suspended members cannot reopen reads or writes
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 503
+    Received: 200
+
+      29 |     process.env.ORG_MEMBERSHIP_ENFORCEMENT = 'shadow';
+      30 |     const downgraded = signedApp('member');
+    > 31 |     expect((await downgraded.app.request('/projects', { headers: downgraded.headers })).status).toBe(503);
+         |                                                                                                 ^
+      32 |     const write = await downgraded.app.request('/projects', { ...jsonRequest('POST', { name: 'Unauthorized' }), headers: { ...downgraded.headers, 'content-type': 'application/json' } });
+      33 |     expect(write.status).toBe(503);
+      34 |     expect(await store.listProjects()).toEqual([]);
+
+      at tests/organizationShadowSafety.test.ts:31:97
+
+  ● T082 shadow mode is diagnostics under maintenance, never weaker serving › valid owner traffic is diagnosed but cannot mutate data in shadow, even before another member joins
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 503
+    Received: 200
+
+      42 |     try {
+      43 |       const shadow = signedApp('owner');
+    > 44 |       expect((await shadow.app.request('/projects', { headers: shadow.headers })).status).toBe(503);
+         |                                                                                           ^
+      45 |       expect((await shadow.app.request('/projects', { ...jsonRequest('POST', { name: 'Must not run' }), headers: { ...shadow.headers, 'content-type': 'application/json' } })).status).toBe(503);
+      46 |       expect(await store.listProjects()).toEqual([]);
+      47 |       expect(warn.mock.calls.filter(c => c[0] === 'authz.would_deny')).toHaveLength(0);
+
+      at Object.<anonymous> (tests/organizationShadowSafety.test.ts:44:91)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 2 passed, 5 total
+Snapshots:   0 total
+Time:        2.974 s
+Ran all test suites matching /tests\/organizationShadowSafety.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

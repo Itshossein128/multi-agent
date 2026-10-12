@@ -3,29 +3,35 @@ import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 import { ApiError } from "../shared/http";
 import { requireResource } from "./resource";
+import { requireCredentialMutationPermission } from "../../auth/credentialResourcePermissions";
 
 export class StudioToolService {
   constructor(private readonly store: StudioStore) {}
   list(principal: RequestPrincipal) { return this.store.listTools(principal); }
   async get(id: string, principal: RequestPrincipal) { return requireResource(await this.store.getTool(id, principal), "Tool"); }
-  async create(body: Parameters<typeof createToolRecord>[0], principal: RequestPrincipal) {
-    assertNoCredentials(body); const tool = createToolRecord(body);
+  async create(body: (NonNullable<Parameters<typeof createToolRecord>[0]> & { configuration?: ToolRecord['configuration'] }) | undefined, principal: RequestPrincipal) {
+    assertNoCredentials(body); const defaults = createToolRecord(body);
+    const tool = migrateToolRecord({ ...defaults, configuration: body?.configuration ?? defaults.configuration });
+    requireCredentialMutationPermission(principal, tool);
     return this.store.saveTool({ ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false }, principal);
   }
   async duplicate(id: string, principal: RequestPrincipal) {
     const original = await this.get(id, principal); const stamp = nowIso();
+    requireCredentialMutationPermission(principal, original);
     return this.store.saveTool({ ...structuredClone(original), id: uid("tool"), name: `${original.name} (copy)`, ownerId: principal.userId,
       tenantId: principal.tenantId, isSystem: false, createdAt: stamp, updatedAt: stamp }, principal);
   }
   async update(id: string, patch: Partial<Omit<ToolRecord, "id" | "createdAt">>, principal: RequestPrincipal) {
     assertNoCredentials(patch); const original = await this.get(id, principal);
     if (original.isSystem) throw new ApiError(403, "Cannot modify system tool");
+    requireCredentialMutationPermission(principal, original, patch);
     return this.store.saveTool({ ...migrateToolRecord({ ...original, ...patch }), ...patch, id: original.id, ownerId: original.ownerId,
       tenantId: original.tenantId, isSystem: false, createdAt: original.createdAt, updatedAt: nowIso() }, principal);
   }
   async delete(id: string, removeReferences: boolean, principal: RequestPrincipal) {
     const original = await this.get(id, principal);
     if (original.isSystem) throw new ApiError(403, "Cannot delete system tool");
+    requireCredentialMutationPermission(principal, original);
     const [workflows, agents] = await Promise.all([this.store.listWorkflows(principal), this.store.listAgents(principal)]);
     const referencingWorkflows = workflows.filter((workflow) => workflow.nodes.some((node) => node.type === "tool" && (node.config as { toolId?: string | null }).toolId === id));
     const referencingAgents = agents.filter((agent) => agent.tools.includes(id));

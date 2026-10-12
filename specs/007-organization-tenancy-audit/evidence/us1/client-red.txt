@@ -1,0 +1,36 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/orgRoute.test.ts tests/executionBff.test.ts
+
+FAIL tests/executionBff.test.ts
+  ● Test suite failed to run
+
+    apps/web/src/services/runService.ts:55:59 - error TS2304: Cannot find name 'API_URL'.
+
+    55   eventsUrl(runId: string, afterSequence = 0) { return `${API_URL}/runs/${encodeURIComponent(runId)}/events?sequence=${afterSequence}`; },
+                                                                 ~~~~~~~
+
+FAIL tests/orgRoute.test.ts
+  ● the browser URL determines the first request before provider effects run
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "/api/o/beta/execution"
+    Received: "/api/o/acme/execution"
+
+      21 |   try {
+      22 |     setCurrentOrgSlug("acme");
+    > 23 |     expect(executionApiBase()).toBe("/api/o/beta/execution");
+         |                                ^
+      24 |   } finally { delete (globalThis as { window?: unknown }).window; setCurrentOrgSlug(null); }
+      25 | });
+      26 |
+
+      at Object.<anonymous> (tests/orgRoute.test.ts:23:32)
+
+Test Suites: 2 failed, 2 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        7.77 s
+Ran all test suites matching /tests\/orgRoute.test.ts|tests\/executionBff.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

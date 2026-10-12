@@ -1,0 +1,148 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationContextResolver.test.ts tests/organizationHomeRedirect.test.ts tests/organizationBffPrincipal.test.ts
+
+FAIL tests/organizationBffPrincipal.test.ts
+  ● project BFF derives organization from URL despite stale session
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    Expected: ObjectContaining {"tenantId": "org-b", "userId": "alice"}, "active"
+    Received: {"tenantId": "org-a", "userId": "alice"}, "active"
+
+    Number of calls: 1
+
+      15 |   const response = await projects(new Request("http://web/api/o/beta/projects"));
+      16 |   expect(response.status).toBe(200);
+    > 17 |   expect(listProjects).toHaveBeenCalledWith(expect.objectContaining({ userId: "alice", tenantId: "org-b" }), "active");
+         |                        ^
+      18 |   expect(query.mock.calls[0][1]).toEqual(["beta", "alice"]);
+      19 | });
+      20 | test("unknown and non-member slug return the same 404 without upstream access", async () => {
+
+      at Object.<anonymous> (tests/organizationBffPrincipal.test.ts:17:24)
+
+  ● unknown and non-member slug return the same 404 without upstream access
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      22 |   for (const slug of ["foreign", "missing"]) {
+      23 |     const response = await projects(new Request(`http://web/api/o/${slug}/projects`));
+    > 24 |     expect(response.status).toBe(404);
+         |                             ^
+      25 |     expect(await response.json()).toEqual({ error: "Not found" });
+      26 |   }
+      27 |   expect(listProjects).not.toHaveBeenCalled();
+
+      at Object.<anonymous> (tests/organizationBffPrincipal.test.ts:24:29)
+
+  ● a member can create a second organization with a fresh identity
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "org-a"
+
+      32 |   expect(response.status).toBe(201);
+      33 |   expect(saveOrganization).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: "alice" }));
+    > 34 |   expect((saveOrganization as jest.Mock).mock.calls[0][1].tenantId).not.toBe("org-a");
+         |                                                                         ^
+      35 | });
+      36 |
+
+      at Object.<anonymous> (tests/organizationBffPrincipal.test.ts:34:73)
+
+FAIL tests/organizationHomeRedirect.test.ts
+  ● last active membership redirects to its organization
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "REDIRECT:/o/acme/"
+    Received message:   "REDIRECT:/onboarding/organization"
+
+          1 | jest.mock("@/auth", () => ({ auth: jest.fn() }));
+          2 | jest.mock("@/lib/db", () => ({ getDbPool: jest.fn() }));
+        > 3 | jest.mock("next/navigation", () => ({ redirect: jest.fn((path: string) => { throw new Error(`REDIRECT:${path}`); }) }), { virtual: true });
+            |                                                                                   ^
+          4 | import Home from "../apps/web/src/app/(authenticated)/page";
+          5 | import { auth } from "../apps/web/src/auth";
+          6 | import { getDbPool } from "../apps/web/src/lib/db";
+
+      at tests/organizationHomeRedirect.test.ts:3:83
+      at AuthenticatedHomePage (/home/hossein/Desktop/projects/multi-agent/apps/web/src/app/(authenticated)../../../../../page.tsx:43:13)
+      at Object.<anonymous> (tests/organizationHomeRedirect.test.ts:11:3)
+      at Object.toThrow (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (tests/organizationHomeRedirect.test.ts:11:32)
+
+  ● stale last organization falls back to first active membership
+
+    expect(received).rejects.toThrow(expected)
+
+    Expected substring: "REDIRECT:/o/beta/"
+    Received message:   "REDIRECT:/onboarding/organization"
+
+          1 | jest.mock("@/auth", () => ({ auth: jest.fn() }));
+          2 | jest.mock("@/lib/db", () => ({ getDbPool: jest.fn() }));
+        > 3 | jest.mock("next/navigation", () => ({ redirect: jest.fn((path: string) => { throw new Error(`REDIRECT:${path}`); }) }), { virtual: true });
+            |                                                                                   ^
+          4 | import Home from "../apps/web/src/app/(authenticated)/page";
+          5 | import { auth } from "../apps/web/src/auth";
+          6 | import { getDbPool } from "../apps/web/src/lib/db";
+
+      at tests/organizationHomeRedirect.test.ts:3:83
+      at AuthenticatedHomePage (/home/hossein/Desktop/projects/multi-agent/apps/web/src/app/(authenticated)../../../../../page.tsx:43:13)
+      at Object.<anonymous> (tests/organizationHomeRedirect.test.ts:15:3)
+      at Object.toThrow (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:218:22)
+      at Object.<anonymous> (tests/organizationHomeRedirect.test.ts:15:32)
+
+FAIL tests/organizationContextResolver.test.ts
+  ● OrganizationContextResolver › rechecks membership version without an explicit local invalidation
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "membershipVersion": 2,
+    -   "role": "viewer",
+    +   "membershipVersion": 1,
+    +   "role": "owner",
+      }
+
+      108 |     const membership = (await store.getMembership("org-a", "user-1"))!;
+      109 |     await store.saveMembership({ ...membership, role: "viewer", version: 2 });
+    > 110 |     expect(await resolver.resolve("org-a", "user-1")).toMatchObject({ role: "viewer", membershipVersion: 2 });
+          |                                                       ^
+      111 |     await store.saveMembership({ ...membership, status: "removed", version: 3 });
+      112 |     await expect(resolver.resolve("org-a", "user-1")).rejects.toBeInstanceOf(OrganizationContextDeniedError);
+      113 |   });
+
+      at Object.<anonymous> (tests/organizationContextResolver.test.ts:110:55)
+
+  ● OrganizationContextResolver › denies a suspended organization even when context was cached
+
+    expect(received).rejects.toBeInstanceOf()
+
+    Received promise resolved instead of rejected
+    Resolved to value: {"membershipVersion": 1, "organizationId": "org-a", "permissions": ["org.read", "org.update", "org.delete", "org.transfer_ownership", "members.manage", "budgets.manage", "agent_org.manage", "goals.create", "goals.delegate", "strategy.request", …], "principalKind": "user", "resolvedAt": 1791740577557, "role": "owner", "userId": "user-1"}
+
+      120 |     const profile = (await store.getOrganizationProfile({ userId: "user-1", tenantId: "org-a" }))!;
+      121 |     jest.spyOn(store, "getOrganizationProfile").mockResolvedValue({ ...profile, status: "suspended" });
+    > 122 |     await expect(resolver.resolve("org-a", "user-1")).rejects.toBeInstanceOf(OrganizationContextDeniedError);
+          |           ^
+      123 |   });
+      124 |
+      125 | });
+
+      at expect (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:113:15)
+      at Object.<anonymous> (tests/organizationContextResolver.test.ts:122:11)
+
+Test Suites: 3 failed, 3 total
+Tests:       7 failed, 4 passed, 11 total
+Snapshots:   0 total
+Time:        8.536 s
+Ran all test suites matching /tests\/organizationContextResolver.test.ts|tests\/organizationHomeRedirect.test.ts|tests\/organizationBffPrincipal.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

@@ -11,11 +11,12 @@ async function loadMembershipContext(userId: string, slug: string): Promise<{
 } | null> {
   const pool = getDbPool();
   const currentRes = await pool.query(
-    `SELECT o.id, o.slug, o.name
+    `SELECT o.id, o.slug, o.name, m.role
        FROM studio_organizations o
        INNER JOIN studio_organization_memberships m
          ON m.organization_id = o.id
-      WHERE lower(o.slug) = lower($1)
+      INNER JOIN studio_users u ON u.id = m.user_id
+      WHERE u.status = 'active' AND lower(o.slug) = lower($1)
         AND m.user_id = $2
         AND m.status = 'active'
         AND o.status = 'active'
@@ -25,7 +26,7 @@ async function loadMembershipContext(userId: string, slug: string): Promise<{
   if (!currentRes.rows[0]) return null;
 
   const listRes = await pool.query(
-    `SELECT o.id, o.slug, o.name
+    `SELECT o.id, o.slug, o.name, m.role
        FROM studio_organizations o
        INNER JOIN studio_organization_memberships m
          ON m.organization_id = o.id
@@ -41,6 +42,7 @@ async function loadMembershipContext(userId: string, slug: string): Promise<{
       id: String(currentRes.rows[0].id),
       slug: String(currentRes.rows[0].slug),
       name: String(currentRes.rows[0].name),
+      role: currentRes.rows[0].role,
     },
     organizations: listRes.rows.map((row) => ({
       id: String(row.id),
@@ -55,7 +57,7 @@ export default async function OrganizationLayout({
   params,
 }: {
   children: React.ReactNode;
-  params: Promise<{ orgSlug: string }> | { orgSlug: string };
+  params: Promise<{ orgSlug: string }>;
 }) {
   const { orgSlug } = await Promise.resolve(params);
   const session = await auth();

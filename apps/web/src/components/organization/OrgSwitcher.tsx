@@ -1,14 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import React from "react";
-import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useOrg } from "@/components/organization/OrgProvider";
 import { orgPath } from "@/lib/orgRoute";
 
 export function OrgSwitcher() {
   const { org, organizations } = useOrg();
-  const router = useRouter();
   const { update } = useSession();
 
   async function onChange(nextSlug: string) {
@@ -25,11 +24,12 @@ export function OrgSwitcher() {
     } catch {
       /* still navigate; layout will re-check membership */
     }
-    router.push(orgPath(nextSlug, "/projects"));
+    // A document navigation discards queries, editor state, streams and pending requests.
+    window.location.assign(orgPath(nextSlug, "/projects"));
   }
 
   return (
-    <label className="flex items-center gap-2 text-xs text-zinc-400">
+    <div><label className="flex items-center gap-2 text-xs text-zinc-400">
       <span className="shrink-0 font-medium uppercase tracking-wider text-zinc-500">Organization</span>
       <select
         aria-label="Switch organization"
@@ -43,6 +43,6 @@ export function OrgSwitcher() {
           </option>
         ))}
       </select>
-    </label>
+    </label><Link className="mt-2 block text-xs text-indigo-400" href="/invitations">Invitations</Link></div>
   );
 }

@@ -1,17 +1,20 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import type { AgentRecord, WorkflowDefinition } from "@multi-agent/types";
 import { Button } from "@/components/ui/button";
 import { Section } from "@/components/agents/AgentFields";
 
 export function ToolAssignedAgents({ toolId, agents }: { toolId: string; agents: AgentRecord[] }) {
+  const orgUrl = useOrgPath();
   const assigned = agents.filter((agent) => agent.tools.includes(toolId));
   return <Section title="Assigned agents">
     <p className="text-sm text-zinc-400">{assigned.length} agents reference this tool.</p>
     {!assigned.length && <p className="text-sm text-zinc-400">No agents have this tool assigned.</p>}
     {assigned.map((agent) => <div key={agent.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 p-3">
       <div className="min-w-0 flex-1"><p className="font-medium">{agent.name}</p><p className="break-all text-xs text-zinc-400">{agent.id} · {agent.enabled === false ? "Disabled" : "Enabled"}</p></div>
-      <a className="text-sm text-indigo-300 underline" href={`/org/agents/${encodeURIComponent(agent.id)}`}>Open agent</a>
+      <a className="text-sm text-indigo-300 underline" href={orgUrl(`/org/agents/${encodeURIComponent(agent.id)}`)}>Open agent</a>
     </div>)}
   </Section>;
 }

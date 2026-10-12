@@ -9,8 +9,8 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: { params: Promise<{ projectId: string }> }) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal) return NextResponse.json({ error: new URL(request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   const { projectId } = await context.params;
   const status = new URL(request.url).searchParams.get("status") ?? "active";
   try {
@@ -22,8 +22,8 @@ export async function GET(request: Request, context: { params: Promise<{ project
 }
 
 export async function POST(request: Request, context: { params: Promise<{ projectId: string }> }) {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const principal = await getAuthenticatedPrincipal(request);
+  if (!principal) return NextResponse.json({ error: new URL(request.url).pathname.startsWith("/api/o/") ? "Not found" : "Unauthorized" }, { status: new URL(request.url).pathname.startsWith("/api/o/") ? 404 : 401 });
   const { projectId } = await context.params;
   try {
     const body = await request.json() as {

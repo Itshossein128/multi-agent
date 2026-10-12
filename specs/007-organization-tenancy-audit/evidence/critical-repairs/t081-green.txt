@@ -1,0 +1,53 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationWriteIsolation.test.ts
+
+PASS tests/organizationWriteIsolation.test.ts (8.482 s)
+  T081 memory writes preserve the organization boundary
+    ✓ workflow refuses a foreign ID without modifying the stored record (25 ms)
+    ✓ agent refuses a foreign ID without modifying the stored record (3 ms)
+    ✓ tool refuses a foreign ID without modifying the stored record (3 ms)
+    ✓ project refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ task refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ workspace refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ repository refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ comment refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ routine refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ webhook refuses a foreign ID without modifying the stored record (2 ms)
+    ✓ workflow import rejects foreign/private/system collisions atomically through HTTP (19 ms)
+    ✓ agent import rejects foreign/private/system collisions atomically through HTTP (10 ms)
+    ✓ tool import rejects foreign/private/system collisions atomically through HTTP (12 ms)
+    ✓ valid imports create personal copies and update only their own IDs (5 ms)
+    ✓ concurrent HTTP imports reject the losing organization uniformly and roll back its batch (6 ms)
+  T081 postgres writes preserve the organization boundary
+    ✓ workflow refuses a foreign ID without modifying the stored record (105 ms)
+    ✓ agent refuses a foreign ID without modifying the stored record (73 ms)
+    ✓ tool refuses a foreign ID without modifying the stored record (63 ms)
+    ✓ project refuses a foreign ID without modifying the stored record (68 ms)
+    ✓ task refuses a foreign ID without modifying the stored record (73 ms)
+    ✓ workspace refuses a foreign ID without modifying the stored record (82 ms)
+    ✓ repository refuses a foreign ID without modifying the stored record (74 ms)
+    ✓ comment refuses a foreign ID without modifying the stored record (77 ms)
+    ✓ routine refuses a foreign ID without modifying the stored record (76 ms)
+    ✓ webhook refuses a foreign ID without modifying the stored record (83 ms)
+    ✓ workflow import rejects foreign/private/system collisions atomically through HTTP (89 ms)
+    ✓ agent import rejects foreign/private/system collisions atomically through HTTP (115 ms)
+    ✓ tool import rejects foreign/private/system collisions atomically through HTTP (113 ms)
+    ✓ valid imports create personal copies and update only their own IDs (83 ms)
+    ✓ concurrent HTTP imports reject the losing organization uniformly and roll back its batch (78 ms)
+    ✓ workflow concurrently created with one ID cannot move between organizations (77 ms)
+    ✓ agent concurrently created with one ID cannot move between organizations (69 ms)
+    ✓ tool concurrently created with one ID cannot move between organizations (67 ms)
+    ✓ project concurrently created with one ID cannot move between organizations (83 ms)
+    ✓ task concurrently created with one ID cannot move between organizations (83 ms)
+    ✓ workspace concurrently created with one ID cannot move between organizations (73 ms)
+    ✓ repository concurrently created with one ID cannot move between organizations (73 ms)
+    ✓ comment concurrently created with one ID cannot move between organizations (84 ms)
+    ✓ routine concurrently created with one ID cannot move between organizations (71 ms)
+    ✓ webhook concurrently created with one ID cannot move between organizations (79 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       40 passed, 40 total
+Snapshots:   0 total
+Time:        8.705 s
+Ran all test suites matching /tests\/organizationWriteIsolation.test.ts/i.

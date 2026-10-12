@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -131,7 +132,8 @@ export default function OrganizationOnboardingPage() {
   return (
     <div className="container mx-auto max-w-lg px-4 py-12 space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold text-white">Set up your organization</h1>
+        <Link className="text-sm text-indigo-400" href="/invitations">View organization invitations</Link>
+          <h1 className="text-2xl font-semibold text-white">Set up your organization</h1>
         <p className="text-sm text-zinc-400">
           Create your organization to start projects, workspaces, and tasks. You can refine settings later.
         </p>

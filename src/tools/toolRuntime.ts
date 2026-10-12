@@ -5,7 +5,8 @@ import type { ToolExecutorFactory } from "./toolExecutorFactory";
 import { boundJsonValue, boundedBytesFromEnvironment } from "../runtime/boundedValue";
 import type { CredentialGateway } from "../security/credentialGateway";
 
-export class ToolPolicyError extends Error {}
+import { ToolPolicyError } from "./errors";
+export { ToolPolicyError } from "./errors";
 
 export interface ToolIdempotencyStore {
   get(key: string): Promise<Record<string, unknown> | undefined> | (Record<string, unknown> | undefined);

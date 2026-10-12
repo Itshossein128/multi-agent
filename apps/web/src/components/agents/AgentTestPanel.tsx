@@ -1,4 +1,6 @@
 "use client";
+
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { AgentRecord } from "@multi-agent/types";
@@ -8,12 +10,13 @@ import { ExecutionTimeline } from "@/components/runs/ExecutionTimeline";
 import { Field, fieldClass, Section } from "./AgentFields";
 
 export function AgentTestPanel({ agent, dirty }: { agent: AgentRecord; dirty: boolean }) {
+  const orgId = useOptionalOrg()?.org.id ?? "none";
   const [input, setInput] = useState('{ "input": "Say hello in one sentence." }');
   const [runId, setRunId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const result = useQuery({
-    queryKey: ["agent-test", runId], enabled: Boolean(runId), retry: false,
+    queryKey: ["org", orgId, "agent-test", runId], enabled: Boolean(runId), retry: false,
     queryFn: async () => {
       const [run, events] = await Promise.all([runService.getRun(runId!), runService.getRunEvents(runId!)]);
       return { run, events };

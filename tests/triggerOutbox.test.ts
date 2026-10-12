@@ -21,7 +21,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
   describe("Task Comments & Self-Comment Loop Suppression", () => {
     let store: InMemoryStudioStore;
     let app: Hono<any>;
-    const principal = { tenantId: "tenant-outbox", userId: "user-alice" };
+    const principal = { tenantId: "tenant-outbox", userId: "user-alice", principalKind: "user" as "user" | "service" };
 
     const reviewerAgent: AgentRecord = {
       id: "agent-reviewer",
@@ -72,6 +72,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
     };
 
     beforeEach(async () => {
+      principal.principalKind = "user";
       store = new InMemoryStudioStore();
       await store.saveAgent(reviewerAgent, principal);
       await store.saveAgent(workerAgent, principal);
@@ -104,7 +105,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
     });
 
     it("suppresses loop when agent comments on its own task without mentions", async () => {
-      process.env.INTERNAL_PRINCIPAL_SECRET = "worker-secret-xyz";
+      principal.principalKind = "service";
       // Agent-worker posts progress update on task-100 (which is assigned to agent-worker)
       const res = await app.request("/tasks/task-100/comments", {
         method: "POST",
@@ -126,7 +127,7 @@ describe("Trigger Outbox & Event-Driven Wakeups", () => {
     });
 
     it("allows agent to wake another agent via @mention", async () => {
-      process.env.INTERNAL_PRINCIPAL_SECRET = "worker-secret-xyz";
+      principal.principalKind = "service";
       // Agent-worker posts comment mentioning Code Reviewer
       const res = await app.request("/tasks/task-100/comments", {
         method: "POST",

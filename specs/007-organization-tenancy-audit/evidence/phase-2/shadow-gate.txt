@@ -1,0 +1,12 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationShadowGate.test.ts
+
+PASS tests/organizationShadowGate.test.ts
+  ✓ Phase 2 shadow gate: valid owner traffic has zero authz.would_deny; denied multi-member traffic fails closed (45 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        4.688 s
+Ran all test suites matching /tests\/organizationShadowGate.test.ts/i.

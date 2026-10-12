@@ -100,7 +100,7 @@ export class InMemoryRunStore implements RunStoreContract {
         if (principal) {
           const ownerId = entry.run.ownerId ?? entry.memoryOwner?.principalId;
           const tenantId = entry.run.tenantId ?? entry.memoryOwner?.tenantId;
-          if (!ownerId || !tenantId || ownerId !== principal.userId || tenantId !== principal.tenantId) {
+          if (!ownerId || !tenantId || (ownerId !== principal.userId && !principal.permissions?.includes("runs.read_all")) || tenantId !== principal.tenantId) {
             return false;
           }
         }

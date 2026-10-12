@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { assertNoCredentials, type AgentRecord } from "@multi-agent/types";
@@ -19,6 +21,7 @@ import { AgentHeartbeatPanel } from "./AgentHeartbeatPanel";
 const sections = ["Overview", "Configuration", "Backend", "Heartbeat", "Tools", "Memory", "Workflows", "Executions", "Test"] as const;
 
 export function AgentDetail({ agentId }: { agentId: string }) {
+  const orgUrl = useOrgPath();
   const router = useRouter();
   const detail = useAgentDetail(agentId);
   const latestRun = detail.runs.data?.[0];
@@ -48,7 +51,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
   }, [dirty]);
   useEffect(() => { if (errors.length) errorRef.current?.focus(); }, [errors]);
 
-  const navigate = (url: string) => { if (!dirty || window.confirm("Discard unsaved agent changes?")) router.push(url); };
+  const navigate = (url: string) => { if (!dirty || window.confirm("Discard unsaved agent changes?")) router.push(orgUrl(url)); };
   const update = (patch: Partial<AgentRecord>) => {
     try { assertNoCredentials(patch); if (draft) setDraft({ ...draft, ...patch }); setNotice(""); }
     catch (error) { setErrors([error instanceof Error ? error.message : String(error)]); }
@@ -84,7 +87,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
             <div className="min-w-0 space-y-2"><p className="text-xs uppercase tracking-widest text-indigo-300">Agent control</p><h1 className="break-words text-2xl font-semibold">{agent.name}</h1><p className="max-w-3xl whitespace-pre-wrap text-sm text-zinc-300">{agent.description || "No description yet."}</p><p className="break-all font-mono text-xs text-zinc-400">{agent.id}</p></div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" disabled={busy || dirty} onClick={async () => {
-                try { const copy = await workflowService.duplicateAgent(agentId); router.push(`/org/agents/${copy.id}`); }
+                try { const copy = await workflowService.duplicateAgent(agentId); router.push(orgUrl(`/org/agents/${copy.id}`)); }
                 catch (error) { setErrors([error instanceof Error ? error.message : String(error)]); }
               }}>Duplicate</Button>
               <Button variant="outline" onClick={() => setSection("Test")}>Test agent</Button>
@@ -92,7 +95,7 @@ export function AgentDetail({ agentId }: { agentId: string }) {
               <Button variant="outline" disabled={busy} onClick={() => setSection("Workflows")}>Open in Graph</Button>
               <Button variant="destructive" disabled={busy || detail.workflows.isPending || detail.workflows.isError} onClick={async () => {
                 if (!window.confirm(`Delete agent “${agent.name}”?${dirty ? " Your unsaved edits in this form will be discarded." : ""}`)) return;
-                try { await detail.remove.mutateAsync(); router.push("/org"); } catch (error) { setErrors([error instanceof Error ? error.message : "Unable to delete agent."]); }
+                try { await detail.remove.mutateAsync(); router.push(orgUrl("/org")); } catch (error) { setErrors([error instanceof Error ? error.message : "Unable to delete agent."]); }
               }}>Delete</Button>
             </div>
           </div>

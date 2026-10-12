@@ -35,6 +35,12 @@ function principalFor(orgId: string, userId: string): Principal {
  * US1 T034 smoke: representative studio routes × same-org / foreign-org / non-member.
  */
 describe("organization route matrix smoke", () => {
+  const originalEnforcement = process.env.ORG_MEMBERSHIP_ENFORCEMENT;
+  beforeAll(() => { process.env.ORG_MEMBERSHIP_ENFORCEMENT = "enforce"; });
+  afterAll(() => {
+    if (originalEnforcement === undefined) delete process.env.ORG_MEMBERSHIP_ENFORCEMENT;
+    else process.env.ORG_MEMBERSHIP_ENFORCEMENT = originalEnforcement;
+  });
   it("same-org succeeds, foreign-org and non-member cannot read cross-org project data", async () => {
     const store = new InMemoryStudioStore();
     await seedOrg(store, "org-a", "acme", "alice");
@@ -96,6 +102,12 @@ describe("organization route matrix smoke", () => {
         expect(aliceProjects.map((p) => p.id)).toEqual(["proj-a"]);
         expect(bobProjects.map((p) => p.id)).toEqual(["proj-b"]);
       }
+    }
+
+    for (const path of ["/projects", "/projects/proj-b", "/budgets", "/organization"]) {
+      const denied = await appFor(principalFor("org-b", "alice")).request(path);
+      expect(denied.status).toBe(404);
+      expect(await denied.json()).toEqual({ error: "Not found" });
     }
 
     // non-member: BFF/layout must refuse before signing an assertion (resolver gate)

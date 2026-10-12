@@ -1,5 +1,9 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -11,13 +15,14 @@ interface Overview { agents: Agent[]; reportingLines: Line[]; goals: Goal[]; goa
 const base = "/api/execution/studio/organization";
 
 async function request(path: string, method: string, body?: object) {
-  const response = await fetch(base + path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const response = await fetch(scopedApiPath(base + path), { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error ?? `Request failed (${response.status})`);
   return result;
 }
 
 export default function OrganizationPage() {
+  const orgUrl = useOrgPath();
   const [data, setData] = useState<Overview>({ agents: [], reportingLines: [], goals: [], goalTasks: [] });
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
@@ -33,7 +38,7 @@ export default function OrganizationPage() {
     try { setData(await request("", "GET")); setError(""); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load organization"); }
   }, []);
-  useEffect(() => { void reload(); void fetch("/api/execution/studio/projects").then(r => r.json()).then(items => setProjects(Array.isArray(items) ? items : [])).catch(() => {}); }, [reload]);
+  useEffect(() => { void reload(); void fetch(scopedApiPath("/api/execution/studio/projects")).then(r => r.json()).then(items => setProjects(Array.isArray(items) ? items : [])).catch(() => {}); }, [reload]);
   const apply = async (action: () => Promise<unknown>) => {
     setBusy(true); setError("");
     try { await action(); await reload(); }
@@ -66,7 +71,7 @@ export default function OrganizationPage() {
         <select aria-label="Parent goal" value={parentGoalId} onChange={event => setParentGoalId(event.target.value)} className="rounded bg-zinc-900 p-2"><option value="">Company goal</option>{data.goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select>
         <select aria-label="Project" required={ceoProposal} value={projectId} onChange={event => setProjectId(event.target.value)} className="rounded bg-zinc-900 p-2"><option value="" disabled={ceoProposal}>{ceoProposal ? "Select project" : "No project"}</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={ceoProposal} disabled={!data.reportingLines.some(line => line.role === "ceo")} onChange={event => setCeoProposal(event.target.checked)} />CEO strategy proposal</label>
-        {ceoProposal && projects.length === 0 && <p className="text-sm text-zinc-400"><Link href="/projects" className="text-indigo-300 underline">Create a project</Link> to request a strategy proposal.</p>}
+        {ceoProposal && projects.length === 0 && <p className="text-sm text-zinc-400"><Link href={orgUrl("/projects")} className="text-indigo-300 underline">Create a project</Link> to request a strategy proposal.</p>}
         <button disabled={busy || (ceoProposal && !projectId)} className="rounded bg-indigo-600 p-2 disabled:opacity-50">Create goal</button>
       </form>
     </section>
@@ -77,12 +82,12 @@ export default function OrganizationPage() {
           <div className="flex gap-2">{goal.status === "proposed" && <button disabled={busy || !strategyReady(goal.id)} title={!strategyReady(goal.id) ? "The CEO strategy task must finish first" : undefined} className="rounded bg-emerald-700 px-2 py-1 text-xs disabled:opacity-50" onClick={() => void apply(() => request(`/goals/${encodeURIComponent(goal.id)}`, "PATCH", { status: "active" }))}>Approve</button>}
             {goal.status === "active" && <><select aria-label={`Delegate ${goal.title}`} id={`delegate-${goal.id}`} className="rounded bg-zinc-900 p-1 text-xs"><option value="">Select agent</option>{data.agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>
               {!goal.projectId && <select aria-label={`Project for ${goal.title}`} value={delegationProjects[goal.id] ?? ""} onChange={event => setDelegationProjects(current => ({ ...current, [goal.id]: event.target.value }))} className="rounded bg-zinc-900 p-1 text-xs"><option value="" disabled>Select project</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select>}
-              {!goal.projectId && projects.length === 0 && <Link href="/projects" className="text-xs text-indigo-300 underline">Create a project</Link>}
+              {!goal.projectId && projects.length === 0 && <Link href={orgUrl("/projects")} className="text-xs text-indigo-300 underline">Create a project</Link>}
               <button disabled={busy || (!goal.projectId && !delegationProjects[goal.id])} className="rounded bg-indigo-600 px-2 py-1 text-xs" onClick={() => void apply(() => request(`/goals/${encodeURIComponent(goal.id)}/delegate`, "POST", { agentId: (document.getElementById(`delegate-${goal.id}`) as HTMLSelectElement).value, ...(!goal.projectId ? { projectId: delegationProjects[goal.id] } : {}) }))}>Delegate to task</button><button disabled={busy} className="rounded bg-zinc-700 px-2 py-1 text-xs" onClick={() => void apply(() => request(`/goals/${encodeURIComponent(goal.id)}`, "PATCH", { status: "completed" }))}>Complete</button></>}</div>
         </div><p className="mt-1 text-sm text-zinc-400">{goal.description}</p>
         {goal.status === "proposed" && !strategyReady(goal.id) && <p className="mt-1 text-xs text-amber-300">Complete the CEO strategy task before approving this goal.</p>}
         <div className="mt-2 text-xs text-zinc-400">{data.goalTasks.filter(task => task.goalId === goal.id && ["completed", "done"].includes(task.status)).length} / {data.goalTasks.filter(task => task.goalId === goal.id).length} tasks complete</div>
-        {data.goalTasks.filter(task => task.goalId === goal.id).map(task => <div key={task.id} className="mt-2 text-xs"><a href={`/tasks?taskId=${encodeURIComponent(task.id)}`} className="text-indigo-300 underline">{task.title} · {task.status}</a>{task.output && <p className="mt-1 whitespace-pre-wrap text-zinc-300">{task.output.slice(0, 2000)}</p>}</div>)}
+        {data.goalTasks.filter(task => task.goalId === goal.id).map(task => <div key={task.id} className="mt-2 text-xs"><a href={orgUrl(`/tasks?taskId=${encodeURIComponent(task.id)}`)} className="text-indigo-300 underline">{task.title} · {task.status}</a>{task.output && <p className="mt-1 whitespace-pre-wrap text-zinc-300">{task.output.slice(0, 2000)}</p>}</div>)}
       </article>)}
     </section>
   </main>;

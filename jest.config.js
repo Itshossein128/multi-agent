@@ -3,6 +3,7 @@ require("dotenv").config({ path: ".env" });
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
+  setupFiles: ["<rootDir>/tests/organizationLegacyFixtures.cjs"],
   // Generated .js siblings can be stale; tests must exercise the TypeScript source.
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   roots: ["<rootDir>/src", "<rootDir>/tests"],

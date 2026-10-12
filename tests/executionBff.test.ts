@@ -39,6 +39,7 @@ test("BFF reconstructs the destination and forwards only allow-listed headers wi
     userId: "owner",
     tenantId: "tenant",
     organizationId: "tenant",
+    principalKind: "user",
   });
   expect(headers.get("X-Multi-Agent-Principal")).not.toBe("forged"); expect(await new Response(init?.body).text()).toBe('{"value":1}');
 });

@@ -16,6 +16,7 @@ describe("principal assertion v2", () => {
       userId: "user-a",
       tenantId: "org-a",
       organizationId: "org-a",
+      principalKind: "user",
     });
 
     const [body] = assertion.split(".");
@@ -37,6 +38,7 @@ describe("principal assertion v2", () => {
       userId: "user-b",
       tenantId: "tenant-b",
       organizationId: "tenant-b",
+      principalKind: "user",
     });
   });
 
@@ -62,6 +64,6 @@ describe("principal assertion v2", () => {
     const assertion = createInternalPrincipalAssertion({ userId: "a", organizationId: "b" }, "secret");
     expect(
       resolveRequestPrincipal(new Request("http://x", { headers: { [INTERNAL_PRINCIPAL_HEADER]: assertion } }), "secret"),
-    ).toEqual({ userId: "a", tenantId: "b", organizationId: "b" });
+    ).toEqual({ userId: "a", tenantId: "b", organizationId: "b", principalKind: "user" });
   });
 });

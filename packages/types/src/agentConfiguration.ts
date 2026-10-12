@@ -32,16 +32,19 @@ export function credentialIssues(value: unknown): string[] {
       try { const url = new URL(item); if (url.username || url.password || [...url.searchParams.keys()].some((key) => secretKey.test(key) || /token/i.test(key))) found = true; } catch { /* ordinary text */ }
     } else if (Array.isArray(item)) item.forEach(visit);
     else if (item && typeof item === "object") for (const [key, child] of Object.entries(item)) {
-      if ((secretKey.test(key) || /apiKey|accessToken|refreshToken|clientSecret|authToken|privateKey|password|secret|authorization|credential|^token$|^env$/i.test(key)) && child !== undefined) found = true;
+      const boundedAlias = key === "credentialAlias" && typeof child === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(child);
+      if (!boundedAlias && (secretKey.test(key) || /apiKey|accessToken|refreshToken|clientSecret|authToken|privateKey|password|secret|authorization|credential|^token$|^env$/i.test(key)) && child !== undefined) found = true;
       visit(child);
     }
   };
   visit(value);
   return found ? ["Credentials belong in server runtime configuration, not agent or workflow data."] : [];
 }
+export class ConfigurationValidationError extends Error {}
+
 export function assertNoCredentials(value: unknown): void {
   const issues = credentialIssues(value);
-  if (issues.length) throw new Error(issues[0]);
+  if (issues.length) throw new ConfigurationValidationError(issues[0]);
 }
 
 export function validateAgent(agent: AgentRecord): string[] {

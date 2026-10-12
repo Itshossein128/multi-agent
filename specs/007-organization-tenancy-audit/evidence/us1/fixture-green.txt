@@ -1,0 +1,20 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/auth.test.ts tests/memoryStorage.test.ts tests/dashboardSourceOfTruth.test.ts
+
+PASS tests/auth.test.ts (6.042 s)
+PASS tests/dashboardSourceOfTruth.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-11T17:55:08.591Z","level":"info","event":"run.cancelled","runId":"run-to-cancel","workflowId":"wf-1","orphaned":true}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/memoryStorage.test.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       41 passed, 41 total
+Snapshots:   0 total
+Time:        10.619 s
+Ran all test suites matching /tests\/auth.test.ts|tests\/memoryStorage.test.ts|tests\/dashboardSourceOfTruth.test.ts/i.

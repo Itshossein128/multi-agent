@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import React from "react";
 import { useStudioStore, TimeFilter } from "@/store/useStudioStore";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,6 +17,7 @@ import { matchesTimeFilter } from "@/lib/dashboardFilters";
 import Link from "next/link";
 
 export function CompletedAndCostSection() {
+  const orgUrl = useOrgPath();
   const { completedTasks, tokenMetrics, timeFilter, setTimeFilter } = useStudioStore();
 
   const filteredTasks = completedTasks.filter((task) => matchesTimeFilter(task.period, timeFilter));
@@ -88,11 +91,11 @@ export function CompletedAndCostSection() {
                     </div>
                     <p className="text-sm font-medium text-zinc-100 truncate">
                       {task.source === "run" ? (
-                        <Link href={`/runs/${encodeURIComponent(task.id)}`} className="hover:text-indigo-300 hover:underline">
+                        <Link href={orgUrl(`/runs/${encodeURIComponent(task.id)}`)} className="hover:text-indigo-300 hover:underline">
                           {task.title}
                         </Link>
                       ) : (
-                        <Link href="/tasks" className="hover:text-indigo-300 hover:underline">
+                        <Link href={orgUrl("/tasks")} className="hover:text-indigo-300 hover:underline">
                           {task.title}
                         </Link>
                       )}
@@ -161,7 +164,7 @@ export function CompletedAndCostSection() {
               <span>{((tokenMetrics.totalCostUsd / tokenMetrics.budgetUsd) * 100).toFixed(2)}% used</span>
               <span>${(tokenMetrics.budgetUsd - tokenMetrics.totalCostUsd).toFixed(2)} remaining</span>
             </div>
-          </div> : <a href="/budgets" className="block rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 text-xs text-indigo-300 underline">Set a company budget</a>}
+          </div> : <a href={orgUrl("/budgets")} className="block rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 text-xs text-indigo-300 underline">Set a company budget</a>}
 
           {/* Provider & Model Distribution */}
           <div className="space-y-2.5">

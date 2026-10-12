@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import React from "react";
 import Link from "next/link";
 import { useStudioStore, TimeFilter } from "@/store/useStudioStore";
@@ -17,6 +19,7 @@ import {
 import { matchesTimeFilter } from "@/lib/dashboardFilters";
 
 export function StatCards() {
+  const orgUrl = useOrgPath();
   const { agents, queue, completedTasks, failedTasks, tokenMetrics, timeFilter, setTimeFilter, isLive } =
     useStudioStore();
 
@@ -148,7 +151,7 @@ export function StatCards() {
               {failedTasksCount} board · {failedRunsCount} runs
             </span>
             {failedRunsCount > 0 && (
-              <Link href="/runs?status=failed" className="text-rose-300 hover:underline">
+              <Link href={orgUrl("/runs?status=failed")} className="text-rose-300 hover:underline">
                 View runs
               </Link>
             )}

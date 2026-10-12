@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOptionalOrg } from "@/components/organization/OrgProvider";
 import { TaskBoardData, TaskPriority, TaskStatus } from "@/lib/taskStatus";
@@ -52,7 +54,7 @@ export class TaskRequestError extends Error {
 }
 
 async function fetchBoard(): Promise<TaskBoardData> {
-  const res = await fetch("/api/tasks", { cache: "no-store" });
+  const res = await fetch(scopedApiPath("/api/tasks"), { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to load task board: ${res.statusText}`);
   }
@@ -60,7 +62,7 @@ async function fetchBoard(): Promise<TaskBoardData> {
 }
 
 async function postTaskAction<T = unknown>(body: Record<string, unknown>): Promise<T> {
-  const res = await fetch("/api/tasks", {
+  const res = await fetch(scopedApiPath("/api/tasks"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

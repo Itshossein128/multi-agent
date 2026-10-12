@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertOctagon,
@@ -66,7 +68,7 @@ export default function TaskBoardPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [wsRes, projRes] = await Promise.all([fetch("/api/workspaces"), fetch("/api/projects")]);
+        const [wsRes, projRes] = await Promise.all([fetch(scopedApiPath("/api/workspaces")), fetch(scopedApiPath("/api/projects"))]);
         if (!wsRes.ok || !projRes.ok) return;
         const [wsBody, projBody] = await Promise.all([
           wsRes.json() as Promise<Array<{ id: string; name: string }>>,

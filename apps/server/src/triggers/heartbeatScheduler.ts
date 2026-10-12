@@ -68,7 +68,7 @@ export class HeartbeatScheduler {
 
       for (const hb of due) {
         try {
-          const principal = { tenantId: hb.tenantId, userId: "system-heartbeat" };
+          const principal = { tenantId: hb.tenantId, userId: "system-heartbeat", principalKind: "service" as const };
           const agent = await this.store.getAgent(hb.agentId, principal);
 
           const now = Date.now();

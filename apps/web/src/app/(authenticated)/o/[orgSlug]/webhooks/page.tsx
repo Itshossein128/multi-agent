@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useEffect, useState } from "react";
 import {
   Webhook,
@@ -166,7 +168,7 @@ export default function WebhookTriggersPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/execution/studio/webhooks/triggers");
+      const res = await fetch(scopedApiPath("/api/execution/studio/webhooks/triggers"));
       if (!res.ok) throw new Error(t.loadError);
       const data = await res.json();
       setTriggers(Array.isArray(data) ? data : []);
@@ -188,7 +190,7 @@ export default function WebhookTriggersPage() {
     try {
       setCreating(true);
       setFormError(null);
-      const res = await fetch("/api/execution/studio/webhooks/triggers", {
+      const res = await fetch(scopedApiPath("/api/execution/studio/webhooks/triggers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -231,8 +233,7 @@ export default function WebhookTriggersPage() {
     }
 
     try {
-      const res = await fetch(
-        `/api/execution/studio/webhooks/triggers/${encodeURIComponent(trigger.id)}/rotate-secret`,
+      const res = await fetch(scopedApiPath(`/api/execution/studio/webhooks/triggers/${encodeURIComponent(trigger.id)}/rotate-secret`),
         {
           method: "POST",
         }
@@ -253,7 +254,7 @@ export default function WebhookTriggersPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/execution/studio/webhooks/triggers/${encodeURIComponent(triggerId)}`, {
+      const res = await fetch(scopedApiPath(`/api/execution/studio/webhooks/triggers/${encodeURIComponent(triggerId)}`), {
         method: "DELETE",
       });
       if (res.ok) {
@@ -268,8 +269,7 @@ export default function WebhookTriggersPage() {
     setActiveTrigger(trigger);
     try {
       setDeliveriesLoading(true);
-      const res = await fetch(
-        `/api/execution/studio/webhooks/triggers/${encodeURIComponent(trigger.id)}/deliveries`
+      const res = await fetch(scopedApiPath(`/api/execution/studio/webhooks/triggers/${encodeURIComponent(trigger.id)}/deliveries`)
       );
       if (res.ok) {
         const data = await res.json();

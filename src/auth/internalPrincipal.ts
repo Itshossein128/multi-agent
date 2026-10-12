@@ -3,15 +3,18 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 /** Normalized principal used across web BFF and execution server. */
 export type AuthenticatedPrincipal = {
   userId: string;
+  principalKind?: "user" | "service";
+  /** Server-derived only; never serialized into an assertion. */
+  permissions?: import("../studio/contracts").OrganizationPermission[];
   /** Organization id (same value as organizationId; kept for store/API compatibility). */
   tenantId: string;
   /** Present on v2 assertions; mirrors tenantId. */
   organizationId?: string;
 };
 
-export type PrincipalAssertionInput =
+export type PrincipalAssertionInput = { principalKind?: "user" | "service" } & (
   | { userId: string; organizationId: string; tenantId?: string }
-  | { userId: string; tenantId: string; organizationId?: string };
+  | { userId: string; tenantId: string; organizationId?: string });
 
 type AssertionPayload = {
   userId: string;
@@ -20,6 +23,7 @@ type AssertionPayload = {
   exp: number;
   nonce: string;
   v: 2;
+  principalKind: "user" | "service";
 };
 
 const sign = (body: string, secret: string) => createHmac("sha256", secret).update(body).digest("base64url");
@@ -45,6 +49,7 @@ export function createInternalPrincipalAssertion(
   const normalized = normalizePrincipal(principal);
   const payload: AssertionPayload = {
     ...normalized,
+    principalKind: principal.principalKind ?? "user",
     exp: now + 60_000,
     nonce: randomUUID(),
     v: 2,
@@ -72,7 +77,8 @@ export function verifyInternalPrincipalAssertion(
     if (typeof parsed.userId !== "string" || typeof parsed.nonce !== "string" || typeof parsed.exp !== "number") {
       return null;
     }
-    if (parsed.exp <= now) return null;
+    if (parsed.exp <= now || !parsed.userId.trim() || !parsed.nonce.trim()) return null;
+    if (parsed.principalKind !== undefined && parsed.principalKind !== "user" && parsed.principalKind !== "service") return null;
     const organizationId =
       typeof parsed.organizationId === "string" && parsed.organizationId
         ? parsed.organizationId
@@ -84,7 +90,7 @@ export function verifyInternalPrincipalAssertion(
         ? parsed.tenantId
         : organizationId;
     if (!organizationId || !tenantId || organizationId !== tenantId) return null;
-    return { userId: parsed.userId, tenantId, organizationId };
+    return { userId: parsed.userId, tenantId, organizationId, principalKind: parsed.principalKind ?? "user" };
   } catch {
     return null;
   }

@@ -1,7 +1,7 @@
 /**
  * Organization-migration feature flags (plan §7 / migration-plan §7).
- * Defaults keep multi-member enforcement, org memory, deletion, and RLS off
- * until later phases flip them after their gates pass.
+ * Phase 2 membership enforcement is the default after the shadow gate.
+ * Org memory, deletion and RLS remain off until their later gates.
  */
 
 export type OrgMembershipEnforcement = "shadow" | "enforce";
@@ -15,7 +15,7 @@ export interface OrgFeatureFlags {
 }
 
 function parseMembership(raw: string | undefined): OrgMembershipEnforcement {
-  return raw === "enforce" ? "enforce" : "shadow";
+  return raw === "shadow" ? "shadow" : "enforce";
 }
 
 function parseRls(raw: string | undefined): OrgRlsMode {

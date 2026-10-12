@@ -1,0 +1,4 @@
+
+> server@0.1.0 build /home/hossein/Desktop/projects/multi-agent/apps/server
+> tsc -p tsconfig.json
+

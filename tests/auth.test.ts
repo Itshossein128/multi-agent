@@ -47,7 +47,7 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
   });
 
   describe("Registration Flow", () => {
-    test("successfully registers a new user with hashed password and isolated tenant", async () => {
+    test("successfully registers a user with hashed password and no implicit organization", async () => {
       const email = "new_user@example.com";
       const password = "SuperSecretPassword123";
 
@@ -65,8 +65,8 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
       expect(rows).toHaveLength(1);
       const user = rows[0];
       
-      // Tenant isolation: Ensure tenant_id is generated
-      expect(user.tenant_id).toBeTruthy();
+      // Organization membership is established separately after registration.
+      expect(user.tenant_id).toBeNull();
       
       // Ownership: Ensure ID is generated
       expect(user.id).toBeTruthy();
@@ -120,7 +120,7 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
       
       expect(user).not.toBeNull();
       expect(user?.id).toBeTruthy();
-      expect(user?.tenantId).toBeTruthy();
+      expect(user?.tenantId).toBeNull();
       expect(user?.email).toBe(email);
     });
 

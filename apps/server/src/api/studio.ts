@@ -1,8 +1,9 @@
+import { registerOrganizationMembershipRoutes } from "./studio/organizationMembershipRoutes";
 import { Hono } from "hono";
 import type { StudioStore, StudioTask } from "../../../../src/studio/contracts";
 import { resolveRequestPrincipal } from "../auth/principal";
 import type { PrincipalResolver } from "../auth/authorization";
-import { requirePrincipal, respondWithApiError, type PrincipalVariables } from "./shared/http";
+import { requireOrganizationContext, requirePrincipal, respondWithApiError, type PrincipalVariables } from "./shared/http";
 import { WorkflowService } from "./studio/workflowService";
 import { AgentService } from "./studio/agentService";
 import { StudioToolService } from "./studio/toolService";
@@ -49,6 +50,7 @@ export function createStudioRouter(
   const workspaceEntities = new WorkspaceEntityService(store);
   const organizationProfiles = new OrganizationProfileService(store);
   app.use("/*", requirePrincipal(resolvePrincipal));
+  app.use("/*", requireOrganizationContext(store));
   app.onError(respondWithApiError);
 
   // Delegate route registration to domain-specific modules (SRP + OCP).
@@ -60,6 +62,7 @@ export function createStudioRouter(
   registerProjectRoutes(app, projects);
   registerWorkspaceEntityRoutes(app, workspaceEntities);
   registerOrganizationProfileRoutes(app, organizationProfiles);
+  registerOrganizationMembershipRoutes(app, store);
   registerTaskCommentRoutes(app, store);
   registerRoutineRoutes(app, store);
   registerWebhookTriggerRoutes(app, store);

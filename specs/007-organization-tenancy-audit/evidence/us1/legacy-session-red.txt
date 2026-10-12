@@ -1,0 +1,33 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationBffPrincipal.test.ts
+
+FAIL tests/organizationBffPrincipal.test.ts
+  ✓ project BFF derives organization from URL despite stale session (8 ms)
+  ✓ unknown and non-member slug return the same 404 without upstream access (15 ms)
+  ✓ a member can create a second organization with a fresh identity (3 ms)
+  ✕ legacy BFF cannot trust an arbitrary tenant supplied through a session update (3 ms)
+
+  ● legacy BFF cannot trust an arbitrary tenant supplied through a session update
+
+    expect(received).resolves.toBeNull()
+
+    Received: {"tenantId": "org-a", "userId": "alice"}
+
+      37 | test("legacy BFF cannot trust an arbitrary tenant supplied through a session update", async () => {
+      38 |   query.mockResolvedValue({ rows: [] });
+    > 39 |   await expect(getAuthenticatedPrincipal()).resolves.toBeNull();
+         |                                                      ^
+      40 |   expect(query).toHaveBeenCalled();
+      41 | });
+      42 |
+
+      at Object.toBeNull (node_modules/.pnpm/expect@29.7.0/node_modules/expect/build/index.js:174:22)
+      at Object.<anonymous> (tests/organizationBffPrincipal.test.ts:39:54)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 3 passed, 4 total
+Snapshots:   0 total
+Time:        3.805 s
+Ran all test suites matching /tests\/organizationBffPrincipal.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

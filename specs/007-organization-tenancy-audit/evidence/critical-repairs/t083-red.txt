@@ -1,0 +1,674 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationCredentialMutations.test.ts
+
+FAIL tests/organizationCredentialMutations.test.ts (5.659 s)
+  T083 memory credential-bearing mutations
+    ✕ owner agents create checks credentials permission and side effects (18 ms)
+    ✓ owner agents rename checks credentials permission and side effects (8 ms)
+    ✕ owner agents reconfigure checks credentials permission and side effects (3 ms)
+    ✓ owner agents clear checks credentials permission and side effects (5 ms)
+    ✓ owner agents duplicate checks credentials permission and side effects (3 ms)
+    ✓ owner agents delete checks credentials permission and side effects (3 ms)
+    ✕ owner agents import checks credentials permission and side effects (5 ms)
+    ✕ admin agents create checks credentials permission and side effects (3 ms)
+    ✓ admin agents rename checks credentials permission and side effects (3 ms)
+    ✕ admin agents reconfigure checks credentials permission and side effects (3 ms)
+    ✓ admin agents clear checks credentials permission and side effects (2 ms)
+    ✓ admin agents duplicate checks credentials permission and side effects (2 ms)
+    ✓ admin agents delete checks credentials permission and side effects (2 ms)
+    ✕ admin agents import checks credentials permission and side effects (2 ms)
+    ✓ member agents create checks credentials permission and side effects (4 ms)
+    ✕ member agents rename checks credentials permission and side effects (2 ms)
+    ✓ member agents reconfigure checks credentials permission and side effects (3 ms)
+    ✓ member agents clear checks credentials permission and side effects (2 ms)
+    ✕ member agents duplicate checks credentials permission and side effects (2 ms)
+    ✕ member agents delete checks credentials permission and side effects (2 ms)
+    ✕ member agents import checks credentials permission and side effects (2 ms)
+    ✓ viewer agents create checks credentials permission and side effects (2 ms)
+    ✓ viewer agents rename checks credentials permission and side effects (2 ms)
+    ✓ viewer agents reconfigure checks credentials permission and side effects (2 ms)
+    ✓ viewer agents clear checks credentials permission and side effects (2 ms)
+    ✓ viewer agents duplicate checks credentials permission and side effects (2 ms)
+    ✓ viewer agents delete checks credentials permission and side effects (1 ms)
+    ✓ viewer agents import checks credentials permission and side effects (1 ms)
+    ✕ owner tools create checks credentials permission and side effects (3 ms)
+    ✓ owner tools rename checks credentials permission and side effects (4 ms)
+    ✓ owner tools reconfigure checks credentials permission and side effects (13 ms)
+    ✓ owner tools clear checks credentials permission and side effects (3 ms)
+    ✓ owner tools duplicate checks credentials permission and side effects (2 ms)
+    ✓ owner tools delete checks credentials permission and side effects (2 ms)
+    ✓ owner tools import checks credentials permission and side effects (3 ms)
+    ✕ admin tools create checks credentials permission and side effects (2 ms)
+    ✓ admin tools rename checks credentials permission and side effects (3 ms)
+    ✓ admin tools reconfigure checks credentials permission and side effects (2 ms)
+    ✓ admin tools clear checks credentials permission and side effects (3 ms)
+    ✓ admin tools duplicate checks credentials permission and side effects (2 ms)
+    ✓ admin tools delete checks credentials permission and side effects (1 ms)
+    ✓ admin tools import checks credentials permission and side effects (2 ms)
+    ✓ member tools create checks credentials permission and side effects (3 ms)
+    ✕ member tools rename checks credentials permission and side effects (2 ms)
+    ✓ member tools reconfigure checks credentials permission and side effects (2 ms)
+    ✓ member tools clear checks credentials permission and side effects (2 ms)
+    ✕ member tools duplicate checks credentials permission and side effects (2 ms)
+    ✕ member tools delete checks credentials permission and side effects (2 ms)
+    ✕ member tools import checks credentials permission and side effects (3 ms)
+    ✓ viewer tools create checks credentials permission and side effects (2 ms)
+    ✓ viewer tools rename checks credentials permission and side effects (1 ms)
+    ✓ viewer tools reconfigure checks credentials permission and side effects (2 ms)
+    ✓ viewer tools clear checks credentials permission and side effects (2 ms)
+    ✓ viewer tools duplicate checks credentials permission and side effects (2 ms)
+    ✓ viewer tools delete checks credentials permission and side effects (2 ms)
+    ✓ viewer tools import checks credentials permission and side effects (1 ms)
+    ✓ members retain credential-free agents CRUD, duplicate and import (4 ms)
+    ✓ members retain credential-free tools CRUD, duplicate and import (4 ms)
+  T083 postgres credential-bearing mutations
+    ✕ owner agents create checks credentials permission and side effects (42 ms)
+    ✓ owner agents rename checks credentials permission and side effects (33 ms)
+    ✕ owner agents reconfigure checks credentials permission and side effects (24 ms)
+    ✓ owner agents clear checks credentials permission and side effects (28 ms)
+    ✓ owner agents duplicate checks credentials permission and side effects (27 ms)
+    ✓ owner agents delete checks credentials permission and side effects (36 ms)
+    ✕ owner agents import checks credentials permission and side effects (23 ms)
+    ✕ admin agents create checks credentials permission and side effects (28 ms)
+    ✓ admin agents rename checks credentials permission and side effects (54 ms)
+    ✕ admin agents reconfigure checks credentials permission and side effects (25 ms)
+    ✓ admin agents clear checks credentials permission and side effects (28 ms)
+    ✓ admin agents duplicate checks credentials permission and side effects (44 ms)
+    ✓ admin agents delete checks credentials permission and side effects (33 ms)
+    ✕ admin agents import checks credentials permission and side effects (23 ms)
+    ✓ member agents create checks credentials permission and side effects (29 ms)
+    ✕ member agents rename checks credentials permission and side effects (28 ms)
+    ✓ member agents reconfigure checks credentials permission and side effects (35 ms)
+    ✓ member agents clear checks credentials permission and side effects (33 ms)
+    ✕ member agents duplicate checks credentials permission and side effects (35 ms)
+    ✕ member agents delete checks credentials permission and side effects (37 ms)
+    ✕ member agents import checks credentials permission and side effects (22 ms)
+    ✓ viewer agents create checks credentials permission and side effects (38 ms)
+    ✓ viewer agents rename checks credentials permission and side effects (31 ms)
+    ✓ viewer agents reconfigure checks credentials permission and side effects (31 ms)
+    ✓ viewer agents clear checks credentials permission and side effects (25 ms)
+    ✓ viewer agents duplicate checks credentials permission and side effects (27 ms)
+    ✓ viewer agents delete checks credentials permission and side effects (28 ms)
+    ✓ viewer agents import checks credentials permission and side effects (25 ms)
+    ✕ owner tools create checks credentials permission and side effects (28 ms)
+    ✓ owner tools rename checks credentials permission and side effects (40 ms)
+    ✓ owner tools reconfigure checks credentials permission and side effects (30 ms)
+    ✓ owner tools clear checks credentials permission and side effects (29 ms)
+    ✓ owner tools duplicate checks credentials permission and side effects (37 ms)
+    ✓ owner tools delete checks credentials permission and side effects (34 ms)
+    ✓ owner tools import checks credentials permission and side effects (32 ms)
+    ✕ admin tools create checks credentials permission and side effects (42 ms)
+    ✓ admin tools rename checks credentials permission and side effects (27 ms)
+    ✓ admin tools reconfigure checks credentials permission and side effects (53 ms)
+    ✓ admin tools clear checks credentials permission and side effects (29 ms)
+    ✓ admin tools duplicate checks credentials permission and side effects (37 ms)
+    ✓ admin tools delete checks credentials permission and side effects (45 ms)
+    ✓ admin tools import checks credentials permission and side effects (28 ms)
+    ✓ member tools create checks credentials permission and side effects (30 ms)
+    ✕ member tools rename checks credentials permission and side effects (31 ms)
+    ✓ member tools reconfigure checks credentials permission and side effects (26 ms)
+    ✓ member tools clear checks credentials permission and side effects (25 ms)
+    ✕ member tools duplicate checks credentials permission and side effects (32 ms)
+    ✕ member tools delete checks credentials permission and side effects (33 ms)
+    ✕ member tools import checks credentials permission and side effects (30 ms)
+    ✓ viewer tools create checks credentials permission and side effects (31 ms)
+    ✓ viewer tools rename checks credentials permission and side effects (25 ms)
+    ✓ viewer tools reconfigure checks credentials permission and side effects (23 ms)
+    ✓ viewer tools clear checks credentials permission and side effects (30 ms)
+    ✓ viewer tools duplicate checks credentials permission and side effects (33 ms)
+    ✓ viewer tools delete checks credentials permission and side effects (25 ms)
+    ✓ viewer tools import checks credentials permission and side effects (26 ms)
+    ✓ members retain credential-free agents CRUD, duplicate and import (57 ms)
+    ✓ members retain credential-free tools CRUD, duplicate and import (62 ms)
+
+  ● T083 memory credential-bearing mutations › owner agents create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 memory credential-bearing mutations › owner agents reconfigure checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 memory credential-bearing mutations › owner agents import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 memory credential-bearing mutations › admin agents create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 memory credential-bearing mutations › admin agents reconfigure checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 memory credential-bearing mutations › admin agents import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 memory credential-bearing mutations › member agents rename checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 memory credential-bearing mutations › member agents duplicate checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 memory credential-bearing mutations › member agents delete checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 memory credential-bearing mutations › member agents import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 400
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 memory credential-bearing mutations › owner tools create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "org-alias"
+    Received: undefined
+
+      76 |             const saved = await read(kind, operation === 'import' ? newId : operation === 'create' || operation === 'duplicate' ? result.id : record.id);
+      77 |             expect(saved).not.toBeNull();
+    > 78 |             expect(alias(saved)).toBe(operation === 'clear' ? undefined : operation === 'reconfigure' ? 'changed-alias' : 'org-alias');
+         |                                  ^
+      79 |           }
+      80 |         }
+      81 |       });
+
+      at tests/organizationCredentialMutations.test.ts:78:34
+
+  ● T083 memory credential-bearing mutations › admin tools create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "org-alias"
+    Received: undefined
+
+      76 |             const saved = await read(kind, operation === 'import' ? newId : operation === 'create' || operation === 'duplicate' ? result.id : record.id);
+      77 |             expect(saved).not.toBeNull();
+    > 78 |             expect(alias(saved)).toBe(operation === 'clear' ? undefined : operation === 'reconfigure' ? 'changed-alias' : 'org-alias');
+         |                                  ^
+      79 |           }
+      80 |         }
+      81 |       });
+
+      at tests/organizationCredentialMutations.test.ts:78:34
+
+  ● T083 memory credential-bearing mutations › member tools rename checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 memory credential-bearing mutations › member tools duplicate checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 memory credential-bearing mutations › member tools delete checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 memory credential-bearing mutations › member tools import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › owner agents create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 postgres credential-bearing mutations › owner agents reconfigure checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 postgres credential-bearing mutations › owner agents import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 postgres credential-bearing mutations › admin agents create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 postgres credential-bearing mutations › admin agents reconfigure checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 postgres credential-bearing mutations › admin agents import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+      71 |         } else {
+    > 72 |           expect(response.status).toBe(operation === 'create' || operation === 'duplicate' ? 201 : 200);
+         |                                   ^
+      73 |           const result = await response.json();
+      74 |           if (operation === 'delete') expect(await read(kind, record.id)).toBeNull();
+      75 |           else {
+
+      at tests/organizationCredentialMutations.test.ts:72:35
+
+  ● T083 postgres credential-bearing mutations › member agents rename checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › member agents duplicate checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › member agents delete checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › member agents import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 400
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › owner tools create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "org-alias"
+    Received: undefined
+
+      76 |             const saved = await read(kind, operation === 'import' ? newId : operation === 'create' || operation === 'duplicate' ? result.id : record.id);
+      77 |             expect(saved).not.toBeNull();
+    > 78 |             expect(alias(saved)).toBe(operation === 'clear' ? undefined : operation === 'reconfigure' ? 'changed-alias' : 'org-alias');
+         |                                  ^
+      79 |           }
+      80 |         }
+      81 |       });
+
+      at tests/organizationCredentialMutations.test.ts:78:34
+
+  ● T083 postgres credential-bearing mutations › admin tools create checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "org-alias"
+    Received: undefined
+
+      76 |             const saved = await read(kind, operation === 'import' ? newId : operation === 'create' || operation === 'duplicate' ? result.id : record.id);
+      77 |             expect(saved).not.toBeNull();
+    > 78 |             expect(alias(saved)).toBe(operation === 'clear' ? undefined : operation === 'reconfigure' ? 'changed-alias' : 'org-alias');
+         |                                  ^
+      79 |           }
+      80 |         }
+      81 |       });
+
+      at tests/organizationCredentialMutations.test.ts:78:34
+
+  ● T083 postgres credential-bearing mutations › member tools rename checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › member tools duplicate checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › member tools delete checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+  ● T083 postgres credential-bearing mutations › member tools import checks credentials permission and side effects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      65 |         const response = await app.request(path, body === undefined ? { method } : jsonRequest(method, body));
+      66 |         if (role === 'member' || role === 'viewer') {
+    > 67 |           expect(response.status).toBe(403);
+         |                                   ^
+      68 |           expect(await read(kind, record.id)).toEqual(original);
+      69 |           expect(await read(kind, newId)).toBeNull(); expect(await read(kind, plainId)).toBeNull();
+      70 |           expect((await (kind === 'agents' ? store.listAgents({ userId: role, tenantId: org }) : store.listTools({ userId: role, tenantId: org })))).toHaveLength(1);
+
+      at tests/organizationCredentialMutations.test.ts:67:35
+
+Test Suites: 1 failed, 1 total
+Tests:       32 failed, 84 passed, 116 total
+Snapshots:   0 total
+Time:        5.859 s
+Ran all test suites matching /tests\/organizationCredentialMutations.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

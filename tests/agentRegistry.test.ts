@@ -88,7 +88,7 @@ describe("Phase 5 browser workspace", () => {
     const [firstBefore, secondBefore] = await Promise.all([workflowService.getWorkflow(first.id), workflowService.getWorkflow(second.id)]);
     store.failWorkflowWrites = true;
 
-    await expect(workflowService.deleteAgent(agent.id, { removeReferences: true })).rejects.toThrow(/simulated workflow write failure/);
+    await expect(workflowService.deleteAgent(agent.id, { removeReferences: true })).rejects.toThrow(/Internal server error/);
     expect(await workflowService.getAgent(agent.id)).not.toBeNull();
     expect(await workflowService.getWorkflow(first.id)).toEqual(firstBefore);
     expect(await workflowService.getWorkflow(second.id)).toEqual(secondBefore);

@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useEffect, useState } from "react";
 import { Activity, Clock, CheckCircle2, AlertCircle, Save, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -76,7 +78,7 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch(`/api/execution/studio/agents/${encodeURIComponent(agentId)}/heartbeat`);
+        const res = await fetch(scopedApiPath(`/api/execution/studio/agents/${encodeURIComponent(agentId)}/heartbeat`));
         if (!res.ok) throw new Error(t.loadError);
         const json: HeartbeatData = await res.json();
         if (mounted) {
@@ -102,7 +104,7 @@ export function AgentHeartbeatPanel({ agentId }: { agentId: string }) {
       setSaving(true);
       setError(null);
       setSuccess(null);
-      const res = await fetch(`/api/execution/studio/agents/${encodeURIComponent(agentId)}/heartbeat`, {
+      const res = await fetch(scopedApiPath(`/api/execution/studio/agents/${encodeURIComponent(agentId)}/heartbeat`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

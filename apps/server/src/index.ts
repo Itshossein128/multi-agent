@@ -17,6 +17,7 @@ import { recoverInterruptedRuns } from "./runtime/recovery";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import { randomUUID } from "node:crypto";
 import { createObservabilityRuntime } from "./observability/bootstrap";
+import { requireOrganizationContext, respondWithApiError, type PrincipalVariables } from "./api/shared/http";
 import { resolveRequestPrincipal } from "./auth/principal";
 import { createInboundWebhookRouter } from "./api/studio/webhookTriggerRoutes";
 import { TriggerOutboxProcessor } from "./triggers/triggerOutboxProcessor";
@@ -45,7 +46,8 @@ async function main() {
   // a valid external broker (with mTLS material when required) is configured.
   const credentials = createCredentialComposition();
   const observability = createObservabilityRuntime();
-  const app = new Hono();
+  const app = new Hono<{ Variables: PrincipalVariables }>();
+  app.onError(respondWithApiError);
   const webOrigins = (process.env.WEB_ORIGIN ?? (process.env.NODE_ENV === "production" ? "http://localhost:3060" : "http://localhost:3060,http://localhost:3061")).split(",").map((origin) => origin.trim());
   app.use("/*", async (c, next) => {
     const origin = c.req.header("Origin");
@@ -61,13 +63,17 @@ async function main() {
     if (c.req.path.startsWith("/api/webhooks/") || c.req.path === "/health") {
       return next();
     }
-    if (!resolveRequestPrincipal(c.req.raw)) return c.json({ error: "Authentication required." }, 401);
+    const principal = resolveRequestPrincipal(c.req.raw);
+    if (!principal) return c.json({ error: "Authentication required." }, 401);
+    c.set("principal", principal);
     await next();
   });
 
   const memory = createMemoryComposition();
   await memory.recover();
   const studio = createStudioComposition();
+  if (!studio.store) throw new Error("Organization authority storage is required by the execution API.");
+  if (studio.store) app.use("/*", requireOrganizationContext(studio.store));
   const resolveMemoryAccess = memoryAccessResolverFromEnvironment();
 
   const connectionString = process.env.MEMORY_DATABASE_URL ?? process.env.STUDIO_DATABASE_URL;

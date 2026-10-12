@@ -1,0 +1,95 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationRunVisibility.test.ts
+
+FAIL tests/organizationRunVisibility.test.ts (5.905 s)
+  US2 teammates run visibility
+    ✕ owner reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied (16 ms)
+    ✕ admin reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied (4 ms)
+    ✕ member reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied (5 ms)
+    ✕ viewer reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied (3 ms)
+
+  ● US2 teammates run visibility › owner reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+        "own",
+    -   "team",
+      ]
+
+      17 |     const { app } = createRunsRouter(executor, async () => null, studio, () => ({ userId, tenantId: 'org-a' }));
+      18 |     const res = await app.request('/'); expect(res.status).toBe(200);
+    > 19 |     expect((await res.json() as { id: string }[]).map(r => r.id).sort()).toEqual(userId === 'admin' || userId === 'owner' ? ['own', 'team'] : ['own']);
+         |                                                                          ^
+      20 |     expect((await app.request('/own')).status).toBe(200);
+      21 |     expect((await app.request('/team')).status).toBe(userId === 'admin' || userId === 'owner' ? 200 : 404);
+      22 |     expect((await app.request('/team/cancel', { method: 'POST' })).status).toBe(userId === 'viewer' ? 403 : 404);
+
+      at tests/organizationRunVisibility.test.ts:19:74
+
+  ● US2 teammates run visibility › admin reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+        "own",
+    -   "team",
+      ]
+
+      17 |     const { app } = createRunsRouter(executor, async () => null, studio, () => ({ userId, tenantId: 'org-a' }));
+      18 |     const res = await app.request('/'); expect(res.status).toBe(200);
+    > 19 |     expect((await res.json() as { id: string }[]).map(r => r.id).sort()).toEqual(userId === 'admin' || userId === 'owner' ? ['own', 'team'] : ['own']);
+         |                                                                          ^
+      20 |     expect((await app.request('/own')).status).toBe(200);
+      21 |     expect((await app.request('/team')).status).toBe(userId === 'admin' || userId === 'owner' ? 200 : 404);
+      22 |     expect((await app.request('/team/cancel', { method: 'POST' })).status).toBe(userId === 'viewer' ? 403 : 404);
+
+      at tests/organizationRunVisibility.test.ts:19:74
+
+  ● US2 teammates run visibility › member reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 404
+    Received: 200
+
+      24 |     const membership = (await studio.getMembership('org-a', userId))!;
+      25 |     await studio.saveMembership({ ...membership, status: 'removed', version: membership.version + 1 });
+    > 26 |     expect((await app.request('/own')).status).toBe(404);
+         |                                                ^
+      27 |   });
+      28 | });
+      29 |
+
+      at tests/organizationRunVisibility.test.ts:26:48
+
+  ● US2 teammates run visibility › viewer reads own runs; only admin and owner read teammates; foreign runs and mutations remain denied
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      20 |     expect((await app.request('/own')).status).toBe(200);
+      21 |     expect((await app.request('/team')).status).toBe(userId === 'admin' || userId === 'owner' ? 200 : 404);
+    > 22 |     expect((await app.request('/team/cancel', { method: 'POST' })).status).toBe(userId === 'viewer' ? 403 : 404);
+         |                                                                            ^
+      23 |     expect((await app.request('/foreign')).status).toBe(404);
+      24 |     const membership = (await studio.getMembership('org-a', userId))!;
+      25 |     await studio.saveMembership({ ...membership, status: 'removed', version: membership.version + 1 });
+
+      at tests/organizationRunVisibility.test.ts:22:76
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 4 total
+Snapshots:   0 total
+Time:        6.126 s
+Ran all test suites matching /tests\/organizationRunVisibility.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

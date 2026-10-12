@@ -1,0 +1,7 @@
+
+Running 2 tests using 1 worker
+
+  ✓  1 [chrome] › e2e/organization-membership.spec.ts:9:5 › owner invites a zero-membership user; acceptance, role update and removal apply to live session (5.9s)
+  ✓  2 [chrome] › e2e/organization-routing.spec.ts:17:5 › one account switches organizations, preserves URL scope, and clears old data (6.6s)
+
+  2 passed (13.5s)

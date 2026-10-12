@@ -1,0 +1,77 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationWriteIsolation.test.ts -t 'concurrent HTTP imports'
+
+FAIL tests/organizationWriteIsolation.test.ts
+  T081 memory writes preserve the organization boundary
+    ✕ concurrent HTTP imports reject the losing organization uniformly and roll back its batch (35 ms)
+    ○ skipped workflow refuses a foreign ID without modifying the stored record
+    ○ skipped agent refuses a foreign ID without modifying the stored record
+    ○ skipped tool refuses a foreign ID without modifying the stored record
+    ○ skipped project refuses a foreign ID without modifying the stored record
+    ○ skipped task refuses a foreign ID without modifying the stored record
+    ○ skipped workspace refuses a foreign ID without modifying the stored record
+    ○ skipped repository refuses a foreign ID without modifying the stored record
+    ○ skipped comment refuses a foreign ID without modifying the stored record
+    ○ skipped routine refuses a foreign ID without modifying the stored record
+    ○ skipped webhook refuses a foreign ID without modifying the stored record
+    ○ skipped workflow import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped agent import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped tool import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped valid imports create personal copies and update only their own IDs
+  T081 postgres writes preserve the organization boundary
+    ✓ concurrent HTTP imports reject the losing organization uniformly and roll back its batch (84 ms)
+    ○ skipped workflow refuses a foreign ID without modifying the stored record
+    ○ skipped agent refuses a foreign ID without modifying the stored record
+    ○ skipped tool refuses a foreign ID without modifying the stored record
+    ○ skipped project refuses a foreign ID without modifying the stored record
+    ○ skipped task refuses a foreign ID without modifying the stored record
+    ○ skipped workspace refuses a foreign ID without modifying the stored record
+    ○ skipped repository refuses a foreign ID without modifying the stored record
+    ○ skipped comment refuses a foreign ID without modifying the stored record
+    ○ skipped routine refuses a foreign ID without modifying the stored record
+    ○ skipped webhook refuses a foreign ID without modifying the stored record
+    ○ skipped workflow import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped agent import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped tool import rejects foreign/private/system collisions atomically through HTTP
+    ○ skipped valid imports create personal copies and update only their own IDs
+    ○ skipped workflow concurrently created with one ID cannot move between organizations
+    ○ skipped agent concurrently created with one ID cannot move between organizations
+    ○ skipped tool concurrently created with one ID cannot move between organizations
+    ○ skipped project concurrently created with one ID cannot move between organizations
+    ○ skipped task concurrently created with one ID cannot move between organizations
+    ○ skipped workspace concurrently created with one ID cannot move between organizations
+    ○ skipped repository concurrently created with one ID cannot move between organizations
+    ○ skipped comment concurrently created with one ID cannot move between organizations
+    ○ skipped routine concurrently created with one ID cannot move between organizations
+    ○ skipped webhook concurrently created with one ID cannot move between organizations
+
+  ● T081 memory writes preserve the organization boundary › concurrent HTTP imports reject the losing organization uniformly and roll back its batch
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Array [
+        200,
+    -   404,
+    +   500,
+      ]
+
+      106 |         ] }));
+      107 |       }));
+    > 108 |       expect(responses.map(r => r.status).sort()).toEqual([200, 404]);
+          |                                                   ^
+      109 |       const winner = responses[0].status === 200 ? a : b;
+      110 |       expect(await store.getAgent(id)).toMatchObject({ tenantId: winner.principal.tenantId });
+      111 |       expect(await store.getAgent(responses[0].status === 200 ? freeB : freeA)).toBeNull();
+
+      at Object.<anonymous> (tests/organizationWriteIsolation.test.ts:108:51)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 38 skipped, 1 passed, 40 total
+Snapshots:   0 total
+Time:        4.172 s, estimated 9 s
+Ran all test suites matching /tests\/organizationWriteIsolation.test.ts/i with tests matching "concurrent HTTP imports".
+ ELIFECYCLE  Test failed. See above for more details.

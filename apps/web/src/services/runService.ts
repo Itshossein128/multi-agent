@@ -1,5 +1,5 @@
 import type { AgentRecord, ApprovalDecision, ApprovalRequest, ClarificationPackage, ClarificationSubmitResponse, Run, RunEvent, RunCreateRequest, RunCreateResponse, RunStatus, WorkflowDefinition } from "@multi-agent/types";
-import { executionApiBase } from "@/lib/orgRoute";
+import { executionApiBase, scopedApiPath } from "@/lib/orgRoute";
 import { requestJson } from "./requestJson";
 
 const TASKS_API_URL = "/api/tasks";
@@ -9,7 +9,7 @@ function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function tasksAction<T>(body: Record<string, unknown>): Promise<T> {
-  return requestJson<T>("", { method: "POST", body: JSON.stringify(body) }, { apiUrl: TASKS_API_URL });
+  return requestJson<T>("", { method: "POST", body: JSON.stringify(body) }, { apiUrl: scopedApiPath(TASKS_API_URL) });
 }
 
 export interface RunListQuery {
@@ -52,7 +52,7 @@ export const runService = {
   cancelRun(runId: string) { return request<{ runId: string; status: string }>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }); },
   cancelBranch(runId: string, branchKey: string) { return request<{ runId: string; branchKey: string; status: string }>(`/runs/${encodeURIComponent(runId)}/branches/${encodeURIComponent(branchKey)}/cancel`, { method: "POST" }); },
   retryRun(runId: string) { return request<RunCreateResponse>(`/runs/${encodeURIComponent(runId)}/retry`, { method: "POST" }); },
-  eventsUrl(runId: string, afterSequence = 0) { return `${API_URL}/runs/${encodeURIComponent(runId)}/events?sequence=${afterSequence}`; },
+  eventsUrl(runId: string, afterSequence = 0) { return `${executionApiBase()}/runs/${encodeURIComponent(runId)}/events?sequence=${afterSequence}`; },
   getApprovals(runId: string) { return request<ApprovalRequest[]>(`/runs/${encodeURIComponent(runId)}/approvals`); },
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecision, response?: string) {
     return request<{ ok: true }>(`/runs/${encodeURIComponent(runId)}/approvals/${encodeURIComponent(approvalId)}/resolve`, { method: "POST", body: JSON.stringify({ decision, response }) });

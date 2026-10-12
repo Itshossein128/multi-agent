@@ -1,5 +1,7 @@
 "use client";
 
+import { scopedApiPath } from "@/lib/orgRoute";
+
 import React, { useEffect, useState } from "react";
 import { MessageSquare, Send, Bot, User, Trash2, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,7 +73,7 @@ export function TaskCommentsSection({ taskId, agents }: TaskCommentsSectionProps
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/execution/studio/tasks/${encodeURIComponent(taskId)}/comments`);
+      const res = await fetch(scopedApiPath(`/api/execution/studio/tasks/${encodeURIComponent(taskId)}/comments`));
       if (!res.ok) throw new Error(t.loadError);
       const data = await res.json();
       setComments(Array.isArray(data) ? data : []);
@@ -95,7 +97,7 @@ export function TaskCommentsSection({ taskId, agents }: TaskCommentsSectionProps
     try {
       setSubmitting(true);
       setError(null);
-      const res = await fetch(`/api/execution/studio/tasks/${encodeURIComponent(taskId)}/comments`, {
+      const res = await fetch(scopedApiPath(`/api/execution/studio/tasks/${encodeURIComponent(taskId)}/comments`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -120,8 +122,7 @@ export function TaskCommentsSection({ taskId, agents }: TaskCommentsSectionProps
 
   const handleDelete = async (commentId: string) => {
     try {
-      const res = await fetch(
-        `/api/execution/studio/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`,
+      const res = await fetch(scopedApiPath(`/api/execution/studio/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`),
         {
           method: "DELETE",
         }

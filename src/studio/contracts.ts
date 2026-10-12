@@ -224,6 +224,7 @@ export interface StudioWorkspaceImport {
 }
 
 export interface StudioPrincipal {
+  principalKind?: "user" | "service";
   userId: string;
   tenantId: string;
 }
@@ -294,6 +295,12 @@ export interface StudioStore {
   listOrganizationsForUser(userId: string): Promise<OrganizationProfile[]>;
   getMembership(organizationId: string, userId: string): Promise<OrganizationMembership | null>;
   listMemberships(organizationId: string): Promise<OrganizationMembership[]>;
+  /** Serializes authorization, owner-count checks, membership and audit writes for one organization. */
+  organizationTransaction<T>(organizationId: string, operation: (store: StudioStore) => Promise<T>): Promise<T>;
+  listOrganizationAudit(organizationId: string): Promise<OrganizationAuditEntry[]>;
+  listInvitationsForUser(userId: string): Promise<OrganizationMembership[]>;
+  findOrganizationUser(identifier: { userId?: string; email?: string }): Promise<string | null>;
+  isOrganizationUserActive(userId: string): Promise<boolean>;
   saveMembership(membership: OrganizationMembership): Promise<OrganizationMembership>;
   appendOrganizationAudit(entry: OrganizationAuditEntry): Promise<void>;
   /** Set studio_users.tenant_id last-used organization pointer (nullable). */

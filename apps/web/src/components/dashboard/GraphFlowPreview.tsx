@@ -1,5 +1,7 @@
 "use client";
 
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
+
 /**
  * Dashboard graph preview shell: data queries, workflow pick, and card layout.
  * Node rendering lives in graph/GraphAgentNode; graph mapping lives in
@@ -22,12 +24,13 @@ import { workflowToGraph } from "./graph/graphMappers";
 const MOUNT_SEED = Math.floor(Math.random() * 1_000_000);
 
 export function GraphFlowPreview() {
+  const orgId = useOptionalOrg()?.org.id ?? "none";
   const workflowsQuery = useQuery({
-    queryKey: ["dashboard-workflows"],
+    queryKey: ["org", orgId, "dashboard-workflows"],
     queryFn: () => workflowService.listWorkflows(),
   });
   const agentsQuery = useQuery({
-    queryKey: ["dashboard-agents"],
+    queryKey: ["org", orgId, "dashboard-agents"],
     queryFn: () => workflowService.listAgents(),
   });
 

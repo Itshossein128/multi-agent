@@ -1,5 +1,7 @@
 "use client";
 
+import { useOrgPath } from "@/components/organization/OrgProvider";
+
 import React from "react";
 import Link from "next/link";
 import {
@@ -81,6 +83,7 @@ function PaletteItem({
 }
 
 export function NodePalette() {
+  const orgUrl = useOrgPath();
   const addNode = useWorkflowStore((s) => s.addNode);
   const addAgentAndNode = useWorkflowStore((s) => s.addAgentAndNode);
   const addNodeForAgent = useWorkflowStore((s) => s.addNodeForAgent);
@@ -155,7 +158,7 @@ export function NodePalette() {
                 {agent.enabled === false ? "Disabled · " : ""}{agentBackendLabel(agent.backend)}
               </span>
             </button>
-            <Link href={`/org/agents/${encodeURIComponent(agent.id)}`} aria-label={`Inspect ${agent.name}`} className="rounded px-1 py-2 text-xs text-indigo-300 underline focus-visible:outline-2 focus-visible:outline-indigo-400">Details</Link>
+            <Link href={orgUrl(`/org/agents/${encodeURIComponent(agent.id)}`)} aria-label={`Inspect ${agent.name}`} className="rounded px-1 py-2 text-xs text-indigo-300 underline focus-visible:outline-2 focus-visible:outline-indigo-400">Details</Link>
             <button
               type="button"
               title={`Delete agent "${agent.name}" and its nodes`}
@@ -209,7 +212,7 @@ export function NodePalette() {
                 {tool.enabled === false ? "Disabled · " : ""}{tool.category}
               </span>
             </button>
-            <Link href={`/org/tools/${encodeURIComponent(tool.id)}`} aria-label={`Inspect ${tool.name}`} className="rounded px-1 py-2 text-xs text-indigo-300 underline focus-visible:outline-2 focus-visible:outline-indigo-400">Details</Link>
+            <Link href={orgUrl(`/org/tools/${encodeURIComponent(tool.id)}`)} aria-label={`Inspect ${tool.name}`} className="rounded px-1 py-2 text-xs text-indigo-300 underline focus-visible:outline-2 focus-visible:outline-indigo-400">Details</Link>
             <button
               type="button"
               title={`Delete tool "${tool.name}" and its nodes`}

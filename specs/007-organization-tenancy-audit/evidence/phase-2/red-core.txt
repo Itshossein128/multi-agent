@@ -1,0 +1,479 @@
+
+> multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
+> node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationPermissions.test.ts tests/organizationMembershipAdmin.test.ts tests/organizationMembershipRevocation.test.ts
+
+FAIL tests/organizationMembershipAdmin.test.ts
+  ● US2 membership administration › invite, accept without membership, role-change, suspend, restore, remove bump versions and audit each change
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 404
+
+      14 |     const owner = appFor(store, 'owner');
+      15 |     let res = await owner.request('/organizations/current/members', jsonRequest('POST', { userId: 'new-user', role: 'viewer' }));
+    > 16 |     expect(res.status).toBe(201); expect(await res.json()).toMatchObject({ status: 'invited', version: 1 });
+         |                        ^
+      17 |     const invitee = appFor(store, 'new-user', 'unused-hint');
+      18 |     res = await invitee.request('/organizations/org-a/invitations/accept', jsonRequest('POST', {}));
+      19 |     expect(res.status).toBe(200); expect(await res.json()).toMatchObject({ status: 'active', version: 2, role: 'viewer' });
+
+      at Object.<anonymous> (tests/organizationMembershipAdmin.test.ts:16:24)
+
+  ● US2 membership administration › last active owner is protected: {"role":"member"}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 409
+    Received: 404
+
+      29 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+      30 |     const res = await appFor(store, 'owner').request('/organizations/current/members/owner', jsonRequest('PATCH', patch));
+    > 31 |     expect(res.status).toBe(409); expect((await store.getMembership('org-a', 'owner'))?.role).toBe('owner');
+         |                        ^
+      32 |   });
+      33 |   test.each([{ role: 'member' }, { status: 'suspended' }, { status: 'removed' }, { role: 'owner' }])('admin cannot modify any owner even with two owners: %j', async patch => {
+      34 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+
+      at tests/organizationMembershipAdmin.test.ts:31:24
+
+  ● US2 membership administration › last active owner is protected: {"status":"suspended"}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 409
+    Received: 404
+
+      29 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+      30 |     const res = await appFor(store, 'owner').request('/organizations/current/members/owner', jsonRequest('PATCH', patch));
+    > 31 |     expect(res.status).toBe(409); expect((await store.getMembership('org-a', 'owner'))?.role).toBe('owner');
+         |                        ^
+      32 |   });
+      33 |   test.each([{ role: 'member' }, { status: 'suspended' }, { status: 'removed' }, { role: 'owner' }])('admin cannot modify any owner even with two owners: %j', async patch => {
+      34 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+
+      at tests/organizationMembershipAdmin.test.ts:31:24
+
+  ● US2 membership administration › last active owner is protected: {"status":"removed"}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 409
+    Received: 404
+
+      29 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+      30 |     const res = await appFor(store, 'owner').request('/organizations/current/members/owner', jsonRequest('PATCH', patch));
+    > 31 |     expect(res.status).toBe(409); expect((await store.getMembership('org-a', 'owner'))?.role).toBe('owner');
+         |                        ^
+      32 |   });
+      33 |   test.each([{ role: 'member' }, { status: 'suspended' }, { status: 'removed' }, { role: 'owner' }])('admin cannot modify any owner even with two owners: %j', async patch => {
+      34 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+
+      at tests/organizationMembershipAdmin.test.ts:31:24
+
+  ● US2 membership administration › admin cannot modify any owner even with two owners: {"role":"member"}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      35 |     const stamp = nowIso(); await store.saveMembership({ organizationId: 'org-a', userId: 'owner-2', role: 'owner', status: 'active', version: 1, createdAt: stamp, updatedAt: stamp });
+      36 |     const res = await appFor(store, 'admin').request('/organizations/current/members/owner', jsonRequest('PATCH', patch));
+    > 37 |     expect(res.status).toBe(403);
+         |                        ^
+      38 |   });
+      39 |   test('admin cannot invite or promote owner; foreign member and uninvited acceptance return uniform 404', async () => {
+      40 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+
+      at tests/organizationMembershipAdmin.test.ts:37:24
+
+  ● US2 membership administration › admin cannot modify any owner even with two owners: {"status":"suspended"}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      35 |     const stamp = nowIso(); await store.saveMembership({ organizationId: 'org-a', userId: 'owner-2', role: 'owner', status: 'active', version: 1, createdAt: stamp, updatedAt: stamp });
+      36 |     const res = await appFor(store, 'admin').request('/organizations/current/members/owner', jsonRequest('PATCH', patch));
+    > 37 |     expect(res.status).toBe(403);
+         |                        ^
+      38 |   });
+      39 |   test('admin cannot invite or promote owner; foreign member and uninvited acceptance return uniform 404', async () => {
+      40 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+
+      at tests/organizationMembershipAdmin.test.ts:37:24
+
+  ● US2 membership administration › admin cannot modify any owner even with two owners: {"status":"removed"}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      35 |     const stamp = nowIso(); await store.saveMembership({ organizationId: 'org-a', userId: 'owner-2', role: 'owner', status: 'active', version: 1, createdAt: stamp, updatedAt: stamp });
+      36 |     const res = await appFor(store, 'admin').request('/organizations/current/members/owner', jsonRequest('PATCH', patch));
+    > 37 |     expect(res.status).toBe(403);
+         |                        ^
+      38 |   });
+      39 |   test('admin cannot invite or promote owner; foreign member and uninvited acceptance return uniform 404', async () => {
+      40 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+
+      at tests/organizationMembershipAdmin.test.ts:37:24
+
+  ● US2 membership administration › admin cannot modify any owner even with two owners: {"role":"owner"}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      35 |     const stamp = nowIso(); await store.saveMembership({ organizationId: 'org-a', userId: 'owner-2', role: 'owner', status: 'active', version: 1, createdAt: stamp, updatedAt: stamp });
+      36 |     const res = await appFor(store, 'admin').request('/organizations/current/members/owner', jsonRequest('PATCH', patch));
+    > 37 |     expect(res.status).toBe(403);
+         |                        ^
+      38 |   });
+      39 |   test('admin cannot invite or promote owner; foreign member and uninvited acceptance return uniform 404', async () => {
+      40 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+
+      at tests/organizationMembershipAdmin.test.ts:37:24
+
+  ● US2 membership administration › admin cannot invite or promote owner; foreign member and uninvited acceptance return uniform 404
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      40 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+      41 |     const admin = appFor(store, 'admin');
+    > 42 |     expect((await admin.request('/organizations/current/members', jsonRequest('POST', { userId: 'new-user', role: 'owner' }))).status).toBe(403);
+         |                                                                                                                                        ^
+      43 |     expect((await admin.request('/organizations/current/members/member', jsonRequest('PATCH', { role: 'owner' }))).status).toBe(403);
+      44 |     for (const res of [await admin.request('/organizations/current/members/foreign', { method: 'DELETE' }), await appFor(store, 'viewer').request('/organizations/org-b/invitations/accept', jsonRequest('POST', {}))]) {
+      45 |       expect(res.status).toBe(404); expect(await res.json()).toEqual({ error: 'Not found' });
+
+      at Object.<anonymous> (tests/organizationMembershipAdmin.test.ts:42:136)
+
+  ● US2 membership administration › two concurrent self-demotions retain one active owner
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Array [
+    -   200,
+    -   409,
+    +   404,
+    +   404,
+      ]
+
+      50 |     const stamp = nowIso(); await store.saveMembership({ organizationId: 'org-a', userId: 'owner-2', role: 'owner', status: 'active', version: 1, createdAt: stamp, updatedAt: stamp });
+      51 |     const results = await Promise.all(['owner', 'owner-2'].map(user => appFor(store, user).request(`/organizations/current/members/${user}`, jsonRequest('PATCH', { role: 'admin' }))));
+    > 52 |     expect(results.map(r => r.status).sort()).toEqual([200, 409]);
+         |                                               ^
+      53 |     expect((await store.listMemberships('org-a')).filter(m => m.role === 'owner' && m.status === 'active')).toHaveLength(1);
+      54 |   });
+      55 |   test('audit failure rolls back membership mutation', async () => {
+
+      at Object.<anonymous> (tests/organizationMembershipAdmin.test.ts:52:47)
+
+  ● US2 membership administration › audit failure rolls back membership mutation
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 500
+    Received: 404
+
+      57 |     jest.spyOn(store, 'appendOrganizationAudit').mockRejectedValue(new Error('secret database detail'));
+      58 |     const res = await appFor(store, 'owner').request('/organizations/current/members/member', jsonRequest('PATCH', { role: 'viewer' }));
+    > 59 |     expect(res.status).toBe(500); expect(await res.json()).toEqual({ error: 'Internal server error' });
+         |                        ^
+      60 |     expect((await store.getMembership('org-a', 'member'))?.role).toBe('member');
+      61 |   });
+      62 |   test('shadow mode refuses invitations', async () => {
+
+      at Object.<anonymous> (tests/organizationMembershipAdmin.test.ts:59:24)
+
+  ● US2 membership administration › shadow mode refuses invitations
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 503
+    Received: 404
+
+      63 |     const store = new InMemoryStudioStore(); await seedUs2(store);
+      64 |     process.env.ORG_MEMBERSHIP_ENFORCEMENT = 'shadow';
+    > 65 |     try { expect((await appFor(store, 'owner').request('/organizations/current/members', jsonRequest('POST', { userId: 'new-user', role: 'viewer' }))).status).toBe(503); }
+         |                                                                                                                                                                ^
+      66 |     finally { process.env.ORG_MEMBERSHIP_ENFORCEMENT = 'enforce'; }
+      67 |   });
+      68 | });
+
+      at Object.<anonymous> (tests/organizationMembershipAdmin.test.ts:65:160)
+
+FAIL tests/organizationPermissions.test.ts
+  ● US2 role permission matrix › requires permission with a typed denial and fails closed without context
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "function"
+    Received: "undefined"
+
+      11 |   test('requires permission with a typed denial and fails closed without context', () => {
+      12 |     const helper = (authorization as unknown as { requirePermission?: (context: unknown, permission: string) => void }).requirePermission;
+    > 13 |     expect(typeof helper).toBe('function');
+         |                           ^
+      14 |     if (!helper) return;
+      15 |     expect(() => helper(undefined, 'members.manage')).toThrow();
+      16 |     expect(() => helper({ permissions: permissionsForRole('viewer') }, 'budgets.manage')).toThrow();
+
+      at Object.<anonymous> (tests/organizationPermissions.test.ts:13:27)
+
+  ● US2 role permission matrix › member: PUT /budgets
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › member: PUT /organization/agents/missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › member: PATCH /organization/goals/missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › member: POST /organizations/current/members
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: PUT /budgets
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: PUT /organization/agents/missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: PATCH /organization/goals/missing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: POST /organization/goals
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 400
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: POST /organization/strategy
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 400
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: POST /organization/goals/missing/delegate
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: POST /projects
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: POST /tasks
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 400
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+  ● US2 role permission matrix › viewer: POST /organizations/current/members
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 404
+
+      34 |       const res = await app.request(path, jsonRequest(method, body));
+      35 |       if ((allowed as readonly string[]).includes(role)) expect(res.status).not.toBe(403);
+    > 36 |       else expect(res.status).toBe(403);
+         |                               ^
+      37 |     });
+      38 |   }
+      39 | });
+
+      at tests/organizationPermissions.test.ts:36:31
+
+FAIL tests/organizationMembershipRevocation.test.ts
+  ● US2 warmed legacy principal is denied on the next request after removal; demotion takes effect immediately
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 404
+
+      10 |     const member = createStudioRouter(store, () => ({ userId: 'member', tenantId: 'org-a' }));
+      11 |     expect((await member.request('/projects')).status).toBe(200);
+    > 12 |     expect((await owner.request('/organizations/current/members/member', { method: 'DELETE' })).status).toBe(200);
+         |                                                                                                         ^
+      13 |     const denied = await member.request('/projects'); expect(denied.status).toBe(404); expect(await denied.json()).toEqual({ error: 'Not found' });
+      14 |     const admin = createStudioRouter(store, () => ({ userId: 'admin', tenantId: 'org-a' }));
+      15 |     expect((await admin.request('/budgets', jsonRequest('PUT', { scope: 'company', limitUsd: 100 }))).status).toBe(200);
+
+      at Object.<anonymous> (tests/organizationMembershipRevocation.test.ts:12:105)
+
+Test Suites: 3 failed, 3 total
+Tests:       27 failed, 23 passed, 50 total
+Snapshots:   0 total
+Time:        4.706 s
+Ran all test suites matching /tests\/organizationPermissions.test.ts|tests\/organizationMembershipAdmin.test.ts|tests\/organizationMembershipRevocation.test.ts/i.
+ ELIFECYCLE  Test failed. See above for more details.

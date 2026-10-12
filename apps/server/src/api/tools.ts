@@ -4,7 +4,7 @@ import { ToolRuntime } from "../../../../src/tools";
 import type { StudioStore } from "../../../../src/studio/contracts";
 import { resolveRequestPrincipal } from "../auth/principal";
 import type { PrincipalResolver } from "../auth/authorization";
-import { requirePrincipal, respondWithApiError, type PrincipalVariables } from "./shared/http";
+import { requireOrganizationContext, requirePrincipal, respondWithApiError, type PrincipalVariables } from "./shared/http";
 import { ToolTestService, type ToolTestRequest } from "./tools/toolTestService";
 
 export type { ToolTestRequest } from "./tools/toolTestService";
@@ -18,6 +18,7 @@ export function createToolsRouter(
   const service = new ToolTestService(runtime, studioStore);
   app.use("*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "Tool request is too large." }, 413) }));
   app.use("*", requirePrincipal(resolvePrincipal));
+  if (studioStore) app.use("*", requireOrganizationContext(studioStore, "/tools"));
   app.onError(respondWithApiError);
   app.post("/test", async (c) => c.json(await service.execute(await c.req.json<ToolTestRequest>(), c.get("principal"))));
   return app;

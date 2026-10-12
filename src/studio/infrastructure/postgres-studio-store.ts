@@ -340,8 +340,8 @@ export class PostgresStudioStore implements StudioStore {
   async listWorkflows(principal?: StudioPrincipal): Promise<WorkflowDefinition[]> {
     const result = principal
       ? await this.query(
-          "SELECT definition FROM studio_workflows WHERE tenant_id = $1 AND (owner_id = $2 OR $2 LIKE 'system%' OR $2 LIKE 'internal:%') ORDER BY updated_at DESC, id",
-          [principal.tenantId, principal.userId],
+          "SELECT definition FROM studio_workflows WHERE tenant_id = $1 AND (owner_id = $2 OR $3::boolean) ORDER BY updated_at DESC, id",
+          [principal.tenantId, principal.userId, principal.principalKind === "service"],
         )
       : await this.query("SELECT definition FROM studio_workflows ORDER BY updated_at DESC, id");
     return result.rows.map((row) => row.definition as WorkflowDefinition);
@@ -350,8 +350,8 @@ export class PostgresStudioStore implements StudioStore {
   async getWorkflow(id: string, principal?: StudioPrincipal): Promise<WorkflowDefinition | null> {
     const result = principal
       ? await this.query(
-          "SELECT definition FROM studio_workflows WHERE id = $1 AND tenant_id = $2 AND (owner_id = $3 OR $3 LIKE 'system%' OR $3 LIKE 'internal:%')",
-          [id, principal.tenantId, principal.userId],
+          "SELECT definition FROM studio_workflows WHERE id = $1 AND tenant_id = $2 AND (owner_id = $3 OR $4::boolean)",
+          [id, principal.tenantId, principal.userId, principal.principalKind === "service"],
         )
       : await this.query("SELECT definition FROM studio_workflows WHERE id = $1", [id]);
     return result.rows[0]?.definition as WorkflowDefinition ?? null;
@@ -367,20 +367,26 @@ export class PostgresStudioStore implements StudioStore {
         }
       }
       definition = { ...definition, ownerId: principal.userId, tenantId: principal.tenantId };
-      await this.query(
+      const written = await this.query(
         `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
          VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at,
-           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id`,
+           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id
+         WHERE studio_workflows.tenant_id = EXCLUDED.tenant_id AND studio_workflows.owner_id = EXCLUDED.owner_id
+         RETURNING id`,
         [definition.id, definition.name, JSON.stringify(definition), definition.updatedAt, definition.updatedAt, principal.userId, principal.tenantId],
       );
+      if (!written.rowCount) throw new Error("Access denied to workflow");
     } else {
-      await this.query(
-        `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at)
-         VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at`,
-        [definition.id, definition.name, JSON.stringify(definition), definition.updatedAt, definition.updatedAt],
+      const written = await this.query(
+        `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
+         VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at
+         WHERE studio_workflows.tenant_id IS NOT DISTINCT FROM EXCLUDED.tenant_id AND studio_workflows.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id
+         RETURNING id`,
+        [definition.id, definition.name, JSON.stringify(definition), definition.updatedAt, definition.updatedAt, definition.ownerId ?? null, definition.tenantId ?? null],
       );
+      if (!written.rowCount) throw new Error("Access denied to resource");
     }
     return definition;
   }
@@ -396,8 +402,8 @@ export class PostgresStudioStore implements StudioStore {
   async listAgents(principal?: StudioPrincipal): Promise<AgentRecord[]> {
     const result = principal
       ? await this.query(
-          "SELECT record FROM studio_agents WHERE is_system = true OR (tenant_id = $1 AND (owner_id = $2 OR owner_id IS NULL OR $2 LIKE 'system%' OR $2 LIKE 'internal:%')) ORDER BY updated_at DESC, id",
-          [principal.tenantId, principal.userId],
+          "SELECT record FROM studio_agents WHERE is_system = true OR (tenant_id = $1 AND (owner_id = $2 OR owner_id IS NULL OR $3::boolean)) ORDER BY updated_at DESC, id",
+          [principal.tenantId, principal.userId, principal.principalKind === "service"],
         )
       : await this.query("SELECT record FROM studio_agents ORDER BY updated_at DESC, id");
     return result.rows.map((row) => row.record as AgentRecord);
@@ -406,8 +412,8 @@ export class PostgresStudioStore implements StudioStore {
   async getAgent(id: string, principal?: StudioPrincipal): Promise<AgentRecord | null> {
     const result = principal
       ? await this.query(
-          "SELECT record FROM studio_agents WHERE id = $1 AND (is_system = true OR (tenant_id = $2 AND (owner_id = $3 OR owner_id IS NULL OR $3 LIKE 'system%' OR $3 LIKE 'internal:%')))",
-          [id, principal.tenantId, principal.userId],
+          "SELECT record FROM studio_agents WHERE id = $1 AND (is_system = true OR (tenant_id = $2 AND (owner_id = $3 OR owner_id IS NULL OR $4::boolean)))",
+          [id, principal.tenantId, principal.userId, principal.principalKind === "service"],
         )
       : await this.query("SELECT record FROM studio_agents WHERE id = $1", [id]);
     return result.rows[0]?.record as AgentRecord ?? null;
@@ -424,20 +430,26 @@ export class PostgresStudioStore implements StudioStore {
         }
       }
       agent = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-      await this.query(
+      const written = await this.query(
         `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
          VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
+           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system
+         WHERE studio_agents.tenant_id = EXCLUDED.tenant_id AND NOT studio_agents.is_system AND (studio_agents.owner_id IS NULL OR studio_agents.owner_id = EXCLUDED.owner_id)
+         RETURNING id`,
         [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt, principal.userId, principal.tenantId],
       );
+      if (!written.rowCount) throw new Error("Access denied to agent");
     } else {
-      await this.query(
-        `INSERT INTO studio_agents (id, name, record, created_at, updated_at)
-         VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-        [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt],
+      const written = await this.query(
+        `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
+         VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, $8)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at
+         WHERE studio_agents.tenant_id IS NOT DISTINCT FROM EXCLUDED.tenant_id AND studio_agents.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id AND studio_agents.is_system = EXCLUDED.is_system
+         RETURNING id`,
+        [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt, agent.ownerId ?? null, agent.tenantId ?? null, agent.isSystem ?? false],
       );
+      if (!written.rowCount) throw new Error("Access denied to resource");
     }
     return agent;
   }
@@ -484,20 +496,26 @@ export class PostgresStudioStore implements StudioStore {
         }
       }
       tool = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-      await this.query(
+      const written = await this.query(
         `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
          VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
+           owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system
+         WHERE studio_tools.tenant_id = EXCLUDED.tenant_id AND NOT studio_tools.is_system AND (studio_tools.owner_id IS NULL OR studio_tools.owner_id = EXCLUDED.owner_id)
+         RETURNING id`,
         [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt, principal.userId, principal.tenantId],
       );
+      if (!written.rowCount) throw new Error("Access denied to tool");
     } else {
-      await this.query(
-        `INSERT INTO studio_tools (id, name, record, created_at, updated_at)
-         VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-        [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt],
+      const written = await this.query(
+        `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
+         VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, $8)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at
+         WHERE studio_tools.tenant_id IS NOT DISTINCT FROM EXCLUDED.tenant_id AND studio_tools.owner_id IS NOT DISTINCT FROM EXCLUDED.owner_id AND studio_tools.is_system = EXCLUDED.is_system
+         RETURNING id`,
+        [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt, tool.ownerId ?? null, tool.tenantId ?? null, tool.isSystem ?? false],
       );
+      if (!written.rowCount) throw new Error("Access denied to resource");
     }
     return tool;
   }
@@ -605,7 +623,7 @@ export class PostgresStudioStore implements StudioStore {
         ownerId: task.ownerId ?? principal.userId,
         updatedAt,
       };
-      await this.query(
+      const written = await this.query(
         `INSERT INTO studio_tasks (
            id, title, description, priority, status, assigned_agent, dependencies, output,
            retry_count, paused, created_at, updated_at, owner_id, tenant_id,
@@ -627,7 +645,9 @@ export class PostgresStudioStore implements StudioStore {
            started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
            parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
            last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata,
-           workspace_id = EXCLUDED.workspace_id, project_id = EXCLUDED.project_id`,
+           workspace_id = EXCLUDED.workspace_id, project_id = EXCLUDED.project_id
+         WHERE studio_tasks.tenant_id = EXCLUDED.tenant_id
+         RETURNING id`,
         [
           task.id, task.title, task.description, task.priority, task.status, assignedAgent,
           JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
@@ -637,6 +657,7 @@ export class PostgresStudioStore implements StudioStore {
           workspaceId, projectId,
         ],
       );
+      if (!written.rowCount) throw new Error("Access denied to task");
     } else {
       const updatedAt = task.updatedAt ?? task.createdAt ?? nowIso();
       const tenantId = task.tenantId ?? "_orphan";
@@ -655,7 +676,7 @@ export class PostgresStudioStore implements StudioStore {
         workspaceId,
         updatedAt,
       };
-      await this.query(
+      const written = await this.query(
         `INSERT INTO studio_tasks (
            id, title, description, priority, status, assigned_agent, dependencies, output,
            retry_count, paused, created_at, updated_at,
@@ -676,7 +697,9 @@ export class PostgresStudioStore implements StudioStore {
            started_at = EXCLUDED.started_at, completed_at = EXCLUDED.completed_at,
            parent_task_id = EXCLUDED.parent_task_id, run_id = EXCLUDED.run_id,
            last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata,
-           workspace_id = EXCLUDED.workspace_id, project_id = EXCLUDED.project_id`,
+           workspace_id = EXCLUDED.workspace_id, project_id = EXCLUDED.project_id
+         WHERE studio_tasks.tenant_id = EXCLUDED.tenant_id
+         RETURNING id`,
         [
           task.id, task.title, task.description, task.priority, task.status, assignedAgent,
           JSON.stringify(task.dependencies ?? []), task.output, task.retryCount, task.paused,
@@ -686,6 +709,7 @@ export class PostgresStudioStore implements StudioStore {
           workspaceId, projectId, tenantId, task.ownerId ?? null,
         ],
       );
+      if (!written.rowCount) throw new Error("Access denied to task");
     }
     return task;
   }
@@ -732,19 +756,22 @@ export class PostgresStudioStore implements StudioStore {
     }
     const nameSource = project.nameSource ?? "manual";
     project = { ...project, nameSource };
-    await this.query(
+    const written = await this.query(
       `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id, name_source)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz, $9, $10)
        ON CONFLICT (id) DO UPDATE SET
          tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
          settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id,
-         name_source = EXCLUDED.name_source`,
+         name_source = EXCLUDED.name_source
+         WHERE studio_projects.tenant_id = EXCLUDED.tenant_id
+         RETURNING id`,
       [
         project.id, project.tenantId, project.name, project.description, project.status,
         JSON.stringify(project.settings ?? {}), project.createdAt, project.updatedAt, project.ownerId,
         nameSource,
       ],
     );
+    if (!written.rowCount) throw new Error("Access denied to project");
     return project;
   }
 
@@ -834,7 +861,7 @@ export class PostgresStudioStore implements StudioStore {
       effectiveSettings: workspace.effectiveSettings ?? { ...(workspace.settings ?? {}), ...settingsOverrides },
       settings: workspace.settings ?? {},
     };
-    await this.query(
+    const written = await this.query(
       `INSERT INTO studio_workspaces (
          id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id,
          project_id, name_source, settings_overrides
@@ -844,13 +871,16 @@ export class PostgresStudioStore implements StudioStore {
          tenant_id = EXCLUDED.tenant_id, name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
          settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at, owner_id = EXCLUDED.owner_id,
          project_id = EXCLUDED.project_id, name_source = EXCLUDED.name_source,
-         settings_overrides = EXCLUDED.settings_overrides`,
+         settings_overrides = EXCLUDED.settings_overrides
+         WHERE studio_workspaces.tenant_id = EXCLUDED.tenant_id
+         RETURNING id`,
       [
         workspace.id, workspace.tenantId, workspace.name, workspace.description, workspace.status,
         JSON.stringify(workspace.settings ?? {}), workspace.createdAt, workspace.updatedAt, workspace.ownerId,
         workspace.projectId, nameSource, JSON.stringify(settingsOverrides),
       ],
     );
+    if (!written.rowCount) throw new Error("Access denied to workspace");
     return workspace;
   }
 
@@ -966,6 +996,38 @@ export class PostgresStudioStore implements StudioStore {
     return result.rows.map(decodeOrganization);
   }
 
+  async organizationTransaction<T>(organizationId: string, operation: (store: StudioStore) => Promise<T>): Promise<T> {
+    return this.transaction(async store => {
+      const tx = store as PostgresStudioStore;
+      await tx.query("SELECT set_config('app.tenant_id', $1, true), set_config('app.principal_kind', 'user', true)", [organizationId]);
+      // Lock the authoritative parent before membership/owner reads. All membership writers use this lock.
+      await tx.query("SELECT id FROM studio_organizations WHERE id = $1 FOR UPDATE", [organizationId]);
+      return operation(store);
+    });
+  }
+
+  async listOrganizationAudit(organizationId: string) {
+    const result = await this.query("SELECT * FROM studio_organization_audit WHERE organization_id = $1 ORDER BY created_at, id", [organizationId]);
+    return result.rows.map(row => ({ id: String(row.id), organizationId: String(row.organization_id), actorUserId: row.actor_user_id as string | null, targetUserId: row.target_user_id as string | null, action: String(row.action), details: row.details as Record<string, unknown>, createdAt: asIso(row.created_at) }));
+  }
+
+  async listInvitationsForUser(userId: string) {
+    const result = await this.query("SELECT m.* FROM studio_organization_memberships m JOIN studio_organizations o ON o.id = m.organization_id WHERE m.user_id = $1 AND m.status = 'invited' AND o.status = 'active' ORDER BY m.created_at", [userId]);
+    return result.rows.map(decodeMembership);
+  }
+
+  async findOrganizationUser(identifier: { userId?: string; email?: string }): Promise<string | null> {
+    const result = identifier.userId
+      ? await this.query("SELECT id FROM studio_users WHERE id = $1 AND status = 'active'", [identifier.userId])
+      : await this.query("SELECT id FROM studio_users WHERE lower(email) = lower($1) AND status = 'active'", [identifier.email]);
+    return result.rows[0] ? String(result.rows[0].id) : null;
+  }
+
+  async isOrganizationUserActive(userId: string): Promise<boolean> {
+    const result = await this.query("SELECT id FROM studio_users WHERE id = $1 AND status = 'active'", [userId]);
+    return result.rows.length > 0;
+  }
+
   async getMembership(organizationId: string, userId: string) {
     const result = await this.query(
       `SELECT * FROM studio_organization_memberships
@@ -1068,7 +1130,7 @@ export class PostgresStudioStore implements StudioStore {
       }
       repo = { ...repo, tenantId: principal.tenantId };
     }
-    await this.query(
+    const written = await this.query(
       `INSERT INTO studio_project_repositories (
          id, tenant_id, project_id, name, source, default_branch, status, created_at, updated_at
        )
@@ -1076,12 +1138,15 @@ export class PostgresStudioStore implements StudioStore {
        ON CONFLICT (id) DO UPDATE SET
          tenant_id = EXCLUDED.tenant_id, project_id = EXCLUDED.project_id, name = EXCLUDED.name,
          source = EXCLUDED.source, default_branch = EXCLUDED.default_branch, status = EXCLUDED.status,
-         updated_at = EXCLUDED.updated_at`,
+         updated_at = EXCLUDED.updated_at
+         WHERE studio_project_repositories.tenant_id = EXCLUDED.tenant_id
+         RETURNING id`,
       [
         repo.id, repo.tenantId, repo.projectId, repo.name, repo.source, repo.defaultBranch,
         repo.status, repo.createdAt, repo.updatedAt,
       ],
     );
+    if (!written.rowCount) throw new Error("Access denied to projectrepository");
     return repo;
   }
 
@@ -1213,66 +1278,23 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async importWorkspace(workspace: StudioWorkspaceImport, principal?: StudioPrincipal): Promise<void> {
-    if (!this.client) {
-      return this.transaction((tx) => tx.importWorkspace(workspace, principal));
-    }
-    for (const workflow of workspace.workflows) {
-      if (principal) {
-        const stamped = { ...workflow, ownerId: principal.userId, tenantId: principal.tenantId };
-        await this.query(
-          `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
-           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
-           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at,
-             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id`,
-          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.updatedAt, stamped.updatedAt, principal.userId, principal.tenantId],
-        );
-      } else {
-        await this.query(
-          `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at)
-           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at`,
-          [workflow.id, workflow.name, JSON.stringify(workflow), workflow.updatedAt, workflow.updatedAt],
-        );
+    if (!this.client) return this.transaction(tx => tx.importWorkspace(workspace, principal));
+    // Validate all collisions before the first write; the transaction also rolls back races.
+    for (const [records, read] of [
+      [workspace.workflows, this.getWorkflow.bind(this)],
+      [workspace.agents, this.getAgent.bind(this)],
+      [workspace.tools, this.getTool.bind(this)],
+    ] as const) {
+      for (const record of records) {
+        const existing = await read(record.id);
+        if (principal && existing && (existing.tenantId !== principal.tenantId || existing.ownerId !== principal.userId || ('isSystem' in existing && existing.isSystem))) {
+          throw new Error('Access denied to imported resource');
+        }
       }
     }
-    for (const agent of workspace.agents) {
-      if (principal) {
-        const stamped = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-        await this.query(
-          `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
-           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
-           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
-          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
-        );
-      } else {
-        await this.query(
-          `INSERT INTO studio_agents (id, name, record, created_at, updated_at)
-           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-          [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt],
-        );
-      }
-    }
-    for (const tool of workspace.tools) {
-      if (principal) {
-        const stamped = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
-        await this.query(
-          `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
-           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
-           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at,
-             owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system`,
-          [stamped.id, stamped.name, JSON.stringify(stamped), stamped.createdAt, stamped.updatedAt, principal.userId, principal.tenantId],
-        );
-      } else {
-        await this.query(
-          `INSERT INTO studio_tools (id, name, record, created_at, updated_at)
-           VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
-           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, record = EXCLUDED.record, updated_at = EXCLUDED.updated_at`,
-          [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt],
-        );
-      }
-    }
+    for (const workflow of workspace.workflows) await this.saveWorkflow(workflow, principal);
+    for (const agent of workspace.agents) await this.saveAgent(agent, principal);
+    for (const tool of workspace.tools) await this.saveTool(tool, principal);
   }
 
   // --- Task Comments ---
@@ -1311,6 +1333,7 @@ export class PostgresStudioStore implements StudioStore {
         mentions = EXCLUDED.mentions,
         metadata = EXCLUDED.metadata,
         updated_at = EXCLUDED.updated_at
+      WHERE studio_task_comments.tenant_id = EXCLUDED.tenant_id
       RETURNING *`,
       [
         comment.id,
@@ -1325,6 +1348,7 @@ export class PostgresStudioStore implements StudioStore {
         comment.updatedAt,
       ],
     );
+    if (!result.rowCount) throw new Error("Access denied to resource");
     return decodeComment(result.rows[0]);
   }
 
@@ -1517,6 +1541,7 @@ export class PostgresStudioStore implements StudioStore {
         last_status = EXCLUDED.last_status,
         last_error = EXCLUDED.last_error,
         updated_at = EXCLUDED.updated_at
+      WHERE studio_routines.tenant_id = EXCLUDED.tenant_id
       RETURNING *`,
       [
         routine.id,
@@ -1540,6 +1565,7 @@ export class PostgresStudioStore implements StudioStore {
         ownerId,
       ],
     );
+    if (!result.rowCount) throw new Error("Access denied to resource");
     return decodeRoutine(result.rows[0]);
   }
 
@@ -1631,6 +1657,7 @@ export class PostgresStudioStore implements StudioStore {
         enabled = EXCLUDED.enabled,
         rate_limit_per_minute = EXCLUDED.rate_limit_per_minute,
         updated_at = EXCLUDED.updated_at
+      WHERE studio_webhook_triggers.tenant_id = EXCLUDED.tenant_id
       RETURNING *`,
       [
         trigger.id,
@@ -1647,6 +1674,7 @@ export class PostgresStudioStore implements StudioStore {
         ownerId,
       ],
     );
+    if (!result.rowCount) throw new Error("Access denied to resource");
     return decodeWebhookTrigger(result.rows[0]);
   }
 
