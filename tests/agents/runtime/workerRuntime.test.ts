@@ -48,8 +48,8 @@ describe("LocalProcessWorkerRuntime", () => {
       };
       let killed = false;
       let timer: NodeJS.Timeout | undefined;
-      const stdoutListeners: Record<string, any[]> = { data: [], close: [] };
-      const stderrListeners: Record<string, any[]> = { data: [], close: [] };
+      const stdoutListeners: Record<string, any[]> = { data: [], close: [], error: [] };
+      const stderrListeners: Record<string, any[]> = { data: [], close: [], error: [] };
 
       const emit = (map: Record<string, any[]>, event: string, ...args: any[]) => {
         if (!killed) map[event]?.forEach(fn => fn(...args));
@@ -365,7 +365,7 @@ describe("LocalProcessWorkerRuntime", () => {
     const spawnFn = ((command: string, args: string[], options: any) => {
       spawned.push({ command, args, env: options.env });
       const listeners: Record<string, Array<(...values: any[]) => void>> = { close: [], error: [] };
-      const streamListeners: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
+      const streamListeners: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [], error: [] };
       setTimeout(() => {
         streamListeners.close.forEach((fn) => fn());
         listeners.close.forEach((fn) => fn(0));
@@ -429,8 +429,8 @@ describe("LocalProcessWorkerRuntime", () => {
     const spawnFn = ((command: string, args: string[], options: any) => {
       spawnedEnvironment = options.env;
       const listeners: Record<string, Array<(...values: any[]) => void>> = { close: [], error: [] };
-      const stdout: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
-      const stderr: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
+      const stdout: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [], error: [] };
+      const stderr: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [], error: [] };
       setTimeout(() => {
         stdout.data.forEach((fn) => fn(Buffer.from("before dummy-split-")));
         stdout.data.forEach((fn) => fn(Buffer.from("secret after")));
@@ -573,6 +573,84 @@ describe("LocalProcessWorkerRuntime", () => {
     // Session must be cleaned up and container force-removed via spawnFn (rm -f)
     expect((runtime as any).sessions.has(handle.workerId)).toBe(false);
     expect(spawnedCommands.some((cmd) => cmd.includes("rm -f"))).toBe(true);
+  });
+
+  test("resolves wait() promptly with spawn_error on spawn failure without stdio close events", async () => {
+    const spawnFn = (command: string, args: string[], options: any) => {
+      const listeners: Record<string, any[]> = { close: [], error: [] };
+      const stdoutListeners: Record<string, any[]> = { data: [], close: [], error: [] };
+      const stderrListeners: Record<string, any[]> = { data: [], close: [], error: [] };
+
+      setTimeout(() => {
+        // Emit process error and close without stdio close
+        listeners.error?.forEach((fn) => fn(new Error("spawn ENOENT")));
+        listeners.close?.forEach((fn) => fn(null));
+      }, 10);
+
+      return {
+        stdout: { on: (e: string, fn: any) => stdoutListeners[e]?.push(fn) },
+        stderr: { on: (e: string, fn: any) => stderrListeners[e]?.push(fn) },
+        on: (e: string, fn: any) => listeners[e]?.push(fn),
+        kill: jest.fn(),
+        pid: undefined,
+      } as any;
+    };
+
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+    const spec = createSpec("node", ["-e", "process.exit(1)"]);
+    const handle = await runtime.start(spec);
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("spawn_error");
+    expect(result.error).toContain("spawn ENOENT");
+
+    await runtime.cleanup(handle.workerId);
+  });
+
+  test("completion event emission and logging are strictly idempotent", async () => {
+    let stdoutCloseCb: (() => void) | undefined;
+    let stderrCloseCb: (() => void) | undefined;
+    let childCloseCb: ((code: number) => void) | undefined;
+
+    const spawnFn = (command: string, args: string[], options: any) => {
+      return {
+        stdout: { on: (e: string, fn: any) => { if (e === "close") stdoutCloseCb = fn; } },
+        stderr: { on: (e: string, fn: any) => { if (e === "close") stderrCloseCb = fn; } },
+        on: (e: string, fn: any) => { if (e === "close") childCloseCb = fn; },
+        kill: jest.fn(),
+        pid: 1234,
+      } as any;
+    };
+
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+    const spec = createSpec("node", []);
+    const handle = await runtime.start(spec);
+
+    const logSpy = jest.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      // Trigger all stream/process close handlers once
+      stdoutCloseCb?.();
+      stderrCloseCb?.();
+      childCloseCb?.(0);
+
+      const result = await runtime.wait(handle.workerId);
+      expect(result.reason).toBe("completed");
+
+      // Count worker.completed log calls so far
+      const completedLogs = logSpy.mock.calls.filter((call) => call[0].includes("worker.completed"));
+      expect(completedLogs.length).toBe(1);
+
+      // Re-trigger close handlers to verify idempotency
+      stdoutCloseCb?.();
+      stderrCloseCb?.();
+      childCloseCb?.(0);
+
+      const completedLogsAfterDuplicate = logSpy.mock.calls.filter((call) => call[0].includes("worker.completed"));
+      expect(completedLogsAfterDuplicate.length).toBe(1);
+    } finally {
+      logSpy.mockRestore();
+      await runtime.cleanup(handle.workerId);
+    }
   });
 
   test("[Integration] node child process runs harmlessly", async () => {
