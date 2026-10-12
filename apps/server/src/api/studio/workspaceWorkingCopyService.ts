@@ -13,6 +13,7 @@ import {
   ensureWorkspaceRepoDir,
   getWorkspaceStorageRoot,
   resolveWorkspaceRepoPath,
+  workspacePathBelongsToOrganization,
 } from "../../../../../src/studio/infrastructure/workspace-storage";
 import { ensureWorkspaceRepoDurableState, markWorkspaceRepoDirty } from "./workspaceRepoStateService";
 
@@ -318,7 +319,12 @@ export async function resolveTaskExecutionWorkspaceRoot(params: {
 
   const candidates: string[] = [];
   if (params.preferredPath && isAbsolute(params.preferredPath)) {
-    candidates.push(resolve(params.preferredPath));
+    const preferred = resolve(params.preferredPath);
+    // US3 / T-11: a preferred working copy may only be used by the organization
+    // whose prefix it carries. Foreign prefixes and unverifiable paths are dropped.
+    if (workspacePathBelongsToOrganization(preferred, params.tenantId, env)) {
+      candidates.push(preferred);
+    }
   }
 
   try {

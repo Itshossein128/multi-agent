@@ -1,5 +1,6 @@
 import type { MemoryAccessContext, MemoryConsolidator } from "../contracts";
 import type { DurableMemoryJob, MemoryJobKind, PostgresMemoryJobStore } from "../infrastructure";
+import { runInOrganizationScope } from "../../studio/infrastructure/organizationJobScope";
 
 export interface DurableMemoryJobWorkerOptions { workerId: string; batchSize?: number; leaseMs?: number; maxAttempts?: number; onEvent?: (event: Record<string, unknown>) => void }
 export type DurableMemoryJobHandler = (job: DurableMemoryJob, access: MemoryAccessContext) => Promise<void>;
@@ -27,7 +28,9 @@ export class DurableMemoryJobWorker {
       try {
         const handler = this.handlers[job.kind];
         if (!handler) throw new Error("unsupported handler version");
-        await handler(job, internalAccess(job));
+        // INV-7 / US3: the worker claims across organizations but every handler
+        // executes strictly inside the organization recorded on the job.
+        await runInOrganizationScope({ organizationId: job.tenantId, source: "memory.job" }, () => handler(job, internalAccess(job)));
         if (await this.store.complete(job.id, this.options.workerId)) this.options.onEvent?.({ event: "memory.job.completed", jobId: job.id, jobKind: job.kind, attempt: job.attempts, workerId: this.options.workerId, durationMs: Date.now()-started });
       } catch (error) {
         const { code, retryable } = classifyError(error);

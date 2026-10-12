@@ -1,0 +1,167 @@
+FAIL tests/organizationBackgroundIsolation.test.ts
+  ● Test suite failed to run
+
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m13[0m:[93m8[0m - [91merror[0m[90m TS2307: [0mCannot find module '../src/studio/infrastructure/organizationJobScope' or its corresponding type declarations.
+
+    [7m13[0m } from '../src/studio/infrastructure/organizationJobScope';
+    [7m  [0m [91m       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m179[0m:[93m80[0m - [91merror[0m[90m TS2353: [0mObject literal may only specify known properties, and 'enabled' does not exist in type '{ tenantId: string; agentId: string; }'.
+
+    [7m179[0m     await store.saveAgentHeartbeat({ agentId: 'agent-gone', tenantId: 'org-a', enabled: true, intervalSeconds: 60, nextHeartbeatAt: stamp }, { tenantId: 'org-a', userId: 'owner' });
+    [7m   [0m [91m                                                                               ~~~~~~~[0m
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m214[0m:[93m72[0m - [91merror[0m[90m TS2322: [0mType '{ scope: "run"; id: string; }' is not assignable to type 'MemoryNamespace'.
+      Types of property 'scope' are incompatible.
+        Type '"run"' is not assignable to type '"agent" | "workflow" | "user" | "project" | "organization"'.
+
+    [7m214[0m       { principalId: 'member', tenantId: 'org-a', readableNamespaces: [namespace], writableNamespaces: [namespace] });
+    [7m   [0m [91m                                                                       ~~~~~~~~~[0m
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m214[0m:[93m105[0m - [91merror[0m[90m TS2322: [0mType '{ scope: "run"; id: string; }' is not assignable to type 'MemoryNamespace'.
+      Types of property 'scope' are incompatible.
+        Type '"run"' is not assignable to type '"agent" | "workflow" | "user" | "project" | "organization"'.
+
+    [7m214[0m       { principalId: 'member', tenantId: 'org-a', readableNamespaces: [namespace], writableNamespaces: [namespace] });
+    [7m   [0m [91m                                                                                                        ~~~~~~~~~[0m
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m226[0m:[93m7[0m - [91merror[0m[90m TS2322: [0mType '{ scope: "run"; id: string; }' is not assignable to type 'MemoryNamespace'.
+      Types of property 'scope' are incompatible.
+        Type '"run"' is not assignable to type '"agent" | "workflow" | "user" | "project" | "organization"'.
+
+    [7m226[0m       namespace,
+    [7m   [0m [91m      ~~~~~~~~~[0m
+
+      [96msrc/memory/infrastructure/postgres-memory-job-store.ts[0m:[93m7[0m:[93m136[0m
+        [7m7[0m export interface DurableMemoryJob { id: string; kind: MemoryJobKind; handlerVersion: number; idempotencyKey: string; tenantId: string; namespace: MemoryNamespace; runId?: string; memoryId?: string; status: MemoryJobStatus; attempts: number; availableAt: string; leasedBy?: string; leaseExpiresAt?: string; lastErrorCode?: string; createdAt: string; updatedAt: string; completedAt?: string }
+        [7m [0m [96m                                                                                                                                       ~~~~~~~~~[0m
+        The expected type comes from property 'namespace' which is declared here on type 'DurableMemoryJob'
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m266[0m:[93m53[0m - [91merror[0m[90m TS2307: [0mCannot find module '../src/studio/infrastructure/organizationJobScope' or its corresponding type declarations.
+
+    [7m266[0m     const { withScopedOrganization } = await import('../src/studio/infrastructure/organizationJobScope');
+    [7m   [0m [91m                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m268[0m:[93m108[0m - [91merror[0m[90m TS7006: [0mParameter 'client' implicitly has an 'any' type.
+
+    [7m268[0m     const result = await withScopedOrganization(pool, 'org-scope-runner', 'service', 'test.source', async (client) => ({
+    [7m   [0m [91m                                                                                                           ~~~~~~[0m
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m279[0m:[93m53[0m - [91merror[0m[90m TS2307: [0mCannot find module '../src/studio/infrastructure/organizationJobScope' or its corresponding type declarations.
+
+    [7m279[0m     const { withScopedOrganization } = await import('../src/studio/infrastructure/organizationJobScope');
+    [7m   [0m [91m                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationBackgroundIsolation.test.ts[0m:[93m290[0m:[93m12[0m - [91merror[0m[90m TS2367: [0mThis comparison appears to be unintentional because the types '{ rows: { tenant_id: string; }[]; }' and 'string' have no overlap.
+
+    [7m290[0m     expect(outside === '' || outside === null).toBe(true);
+    [7m   [0m [91m           ~~~~~~~~~~~~~~[0m
+
+FAIL tests/organizationExecutionIsolation.test.ts
+  ● Test suite failed to run
+
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m7[0m:[93m8[0m - [91merror[0m[90m TS2307: [0mCannot find module '../apps/server/src/runtime/runOrganizationAccess' or its corresponding type declarations.
+
+    [7m7[0m } from '../apps/server/src/runtime/runOrganizationAccess';
+    [7m [0m [91m       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m11[0m:[93m8[0m - [91merror[0m[90m TS2307: [0mCannot find module '../apps/server/src/runtime/runAccessCheckpoint' or its corresponding type declarations.
+
+    [7m11[0m } from '../apps/server/src/runtime/runAccessCheckpoint';
+    [7m  [0m [91m       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m69[0m:[93m51[0m - [91merror[0m[90m TS2554: [0mExpected 0-10 arguments, but got 11.
+
+    [7m69[0m       undefined, undefined, undefined, undefined, new RunOrganizationAccess(store));
+    [7m  [0m [91m                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m105[0m:[93m51[0m - [91merror[0m[90m TS2554: [0mExpected 0-10 arguments, but got 11.
+
+    [7m105[0m       undefined, undefined, undefined, undefined, new RunOrganizationAccess(store));
+    [7m   [0m [91m                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m135[0m:[93m51[0m - [91merror[0m[90m TS2554: [0mExpected 0-10 arguments, but got 11.
+
+    [7m135[0m       undefined, undefined, undefined, undefined, new RunOrganizationAccess(store));
+    [7m   [0m [91m                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m175[0m:[93m51[0m - [91merror[0m[90m TS2554: [0mExpected 0-10 arguments, but got 11.
+
+    [7m175[0m       undefined, undefined, undefined, undefined, new RunOrganizationAccess(store));
+    [7m   [0m [91m                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m190[0m:[93m51[0m - [91merror[0m[90m TS2554: [0mExpected 0-10 arguments, but got 11.
+
+    [7m190[0m       undefined, undefined, undefined, undefined, new RunOrganizationAccess(store));
+    [7m   [0m [91m                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m197[0m:[93m34[0m - [91merror[0m[90m TS7031: [0mBinding element 'guardedRunId' implicitly has an 'any' type.
+
+    [7m197[0m     checkpoint.install(({ runId: guardedRunId }) => executor.assertRunAccess(guardedRunId));
+    [7m   [0m [91m                                 ~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m197[0m:[93m62[0m - [91merror[0m[90m TS2339: [0mProperty 'assertRunAccess' does not exist on type 'RunExecutor'.
+
+    [7m197[0m     checkpoint.install(({ runId: guardedRunId }) => executor.assertRunAccess(guardedRunId));
+    [7m   [0m [91m                                                             ~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m214[0m:[93m51[0m - [91merror[0m[90m TS2554: [0mExpected 0-10 arguments, but got 11.
+
+    [7m214[0m       undefined, undefined, undefined, undefined, new RunOrganizationAccess(store));
+    [7m   [0m [91m                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m258[0m:[93m7[0m - [91merror[0m[90m TS2554: [0mExpected 1-2 arguments, but got 3.
+
+    [7m258[0m       new RunOrganizationAccess(store));
+    [7m   [0m [91m      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionIsolation.test.ts[0m:[93m281[0m:[93m7[0m - [91merror[0m[90m TS2554: [0mExpected 1-2 arguments, but got 3.
+
+    [7m281[0m       new RunOrganizationAccess(store));
+    [7m   [0m [91m      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+FAIL tests/organizationExecutionSecurity.test.ts
+  ● Test suite failed to run
+
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m11[0m:[93m8[0m - [91merror[0m[90m TS2307: [0mCannot find module '../apps/server/src/runtime/runOrganizationAccess' or its corresponding type declarations.
+
+    [7m11[0m } from '../apps/server/src/runtime/runOrganizationAccess';
+    [7m  [0m [91m       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m12[0m:[93m65[0m - [91merror[0m[90m TS2307: [0mCannot find module '../apps/server/src/runtime/runAccessCheckpoint' or its corresponding type declarations.
+
+    [7m12[0m import { RunAccessCheckpoint, checkpointedApiCredentials } from '../apps/server/src/runtime/runAccessCheckpoint';
+    [7m  [0m [91m                                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m16[0m:[93m10[0m - [91merror[0m[90m TS2305: [0mModule '"../src/studio/infrastructure/workspace-storage"' has no exported member 'assertWorkspacePathBelongsToOrganization'.
+
+    [7m16[0m import { assertWorkspacePathBelongsToOrganization } from '../src/studio/infrastructure/workspace-storage';
+    [7m  [0m [91m         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m54[0m:[93m49[0m - [91merror[0m[90m TS2554: [0mExpected 0-10 arguments, but got 11.
+
+    [7m54[0m     undefined, undefined, undefined, undefined, new RunOrganizationAccess(store));
+    [7m  [0m [91m                                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m79[0m:[93m79[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ principalId: string; tenantId: string; readableNamespaces: { scope: "run"; id: string; }[]; writableNamespaces: { scope: "run"; id: string; }[]; }' is not assignable to parameter of type 'MemoryAccessContext'.
+      Types of property 'readableNamespaces' are incompatible.
+        Type '{ scope: "run"; id: string; }[]' is not assignable to type 'MemoryNamespace[]'.
+          Type '{ scope: "run"; id: string; }' is not assignable to type 'MemoryNamespace'.
+            Types of property 'scope' are incompatible.
+              Type '"run"' is not assignable to type '"agent" | "user" | "workflow" | "project" | "organization"'.
+
+    [7m79[0m         executor.start({ workflow: simpleWorkflow(), agents: [], input: {} }, foreignGrant, principal);
+    [7m  [0m [91m                                                                              ~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m99[0m:[93m52[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ principalId: string; tenantId: string; readableNamespaces: { scope: "run"; id: string; }[]; writableNamespaces: { scope: "run"; id: string; }[]; }' is not assignable to parameter of type 'MemoryAccessContext'.
+      Types of property 'readableNamespaces' are incompatible.
+        Type '{ scope: "run"; id: string; }[]' is not assignable to type 'MemoryNamespace[]'.
+          Type '{ scope: "run"; id: string; }' is not assignable to type 'MemoryNamespace'.
+            Types of property 'scope' are incompatible.
+              Type '"run"' is not assignable to type '"agent" | "user" | "workflow" | "project" | "organization"'.
+
+    [7m99[0m     await expect(async () => executor.retry(runId, foreignGrant)).rejects.toMatchObject({
+    [7m  [0m [91m                                                   ~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m121[0m:[93m65[0m - [91merror[0m[90m TS2345: [0mArgument of type '{ principalId: string; tenantId: string; readableNamespaces: { scope: "run"; id: string; }[]; writableNamespaces: { scope: "run"; id: string; }[]; }' is not assignable to parameter of type 'MemoryAccessContext'.
+      Types of property 'readableNamespaces' are incompatible.
+        Type '{ scope: "run"; id: string; }[]' is not assignable to type 'MemoryNamespace[]'.
+          Type '{ scope: "run"; id: string; }' is not assignable to type 'MemoryNamespace'.
+            Types of property 'scope' are incompatible.
+              Type '"run"' is not assignable to type '"agent" | "user" | "workflow" | "project" | "organization"'.
+
+    [7m121[0m     expect(() => executor.resumeQueuedRun('run-queued-foreign', foreignGrant)).toThrow(
+    [7m   [0m [91m                                                                ~~~~~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m180[0m:[93m27[0m - [91merror[0m[90m TS7031: [0mBinding element 'runId' implicitly has an 'any' type.
+
+    [7m180[0m     checkpoint.install(({ runId, tenantId }) => executor.assertRunAccess(runId, tenantId));
+    [7m   [0m [91m                          ~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m180[0m:[93m34[0m - [91merror[0m[90m TS7031: [0mBinding element 'tenantId' implicitly has an 'any' type.
+
+    [7m180[0m     checkpoint.install(({ runId, tenantId }) => executor.assertRunAccess(runId, tenantId));
+    [7m   [0m [91m                                 ~~~~~~~~[0m
+    [96mtests/organizationExecutionSecurity.test.ts[0m:[93m180[0m:[93m58[0m - [91merror[0m[90m TS2339: [0mProperty 'assertRunAccess' does not exist on type 'RunExecutor'.
+
+    [7m180[0m     checkpoint.install(({ runId, tenantId }) => executor.assertRunAccess(runId, tenantId));
+    [7m   [0m [91m                                                         ~~~~~~~~~~~~~~~[0m
+
+Test Suites: 3 failed, 3 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        46.594 s
+Ran all test suites matching /tests\\organizationExecutionIsolation.test.ts|tests\\organizationBackgroundIsolation.test.ts|tests\\organizationExecutionSecurity.test.ts/i.

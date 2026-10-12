@@ -14,6 +14,7 @@ import {
   type AgentHeartbeatSettings,
 } from "@multi-agent/types";
 import type { PgClient, PgPool } from "../../memory/infrastructure";
+import { scopedDbClient } from "./organizationJobScope";
 import type {
   AcceptWebhookDeliveryParams,
   AcceptWebhookDeliveryResult,
@@ -320,7 +321,12 @@ function decodeTask(row: Record<string, unknown>): StudioTask {
 
 export class PostgresStudioStore implements StudioStore {
   constructor(private readonly pool: PgPool, private readonly client?: PgClient) {}
-  private query(text: string, values?: unknown[]) { return (this.client ?? this.pool).query(text, values); }
+  private query(text: string, values?: unknown[]) {
+    // US3/T050: statements issued while an organization scope owns a
+    // transaction for this pool run on that connection, so `app.tenant_id`
+    // (RLS prerequisite) applies to background handler work.
+    return (this.client ?? scopedDbClient(this.pool) ?? this.pool).query(text, values);
+  }
 
   async transaction<T>(operation: (store: StudioStore) => Promise<T>): Promise<T> {
     if (this.client) throw new Error("Nested Studio transactions are unsupported.");
@@ -1398,29 +1404,43 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async claimNextTriggerEvent(workerId: string, leaseDurationSeconds = 60): Promise<TriggerEvent | null> {
-    const result = await this.query(
-      `UPDATE studio_trigger_events
-       SET status = 'processing',
-           locked_by = $1,
-           locked_until = now() + ($2 || ' seconds')::interval,
-           updated_at = now()
-       WHERE id = (
-         SELECT id FROM studio_trigger_events
-         WHERE (
-           status IN ('pending', 'failed')
-           OR (status = 'processing' AND locked_until IS NOT NULL AND locked_until <= now())
+    const inline = async (): Promise<TriggerEvent | null> => {
+      const result = await this.query(
+        `UPDATE studio_trigger_events
+         SET status = 'processing',
+             locked_by = $1,
+             locked_until = now() + ($2 || ' seconds')::interval,
+             updated_at = now()
+         WHERE id = (
+           SELECT id FROM studio_trigger_events
+           WHERE (
+             status IN ('pending', 'failed')
+             OR (status = 'processing' AND locked_until IS NOT NULL AND locked_until <= now())
+           )
+             AND retry_count < max_retries
+             AND (next_retry_at IS NULL OR next_retry_at <= now())
+             AND (locked_until IS NULL OR locked_until <= now())
+           ORDER BY created_at ASC
+           FOR UPDATE SKIP LOCKED
+           LIMIT 1
          )
-           AND retry_count < max_retries
-           AND (next_retry_at IS NULL OR next_retry_at <= now())
-           AND (locked_until IS NULL OR locked_until <= now())
-         ORDER BY created_at ASC
-         FOR UPDATE SKIP LOCKED
-         LIMIT 1
-       )
-       RETURNING *`,
-      [workerId, String(leaseDurationSeconds)],
-    );
-    return result.rows[0] ? decodeTriggerEvent(result.rows[0]) : null;
+         RETURNING *`,
+        [workerId, String(leaseDurationSeconds)],
+      );
+      return result.rows[0] ? decodeTriggerEvent(result.rows[0]) : null;
+    };
+    // US3/T052: claim through the SECURITY DEFINER worker function so a
+    // least-privileged role can claim across organizations under future RLS.
+    try {
+      const result = await this.query(
+        "SELECT * FROM studio_claim_trigger_events($1, $2, $3)",
+        [1, workerId, leaseDurationSeconds],
+      );
+      return result.rows[0] ? decodeTriggerEvent(result.rows[0]) : null;
+    } catch (err: any) {
+      if (err?.code === "42883" || err?.code === "42P01") return inline();
+      throw err;
+    }
   }
 
   async updateTriggerEvent(id: string, patch: Partial<TriggerEvent>, expectedLockedBy?: string): Promise<TriggerEvent | null> {
@@ -1578,6 +1598,12 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async claimDueRoutines(workerId: string, limit = 5): Promise<RoutineRecord[]> {
+    try {
+      const result = await this.query("SELECT * FROM studio_claim_routines($1, $2)", [limit, workerId]);
+      return result.rows.map(decodeRoutine);
+    } catch (err: any) {
+      if (err?.code !== "42883" && err?.code !== "42P01") throw err;
+    }
     const result = await this.query(
       `SELECT * FROM studio_routines
        WHERE enabled = true
@@ -1926,25 +1952,34 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async claimDueHeartbeats(workerId: string, limit = 10): Promise<AgentHeartbeatSettings[]> {
-    const result = await this.query(
-      `UPDATE studio_agent_heartbeats
-       SET locked_by = $1,
-           locked_until = now() + interval '60 seconds'
-       WHERE (tenant_id, agent_id) IN (
-         SELECT tenant_id, agent_id
-         FROM studio_agent_heartbeats
-         WHERE enabled = true
-           AND next_heartbeat_at IS NOT NULL
-           AND next_heartbeat_at <= now()
-           AND (locked_until IS NULL OR locked_until <= now())
-         ORDER BY next_heartbeat_at ASC
-         FOR UPDATE SKIP LOCKED
-         LIMIT $2
-       )
-       RETURNING *`,
-      [workerId, limit],
-    );
-    return result.rows.map(decodeAgentHeartbeat);
+    const inline = async (): Promise<AgentHeartbeatSettings[]> => {
+      const result = await this.query(
+        `UPDATE studio_agent_heartbeats
+         SET locked_by = $1,
+             locked_until = now() + interval '60 seconds'
+         WHERE (tenant_id, agent_id) IN (
+           SELECT tenant_id, agent_id
+           FROM studio_agent_heartbeats
+           WHERE enabled = true
+             AND next_heartbeat_at IS NOT NULL
+             AND next_heartbeat_at <= now()
+             AND (locked_until IS NULL OR locked_until <= now())
+           ORDER BY next_heartbeat_at ASC
+           FOR UPDATE SKIP LOCKED
+           LIMIT $2
+         )
+         RETURNING *`,
+        [workerId, limit],
+      );
+      return result.rows.map(decodeAgentHeartbeat);
+    };
+    try {
+      const result = await this.query("SELECT * FROM studio_claim_heartbeats($1, $2)", [limit, workerId]);
+      return result.rows.map(decodeAgentHeartbeat);
+    } catch (err: any) {
+      if (err?.code === "42883" || err?.code === "42P01") return inline();
+      throw err;
+    }
   }
 
   async isAgentBusy(agentId: string, tenantId: string): Promise<boolean> {

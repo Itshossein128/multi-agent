@@ -40,6 +40,17 @@ import type { RequestPrincipal } from "../auth/principal";
 import { ApprovalManager, type PausedContext } from "./approvalManager";
 import { GraphRunner } from "./graphRunner";
 import type { DurableMemoryJob, EnqueueMemoryJob } from "../../../../src/memory/infrastructure";
+import {
+  OrganizationAccessRevokedError,
+  ORGANIZATION_ACCESS_REVOKED,
+  MEMORY_ACCESS_ORGANIZATION_MISMATCH,
+  MemoryAccessOrganizationMismatchError,
+  RunOrganizationAccess,
+  assertMemoryAccessMatchesRun,
+  deriveRunInitiatorKind,
+} from "./runOrganizationAccess";
+import { assertRunAccessTenant } from "./runAccessCheckpoint";
+import { runInOrganizationScope } from "../../../../src/studio/infrastructure/organizationJobScope";
 
 interface DurableMemoryJobEnqueuer { enqueue(input: EnqueueMemoryJob): Promise<{ job: DurableMemoryJob; duplicate: boolean }>; }
 
@@ -85,6 +96,7 @@ export class RunExecutor {
     private readonly proceduralService?: ProceduralService,
     private readonly memoryJobs?: MemoryBackgroundJobs,
     private readonly durableMemoryJobs?: DurableMemoryJobEnqueuer,
+    private readonly organizationAccess?: RunOrganizationAccess,
   ) {
     this.instanceId = (this.store as any).instanceId ?? randomUUID();
     // Wire up the extracted managers with shared state.
@@ -105,10 +117,25 @@ export class RunExecutor {
         this.graphRunner.runGraph(runId, compiled, input, workflow, agents, this.approvalManager, memoryAccess, tools, stepBudget, this.store.signal(runId), this.branchControllers.get(runId), this.guardrails.recursionLimit),
       signal: (runId) => this.store.signal(runId),
       fail: (runId, error) => this.fail(runId, error),
+      assertRunAccess: (runId) => this.assertRunAccess(runId),
     });
   }
 
   getStore() { return this.store; }
+
+  /**
+   * Credential-lease / resume checkpoint (D-5): revalidates that the run still
+   * exists, belongs to `tenantId` when one is requested, and that its
+   * initiator still has organization access.
+   */
+  async assertRunAccess(runId: string, tenantId?: string): Promise<void> {
+    const entry = this.store.get(runId);
+    if (!entry) {
+      throw new OrganizationAccessRevokedError("run_not_found", `run ${runId} is not known to this instance`);
+    }
+    assertRunAccessTenant(entry.run.tenantId, tenantId);
+    if (this.organizationAccess) await this.organizationAccess.assertRunActive(entry.run);
+  }
 
   private scheduleProceduralLearning(runId: string, input: EpisodeExtractionInput, access: import("../../../../src/memory/contracts").MemoryAccessContext, _episode: EpisodeExtractionResult): void {
     if (!this.proceduralService) return;
@@ -171,27 +198,31 @@ export class RunExecutor {
 
   /** Durable handler: re-load run state and validate its trusted captured scope. */
   async processDurableEpisodicJob(job: DurableMemoryJob): Promise<void> {
-    const access = this.durableScope(job);
-    if (!job.runId || !access) throw new Error("access validation failed for durable episodic job");
-    const entry = this.store.get(job.runId)!;
-    if (!this.episodeService || !["completed", "failed", "cancelled"].includes(entry.run.status)) throw new Error("unsupported episodic job state");
-    await this.processTerminalEpisodicMemory(
-      job.runId,
-      { succeeded: entry.run.status === "completed", error: entry.run.error, cancelled: entry.run.status === "cancelled" },
-      { skipDurableEnqueue: true },
-    );
+    return runInOrganizationScope({ organizationId: job.tenantId, source: "memory.job" }, async () => {
+      const access = this.durableScope(job);
+      if (!job.runId || !access) throw new Error("access validation failed for durable episodic job");
+      const entry = this.store.get(job.runId)!;
+      if (!this.episodeService || !["completed", "failed", "cancelled"].includes(entry.run.status)) throw new Error("unsupported episodic job state");
+      await this.processTerminalEpisodicMemory(
+        job.runId,
+        { succeeded: entry.run.status === "completed", error: entry.run.error, cancelled: entry.run.status === "cancelled" },
+        { skipDurableEnqueue: true },
+      );
+    });
   }
 
   /** Durable handler: procedures read authoritative episodes at execution time. */
   async processDurableProceduralJob(job: DurableMemoryJob): Promise<void> {
-    const access = this.durableScope(job);
-    if (!job.runId || !access || !this.proceduralService) throw new Error("access validation failed for durable procedural job");
-    const entry = this.store.get(job.runId)!;
-    const agentId = entry.agentsSnapshot?.[0]?.id ?? "unknown";
-    const result = await this.proceduralService.learnFromAuthorizedEpisodes({ access, namespace: job.namespace, agentId });
-    const failed = result.failed === true || result.reason === "persistence_failed";
-    this.store.setProceduralMemoryStatus?.(job.runId, failed ? "failed" : "processed");
-    if (failed) throw new Error(result.reason);
+    return runInOrganizationScope({ organizationId: job.tenantId, source: "memory.job" }, async () => {
+      const access = this.durableScope(job);
+      if (!job.runId || !access || !this.proceduralService) throw new Error("access validation failed for durable procedural job");
+      const entry = this.store.get(job.runId)!;
+      const agentId = entry.agentsSnapshot?.[0]?.id ?? "unknown";
+      const result = await this.proceduralService.learnFromAuthorizedEpisodes({ access, namespace: job.namespace, agentId });
+      const failed = result.failed === true || result.reason === "persistence_failed";
+      this.store.setProceduralMemoryStatus?.(job.runId, failed ? "failed" : "processed");
+      if (failed) throw new Error(result.reason);
+    });
   }
 
   private credentialPrincipalForRun(runId: string): TrustedCredentialPrincipal | undefined {
@@ -222,6 +253,7 @@ export class RunExecutor {
     const stamp = nowIso();
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
+    assertMemoryAccessMatchesRun({ id, tenantId }, memoryAccess);
     const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
     const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
     this.store.create(
@@ -273,6 +305,7 @@ export class RunExecutor {
     this.assertRunInputContract(request);
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
+    assertMemoryAccessMatchesRun({ tenantId }, memoryAccess);
     const triggerDispatchKey = typeof request.metadata?.triggerDispatchKey === "string" ? request.metadata.triggerDispatchKey : undefined;
     if (triggerDispatchKey) {
       const existing = this.store.findByTriggerDispatchKey?.(triggerDispatchKey, tenantId);
@@ -285,7 +318,8 @@ export class RunExecutor {
     const id = uid("run"); const stamp = nowIso();
     const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
     const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
-    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId };
+    const initiatorKind = deriveRunInitiatorKind({ metadata: request.metadata, principalKind: principal?.principalKind });
+    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId, initiatorKind };
     this.store.create(
       run,
       memoryOwnerId && memoryOwnerTenantId ? { principalId: memoryOwnerId, tenantId: memoryOwnerTenantId } : undefined,
@@ -310,21 +344,27 @@ export class RunExecutor {
     const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
     const tools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
     if (!workflow || !agents) return false;
+    const access = memoryAccess ?? entry.memoryAccess;
+    // A run may only be restored with a memory grant from its own organization.
+    assertMemoryAccessMatchesRun(entry.run, access);
     this.pendingRequests.set(runId, {
       request: { workflow, agents, tools, input: entry.run.input ?? {}, metadata: entry.run.metadata, taskId: entry.run.taskId },
-      memoryAccess: memoryAccess ?? entry.memoryAccess,
+      memoryAccess: access,
       principal: entry.run.ownerId && entry.run.tenantId ? { userId: entry.run.ownerId, tenantId: entry.run.tenantId } : undefined,
     });
     this.pumpQueue();
     return true;
   }
 
-  retry(runId: string, memoryAccess?: MemoryAccessContext) {
+  /** Retry re-checks the initiator's organization access (D-5) before starting. */
+  async retry(runId: string, memoryAccess?: MemoryAccessContext) {
     const entry = this.store.get(runId);
     if (!entry) throw new Error("Run not found");
     if (entry.run.status !== "failed" && entry.run.status !== "cancelled") {
       throw new Error("Only failed or cancelled runs can be retried");
     }
+    assertMemoryAccessMatchesRun(entry.run, memoryAccess);
+    if (this.organizationAccess) await this.organizationAccess.assertRunActive(entry.run);
     const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
     const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
     const tools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
@@ -587,6 +627,28 @@ export class RunExecutor {
       return;
     }
 
+    // Execution checkpoints (US3 / D-5 / INV-3 / INV-6):
+    //  - the memory grant must belong to the run's organization, and
+    //  - the initiator must still have organization access, or the run stops
+    //    with ORGANIZATION_ACCESS_REVOKED before any credential/memory use.
+    try {
+      assertMemoryAccessMatchesRun(entry.run, memoryAccess ?? entry.memoryAccess);
+      if (this.organizationAccess) {
+        await this.organizationAccess.assertRunActive(entry.run);
+        const context = await this.organizationAccess.resolveStartContext(entry.run);
+        const patch: Partial<Run> = {};
+        const initiatorKind = entry.run.initiatorKind ?? context.initiatorKind;
+        if (entry.run.initiatorKind !== initiatorKind) patch.initiatorKind = initiatorKind;
+        if (entry.run.membershipVersionAtStart === undefined && context.membershipVersionAtStart !== undefined) {
+          patch.membershipVersionAtStart = context.membershipVersionAtStart;
+        }
+        if (Object.keys(patch).length > 0) this.store.update(runId, patch);
+      }
+    } catch (error) {
+      this.fail(runId, error);
+      return;
+    }
+
     this.store.update(runId, { status: "running" });
     const timeout = setTimeout(() => this.store.cancel(runId), this.guardrails.maxRunDurationMs);
     const checkpointer = typeof this.checkpointer === "object" ? this.checkpointer : new MemorySaver();
@@ -752,6 +814,18 @@ export function classifyRunFailure(error: unknown): NodeResultEnvelope {
   if (error instanceof NodeOutcomeError) return error.envelope;
   if (error instanceof ContractViolationError) return error.envelope;
   if (error instanceof BranchRoutingError) return error.envelope;
+  if (error instanceof OrganizationAccessRevokedError || (error as { code?: string } | null)?.code === ORGANIZATION_ACCESS_REVOKED) {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+    return createResultEnvelope("blocked", {
+      error: { code: ORGANIZATION_ACCESS_REVOKED, message: message || "Run stopped: organization access revoked", retryable: false },
+    });
+  }
+  if (error instanceof MemoryAccessOrganizationMismatchError || (error as { code?: string } | null)?.code === MEMORY_ACCESS_ORGANIZATION_MISMATCH) {
+    const message = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+    return createResultEnvelope("blocked", {
+      error: { code: MEMORY_ACCESS_ORGANIZATION_MISMATCH, message, retryable: false },
+    });
+  }
   if (error instanceof ToolPolicyError) {
     return createResultEnvelope("policy_rejected", {
       error: { code: "TOOL_POLICY_REJECTED", message: (error.message || "Tool execution was rejected by server policy").slice(0, 300), retryable: false },

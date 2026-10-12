@@ -142,7 +142,7 @@ export class RunApiService {
     const access = needsMemory ? await this.resolveMemoryAccess(request) : null;
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required to retry this run.");
     try {
-      const retriedRunId = this.executor.retry(runId, access ?? undefined);
+      const retriedRunId = await this.executor.retry(runId, access ?? undefined);
       try {
         if (this.studioStore && entry.run.taskId) {
           const task = await this.studioStore.getTask(entry.run.taskId, principal);

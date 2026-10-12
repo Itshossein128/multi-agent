@@ -1,0 +1,4 @@
+
+> server@0.1.0 build E:\hossein\ai_agent\multi-agent\apps\server
+> tsc -p tsconfig.json
+

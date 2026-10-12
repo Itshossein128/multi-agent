@@ -1,6 +1,15 @@
 import { nowIso, uid, type TriggerEvent } from "@multi-agent/types";
 import type { StudioPrincipal, StudioStore } from "../../../../src/studio/contracts";
+import {
+  assertOrganizationScope,
+  asyncLocalOrganizationScopeRunner,
+  type OrganizationScopeRunner,
+} from "../../../../src/studio/infrastructure/organizationJobScope";
 import type { RunExecutor } from "../runtime/runExecutor";
+import {
+  OrganizationAccessRevokedError,
+  type RunOrganizationAccess,
+} from "../runtime/runOrganizationAccess";
 import type { TaskService } from "../api/studio/taskService";
 import { log } from "../logging";
 
@@ -8,6 +17,8 @@ export interface TriggerOutboxProcessorOptions {
   workerId?: string;
   pollIntervalMs?: number;
   leaseDurationSeconds?: number;
+  /** Executes each claimed event inside its own organization scope (US3/T050). */
+  scopeRunner?: OrganizationScopeRunner;
 }
 
 /**
@@ -18,6 +29,7 @@ export class TriggerOutboxProcessor {
   private readonly workerId: string;
   private readonly pollIntervalMs: number;
   private readonly leaseDurationSeconds: number;
+  private readonly scopeRunner: OrganizationScopeRunner;
   private timer?: NodeJS.Timeout;
   private running = false;
   private processing = false;
@@ -27,10 +39,12 @@ export class TriggerOutboxProcessor {
     private readonly executor?: RunExecutor,
     private readonly taskService?: TaskService,
     options: TriggerOutboxProcessorOptions = {},
+    private readonly organizationAccess?: RunOrganizationAccess,
   ) {
     this.workerId = options.workerId ?? `worker-${uid("node")}`;
     this.pollIntervalMs = options.pollIntervalMs ?? 1000;
     this.leaseDurationSeconds = options.leaseDurationSeconds ?? 60;
+    this.scopeRunner = options.scopeRunner ?? asyncLocalOrganizationScopeRunner;
   }
 
   start(): void {
@@ -71,12 +85,47 @@ export class TriggerOutboxProcessor {
       if (!event) return null;
 
       try {
-        const dispatchedRunId = await this.processEvent(event);
+        const dispatchedRunId = await this.scopeRunner(
+          { organizationId: event.tenantId, source: "trigger_outbox" },
+          async () => {
+            // Per-item organization assertion (INV-7 / US3).
+            assertOrganizationScope(event.tenantId);
+            if (this.organizationAccess) {
+              try {
+                await this.organizationAccess.assertRunActive({ tenantId: event.tenantId, initiatorKind: "service" });
+              } catch (error) {
+                // Suspended/deleted organizations never dispatch scheduled work.
+                if (error instanceof OrganizationAccessRevokedError) return { revoked: true as const };
+                throw error;
+              }
+            }
+            return { revoked: false as const, runId: await this.processEvent(event) };
+          },
+        );
+        if (dispatchedRunId && "revoked" in dispatchedRunId && dispatchedRunId.revoked) {
+          const denied = await this.store.updateTriggerEvent(
+            event.id,
+            {
+              status: "dead_letter",
+              lastError: "ORGANIZATION_ACCESS_REVOKED",
+              lockedBy: null,
+              lockedUntil: null,
+            },
+            this.workerId,
+          );
+          log.warn("trigger.organization_access_revoked", {
+            eventId: event.id,
+            tenantId: event.tenantId,
+            leaseLost: !denied,
+          });
+          return event;
+        }
+        const dispatchedRunIdValue = dispatchedRunId && "runId" in dispatchedRunId ? dispatchedRunId.runId : undefined;
         const updated = await this.store.updateTriggerEvent(
           event.id,
           {
             status: "processed",
-            dispatchedRunId: dispatchedRunId ?? null,
+            dispatchedRunId: dispatchedRunIdValue ?? null,
             lastError: null,
             lockedBy: null,
             lockedUntil: null,
@@ -95,7 +144,7 @@ export class TriggerOutboxProcessor {
           targetType: event.targetType,
           targetId: event.targetId,
           tenantId: event.tenantId,
-          runId: dispatchedRunId,
+          runId: dispatchedRunIdValue,
         });
         return event;
       } catch (error) {

@@ -13,6 +13,7 @@ export async function runMemoryMigrations(pool: PgPool, options: { vectorEnabled
     "004_memory_jobs.sql",
     "005_memory_jobs_tenant_identity.sql",
     "006_organization_tenant_rls.sql",
+    "007_memory_job_claims.sql",
   ];
   const migrations = await Promise.all(names.map(async name => { const sql = await readFile(resolve(directory, name), "utf8"); return { name, sql, checksum: createHash("sha256").update(sql).digest("hex") }; }));
   const client = await pool.connect();

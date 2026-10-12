@@ -28,6 +28,8 @@ export interface ApprovalManagerDependencies {
   ) => Promise<void>;
   signal: (runId: string) => AbortSignal | undefined;
   fail: (runId: string, error: unknown) => void;
+  /** D-5 checkpoint: revalidate the run initiator before resuming after approval. */
+  assertRunAccess?: (runId: string) => Promise<void>;
 }
 
 export interface PausedContext {
@@ -158,6 +160,16 @@ export class ApprovalManager {
     const context = this.deps.pausedContext.get(runId);
     const checkpointer = this.deps.checkpointers.get(runId);
     if (!context || !checkpointer) { this.deps.fail(runId, new Error("Run is not resumable.")); return; }
+    // Resume checkpoint (D-5): a removed initiator stops here with
+    // ORGANIZATION_ACCESS_REVOKED instead of continuing execution.
+    if (this.deps.assertRunAccess) {
+      try {
+        await this.deps.assertRunAccess(runId);
+      } catch (error) {
+        this.deps.fail(runId, error);
+        return;
+      }
+    }
     this.deps.pausedContext.delete(runId);
     try {
       const compiled = compileWorkflow(context.workflow, context.agents, {

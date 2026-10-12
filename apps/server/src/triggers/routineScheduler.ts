@@ -1,11 +1,19 @@
 import { nowIso, uid, type RoutineRecord, type RoutineHistoryRecord } from "@multi-agent/types";
 import type { StudioStore } from "../../../../src/studio/contracts";
+import {
+  assertOrganizationScope,
+  asyncLocalOrganizationScopeRunner,
+  type OrganizationScopeRunner,
+} from "../../../../src/studio/infrastructure/organizationJobScope";
+import type { RunOrganizationAccess } from "../runtime/runOrganizationAccess";
 import { log } from "../logging";
 
 export interface RoutineSchedulerOptions {
   workerId?: string;
   pollIntervalMs?: number;
   claimLimit?: number;
+  /** Executes each claimed routine inside its own organization scope (US3/T050). */
+  scopeRunner?: OrganizationScopeRunner;
 }
 
 /**
@@ -169,6 +177,7 @@ export class RoutineScheduler {
   private readonly workerId: string;
   private readonly pollIntervalMs: number;
   private readonly claimLimit: number;
+  private readonly scopeRunner: OrganizationScopeRunner;
   private timer?: NodeJS.Timeout;
   private running = false;
   private processing = false;
@@ -176,10 +185,12 @@ export class RoutineScheduler {
   constructor(
     private readonly store: StudioStore,
     options: RoutineSchedulerOptions = {},
+    private readonly organizationAccess?: RunOrganizationAccess,
   ) {
     this.workerId = options.workerId ?? `routine-worker-${uid("node")}`;
     this.pollIntervalMs = options.pollIntervalMs ?? 1000;
     this.claimLimit = options.claimLimit ?? 5;
+    this.scopeRunner = options.scopeRunner ?? asyncLocalOrganizationScopeRunner;
   }
 
   start(): void {
@@ -219,6 +230,20 @@ export class RoutineScheduler {
 
       for (const routine of due) {
         try {
+          const dispatched = await this.scopeRunner(
+            { organizationId: routine.tenantId, source: "routine" },
+            async () => {
+              // Per-item organization assertion (INV-7 / US3).
+              assertOrganizationScope(routine.tenantId);
+              if (this.organizationAccess) {
+                try {
+                  // D-5: routines of a removed owner (or suspended org) stop firing.
+                  await this.organizationAccess.assertRoutineActive(routine);
+                } catch (error) {
+                  await this.skipRoutine(routine, error);
+                  return null;
+                }
+              }
           const principal = { tenantId: routine.tenantId, userId: routine.ownerId };
           const scheduledAt = routine.nextRunAt ?? nowIso();
           const scheduledMs = Date.parse(scheduledAt);
@@ -259,8 +284,7 @@ export class RoutineScheduler {
               scheduledAt,
               nextRunAt: nextRun.toISOString(),
             });
-            processed.push(updated);
-            continue;
+            return updated;
           }
 
           // Compute next future run from now (or from scheduled time if coalesce/enqueue)
@@ -316,7 +340,10 @@ export class RoutineScheduler {
             nextRunAt: nextRun.toISOString(),
           });
 
-          processed.push(updated);
+              return updated;
+            },
+          );
+          if (dispatched) processed.push(dispatched);
         } catch (error) {
           log.warn("routine.failed", {
             routineId: routine.id,
@@ -330,5 +357,39 @@ export class RoutineScheduler {
     } finally {
       this.processing = false;
     }
+  }
+
+  /** D-5: record a skipped tick when the routine may no longer fire. */
+  private async skipRoutine(routine: RoutineRecord, error: unknown): Promise<RoutineRecord> {
+    const reason = error instanceof Error ? error.message : String(error);
+    const scheduledAt = routine.nextRunAt ?? nowIso();
+    const nextRun = computeNextRun(routine.scheduleType, routine.scheduleExpr, routine.timezone, new Date());
+    const principal = { tenantId: routine.tenantId, userId: routine.ownerId };
+    const updated = await this.store.saveRoutine(
+      {
+        ...routine,
+        lastRunAt: scheduledAt,
+        nextRunAt: nextRun.toISOString(),
+        lastStatus: "skipped",
+        lastError: reason.slice(0, 300),
+      },
+      principal,
+    );
+    await this.store.recordRoutineHistory({
+      id: uid("rhist"),
+      tenantId: routine.tenantId,
+      routineId: routine.id,
+      scheduledAt,
+      executedAt: nowIso(),
+      status: "skipped",
+      error: reason.slice(0, 300),
+      createdAt: nowIso(),
+    });
+    log.warn("routine.skipped", {
+      routineId: routine.id,
+      tenantId: routine.tenantId,
+      reason: reason.slice(0, 300),
+    });
+    return updated;
   }
 }

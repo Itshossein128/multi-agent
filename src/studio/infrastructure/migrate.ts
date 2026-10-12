@@ -122,6 +122,7 @@ export async function runStudioMigrations(pool: PgPool, options: { directory?: s
     "018_organization_foundation.sql",
     "019_tenant_constraints.sql",
     "020_rls_prerequisites.sql",
+    "021_run_initiator.sql",
   ];
   const migrations = await Promise.all(names.map(async (name) => {
     const sql = await readFile(resolve(directory, name), "utf8");

@@ -769,6 +769,10 @@ export interface Run {
   metadata: Record<string, unknown>;
   ownerId?: string;
   tenantId?: string;
+  /** Who started the run (US3 / D-5): user, service, schedule or trigger. */
+  initiatorKind?: "user" | "service" | "schedule" | "trigger";
+  /** Membership version observed when execution started; D-5 audit field. */
+  membershipVersionAtStart?: number;
   executionOwnerId?: string;
   executionLeaseExpiresAt?: string;
   executionHeartbeatAt?: string;

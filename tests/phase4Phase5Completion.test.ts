@@ -244,7 +244,7 @@ test("failed runs can be retried from their immutable definition snapshot", asyn
   const executor = new RunExecutor(store, runtime);
   const firstRunId = executor.start({ workflow, agents: [agent], input: { request: "retry" } });
   await waitFor(() => store.get(firstRunId)?.run.status === "failed");
-  const retriedRunId = executor.retry(firstRunId);
+  const retriedRunId = await executor.retry(firstRunId);
   expect(retriedRunId).not.toBe(firstRunId);
   await waitFor(() => store.get(retriedRunId)?.run.status === "completed");
   expect(store.get(retriedRunId)?.run.input).toEqual({ request: "retry" });

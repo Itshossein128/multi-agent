@@ -24,6 +24,9 @@ import { TriggerOutboxProcessor } from "./triggers/triggerOutboxProcessor";
 import { HeartbeatScheduler } from "./triggers/heartbeatScheduler";
 import { RoutineScheduler } from "./triggers/routineScheduler";
 import { InMemoryOrganizationStore, PostgresOrganizationStore } from "./organization/organizationStore";
+import { RunOrganizationAccess } from "./runtime/runOrganizationAccess";
+import { RunAccessCheckpoint, checkpointedApiCredentials } from "./runtime/runAccessCheckpoint";
+import { createPgOrganizationScopeRunner } from "../../../src/studio/infrastructure/organizationJobScope";
 import { PostgresOrganizationUnitOfWork } from "./organization/organizationUnitOfWork";
 import { InMemoryBudgetStore, PostgresBudgetStore } from "./budgets/budgetStore";
 import { RunBudgetController } from "./budgets/runBudgetController";
@@ -87,6 +90,9 @@ async function main() {
   }
   const budgetStore = studio.pool ? new PostgresBudgetStore(studio.pool) : new InMemoryBudgetStore();
   const budgetController = new RunBudgetController(budgetStore);
+  // D-5: one checkpoint instance guards every credential lease and resume path.
+  const runAccessCheckpoint = new RunAccessCheckpoint();
+  const runOrganizationAccess = new RunOrganizationAccess(studio.store);
 
   const checkpointer = studio.mode === "postgres" && connectionString
     ? await createDurableCheckpointer(connectionString)
@@ -102,7 +108,9 @@ async function main() {
       undefined,
       undefined,
       credentials.workerCredentials,
-      credentials.apiCredentials,
+      // D-5 credential-lease checkpoint: no broker lease is issued for a run
+      // that no longer exists, changed organization, or lost its initiator.
+      checkpointedApiCredentials(credentials.apiCredentials, runAccessCheckpoint),
     ), budgetController, runStore, studio.store),
     checkpointer,
     observability.telemetry,
@@ -112,7 +120,9 @@ async function main() {
     memory.proceduralService,
     memory.jobs,
     memory.durableJobs,
+    runOrganizationAccess,
   );
+  runAccessCheckpoint.install(({ runId, tenantId }) => executor.assertRunAccess(runId, tenantId));
   memory.startDurableWorkers({
     episodic_extraction: async job => executor.processDurableEpisodicJob(job),
     procedural_learning: async job => executor.processDurableProceduralJob(job),
@@ -153,17 +163,21 @@ async function main() {
 
   if (studio.store) {
     const organizationStore = studio.pool ? new PostgresOrganizationStore(studio.pool) : new InMemoryOrganizationStore();
+    const organizationAccess = runOrganizationAccess;
+    // US3/T050: each background item claims across organizations but executes
+    // inside its own organization scope (RLS GUCs on PostgreSQL).
+    const scopeRunner = studio.pool ? createPgOrganizationScopeRunner(studio.pool) : undefined;
     app.route("/studio", createStudioRouter(studio.store, undefined, executor, organizationStore, budgetStore,
       studio.pool ? new PostgresOrganizationUnitOfWork(studio.pool) : undefined));
     app.route("/api/webhooks", createInboundWebhookRouter(studio.store));
 
-    outboxProcessor = new TriggerOutboxProcessor(studio.store, executor);
+    outboxProcessor = new TriggerOutboxProcessor(studio.store, executor, undefined, { scopeRunner }, organizationAccess);
     outboxProcessor.start();
 
-    heartbeatScheduler = new HeartbeatScheduler(studio.store, executor);
+    heartbeatScheduler = new HeartbeatScheduler(studio.store, executor, { scopeRunner }, organizationAccess);
     heartbeatScheduler.start();
 
-    routineScheduler = new RoutineScheduler(studio.store);
+    routineScheduler = new RoutineScheduler(studio.store, { scopeRunner }, organizationAccess);
     routineScheduler.start();
   }
 

@@ -361,7 +361,7 @@ describe("persistence, migration, and retry safety", () => {
     const snapshot = store.getWorkflowSnapshot(firstRunId);
     expect(snapshot?.nodes.find((node) => node.id === agentNode.id)?.contract).toEqual(workflow.nodes.find((node) => node.id === agentNode.id)?.contract);
 
-    const retriedRunId = executor.retry(firstRunId);
+    const retriedRunId = await executor.retry(firstRunId);
     await waitFor(() => store.get(retriedRunId)?.run.status === "completed");
     const retriedSnapshot = store.getWorkflowSnapshot(retriedRunId);
     expect(retriedSnapshot?.nodes.find((node) => node.id === agentNode.id)?.contract).toMatchObject({

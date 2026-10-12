@@ -74,6 +74,7 @@ const KNOWN_STUDIO_MIGRATIONS = [
   "018_organization_foundation.sql",
   "019_tenant_constraints.sql",
   "020_rls_prerequisites.sql",
+  "021_run_initiator.sql",
 ];
 
 const KNOWN_MEMORY_MIGRATIONS = [
@@ -83,6 +84,7 @@ const KNOWN_MEMORY_MIGRATIONS = [
   "004_memory_jobs.sql",
   "005_memory_jobs_tenant_identity.sql",
   "006_organization_tenant_rls.sql",
+  "007_memory_job_claims.sql",
 ];
 
 export async function runOnboarding(options: OnboardingOptions = {}): Promise<OnboardingReport> {
@@ -208,6 +210,8 @@ export async function runOnboarding(options: OnboardingOptions = {}): Promise<On
           "003_temporal_validity.sql",
           "004_memory_jobs.sql",
           "005_memory_jobs_tenant_identity.sql",
+          "006_organization_tenant_rls.sql",
+          "007_memory_job_claims.sql",
         ];
 
         report.database.memoryPendingMigrations = requiredMemoryMigrations.filter((name) => !appliedMemNames.includes(name));

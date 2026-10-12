@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 
 const DEFAULT_SEGMENT = "default";
 
@@ -61,6 +61,77 @@ export function resolveWorkspaceRepoPath(
     throw new Error("Resolved workspace path escapes STUDIO_WORKSPACE_STORAGE_ROOT");
   }
   return absolute;
+}
+
+/** Thrown when a workspace path cannot be proven to belong to an organization. */
+export class WorkspacePathOrganizationError extends Error {
+  readonly code = "WORKSPACE_ORGANIZATION_MISMATCH";
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkspacePathOrganizationError";
+  }
+}
+
+function isPathInsideRoot(candidate: string, root: string): boolean {
+  const absolute = resolve(candidate);
+  const absoluteRoot = resolve(root);
+  const rootWithSep = absoluteRoot.endsWith(sep) ? absoluteRoot : absoluteRoot + sep;
+  return absolute === absoluteRoot || absolute.startsWith(rootWithSep);
+}
+
+/** Configured workspace roots: the storage root plus optional CLI agent roots. */
+export function workspaceStorageRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+  const roots: string[] = [];
+  try {
+    roots.push(getWorkspaceStorageRoot(env));
+  } catch {
+    // storage root not configured
+  }
+  for (const entry of (env.CLI_AGENT_WORKSPACE_ROOTS ?? "").split(",").map((value) => value.trim()).filter(Boolean)) {
+    roots.push(resolve(entry));
+  }
+  return roots;
+}
+
+/**
+ * T-11 / US3: a workspace path may only be used for the organization whose
+ * prefix it carries (`{root}/{organizationId}/…`). Rejects traversal, foreign
+ * organization prefixes and paths outside every configured root.
+ */
+export function assertWorkspacePathBelongsToOrganization(
+  absolutePath: string,
+  organizationId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const organization = organizationId.trim();
+  if (!organization) throw new WorkspacePathOrganizationError("organizationId is required for workspace path validation");
+  const candidate = resolve(absolutePath);
+  const roots = workspaceStorageRoots(env);
+  const containing = roots.find((root) => isPathInsideRoot(candidate, root));
+  if (!containing) {
+    throw new WorkspacePathOrganizationError(`Workspace path escapes the configured workspace roots: ${candidate}`);
+  }
+  const relativePath = relative(containing, candidate);
+  const [segment] = relativePath.split(sep).filter(Boolean);
+  if (segment !== organization) {
+    throw new WorkspacePathOrganizationError(
+      `Workspace path belongs to organization "${segment ?? "unknown"}" instead of "${organization}"`,
+    );
+  }
+}
+
+/** True when the path is proven to live under the organization's prefix. */
+export function workspacePathBelongsToOrganization(
+  absolutePath: string,
+  organizationId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  try {
+    assertWorkspacePathBelongsToOrganization(absolutePath, organizationId, env);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Ensure the working-copy directory exists; returns the absolute path. */

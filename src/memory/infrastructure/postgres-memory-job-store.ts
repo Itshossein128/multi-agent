@@ -19,7 +19,17 @@ export class PostgresMemoryJobStore {
     return {job:decode(existing.rows[0]),duplicate:true};
   }
   async claim(workerId:string,limit=1,leaseMs=30_000):Promise<DurableMemoryJob[]> {
-    const c=await this.pool.connect(); try { await c.query("BEGIN"); const r=await c.query(`WITH eligible AS (SELECT id FROM studio_memory_jobs WHERE (status IN ('pending','failed') AND available_at<=now()) OR (status='leased' AND lease_expires_at<=now()) ORDER BY available_at,created_at FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE studio_memory_jobs j SET status='leased',attempts=j.attempts+1,leased_by=$2,lease_expires_at=now()+($3::text||' milliseconds')::interval,updated_at=now() FROM eligible WHERE j.id=eligible.id RETURNING j.*`,[Math.max(1,Math.min(100,limit)),workerId,Math.max(1000,leaseMs)]); await c.query("COMMIT"); return r.rows.map(decode); } catch(e){try{await c.query("ROLLBACK");}catch{}throw e;} finally{c.release();}
+    const boundedLimit=Math.max(1,Math.min(100,limit)), boundedLease=Math.max(1000,leaseMs);
+    // US3/T052: prefer the SECURITY DEFINER worker claim so a least-privileged
+    // role can claim across organizations; keep the inline claim as fallback.
+    try {
+      const r=await this.pool.query("SELECT * FROM studio_claim_memory_jobs($1,$2,$3)",[boundedLimit,workerId,boundedLease]);
+      return r.rows.map(decode);
+    } catch(e){
+      const code=(e as {code?:string})?.code;
+      if(code!=="42883" && code!=="42P01") throw e;
+    }
+    const c=await this.pool.connect(); try { await c.query("BEGIN"); const r=await c.query(`WITH eligible AS (SELECT id FROM studio_memory_jobs WHERE (status IN ('pending','failed') AND available_at<=now()) OR (status='leased' AND lease_expires_at<=now()) ORDER BY available_at,created_at FOR UPDATE SKIP LOCKED LIMIT $1) UPDATE studio_memory_jobs j SET status='leased',attempts=j.attempts+1,leased_by=$2,lease_expires_at=now()+($3::text||' milliseconds')::interval,updated_at=now() FROM eligible WHERE j.id=eligible.id RETURNING j.*`,[boundedLimit,workerId,boundedLease]); await c.query("COMMIT"); return r.rows.map(decode); } catch(e){try{await c.query("ROLLBACK");}catch{}throw e;} finally{c.release();}
   }
   async complete(id:string,workerId:string):Promise<boolean>{const r=await this.pool.query(`UPDATE studio_memory_jobs SET status='completed',leased_by=NULL,lease_expires_at=NULL,completed_at=now(),updated_at=now() WHERE id=$1 AND status='leased' AND leased_by=$2 AND lease_expires_at>now()`,[id,workerId]);return !!r.rowCount;}
   async fail(id:string,workerId:string,code:string,retryable:boolean,maxAttempts=3):Promise<MemoryJobStatus|null>{const r=await this.pool.query(`UPDATE studio_memory_jobs SET status=CASE WHEN $4 AND attempts<$5 THEN 'failed' ELSE 'dead' END,available_at=CASE WHEN $4 AND attempts<$5 THEN now()+(LEAST(30000,250*(2^attempts))::text||' milliseconds')::interval ELSE available_at END,leased_by=NULL,lease_expires_at=NULL,last_error_code=$3,updated_at=now() WHERE id=$1 AND status='leased' AND leased_by=$2 RETURNING status`,[id,workerId,code,retryable,maxAttempts]);return r.rows[0]?.status??null;}

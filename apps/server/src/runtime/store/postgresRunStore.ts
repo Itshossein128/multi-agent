@@ -151,6 +151,31 @@ export class PostgresRunStore implements RunStoreContract {
     if (result.rowCount === 0) throw new RunLeaseLostError(runId);
   }
 
+  /** US3 / D-5: additive initiator audit columns (migration 021). */
+  private initiatorColumns: boolean | undefined;
+
+  /** Must run inside an already-enqueued write task (never re-enters the queue). */
+  private async applyInitiatorColumns(runId: string, run: Partial<Run>): Promise<void> {
+    if (this.initiatorColumns === false) return;
+    if (run.initiatorKind === undefined && run.membershipVersionAtStart === undefined) return;
+    try {
+      await this.pool.query(
+        `UPDATE studio_runs SET initiator_kind = COALESCE($2, initiator_kind),
+           membership_version_at_start = COALESCE($3, membership_version_at_start), updated_at = now()
+         WHERE id = $1`,
+        [runId, run.initiatorKind ?? null, run.membershipVersionAtStart ?? null],
+      );
+      this.initiatorColumns = true;
+    } catch (err: any) {
+      if (err?.code === "42703") {
+        this.initiatorColumns = false;
+        log.info("run.initiator_columns_unavailable", { runId });
+        return;
+      }
+      log.warn("run.initiator_persist_failed", { runId, error: err?.message ?? String(err) });
+    }
+  }
+
   /**
    * Terminal writes may proceed when this instance still holds a live lease, or
    * when the lease is already expired/null (orphan reclaim after a crash).
@@ -209,6 +234,11 @@ export class PostgresRunStore implements RunStoreContract {
         metadata: (row.metadata ?? {}) as Record<string, unknown>,
         ownerId: (row.owner_id as string | null) ?? (row.memory_owner_principal_id as string | null) ?? undefined,
         tenantId: (row.tenant_id as string | null) ?? (row.memory_owner_tenant_id as string | null) ?? undefined,
+        initiatorKind: row.initiator_kind ? (String(row.initiator_kind) as Run["initiatorKind"]) : undefined,
+        membershipVersionAtStart:
+          row.membership_version_at_start === null || row.membership_version_at_start === undefined
+            ? undefined
+            : Number(row.membership_version_at_start),
         executionOwnerId: row.execution_owner_id ? String(row.execution_owner_id) : undefined,
         executionLeaseExpiresAt: row.execution_lease_expires_at ? asIso(row.execution_lease_expires_at) : undefined,
         executionHeartbeatAt: row.execution_heartbeat_at ? asIso(row.execution_heartbeat_at) : undefined,
@@ -340,6 +370,7 @@ export class PostgresRunStore implements RunStoreContract {
               ],
             );
             this.hasLeaseColumns = true;
+            await this.applyInitiatorColumns(run.id, run);
             resolvePromise({ success: true });
             return;
           } catch (err: any) {
@@ -384,6 +415,7 @@ export class PostgresRunStore implements RunStoreContract {
             memoryAccess ? JSON.stringify(memoryAccess) : null,
           ],
         );
+        await this.applyInitiatorColumns(run.id, run);
         resolvePromise({ success: true });
       } catch (err: any) {
         if (err?.code === "23505" && (err?.constraint === "studio_runs_trigger_dispatch_key" || String(err?.detail || err?.message).includes("triggerDispatchKey"))) {
@@ -492,6 +524,9 @@ export class PostgresRunStore implements RunStoreContract {
       };
     }
     const run = this.memory.update(runId, patch);
+    if (run && (patch.initiatorKind !== undefined || patch.membershipVersionAtStart !== undefined)) {
+      this.enqueue(() => this.applyInitiatorColumns(runId, patch));
+    }
     if (run) {
       this.enqueue(async () => {
         const promise = this.runPromises.get(runId);

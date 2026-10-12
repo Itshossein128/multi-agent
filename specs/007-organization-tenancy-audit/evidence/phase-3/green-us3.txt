@@ -1,0 +1,215 @@
+(node:11088) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS tests/postgresMultiInstanceRecovery.test.ts (18.142 s)
+  ● Console
+
+    console.warn
+      {"timestamp":"2026-10-12T08:15:56.986Z","level":"warn","event":"run.execution_lease_lost","runId":"run-fenced-9bfa5516-c824-413f-8d99-0f2320f98fc4","instanceId":"fence-A"}
+
+    [0m [90m 14 |[39m   [36mconst[39m record [33m=[39m { timestamp[33m:[39m [36mnew[39m [33mDate[39m()[33m.[39mtoISOString()[33m,[39m level[33m,[39m event[33m,[39m [33m...[39msafeContext }[33m;[39m
+     [90m 15 |[39m   [90m// One line per event keeps local and hosted log collectors machine-readable.[39m
+    [31m[1m>[22m[39m[90m 16 |[39m   console[level]([33mJSON[39m[33m.[39mstringify(record))[33m;[39m
+     [90m    |[39m                 [31m[1m^[22m[39m
+     [90m 17 |[39m }
+     [90m 18 |[39m[0m
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/runtime/store/postgresRunStore.ts:140:13
+      at PostgresRunStore.flush (apps/server/src/runtime/store/postgresRunStore.ts:200:5)
+      at Object.<anonymous> (tests/postgresMultiInstanceRecovery.test.ts:162:5)
+
+    console.info
+      {"timestamp":"2026-10-12T08:15:57.368Z","level":"info","event":"run.cancelled","runId":"run-orphan-cancel","workflowId":"wf-task-mv4z9el8-9st6v4","orphaned":true}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.warn
+      {"timestamp":"2026-10-12T08:15:57.383Z","level":"warn","event":"run.execution_lease_lost","runId":"run-orphan-cancel","instanceId":"replica-cancel-B"}
+
+    [0m [90m 14 |[39m   [36mconst[39m record [33m=[39m { timestamp[33m:[39m [36mnew[39m [33mDate[39m()[33m.[39mtoISOString()[33m,[39m level[33m,[39m event[33m,[39m [33m...[39msafeContext }[33m;[39m
+     [90m 15 |[39m   [90m// One line per event keeps local and hosted log collectors machine-readable.[39m
+    [31m[1m>[22m[39m[90m 16 |[39m   console[level]([33mJSON[39m[33m.[39mstringify(record))[33m;[39m
+     [90m    |[39m                 [31m[1m^[22m[39m
+     [90m 17 |[39m }
+     [90m 18 |[39m[0m
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at apps/server/src/runtime/store/postgresRunStore.ts:140:13
+      at PostgresRunStore.flush (apps/server/src/runtime/store/postgresRunStore.ts:200:5)
+      at Object.<anonymous> (tests/postgresMultiInstanceRecovery.test.ts:283:5)
+
+PASS tests/organizationExecutionSecurity.test.ts
+PASS tests/organizationBackgroundIsolation.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.331Z","level":"info","event":"run.started","runId":"run-mv4z9kju-y45hmt","workflowId":"wf-shared"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.341Z","level":"info","event":"trigger.processed","eventId":"trig-mv4z9kjp-ulmva6","eventType":"webhook_inbound","targetType":"workflow","targetId":"wf-shared","tenantId":"org-a","runId":"run-mv4z9kju-y45hmt"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.344Z","level":"info","event":"run.started","runId":"run-mv4z9kk8-gw9e8n","workflowId":"wf-b"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.347Z","level":"info","event":"trigger.processed","eventId":"trig-mv4z9kjq-4i8q0b","eventType":"webhook_inbound","targetType":"workflow","targetId":"wf-b","tenantId":"org-b","runId":"run-mv4z9kk8-gw9e8n"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.369Z","level":"info","event":"run.started","runId":"run-mv4z9kkx-nuzp7o","workflowId":"wf-dedupe"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.370Z","level":"info","event":"run.started","runId":"run-mv4z9kky-4cpebk","workflowId":"wf-dedupe"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.407Z","level":"info","event":"routine.dispatched","routineId":"routine-a","tenantId":"org-a","scheduledAt":"2026-10-12T08:15:59.401Z","nextRunAt":"2026-10-12T08:17:00.404Z"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.414Z","level":"info","event":"routine.dispatched","routineId":"routine-b","tenantId":"org-b","scheduledAt":"2026-10-12T08:15:59.401Z","nextRunAt":"2026-10-12T08:17:00.411Z"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:00.470Z","level":"info","event":"memory.episodic.extracted","runId":"run-memory","created":false,"reason":"trivial"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+PASS tests/brokerPersistence.test.ts
+PASS tests/organizationExecutionIsolation.test.ts
+  ● Console
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:03.999Z","level":"info","event":"run.started","runId":"run-mv4z9ndr-4j7u8m","workflowId":"wf-mv4z9ndq-0n6mt7"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:04.041Z","level":"info","event":"run.started","runId":"run-mv4z9nex-xkflz5","workflowId":"wf-mv4z9new-r3ysin","taskId":"task-keep"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-12T08:16:04.066Z","level":"error","event":"run.failed","runId":"run-mv4z9nex-xkflz5","workflowId":"wf-mv4z9new-r3ysin","taskId":"task-keep","error":"ORGANIZATION_ACCESS_REVOKED: initiator member membership is removed","resultStatus":"blocked","code":"ORGANIZATION_ACCESS_REVOKED"}
+
+    [0m [90m 14 |[39m   [36mconst[39m record [33m=[39m { timestamp[33m:[39m [36mnew[39m [33mDate[39m()[33m.[39mtoISOString()[33m,[39m level[33m,[39m event[33m,[39m [33m...[39msafeContext }[33m;[39m
+     [90m 15 |[39m   [90m// One line per event keeps local and hosted log collectors machine-readable.[39m
+    [31m[1m>[22m[39m[90m 16 |[39m   console[level]([33mJSON[39m[33m.[39mstringify(record))[33m;[39m
+     [90m    |[39m                 [31m[1m^[22m[39m
+     [90m 17 |[39m }
+     [90m 18 |[39m[0m
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:707:14)
+      at Object.fail (apps/server/src/runtime/runExecutor.ts:119:36)
+      at ApprovalManager.continueAfterApproval (apps/server/src/runtime/approvalManager.ts:169:19)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:04.073Z","level":"info","event":"run.started","runId":"run-mv4z9nft-xfw0rd","workflowId":"wf-mv4z9nft-4a8kep"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-12T08:16:04.094Z","level":"error","event":"run.failed","runId":"run-queued-revoked","workflowId":"wf-revoked","error":"ORGANIZATION_ACCESS_REVOKED: initiator member membership is removed","resultStatus":"blocked","code":"ORGANIZATION_ACCESS_REVOKED"}
+
+    [0m [90m 14 |[39m   [36mconst[39m record [33m=[39m { timestamp[33m:[39m [36mnew[39m [33mDate[39m()[33m.[39mtoISOString()[33m,[39m level[33m,[39m event[33m,[39m [33m...[39msafeContext }[33m;[39m
+     [90m 15 |[39m   [90m// One line per event keeps local and hosted log collectors machine-readable.[39m
+    [31m[1m>[22m[39m[90m 16 |[39m   console[level]([33mJSON[39m[33m.[39mstringify(record))[33m;[39m
+     [90m    |[39m                 [31m[1m^[22m[39m
+     [90m 17 |[39m }
+     [90m 18 |[39m[0m
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:707:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:648:12)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:04.101Z","level":"info","event":"run.started","runId":"run-mv4z9ngl-2gfaxv","workflowId":"wf-mv4z9ngl-5b3o4q"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:04.125Z","level":"info","event":"run.started","runId":"run-mv4z9nh9-adm6u7","workflowId":"wf-mv4z9nh9-78qnx0"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.error
+      {"timestamp":"2026-10-12T08:16:04.126Z","level":"error","event":"run.failed","runId":"run-mv4z9nh9-adm6u7","workflowId":"wf-mv4z9nh9-78qnx0","error":"ORGANIZATION_ACCESS_REVOKED: organization org-a is suspended","resultStatus":"blocked","code":"ORGANIZATION_ACCESS_REVOKED"}
+
+    [0m [90m 14 |[39m   [36mconst[39m record [33m=[39m { timestamp[33m:[39m [36mnew[39m [33mDate[39m()[33m.[39mtoISOString()[33m,[39m level[33m,[39m event[33m,[39m [33m...[39msafeContext }[33m;[39m
+     [90m 15 |[39m   [90m// One line per event keeps local and hosted log collectors machine-readable.[39m
+    [31m[1m>[22m[39m[90m 16 |[39m   console[level]([33mJSON[39m[33m.[39mstringify(record))[33m;[39m
+     [90m    |[39m                 [31m[1m^[22m[39m
+     [90m 17 |[39m }
+     [90m 18 |[39m[0m
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.error (apps/server/src/logging.ts:9:52)
+      at RunExecutor.fail (apps/server/src/runtime/runExecutor.ts:707:14)
+      at RunExecutor.executeWorkflow (apps/server/src/runtime/runExecutor.ts:648:12)
+
+    console.warn
+      {"timestamp":"2026-10-12T08:16:04.135Z","level":"warn","event":"routine.skipped","routineId":"routine-removed-owner","tenantId":"org-a","reason":"ORGANIZATION_ACCESS_REVOKED: initiator member membership is removed"}
+
+    [0m [90m 14 |[39m   [36mconst[39m record [33m=[39m { timestamp[33m:[39m [36mnew[39m [33mDate[39m()[33m.[39mtoISOString()[33m,[39m level[33m,[39m event[33m,[39m [33m...[39msafeContext }[33m;[39m
+     [90m 15 |[39m   [90m// One line per event keeps local and hosted log collectors machine-readable.[39m
+    [31m[1m>[22m[39m[90m 16 |[39m   console[level]([33mJSON[39m[33m.[39mstringify(record))[33m;[39m
+     [90m    |[39m                 [31m[1m^[22m[39m
+     [90m 17 |[39m }
+     [90m 18 |[39m[0m
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at RoutineScheduler.skipRoutine (apps/server/src/triggers/routineScheduler.ts:388:9)
+      at apps/server/src/triggers/routineScheduler.ts:243:19
+      at RoutineScheduler.tick (apps/server/src/triggers/routineScheduler.ts:233:30)
+      at Object.<anonymous> (tests/organizationExecutionIsolation.test.ts:259:23)
+
+    console.info
+      {"timestamp":"2026-10-12T08:16:04.136Z","level":"info","event":"routine.dispatched","routineId":"routine-active-owner","tenantId":"org-a","scheduledAt":"2026-10-12T08:16:03.134Z","nextRunAt":"2026-10-12T08:17:04.136Z"}
+
+      at write (apps/server/src/logging.ts:16:17)
+
+    console.warn
+      {"timestamp":"2026-10-12T08:16:04.142Z","level":"warn","event":"routine.skipped","routineId":"routine-suspended-org","tenantId":"org-a","reason":"ORGANIZATION_ACCESS_REVOKED: organization org-a is suspended"}
+
+    [0m [90m 14 |[39m   [36mconst[39m record [33m=[39m { timestamp[33m:[39m [36mnew[39m [33mDate[39m()[33m.[39mtoISOString()[33m,[39m level[33m,[39m event[33m,[39m [33m...[39msafeContext }[33m;[39m
+     [90m 15 |[39m   [90m// One line per event keeps local and hosted log collectors machine-readable.[39m
+    [31m[1m>[22m[39m[90m 16 |[39m   console[level]([33mJSON[39m[33m.[39mstringify(record))[33m;[39m
+     [90m    |[39m                 [31m[1m^[22m[39m
+     [90m 17 |[39m }
+     [90m 18 |[39m[0m
+
+      at write (apps/server/src/logging.ts:16:17)
+      at Object.warn (apps/server/src/logging.ts:8:51)
+      at RoutineScheduler.skipRoutine (apps/server/src/triggers/routineScheduler.ts:388:9)
+      at apps/server/src/triggers/routineScheduler.ts:243:19
+      at RoutineScheduler.tick (apps/server/src/triggers/routineScheduler.ts:233:30)
+      at Object.<anonymous> (tests/organizationExecutionIsolation.test.ts:282:23)
+
+PASS tests/brokerSecurity.test.ts
+PASS tests/brokerHttp.test.ts
+PASS tests/brokerContract.test.ts
+PASS tests/brokerService.test.ts
+
+Test Suites: 9 passed, 9 total
+Tests:       132 passed, 132 total
+Snapshots:   0 total
+Time:        29.46 s
+Ran all test suites matching /tests\\organizationExecutionIsolation.test.ts|tests\\organizationBackgroundIsolation.test.ts|tests\\organizationExecutionSecurity.test.ts|tests\\postgresMultiInstanceRecovery.test.ts|tests\\brokerContract.test.ts|tests\\brokerService.test.ts|tests\\brokerHttp.test.ts|tests\\brokerSecurity.test.ts|tests\\brokerPersistence.test.ts/i.
