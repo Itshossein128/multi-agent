@@ -1062,13 +1062,13 @@ PASS tests/agents.test.ts
       at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1096,13 +1096,13 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [NEW_PROJECT] mode.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -1137,13 +1137,13 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1183,13 +1183,13 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent confirmed MATURE documentation. Creating work items...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Created 2 work items/issues in repo "MainProject-Backend": 399, 483
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1200,19 +1200,19 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent mode: "NEW_PROJECT" using [GitHub Cloud API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on NEW_PROJECT specification...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1240,19 +1240,19 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent creating branch "feature/code-changes" in repository "MainProject-Backend"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "feature/code-changes"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1268,13 +1268,13 @@ PASS tests/agents.test.ts
       at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1302,13 +1302,13 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [NEW_PROJECT] mode.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -1343,19 +1343,19 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent determined input is NOT a documentation. Handing off to DocGeneratorAgent.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1366,7 +1366,7 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DocGeneratorAgent starting: Transforming amateur input into a mature technical spec...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1387,7 +1387,7 @@ PASS tests/agents.test.ts
       at RunnableCallable.func (src/agents/core/graphEngine.ts:117:25)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -1417,7 +1417,7 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DocGeneratorAgent completed: Created mature documentation.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1428,31 +1428,31 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent confirmed MATURE documentation. Creating work items...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Created 2 work items/issues in repo "MainProject-Backend": 186, 496
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1463,19 +1463,19 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent mode: "NEW_PROJECT" using [GitHub Cloud API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on NEW_PROJECT specification...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1503,19 +1503,19 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent creating branch "feature/technical-specification-build-a-simple-c" in repository "MainProject-Backend"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "feature/technical-specification-build-a-simple-c"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1531,13 +1531,13 @@ PASS tests/agents.test.ts
       at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1565,13 +1565,13 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [DEBUG] mode.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -1606,25 +1606,25 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent initiating bug triage in repository "MainProject-Backend"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Created Bug issue #209 in "MainProject-Backend". Routing directly to DeveloperAgent for fix.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1635,19 +1635,19 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent mode: "DEBUG" using [GitHub Cloud API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on DEBUG specification...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1675,19 +1675,19 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent creating branch "fix/bug-fix-the-critical-bug-in-index-js-cau" in repository "MainProject-Backend"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "fix/bug-fix-the-critical-bug-in-index-js-cau"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1703,13 +1703,13 @@ PASS tests/agents.test.ts
       at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1737,13 +1737,13 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [CONTINUATION] mode.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -1778,19 +1778,19 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Strategy selected: [API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1830,7 +1830,7 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent: Handing off to DocGeneratorAgent for continuation specification.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1841,7 +1841,7 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DocGeneratorAgent starting: Transforming amateur input into a mature technical spec...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1862,7 +1862,7 @@ PASS tests/agents.test.ts
       at RunnableCallable.func (src/agents/core/graphEngine.ts:117:25)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -1892,7 +1892,7 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -1921,7 +1921,7 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DocGeneratorAgent completed: Created mature documentation.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1932,31 +1932,31 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent operating directly via GitHub Cloud APIs (no local clone).
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Created Feature issue #337 in existing repo "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -1967,19 +1967,19 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent mode: "CONTINUATION" using [GitHub Cloud API] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/index.ts" based on CONTINUATION specification...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2007,19 +2007,19 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent creating branch "feat/technical-specification-in-mainprojectba" in repository "MainProject-Backend"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/index.ts" on branch "feat/technical-specification-in-mainprojectba"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2035,13 +2035,13 @@ PASS tests/agents.test.ts
       at new LangFuseTracer (src/integrations/langfuse.ts:27:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2069,31 +2069,31 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent classified workflow as: [CONTINUATION] mode.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: User requested local cloning in prompt. Operating in [CLONE] mode.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent cloning repository "MainProject-Backend" into local workspace...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Repository successfully cloned to workspace: "/home/hossein/Desktop/projects/multi-agent/workspaces/MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2133,7 +2133,7 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent: Handing off to DocGeneratorAgent for continuation specification.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2144,7 +2144,7 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DocGeneratorAgent starting: Transforming amateur input into a mature technical spec...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2165,7 +2165,7 @@ PASS tests/agents.test.ts
       at RunnableCallable.func (src/agents/core/graphEngine.ts:117:25)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -2195,7 +2195,7 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)
@@ -2224,7 +2224,7 @@ PASS tests/agents.test.ts
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:24:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DocGeneratorAgent completed: Created mature documentation.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2235,37 +2235,37 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent evaluating input and repository context...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Found 1 repos for context.
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent cloning repository "MainProject-Backend" into local workspace...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Repository successfully cloned to workspace: "/home/hossein/Desktop/projects/multi-agent/workspaces/MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: OrchestratorAgent inspecting existing repository "MainProject-Backend" for continuation...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: Created Feature issue #262 in existing repo "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2276,19 +2276,19 @@ PASS tests/agents.test.ts
       at LangFuseTracer.traceExecution (src/integrations/langfuse.ts:48:15)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent starting software development execution with Code Generator...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent mode: "CONTINUATION" using [Local Git Clone] for repository "MainProject-Backend".
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent is writing code for "src/technical-specificat.ts" based on CONTINUATION specification...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2316,19 +2316,19 @@ PASS tests/agents.test.ts
       at createAndRunLoop (node_modules/.pnpm/@langchain+langgraph@1.4.14_@langchain+core@1.2.9_@opentelemetry+api@1.9.1_@opentelemet_72876857781a6420c9a374648d9a133f/node_modules/@langchain/langgraph/src/pregel/index.ts:2453:9)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent creating branch "feat/technical-specification-please-clone-the" in repository "MainProject-Backend"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent committing changes to "src/technical-specificat.ts" on branch "feat/technical-specification-please-clone-the"...
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
 
     console.log
-      
+
       [AGENT NOTIFICATION]: DeveloperAgent created version control Pull Request: https://github.com/my-github-username/MainProject-Backend/pull/1
 
       at CLIHumanAdapter.notify (src/adapters/humanAdapter.ts:42:13)
@@ -2597,7 +2597,7 @@ PASS tests/adapters.test.ts
   ● Console
 
     console.log
-      
+
       ================ HUMAN QUESTION ================
 
       at CLIHumanAdapter.askHuman (src/adapters/humanAdapter.ts:14:13)

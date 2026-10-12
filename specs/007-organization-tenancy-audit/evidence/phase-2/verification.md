@@ -65,3 +65,5 @@ An unchanged episodic-retrieval test failed once during overlapping broad checks
 US3 execution checkpoints/background revocation, service memory-grant equality, organization memory, deletion and RLS activation remain deferred to their listed tasks. No new destructive reset or production deployment was performed.
 
 `source-manifest.sha256` identifies the source/test workspace used for verification; `SHA256SUMS` covers the retained artifacts. The results describe this uncommitted workspace, not a clean committed SHA.
+
+Captured text logs have trailing whitespace and extra trailing blank lines normalized for Git review; test outcomes and diagnostics are unchanged.

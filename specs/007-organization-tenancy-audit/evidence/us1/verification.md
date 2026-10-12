@@ -82,3 +82,5 @@ migration was run against existing application data. The final compiled server u
 No real provider execution, Vault, mTLS, RLS activation or organization-memory retrieval is claimed.
 Temporary servers, database and HEAD worktree are removed after evidence retention. PostgreSQL dev service
 remains available. No commit, push or deployment was performed.
+
+Captured text logs have trailing whitespace and extra trailing blank lines normalized for Git review; test outcomes and diagnostics are unchanged.

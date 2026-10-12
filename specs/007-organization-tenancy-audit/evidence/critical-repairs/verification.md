@@ -44,3 +44,5 @@ The targeted suites exercise actual HTTP middleware/services and both adapters, 
 No new browser run, production deployment, live Vault/mTLS verification or RLS activation is claimed by this pass. Earlier US1/US2 browser evidence remains in its original directories. T084–T103 and later-story obligations remain open, including shared-resource ownership capture, database context/RLS, organization memory and deletion. Existing activation gates remain unchanged.
 
 `source-manifest.sha256` records changed implementation/test source; `SHA256SUMS` records this evidence directory excluding itself.
+
+Captured text logs have trailing whitespace and extra trailing blank lines normalized for Git review; test outcomes and diagnostics are unchanged.
