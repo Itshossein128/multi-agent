@@ -42,14 +42,16 @@ describe("LocalProcessWorkerRuntime", () => {
 
   function mockSpawnFn(mockStdout: string, mockStderr: string, mockCode: number | null, sleepMs = 0) {
     return (command: string, args: string[], options: any) => {
-      const listeners: Record<string, any[]> = {
-        close: [],
-        error: []
-      };
+      const listeners: Record<string, any[]> = {};
       let killed = false;
       let timer: NodeJS.Timeout | undefined;
-      const stdoutListeners: Record<string, any[]> = { data: [], close: [] };
-      const stderrListeners: Record<string, any[]> = { data: [], close: [] };
+      const stdoutListeners: Record<string, any[]> = {};
+      const stderrListeners: Record<string, any[]> = {};
+      const stdinListeners: Record<string, any[]> = {};
+
+      const addListener = (map: Record<string, any[]>, e: string, fn: any) => {
+        (map[e] ??= []).push(fn);
+      };
 
       const emit = (map: Record<string, any[]>, event: string, ...args: any[]) => {
         if (!killed) map[event]?.forEach(fn => fn(...args));
@@ -66,16 +68,17 @@ describe("LocalProcessWorkerRuntime", () => {
       }, sleepMs);
 
       return {
-        stdout: { on: (e: string, fn: any) => stdoutListeners[e].push(fn) },
-        stderr: { on: (e: string, fn: any) => stderrListeners[e].push(fn) },
-        on: (e: string, fn: any) => listeners[e].push(fn),
+        stdout: { on: (e: string, fn: any) => addListener(stdoutListeners, e, fn) },
+        stderr: { on: (e: string, fn: any) => addListener(stderrListeners, e, fn) },
+        stdin: { on: (e: string, fn: any) => addListener(stdinListeners, e, fn), write: jest.fn(), end: jest.fn() },
+        on: (e: string, fn: any) => addListener(listeners, e, fn),
         kill: (signal: string) => {
           killed = true;
           clearTimeout(timer);
           // A killed child still closes its stdio and emits child.close.
           setTimeout(() => {
-            stdoutListeners.close.forEach(fn => fn());
-            stderrListeners.close.forEach(fn => fn());
+            stdoutListeners["close"]?.forEach(fn => fn());
+            stderrListeners["close"]?.forEach(fn => fn());
             listeners["close"]?.forEach(fn => fn(null));
           }, 10);
         },
@@ -371,9 +374,9 @@ describe("LocalProcessWorkerRuntime", () => {
         listeners.close.forEach((fn) => fn(0));
       }, 0);
       return {
-        stdout: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event].push(fn) },
-        stderr: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event].push(fn) },
-        stdin: { write: jest.fn(), end: jest.fn() },
+        stdout: { on: (event: string, fn: (...values: any[]) => void) => (streamListeners[event] ??= []).push(fn) },
+        stderr: { on: (event: string, fn: (...values: any[]) => void) => (streamListeners[event] ??= []).push(fn) },
+        stdin: { on: jest.fn(), write: jest.fn(), end: jest.fn() },
         on: (event: string, fn: (...values: any[]) => void) => listeners[event].push(fn),
         once: (event: string, fn: (...values: any[]) => void) => listeners[event].push(fn),
         kill: jest.fn(),
@@ -439,9 +442,9 @@ describe("LocalProcessWorkerRuntime", () => {
         listeners.close.forEach((fn) => fn(0));
       }, 0);
       return {
-        stdout: { on: (event: string, fn: (...values: any[]) => void) => stdout[event].push(fn) },
-        stderr: { on: (event: string, fn: (...values: any[]) => void) => stderr[event].push(fn) },
-        stdin: { write: jest.fn(), end: jest.fn() },
+        stdout: { on: (event: string, fn: (...values: any[]) => void) => (stdout[event] ??= []).push(fn) },
+        stderr: { on: (event: string, fn: (...values: any[]) => void) => (stderr[event] ??= []).push(fn) },
+        stdin: { on: jest.fn(), write: jest.fn(), end: jest.fn() },
         on: (event: string, fn: (...values: any[]) => void) => listeners[event].push(fn),
         kill: jest.fn(),
         pid: 123,
@@ -538,9 +541,9 @@ describe("LocalProcessWorkerRuntime", () => {
         listeners.close.forEach((fn) => fn(0));
       }, 0);
       return {
-        stdout: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
-        stderr: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
-        stdin: { write: jest.fn(), end: jest.fn() },
+        stdout: { on: (event: string, fn: (...values: any[]) => void) => (streamListeners[event] ??= []).push(fn) },
+        stderr: { on: (event: string, fn: (...values: any[]) => void) => (streamListeners[event] ??= []).push(fn) },
+        stdin: { on: jest.fn(), write: jest.fn(), end: jest.fn() },
         on: (event: string, fn: (...values: any[]) => void) => listeners[event]?.push(fn),
         once: (event: string, fn: (...values: any[]) => void) => listeners[event]?.push(fn),
         kill: jest.fn(),
@@ -573,6 +576,69 @@ describe("LocalProcessWorkerRuntime", () => {
     // Session must be cleaned up and container force-removed via spawnFn (rm -f)
     expect((runtime as any).sessions.has(handle.workerId)).toBe(false);
     expect(spawnedCommands.some((cmd) => cmd.includes("rm -f"))).toBe(true);
+  });
+
+  test("handles stdout, stderr, and stdin stream error events cleanly and redacts secrets", async () => {
+    const secret = "my-super-secret-api-token";
+    let triggerStdoutError: ((err: Error) => void) | undefined;
+    let triggerStdinError: ((err: Error) => void) | undefined;
+
+    const spawnFn = ((command: string, args: string[], options: any) => {
+      const listeners: Record<string, Array<(...values: any[]) => void>> = {};
+      const stdoutListeners: Record<string, Array<(...values: any[]) => void>> = {};
+      const stderrListeners: Record<string, Array<(...values: any[]) => void>> = {};
+      const stdinListeners: Record<string, Array<(...values: any[]) => void>> = {};
+
+      const addListener = (map: Record<string, any[]>, e: string, fn: any) => {
+        (map[e] ??= []).push(fn);
+      };
+
+      triggerStdoutError = (err) => {
+        stdoutListeners["error"]?.forEach((fn) => fn(err));
+        stdoutListeners["close"]?.forEach((fn) => fn());
+        stderrListeners["close"]?.forEach((fn) => fn());
+        listeners["close"]?.forEach((fn) => fn(1));
+      };
+
+      triggerStdinError = (err) => {
+        stdinListeners["error"]?.forEach((fn) => fn(err));
+      };
+
+      return {
+        stdout: { on: (event: string, fn: any) => addListener(stdoutListeners, event, fn) },
+        stderr: { on: (event: string, fn: any) => addListener(stderrListeners, event, fn) },
+        stdin: { on: (event: string, fn: any) => addListener(stdinListeners, event, fn), write: jest.fn((input, cb) => cb?.()), end: jest.fn() },
+        on: (event: string, fn: any) => addListener(listeners, event, fn),
+        kill: jest.fn(() => {
+          stdoutListeners["close"]?.forEach((fn) => fn());
+          stderrListeners["close"]?.forEach((fn) => fn());
+          listeners["close"]?.forEach((fn) => fn(1));
+        }),
+        pid: 1234,
+      } as any;
+    }) as any;
+
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn);
+    const spec = createSpec("node", []);
+    const handle = await runtime.start(spec, undefined, "input-data", {
+      environment: { OPENAI_API_KEY: secret },
+    });
+
+    // Wait for event handlers to be attached
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Simulate EPIPE error on stdin - should be caught gracefully
+    expect(() => triggerStdinError?.(new Error("EPIPE: broken pipe"))).not.toThrow();
+
+    // Simulate stream error containing secret on stdout - should be redacted and emitted
+    triggerStdoutError?.(new Error(`Stream read error with token ${secret}`));
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("spawn_error");
+    expect(result.error).toContain("[REDACTED]");
+    expect(result.error).not.toContain(secret);
+
+    await runtime.cleanup(handle.workerId);
   });
 
   test("[Integration] node child process runs harmlessly", async () => {
