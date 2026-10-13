@@ -1,11 +1,11 @@
 import { orgFeatureFlagsFromEnvironment } from "../apps/server/src/organization/orgFeatureFlags";
 
 describe("orgFeatureFlagsFromEnvironment", () => {
-  it("defaults enforce Phase 2 membership while keeping later phases off", () => {
+  it("defaults enforce Phase 2 membership and deletion after Polish gate while keeping memoryScope and rls off", () => {
     expect(orgFeatureFlagsFromEnvironment({})).toEqual({
       membershipEnforcement: "enforce",
       memoryScope: false,
-      deletionEnabled: false,
+      deletionEnabled: true,
       rls: "off",
     });
   });

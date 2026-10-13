@@ -469,8 +469,6 @@ export class PostgresStudioStore implements StudioStore {
           throw new Error("Access denied to agent");
         }
         targetOwnerId = row.owner_id ? String(row.owner_id) : null;
-      } else if (agent.ownerId === undefined || agent.ownerId === null) {
-        targetOwnerId = null;
       }
       agent = { ...agent, ownerId: targetOwnerId ?? undefined, tenantId: principal.tenantId, isSystem: false };
       const written = await this.query(
@@ -539,8 +537,6 @@ export class PostgresStudioStore implements StudioStore {
           throw new Error("Access denied to tool");
         }
         targetOwnerId = row.owner_id ? String(row.owner_id) : null;
-      } else if (tool.ownerId === undefined || tool.ownerId === null) {
-        targetOwnerId = null;
       }
       tool = { ...tool, ownerId: targetOwnerId ?? undefined, tenantId: principal.tenantId, isSystem: false };
       const written = await this.query(

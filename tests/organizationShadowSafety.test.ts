@@ -14,10 +14,12 @@ describe('T082 shadow mode is diagnostics under maintenance, never weaker servin
   beforeEach(async () => { process.env.ORG_MEMBERSHIP_ENFORCEMENT = 'enforce'; store = new InMemoryStudioStore(); await seedUs2(store); });
   afterAll(() => { if (previous === undefined) delete process.env.ORG_MEMBERSHIP_ENFORCEMENT; else process.env.ORG_MEMBERSHIP_ENFORCEMENT = previous; });
   const principal = (userId: string) => ({ userId, tenantId: 'org-a', organizationId: 'org-a' });
-  const signedApp = (userId: string) => {
-    const header = createInternalPrincipalAssertion(principal(userId), secret);
-    return { app: createStudioRouter(store, request => resolveRequestPrincipal(request, secret)), headers: { [INTERNAL_PRINCIPAL_HEADER]: header } };
-  };
+  const signedApp = (userId: string) => ({
+    app: createStudioRouter(store, request => resolveRequestPrincipal(request, secret)),
+    get headers() {
+      return { [INTERNAL_PRINCIPAL_HEADER]: createInternalPrincipalAssertion(principal(userId), secret) };
+    },
+  });
 
   test.each(['removed', 'suspended'] as const)('restart/config downgrade after %s members cannot reopen reads or writes', async status => {
     const warm = signedApp('member'); expect((await warm.app.request('/projects', { headers: warm.headers })).status).toBe(200);

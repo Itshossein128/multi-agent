@@ -221,8 +221,6 @@ export class InMemoryStudioStore implements StudioStore {
           throw new Error("Access denied to agent");
         }
         targetOwnerId = existing.ownerId ? existing.ownerId : undefined;
-      } else if (agent.ownerId === undefined || agent.ownerId === null) {
-        targetOwnerId = undefined;
       }
       agent = { ...agent, ownerId: targetOwnerId, tenantId: principal.tenantId, isSystem: false };
     }
@@ -277,8 +275,6 @@ export class InMemoryStudioStore implements StudioStore {
           throw new Error("Access denied to tool");
         }
         targetOwnerId = existing.ownerId ? existing.ownerId : undefined;
-      } else if (tool.ownerId === undefined || tool.ownerId === null) {
-        targetOwnerId = undefined;
       }
       tool = { ...tool, ownerId: targetOwnerId, tenantId: principal.tenantId, isSystem: false };
     }

@@ -421,3 +421,10 @@ shadow is diagnostics-only maintenance (503 for scoped requests), and credential
 Real PostgreSQL tests executed against isolated temporary schemas. T084–T103 and the remaining later-story
 tasks stay open; organization memory, deletion and RLS activation remain behind their existing gates.
 The requirements checklist was not edited; no extension hooks exist.
+
+
+## Phase 11: Convergence
+
+- [X] T104 [US1] [US2] Restore member-personal ownership as default for newly created agents and tools (`targetOwnerId = principal.userId`) in `src/studio/infrastructure/in-memory-studio-store.ts` and `src/studio/infrastructure/postgres-studio-store.ts` while preserving `ownerId = null` only for existing shared records; fix cross-user agent/tool isolation in `tests/ownershipAuthorization.test.ts` and workspace import updates in `tests/organizationWriteIsolation.test.ts` per FR-103, data-model.md §1, SC-001 (contradicts)
+- [X] T105 Update test assertion helpers in `tests/organizationShadowSafety.test.ts` to sign fresh v2 assertions per request or avoid reusing nonces across sequential HTTP calls so that replay hardening does not trigger false 401 Unauthorized errors in shadow mode test cases per D-3, T067, T102 (partial)
+- [X] T106 Update `tests/orgFeatureFlags.test.ts` and `tests/organizationServerRouteMatrix.test.ts` to align with the activated `ORG_DELETION_ENABLED=true` default, ensuring owner `DELETE /organizations/current` validates name confirmation without expecting 403 Forbidden per FR-113, SC-008, T070 (contradicts)

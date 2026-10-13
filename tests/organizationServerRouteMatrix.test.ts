@@ -49,14 +49,11 @@ describe('US2 every registered Studio route × role and membership', () => {
           allowed = route.method === 'GET' && !isPrivilegedRead;
         }
 
-        // DELETE /organizations/current requires ORG_DELETION_ENABLED flag (default false)
-        const isDeletionDisabled = key === 'DELETE /organizations/current';
-
         const res = await app.request(path, route.method === 'GET' ? {} : jsonRequest(route.method, {}));
-        if (allowed && !isDeletionDisabled) {
+        if (allowed) {
           expect(res.status).not.toBe(403);
           expect(res.status).not.toBe(500);
-          if (path.includes('missing')) {
+          if (path.includes('missing') || key === 'DELETE /organizations/current') {
             expect([400, 404]).toContain(res.status);
           } else if (route.method === 'GET') {
             expect(res.status).toBe(200);
