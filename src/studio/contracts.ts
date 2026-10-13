@@ -169,6 +169,7 @@ export interface ProjectRepository {
 }
 
 export interface WorkspaceRepositoryMembership {
+  tenantId?: string;
   workspaceId: string;
   projectRepositoryId: string;
   branch: string;

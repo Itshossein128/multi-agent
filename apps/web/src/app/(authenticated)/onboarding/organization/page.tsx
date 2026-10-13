@@ -65,10 +65,16 @@ export default function OrganizationOnboardingPage() {
     void (async () => {
       try {
         const res = await fetch("/api/organizations/current");
+        if (res.status === 401) {
+          router.replace("/login?callbackUrl=" + encodeURIComponent("/onboarding/organization"));
+          return;
+        }
         if (res.ok) {
           const org = (await res.json().catch(() => ({}))) as { slug?: string };
-          router.replace(org.slug ? orgPath(org.slug, "/projects") : "/");
-          return;
+          if (org.slug) {
+            router.replace(orgPath(org.slug, "/projects"));
+            return;
+          }
         }
       } finally {
         setChecking(false);
@@ -109,6 +115,10 @@ export default function OrganizationOnboardingPage() {
           },
         }),
       });
+      if (res.status === 401) {
+        router.replace("/login?callbackUrl=" + encodeURIComponent("/onboarding/organization"));
+        return;
+      }
       const body = (await res.json().catch(() => ({}))) as { error?: string; slug?: string };
       if (!res.ok) throw new Error(body.error ?? "Could not create organization");
       sessionStorage.removeItem(DRAFT_KEY);

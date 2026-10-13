@@ -26,6 +26,10 @@ export function OrganizationGate({ children }: { children: React.ReactNode }) {
           setState("needs_org");
           return;
         }
+        if (res.status === 401) {
+          router.replace(`/login?callbackUrl=${encodeURIComponent(pathname)}`);
+          return;
+        }
         if (!res.ok) {
           setState("error");
           return;

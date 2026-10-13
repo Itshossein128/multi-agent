@@ -126,6 +126,10 @@ export default function ProjectDashboardPage() {
     setError(null);
     try {
       const repos = data?.repositories ?? [];
+      if (repos.length === 0) {
+        setError("A workspace requires at least one project repository. Please attach a repository below first.");
+        return;
+      }
       const selected = repos.filter((repo) => selectedWorkspaceRepos[repo.id] !== false);
       const payload: {
         name?: string;
@@ -281,6 +285,17 @@ export default function ProjectDashboardPage() {
             ))}
           </ul>
         )}
+        {repositories.length === 0 && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200 space-y-1">
+            <p className="font-semibold text-amber-300">Attach a repository first</p>
+            <p className="text-zinc-300">
+              Workspaces provide isolated working copies of source code repositories. You must attach at least one repository to this project before creating an explicit workspace.
+            </p>
+            <a href="#repositories-section" className="inline-block mt-1 text-indigo-400 underline font-medium hover:text-indigo-300">
+              ↓ Jump to Attach Repository section below
+            </a>
+          </div>
+        )}
         <form onSubmit={createWorkspace} className="space-y-3 pt-1">
           <label className="block min-w-[12rem] space-y-1 text-xs text-zinc-400">
             New workspace (name optional)
@@ -289,6 +304,7 @@ export default function ProjectDashboardPage() {
               onChange={(e) => setWorkspaceName(e.target.value)}
               className={inputClass}
               placeholder="e.g. Staging"
+              disabled={repositories.length === 0}
             />
           </label>
           {repositories.length > 0 && (
@@ -335,11 +351,18 @@ export default function ProjectDashboardPage() {
               </ul>
             </div>
           )}
-          <Button type="submit" size="sm" disabled={busy}>Create workspace</Button>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={busy || repositories.length === 0}
+            title={repositories.length === 0 ? "Attach a repository to this project first" : undefined}
+          >
+            Create workspace
+          </Button>
         </form>
       </section>
 
-      <section className="space-y-2">
+      <section id="repositories-section" className="space-y-2">
         <h2 className="text-sm font-semibold text-zinc-200">Repositories</h2>
         {repositories.length === 0 ? (
           <p className="text-sm text-zinc-500">No repositories attached.</p>

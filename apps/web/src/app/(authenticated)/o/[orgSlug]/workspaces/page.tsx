@@ -179,6 +179,11 @@ export default function WorkspacesPage() {
       {error && (
         <div className="flex flex-wrap items-center gap-3">
           <p role="alert" className="text-sm text-red-300">{error}</p>
+          {projectId && error.toLowerCase().includes("repository") && (
+            <Link href={orgUrl(`/projects/${encodeURIComponent(projectId)}`)} className="text-xs text-indigo-400 hover:underline">
+              Go to project to attach a repository →
+            </Link>
+          )}
           <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>Retry</Button>
         </div>
       )}

@@ -150,6 +150,7 @@ async function applyWorkspaceMembership(
 ): Promise<WorkspaceRepositoryMembership[]> {
   const stamp = nowIso();
   const memberships: WorkspaceRepositoryMembership[] = repos.map((repo) => ({
+    tenantId: workspace.tenantId,
     workspaceId: workspace.id,
     projectRepositoryId: repo.id,
     branch: repo.defaultBranch,
@@ -347,10 +348,6 @@ export class ProjectService {
           forceNameSource: "manual",
           forceOverrides: {},
         });
-        const allRepos = (await tx.listProjectRepositories(projectId, principal))
-          .filter((repo) => repo.status === "active");
-        await applyWorkspaceMembership(tx, defaultWorkspace, allRepos, principal);
-
         const projectTasks = await tx.listTasksByProject(projectId, principal);
         for (const task of projectTasks) {
           if (task.workspaceId === null || task.workspaceId === undefined) {
@@ -368,6 +365,10 @@ export class ProjectService {
           fromWorkspaceId: null,
           toWorkspaceId: defaultWorkspace.id,
         });
+
+        const allRepos = (await tx.listProjectRepositories(projectId, principal))
+          .filter((repo) => repo.status === "active");
+        await applyWorkspaceMembership(tx, defaultWorkspace, allRepos, principal);
 
         materializedDefault = await withEffectiveSettings(tx, defaultWorkspace, principal);
       }

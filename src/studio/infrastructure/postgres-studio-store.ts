@@ -1310,6 +1310,7 @@ export class PostgresStudioStore implements StudioStore {
       [workspaceId],
     );
     return result.rows.map((row) => ({
+      tenantId: row.tenant_id ? String(row.tenant_id) : undefined,
       workspaceId: String(row.workspace_id),
       projectRepositoryId: String(row.project_repository_id),
       branch: String(row.branch),
@@ -1323,15 +1324,22 @@ export class PostgresStudioStore implements StudioStore {
     memberships: WorkspaceRepositoryMembership[],
     principal?: StudioPrincipal,
   ): Promise<WorkspaceRepositoryMembership[]> {
+    let tenantId = principal?.tenantId ?? memberships.find((m) => m.tenantId)?.tenantId;
     if (principal) {
       const workspace = await this.getWorkspace(workspaceId, principal);
       if (!workspace) throw new Error("Access denied to workspace");
+      tenantId = workspace.tenantId;
+    }
+    if (!tenantId) {
+      const ws = await this.query("SELECT tenant_id FROM studio_workspaces WHERE id = $1", [workspaceId]);
+      tenantId = ws.rows[0]?.tenant_id ? String(ws.rows[0].tenant_id) : undefined;
     }
     await this.query("DELETE FROM studio_workspace_repositories WHERE workspace_id = $1", [workspaceId]);
     const stamp = nowIso();
     const saved: WorkspaceRepositoryMembership[] = [];
     for (const membership of memberships) {
       const record: WorkspaceRepositoryMembership = {
+        tenantId: tenantId ?? membership.tenantId,
         workspaceId,
         projectRepositoryId: membership.projectRepositoryId,
         branch: membership.branch,
@@ -1339,9 +1347,9 @@ export class PostgresStudioStore implements StudioStore {
         updatedAt: stamp,
       };
       await this.query(
-        `INSERT INTO studio_workspace_repositories (workspace_id, project_repository_id, branch, created_at, updated_at)
-         VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)`,
-        [record.workspaceId, record.projectRepositoryId, record.branch, record.createdAt, record.updatedAt],
+        `INSERT INTO studio_workspace_repositories (tenant_id, workspace_id, project_repository_id, branch, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz)`,
+        [record.tenantId, record.workspaceId, record.projectRepositoryId, record.branch, record.createdAt, record.updatedAt],
       );
       saved.push(record);
     }
@@ -1407,8 +1415,19 @@ export class PostgresStudioStore implements StudioStore {
     const result = await this.query(
       `UPDATE studio_workspace_repo_states
        SET workspace_id = $4, workspace_key = $4, updated_at = now()
-       WHERE tenant_id = $1 AND project_id = $2 AND workspace_key = $3`,
+       WHERE tenant_id = $1 AND project_id = $2 AND workspace_key = $3
+         AND NOT EXISTS (
+           SELECT 1 FROM studio_workspace_repo_states existing
+           WHERE existing.tenant_id = $1 AND existing.project_id = $2
+             AND existing.project_repository_id = studio_workspace_repo_states.project_repository_id
+             AND existing.workspace_key = $4
+         )`,
       [params.tenantId, params.projectId, fromKey, params.toWorkspaceId],
+    );
+    await this.query(
+      `DELETE FROM studio_workspace_repo_states
+       WHERE tenant_id = $1 AND project_id = $2 AND workspace_key = $3`,
+      [params.tenantId, params.projectId, fromKey],
     );
     return result.rowCount ?? 0;
   }

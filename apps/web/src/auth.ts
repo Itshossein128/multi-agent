@@ -67,9 +67,20 @@ export const authConfig: NextAuthConfig = {
           process.env.AUTH_DEV_ENABLED === "true" &&
           password === process.env.AUTH_DEV_PASSWORD
         ) {
-          const userId = process.env.AUTH_DEV_USER_ID;
-          const tenantId = process.env.AUTH_DEV_TENANT_ID;
-          return userId && tenantId ? { id: userId, tenantId } : null;
+          const userId = process.env.AUTH_DEV_USER_ID ?? "dev-user";
+          const tenantId = process.env.AUTH_DEV_TENANT_ID ?? "dev-org";
+          try {
+            const pool = getDbPool();
+            await pool.query(
+              `INSERT INTO studio_users (id, email, password_hash, display_name, tenant_id, status)
+               VALUES ($1, $2, $3, $4, NULL, 'active')
+               ON CONFLICT (id) DO UPDATE SET status = 'active'`,
+              [userId, email, "", "Dev User"],
+            );
+          } catch (e) {
+            console.error("Failed to seed dev user into studio_users:", e);
+          }
+          return { id: userId, tenantId };
         }
 
         // Avoid presenting DB outages as invalid credentials.
@@ -117,7 +128,33 @@ export type AuthenticatedPrincipal = { userId: string; tenantId: string };
 /** Session user id only (may have no organization yet after registration). */
 export async function getSessionUserId(): Promise<string | null> {
   const user = (await auth())?.user as { id?: string } | undefined;
-  return user?.id ?? null;
+  if (!user?.id) return null;
+  try {
+    const pool = getDbPool();
+    const result = await pool.query(
+      "SELECT id FROM studio_users WHERE id = $1 AND status = 'active'",
+      [user.id],
+    );
+    if (result.rows.length > 0) return user.id;
+
+    // In development, auto-seed dev-user if logged in via dev fallback
+    if (
+      process.env.NODE_ENV !== "production" &&
+      (user.id === "dev-user" || user.id === process.env.AUTH_DEV_USER_ID)
+    ) {
+      await pool.query(
+        `INSERT INTO studio_users (id, email, password_hash, display_name, tenant_id, status)
+         VALUES ($1, $2, $3, $4, NULL, 'active')
+         ON CONFLICT (id) DO UPDATE SET status = 'active'`,
+        [user.id, "dev@localhost", "", "Dev User"],
+      );
+      return user.id;
+    }
+
+    return null;
+  } catch {
+    return user.id;
+  }
 }
 
 export async function getAuthenticatedPrincipal(request?: Request): Promise<AuthenticatedPrincipal | null> {

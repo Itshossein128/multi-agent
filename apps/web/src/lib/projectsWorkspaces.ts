@@ -5,7 +5,11 @@ import "server-only";
 
 import { createInternalPrincipalAssertion, type AuthenticatedPrincipal } from "../../../../src/auth/internalPrincipal";
 
-const API_URL = process.env.NEXT_PUBLIC_EXECUTION_API_URL ?? process.env.EXECUTION_API_URL ?? "http://localhost:4000";
+const API_URL =
+  process.env.NEXT_PUBLIC_EXECUTION_API_URL ??
+  process.env.EXECUTION_API_URL ??
+  process.env.EXECUTION_SERVER_URL ??
+  "http://localhost:4000";
 
 export type StudioNameSource = "placeholder" | "derived" | "manual";
 

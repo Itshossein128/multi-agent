@@ -35,6 +35,10 @@ export function requirePrincipal(
   resolvePrincipal: PrincipalResolver = resolveRequestPrincipal,
 ): MiddlewareHandler<{ Variables: PrincipalVariables }> {
   return async (context, next) => {
+    const existing = context.get("principal");
+    if (existing) {
+      return next();
+    }
     const principal = await resolvePrincipal(context.req.raw);
     if (!principal) return context.json({ error: "Authentication required." }, 401);
     context.set("principal", principal);
