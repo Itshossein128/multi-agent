@@ -54,4 +54,62 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
   it("rejects blank organizationId", async () => {
     await expect(withOrganization(pool, "  ", "user", async () => null)).rejects.toThrow(/organizationId/i);
   });
+
+  it("exposes ambient scoped client via scopedDbClient during withOrganization execution", async () => {
+    const { scopedDbClient } = await import("../src/studio/infrastructure/withOrganization");
+    expect(scopedDbClient(pool)).toBeUndefined();
+    await withOrganization(pool, "org-c", "user", async (client) => {
+      const scoped = scopedDbClient(pool);
+      expect(scoped).toBeDefined();
+      const res = await scoped!.query("SELECT 1 AS num");
+      expect(res.rows[0].num).toBe(1);
+    });
+    expect(scopedDbClient(pool)).toBeUndefined();
+  });
+
+  it("supports nested withOrganization for the same organization via savepoint", async () => {
+    await withOrganization(pool, "org-d", "user", async (client) => {
+      await client.query(
+        `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id, name_source)
+         VALUES ('p-outer', 'org-d', 'Outer', '', 'active', '{}'::jsonb, now(), now(), 'u1', 'manual')`,
+      );
+
+      // Inner call succeeds
+      await withOrganization(pool, "org-d", "user", async (innerClient) => {
+        await innerClient.query(
+          `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id, name_source)
+           VALUES ('p-inner', 'org-d', 'Inner', '', 'active', '{}'::jsonb, now(), now(), 'u1', 'manual')`,
+        );
+      });
+
+      // Inner call fails: savepoint rollback should preserve outer row
+      await expect(
+        withOrganization(pool, "org-d", "user", async (innerClient) => {
+          await innerClient.query(
+            `INSERT INTO studio_projects (id, tenant_id, name, description, status, settings, created_at, updated_at, owner_id, name_source)
+             VALUES ('p-fail', 'org-d', 'Fail', '', 'active', '{}'::jsonb, now(), now(), 'u1', 'manual')`,
+          );
+          throw new Error("inner error");
+        }),
+      ).rejects.toThrow("inner error");
+
+      // Verify outer transaction is intact and p-fail was rolled back
+      const res = await client.query("SELECT id FROM studio_projects ORDER BY id");
+      expect(res.rows.map((r) => r.id)).toEqual(["p-inner", "p-outer"]);
+    });
+
+    const finalRes = await pool.query("SELECT id FROM studio_projects ORDER BY id");
+    expect(finalRes.rows.map((r) => r.id)).toEqual(["p-inner", "p-outer"]);
+  });
+
+  it("rejects cross-organization nested withOrganization calls", async () => {
+    const { OrganizationScopeError } = await import("../src/studio/infrastructure/withOrganization");
+    await withOrganization(pool, "org-d1", "user", async () => {
+      await expect(
+        withOrganization(pool, "org-d2", "user", async () => {
+          return null;
+        }),
+      ).rejects.toThrow(OrganizationScopeError ?? /Cross-organization/);
+    });
+  });
 });

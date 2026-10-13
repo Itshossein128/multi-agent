@@ -1,0 +1,78 @@
+================================================================================
+US5 Independent Test: Clean Start Without Legacy Tenants (FR-108, SC-002, T024)
+Timestamp: 2026-10-12T23:23:47.426Z
+================================================================================
+
+[Step 0] Creating task-owned disposable database schema "us5_independent_24047ee837cb4a04"...
+[Step 0] Created isolated workspace storage root: /tmp/studio-us5-ws-3jWG2l
+
+[Step 1] Applying pre-organization migrations 001_studio_entities.sql through 017_project_workspace_hierarchy.sql...
+  -> Applied 17 pre-organization migrations. Ledger count: 17
+
+[Step 2] Populating legacy application data and filesystem working copies...
+  -> Seeded legacy users: 1
+  -> Seeded legacy organizations: 1
+  -> Seeded legacy projects: 1
+  -> Seeded legacy tasks: 1
+  -> Seeded legacy workflows: 1
+  -> Seeded legacy tools: 1
+  -> Seeded legacy agents: 1
+  -> Seeded filesystem file: /tmp/studio-us5-ws-3jWG2l/tenant-legacy-alpha/workspace-code.ts (exists: true)
+
+[Step 3] Executing reset WITHOUT explicit confirmation flag (confirm: false)...
+  -> PASS: Unconfirmed reset rejected as expected: "Refusing to destroy data without --confirm-destroy-all-data"
+  -> Verification: Users remaining: 1
+  -> Verification: Organizations remaining: 1
+  -> Verification: Projects remaining: 1
+  -> Verification: Tasks remaining: 1
+  -> Verification: Workspace file exists: true
+
+[Step 4] Attempting to apply migration 018_organization_foundation.sql while legacy data exists...
+  -> PASS: Migration 018 refused legacy data as expected: "Migration 018 refused: 7 legacy organization-owned row(s) exist before studio_organization_memberships. Run pnpm db:reset -- --confirm-destroy-all-data first."
+
+[Step 5] Executing confirmed reset WITH --confirm-destroy-all-data...
+  -> Truncated 26 application data tables: studio_workspace_repo_states, studio_workspace_repositories, studio_project_repositories, studio_task_comments, studio_trigger_events, studio_routine_history, studio_routines, studio_webhook_deliveries, studio_webhook_triggers, studio_agent_heartbeats, studio_approvals, studio_run_events, studio_runs, studio_tasks, studio_workspaces, studio_projects, studio_organization_goals, studio_agent_reporting, studio_budgets, studio_budget_reservations, studio_budget_alerts, studio_organizations, studio_workflows, studio_agents, studio_tools, studio_users
+  -> Verification: Users count: 0
+  -> Verification: Organizations count: 0
+  -> Verification: Projects count: 0
+  -> Verification: Tasks count: 0
+  -> Verification: Workflows count: 0
+  -> Verification: Tools count: 0
+  -> Verification: Agents count: 0
+  -> Verification: Migration ledger count: 17 (PRESERVED)
+  -> Verification: Workspace files remaining in /tmp/studio-us5-ws-3jWG2l: [] (CLEARED)
+
+[Step 6] Running remaining studio migrations (018 through 023) on clean schema...
+  -> Applied 6 migrations: 018_organization_foundation.sql, 019_tenant_constraints.sql, 020_rls_prerequisites.sql, 021_run_initiator.sql, 022_tenant_composite_constraints.sql, 023_rls_prerequisites_complete.sql
+  -> Total migrations in ledger: 23
+
+[Step 7] Simulating clean registration and first organization creation...
+  -> Inserting newly registered user (id: "63e00055-45fc-4733-9744-c582ccd85a2a", email: "first.owner@clean-start.local", tenant_id: NULL)...
+  -> User registered successfully: tenant_id = NULL (no implicit tenant)
+  -> Creating organization "Analytical Engine" (slug: "analytical-engine", id: "74fdab1d-ac8d-4da6-9776-8960c221da22")...
+  -> Organization profile created:
+     - id: 74fdab1d-ac8d-4da6-9776-8960c221da22
+     - name: Analytical Engine
+     - slug: analytical-engine
+     - status: active
+     - ownerId: 63e00055-45fc-4733-9744-c582ccd85a2a
+  -> Organization memberships: 1
+     - user: 63e00055-45fc-4733-9744-c582ccd85a2a, role: owner, status: active, version: 1
+  -> Organization audit records: 1
+     - action: organization.created, target: 63e00055-45fc-4733-9744-c582ccd85a2a, actor: 63e00055-45fc-4733-9744-c582ccd85a2a
+  -> User default tenant updated: 74fdab1d-ac8d-4da6-9776-8960c221da22
+
+[Step 8] Pre-reset data leakage verification:
+  -> Legacy users visible: 0
+  -> Legacy projects visible: 0
+  -> Legacy tasks visible: 0
+  -> Legacy workflows visible: 0
+  -> Legacy tools visible: 0
+  -> Legacy agents visible: 0
+
+================================================================================
+RESULT: US5 Independent Test PASSED (100% of invariants verified)
+================================================================================
+
+[Cleanup] Dropping disposable schema "us5_independent_24047ee837cb4a04"...
+[Cleanup] Completed successfully.

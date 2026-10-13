@@ -20,10 +20,10 @@ delegation project must match the goal's project. Unknown or foreign projects re
 404, retired projects return 409, and missing required projects return 400. Strategy
 validation or transaction failures leave no new goal, task, or assignment event.
 
-All organization records are scoped to a tenant. The organization and budget UI use
-the authenticated execution proxy; direct server endpoints require a trusted principal.
-PostgreSQL deployments require studio migrations through 017; run `pnpm db:migrate`
-before starting the server. Local development can use the in-memory adapters.
+All organization records are scoped to an organization (`tenant_id = organization.id`). The organization and budget UI use
+the authenticated execution proxy; direct server endpoints require a trusted v2 signed principal assertion.
+PostgreSQL deployments require studio migrations through 024; run `pnpm db:migrate`
+before starting the server. Migration 024 activates and forces PostgreSQL Row Level Security (RLS) across all organization, goal, and budget tables. Local development can use the in-memory adapters.
 
 ## Monthly budgets
 
@@ -57,3 +57,19 @@ providers may bill more than the reservation for a single invocation; choose a
 reservation above the maximum expected call cost when strict financial exposure
 matters. Project caps apply to task-linked runs; direct runs without an authoritative
 project association use company and agent caps.
+
+## Organization memory and context precedence
+
+Long-term organization memory stores durable company-wide knowledge, policies, and guidelines:
+
+- **Access and authorization**:
+  - `memory.org.read` is granted to all active organization members, allowing agents executing within the organization to recall organization knowledge.
+  - `memory.org.write` is restricted to `owner` and `admin` roles, preventing unprivileged viewers or members from modifying or deleting company-wide memories.
+- **Context precedence**:
+  During execution context assembly, long-term memories are filtered and ranked according to explicit scope precedence:
+  $$\text{run / workflow} > \text{agent} > \text{project / user} > \text{organization}$$
+  When long-term facts conflict on a subject, more specific scopes override broader scopes (e.g., project-specific settings override organization-wide conventions).
+- **Temporal supersession**:
+  Within and across scopes, valid newer knowledge supersedes older outdated knowledge on the same subject.
+- **Tenant isolation**:
+  Organization memories are bound to the immutable organization ID (`tenantId`). Vector similarity searches filter by tenant ID prior to ranking, guaranteeing zero cross-organization leakage even with identical embeddings.

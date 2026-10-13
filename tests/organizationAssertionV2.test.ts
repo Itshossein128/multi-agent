@@ -23,23 +23,47 @@ describe("principal assertion v2", () => {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString()) as Record<string, unknown>;
     expect(payload.v).toBe(2);
     expect(payload.organizationId).toBe("org-a");
-    expect(payload.tenantId).toBe("org-a");
+    expect(payload.tenantId).toBeUndefined();
     expect(typeof payload.nonce).toBe("string");
     expect(payload.exp).toBe(1_000 + 60_000);
   });
 
-  it("accepts legacy tenantId-only assertions as organizationId alias until Phase 5", () => {
+  it("rejects legacy v1 assertions lacking v: 2 or organizationId", () => {
+    const { createHmac } = require("node:crypto");
+    const legacyPayload = {
+      userId: "user-b",
+      tenantId: "tenant-b",
+      nonce: "legacy-nonce-123",
+      exp: 100_000,
+    };
+    const body = Buffer.from(JSON.stringify(legacyPayload)).toString("base64url");
+    const sig = createHmac("sha256", "test-secret").update(body).digest("base64url");
+    const legacyAssertion = `${body}.${sig}`;
+    expect(verifyInternalPrincipalAssertion(legacyAssertion, "test-secret", 2_000)).toBeNull();
+  });
+
+  it("rejects assertion replay when nonce is reused within validity window", () => {
     const assertion = createInternalPrincipalAssertion(
-      { userId: "user-b", tenantId: "tenant-b" },
+      { userId: "user-replay", organizationId: "org-replay" },
       "test-secret",
       1_000,
     );
-    expect(verifyInternalPrincipalAssertion(assertion, "test-secret", 2_000)).toEqual({
-      userId: "user-b",
-      tenantId: "tenant-b",
-      organizationId: "tenant-b",
-      principalKind: "user",
-    });
+    const verified = verifyInternalPrincipalAssertion(assertion, "test-secret", 2_000);
+    expect(verified).not.toBeNull();
+    expect(verified?.organizationId).toBe("org-replay");
+
+    // Replay with identical nonce fails
+    const replayed = verifyInternalPrincipalAssertion(assertion, "test-secret", 2_001);
+    expect(replayed).toBeNull();
+
+    // Fresh assertion with distinct nonce succeeds
+    const fresh = createInternalPrincipalAssertion(
+      { userId: "user-replay", organizationId: "org-replay" },
+      "test-secret",
+      1_000,
+    );
+    const verifiedFresh = verifyInternalPrincipalAssertion(fresh, "test-secret", 2_002);
+    expect(verifiedFresh).not.toBeNull();
   });
 
   it("rejects forged, unsigned, and expired v2 assertions", () => {

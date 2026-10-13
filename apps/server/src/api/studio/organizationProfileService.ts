@@ -68,6 +68,59 @@ export class OrganizationProfileService {
     return profile;
   }
 
+  async updateCurrent(
+    body: { name?: unknown; description?: unknown; config?: unknown; slug?: unknown },
+    principal: RequestPrincipal,
+  ): Promise<OrganizationProfile> {
+    if (!principal.userId) throw new ApiError(401, "Unauthorized");
+    if (!principal.tenantId?.trim()) throw new ApiError(400, "Organization tenantId is required");
+
+    const updates: {
+      name?: string;
+      description?: string;
+      config?: Record<string, unknown>;
+      slug?: string;
+    } = {};
+
+    if (body.name !== undefined) {
+      updates.name = normalizeName(body.name);
+    }
+    if (body.description !== undefined) {
+      updates.description = normalizeDescription(body.description);
+    }
+    if (body.config !== undefined) {
+      updates.config = normalizeConfig(body.config);
+    }
+    if (body.slug !== undefined) {
+      if (typeof body.slug !== "string") throw new ApiError(400, "slug must be a string");
+      const slug = body.slug.trim().toLowerCase();
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > SLUG_MAX) {
+        throw new ApiError(400, "slug must be lowercase URL-safe (a-z, 0-9, hyphen) and at most 80 characters");
+      }
+      updates.slug = slug;
+    }
+
+    try {
+      return await this.store.updateOrganizationProfile(updates, principal);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("not found")) {
+        throw new ApiError(404, "Organization not found");
+      }
+      if (
+        message.includes("slug already in use") ||
+        message.includes("studio_organizations_slug") ||
+        message.toLowerCase().includes("duplicate key")
+      ) {
+        throw new ApiError(409, "Organization slug already in use");
+      }
+      if (message.includes("slug must be lowercase")) {
+        throw new ApiError(400, message);
+      }
+      throw error;
+    }
+  }
+
   async deleteCurrent(
     body: { name?: unknown; confirmationName?: unknown },
     principal: RequestPrincipal,

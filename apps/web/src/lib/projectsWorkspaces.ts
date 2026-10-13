@@ -152,6 +152,12 @@ export function createOrganization(
 ) {
   return studioRequest<OrganizationProfileDto>("/organizations", { method: "POST", body: JSON.stringify(body) }, principal);
 }
+export function patchOrganizationCurrent(
+  body: { name?: string; description?: string; config?: Record<string, unknown>; slug?: string },
+  principal: AuthenticatedPrincipal,
+) {
+  return studioRequest<OrganizationProfileDto>("/organizations/current", { method: "PATCH", body: JSON.stringify(body) }, principal);
+}
 
 export function listMyOrganizations(principal: AuthenticatedPrincipal) {
   return studioRequest<OrganizationProfileDto[]>("/me/organizations", undefined, principal);

@@ -1,6 +1,6 @@
 import { assertNoCredentials, migrateAgentRecord, nowIso, validateAgent, type AgentRecord, type AgentTestRequest, type RunCreateRequest, type RunStatus, type WorkflowDefinition } from "@multi-agent/types";
 import type { StudioStore } from "../../../../../src/studio/contracts";
-import type { MemoryAccessResolver } from "../../memory/access";
+import { type MemoryAccessResolver, deriveMemoryAccessFromPrincipal } from "../../memory/access";
 import type { RequestPrincipal } from "../../auth/principal";
 import type { PrincipalResolver } from "../../auth/authorization";
 import type { RunExecutor } from "../../runtime/runExecutor";
@@ -57,7 +57,10 @@ export class RunApiService {
     if (errors.length) throw new ApiError(400, errors.join(" "));
     const authoritativeAgent = await this.authoritativeAgent(body.agent.id, principal) ?? migrateAgentRecord(body.agent);
     const needsMemory = this.hasLongTermMemory([authoritativeAgent]);
-    const access = needsMemory ? await this.resolveMemoryAccess(request) : null;
+    let access = needsMemory ? await this.resolveMemoryAccess(request) : null;
+    if (needsMemory && !access && principal) {
+      access = deriveMemoryAccessFromPrincipal(principal, { agentId: authoritativeAgent.id });
+    }
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required for this agent.");
     return this.executor.startAgentTest({ agent: authoritativeAgent, input: body.input }, access ?? undefined, principal);
   }
@@ -79,7 +82,10 @@ export class RunApiService {
       : body.agents.map(migrateAgentRecord);
     assertNoCredentials({ workflow: body.workflow, agents: body.agents, tools: body.tools ?? [] });
     const needsMemory = this.hasLongTermMemory(agents);
-    const access = needsMemory ? await this.resolveMemoryAccess(request) : null;
+    let access = needsMemory ? await this.resolveMemoryAccess(request) : null;
+    if (needsMemory && !access && principal) {
+      access = deriveMemoryAccessFromPrincipal(principal, { workflowId: workflow.id });
+    }
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required for this workflow.");
     const tools = this.studioStore ? await this.studioStore.listTools(principal) : (body.tools ?? []);
     return this.executor.start({ ...(body as RunCreateRequest), workflow, agents, tools }, access ?? undefined, principal);

@@ -1,16 +1,16 @@
-# Graph Report - multi-agent  (2026-10-12)
+# Graph Report - multi-agent  (2026-10-13)
 
 ## Corpus Check
-- 908 files · ~1,125,090 words
+- 932 files · ~1,164,048 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 9139 nodes · 17332 edges · 503 communities (434 shown, 69 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 665 edges (avg confidence: 0.81)
+- 9592 nodes · 18762 edges · 523 communities (454 shown, 69 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 804 edges (avg confidence: 0.81)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5083b002`
+- Built from commit: `afb7b21f`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -18,38 +18,38 @@
 - InMemoryMemoryStore
 - design_system.py
 - workerRuntime.ts
-- projectService.ts
-- runExecutor.ts
-- principal.ts
+- RequestPrincipal
+- server/src/index.ts
+- createInternalPrincipalAssertion
 - memory/contracts.ts
 - runtime/index.ts
 - cn
 - Tasks: Organization-Centric Tenancy Migration (Phases 1–5)
-- agentService.ts
+- studio.ts
 - types/src/index.ts
 - MemoryAccessContext
-- useOrgPath
-- RequestPrincipal
-- AgentRuntime
+- services/memoryService.ts
+- StudioTask
+- organizationBackgroundIsolation.test.ts
 - agentRuntime.ts
 - memorySemanticConflict.test.ts
-- server.ts
-- hybridMemoryRetriever.ts
+- organizationExecutionSecurity.test.ts
+- memoryReliability.ts
 - validate_data.py
 - Memory Architecture Guidance
 - InMemoryStudioStore
 - test_design_system_mode.py
-- QueueAndFailedSection.tsx
+- useOptionalOrg
 - color
-- PostgresStudioStore
+- StudioPrincipal
 - broker/index.ts
 - workflowCompiler.ts
 - Design Search and Retrieval
-- studio.ts
-- agentExecutorFactory.ts
-- application/index.ts
+- in-memory-studio-store.ts
+- episodicMemory.ts
+- memoryLiveEmbeddingRunner.ts
 - memoryEvalRunner.ts
-- ExecutionTimeline.tsx
+- services/workflowService.ts
 - Punycode Package Metadata
 - Tailwind Utility Reference
 - DesignSystemGenerator
@@ -58,18 +58,18 @@
 - Slide Search Utilities
 - ExecutionTelemetry
 - organizationService.ts
-- httpApp.ts
+- brokerHarness.ts
 - Design Catalog Search
 - Memory Readiness Audit
-- episodicMemory.ts
+- operationalE2E.test.ts
 - tls.ts
 - PostgresRunStore
 - CLI Backend Architecture
 - Event Routine Database Schema
 - Brand Guidelines
 - Phase 0 Semantic Memory Report
+- PostgresMemoryJobStore
 - memory/composition.ts
-- graphRunner.ts
 - StudioStore
 - .agents/skills/speckit-analyze/SKILL.md
 - proceduralMemory.ts
@@ -79,38 +79,38 @@
 - e2e-resilience-pg.ts
 - InMemoryRunStore
 - Clarification Delivery Tasks
-- leaseStore.ts
+- server.ts
 - Platform Stack Search
-- toaster.tsx
+- Tasks: Phase 0.5 — Baseline Repair
 - nodeContract.ts
 - Organization Hierarchy Specification
 - Forms and Dialog Components
 - Responsive Tailwind Layouts
 - webhookAgentExecutor.ts
-- audit.ts
+- workspaceWorkingCopyService.ts
 - graphEngine.ts
 - Project Dashboard Specification
 - secretStore.ts
 - Typography and Accessibility
 - Tailwind Generator Checks
 - Prerequisites
-- RunStoreContract
+- RunExecutor
 - punycode.js
-- Documentation Build Scripts
+- scripts
 - Phase 1 Context Assembler Report
 - Project Dashboard Delivery Tasks
 - detect_domain
 - gray
-- productionEpisodicMemory.test.ts
-- studio/infrastructure/migrate.ts
+- compilerOptions
+- organizationProfileService.ts
 - فهرست نیازمندی‌های محصول Production و SaaS
 - Studio hierarchy OpenAPI contract
 - Hierarchy Delivery Tasks
-- orchestratorAgent.ts
+- e2e-multi-agent-workflow.ts
 - Logo and Platform Guidelines
 - Accessible Component Patterns
 - HTML Token Validation
-- RunExecutor
+- createRunsRouter
 - Implementation Plan: Organization-Centric Tenancy Migration (Phases 1–5)
 - Documentation Pages
 - dependencies
@@ -122,12 +122,12 @@
 - Workflow Deletion Tasks
 - Hierarchy data model
 - Organization project workspace hierarchy specification
-- api/projects/[projectId]/repositories/route.ts
+- getAuthenticatedPrincipal
 - Asset Approval Checks
 - Logo Prompt Engineering
 - webhookTriggerRoutes.ts
 - verification-load-smoke.ts
-- studioPostgresRollback.test.ts
+- orchestratorAgent.ts
 - Specification Analysis Workflow
 - Procedural Memory Architecture
 - Git Workspace Clients
@@ -141,9 +141,9 @@
 - Event Routine Specification
 - Workflow Components
 - devDependencies
-- runStore.ts
+- runExecutor.ts
 - Episodic Memory Architecture
-- tools/index.ts
+- [runId]/page.tsx
 - Design Token Architecture
 - Tailwind Theme Customization
 - Structured Agent Handoffs
@@ -166,28 +166,28 @@
 - scopedApiPath
 - docs/README.md
 - Temporal Memory Semantics
-- config.ts
+- ExecutionTimeline.tsx
 - Notification Outbox Storage
 - Asset Organization Guide
 - Primary Color Meanings
 - Core Logo Types
 - color
 - devDependencies
-- queryExpansion.ts
+- studio/infrastructure/migrate.ts
 - taskStatus.ts
 - Live Execution Timeline
-- clarificationResponse.test.ts
+- Phase 0.5 Research — Baseline Repair
 - Brand Consistency Checklist
 - CIP Mockup Prompt Engineering
 - Color Semantics
 - fetch-background Components
 - llmFactory.ts
-- VersionControlClient
+- developerAgent.ts
 - Test Threshold Gate
 - [orgSlug]/execution/[...path]/route.ts
-- ScopedWorkingMemory
+- queryExpansion.ts
 - executionBff.ts
-- brokerHarness.ts
+- policy.ts
 - postgres-studio-store.ts
 - Design Principles
 - Design Principles
@@ -209,10 +209,10 @@
 - Copywriting Formulas
 - TestShadcnInstaller
 - compilerOptions
-- .generate
+- Implementation Plan: Phase 0.5 — Baseline Repair
 - compilerOptions
 - Hierarchy implementation task list
-- services/workflowService.ts
+- PgPool
 - functionToolExecutor.ts
 - types-bundle Components
 - Banner Design - Multi-Format Creative
@@ -224,14 +224,14 @@
 - Tailwind Integration
 - radius
 - Layout Patterns
-- AppSidebar.tsx
+- useOrgPath
 - Local Development Guidance
-- Studio Routine Migrations
+- 012_event_routines_triggers.sql
 - toolConfiguration.ts
 - RateLimiter
 - Clarification Feature Specification
 - Hierarchy Architecture Research
-- getAuthenticatedPrincipal
+- api/projects/route.ts
 - update Components
 - Logo Design Reference
 - Token Architecture
@@ -246,10 +246,10 @@
 - User Scenarios Testing mandatory
 - Incremental Migration Plan
 - .test_init_dry_run
-- databaseToolExecutor.ts
+- Phase 5 Integrated Verification Report: Organization-Centric Tenancy & RLS Activation
 - Primitive Tokens
 - validate-tokens Components
-- card Components
+- card
 - ShadcnInstaller
 - check_shadcn_config Components
 - generate_config_string Components
@@ -267,18 +267,18 @@
 - test_tailwind_config_gen Components
 - .test_get_installed_components_with_files
 - dashboardService.ts
-- class-variance-authority
+- test_text_layout_resilience.py
 - web package
 - speckit-plan SKILL
 - speckit-specify SKILL
 - speckit-tasks SKILL
 - Production SaaS Readiness
-- Agent Record Migration
+- nowIso
 - Core Principles
 - Core Principles
 - Manual contract scenarios expected outcomes
-- Plugin Runtime Registry
-- credentialGateway.ts
+- PluginRegistry
+- config.ts
 - clsx
 - Credential Broker Verification
 - Brand Components
@@ -308,7 +308,7 @@
 - Fix Codex trusted-directory workflow failure
 - Studio Architecture Documentation
 - Real-world readiness validation 2026-09-17
-- CredentialGateway
+- web/src/app/layout.tsx
 - Memory Audit Findings
 - package Components
 - Implementation Plan FEATURE
@@ -316,10 +316,10 @@
 - Implementation Plan Delete Workflow Button
 - Research questions resolved
 - Agent Adapter Contracts
-- evaluation/index.ts
+- api/projects/[projectId]/route.ts
 - compilerOptions
 - input
-- PostgresBudgetStore
+- budgetStore.ts
 - 56 Testing Requirements
 - speckit-checklist SKILL
 - Human Approval States
@@ -353,7 +353,7 @@
 - 007-organization-tenancy-audit/tasks.md
 - Slides Components
 - @xyflow/react
-- @langchain/anthropic
+- Feature Specification: Phase 0.5 — Baseline Repair
 - DeterministicProceduralExtractor
 - speckit-constitution SKILL
 - Credential Broker Integration
@@ -368,13 +368,13 @@
 - 002-clarification-response spec
 - Specification Quality Checklist Server-Owned Agent
 - Brand Guidelines Template
-- type Components
+- HttpCredentialGateway
 - radius Components
-- @langchain/core
+- agents/index.ts
 - .agents/skills/speckit-plan/SKILL.md
 - agent-detail-journeys spec
-- graphMappers.tsx
-- StudioWorkspace
+- AppSidebar.tsx
+- WorkspaceRepositoryMembership
 - Edge Authentication
 - speckit-taskstoissues SKILL
 - Memory Explorer Access
@@ -387,7 +387,7 @@
 - Q lang Graph Event Adapter
 - Q is it possible to
 - Q How can we completely
-- Hierarchy Database Migration
+- Studio memory persistence
 - Main Gaps
 - Approval Decision Contracts
 - deterministic-model-server Components
@@ -403,10 +403,10 @@
 - require-punycode Components
 - web README
 - 58 Implementation Priority
-- محدودیت ها و کارهای باقی
+- US5 Independent Test Verification — Clean Start Without Legacy Tenants
 - Documentation Evidence Index
-- Roadmap و وضعیت فعلی
-- PostgreSQL Memory Storage
+- foreground
+- US3 implementation verification — 2026-10-12
 - 001_studio_entities Components
 - 002_runs Components
 - Cost Budget Database Migration
@@ -424,19 +424,18 @@
 - api/projects/[projectId]/workspaces/route.ts
 - $type
 - .agents/skills/speckit-taskstoissues/SKILL.md
-- destructive-foreground Components
-- muted Components
-- primary-foreground Components
+- muted-foreground
+- primary
+- primary-hover
 - ring Components
-- secondary-foreground Components
+- class-variance-authority
 - __init__ Components
 - temp_project Components
 - fa page
 - studio-lifecycle spec
 - Background Memory Writing
 - Memory Lifetime Semantics
-- StudioEntityError
-- Organization Goals Schema
+- api/workspaces/[workspaceId]/repositories/route.ts
 - Existing Architecture
 - Context Management Findings
 - check-workspace-package Components
@@ -446,10 +445,9 @@
 - slides-create Components
 - create Components
 - test_add_components_no_config Components
-- primary
+- InMemoryToolIdempotencyStore
 - test_init_default_project_root Components
 - test_check_shadcn_config_exists Components
-- bcryptjs
 - Current vs. Target Gap Analysis
 - test_add_components_no_components Components
 - test_add_fonts Components
@@ -477,46 +475,61 @@
 - web next config
 - postcss config
 - Memory Table Migration
-- Memory Jobs Migration
-- 005_users Components
+- studio_memory_jobs
+- hybridMemoryRetriever.ts
 - tmp-check-agent Components
 - tmp-verify-register Components
 - GET POST
 - Specification Quality Checklist: Organization-Centric Tenancy — Phase 0
 - Tenant Boundary & Threat Model
-- in-memory-studio-store.ts
+- OrganizationProfile
 - US2 implementation verification — 2026-10-11
-- verification-real-tools.ts
-- api/projects/[projectId]/repositories/[repoId]/route.ts
+- credentialGateway.ts
+- StudioEntityError
+- Phase 0.5 — Verified implementation baseline
+- Phase 0.5 workflow recheck — first implementation pass
 - Q: Should InMemoryMemoryStore be split into smaller, more focused modules?
+- Contract: Organization Strategy, Delegation, and Goal Project Validation (Phase 0.5)
+- Dependency & Risk Register
+- padding-y
+- destructive
+- OrganizationGate.tsx
+- eventsource-parser
+- @hono/node-server
+- pg
+- credential_broker_leases
 
 ## God Nodes (most connected - your core abstractions)
-1. `StudioStore` - 148 edges
-2. `InMemoryStudioStore` - 120 edges
-3. `StudioPrincipal` - 113 edges
-4. `MemoryAccessContext` - 97 edges
-5. `PostgresStudioStore` - 96 edges
-6. `RequestPrincipal` - 91 edges
-7. `RunExecutor` - 76 edges
-8. `TailwindConfigGenerator` - 58 edges
-9. `scopedApiPath()` - 53 edges
-10. `RunStoreContract` - 52 edges
+1. `StudioStore` - 161 edges
+2. `RequestPrincipal` - 142 edges
+3. `InMemoryStudioStore` - 136 edges
+4. `StudioPrincipal` - 118 edges
+5. `PostgresStudioStore` - 115 edges
+6. `MemoryAccessContext` - 108 edges
+7. `RunExecutor` - 84 edges
+8. `InMemoryRunStore` - 63 edges
+9. `TailwindConfigGenerator` - 58 edges
+10. `RunStoreContract` - 58 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `createMemoryAccessResolver()` --indirect_call--> `isMemoryNamespace()`  [INFERRED]
+  apps/server/src/memory/access.ts → packages/types/src/memory.ts
 - `MockStoreState` --references--> `RunEntry`  [EXTRACTED]
   tests/graphRunner.test.ts → apps/server/src/runtime/store/contracts.ts
 - `RunState` --references--> `WorkingMemoryEntries`  [EXTRACTED]
   tests/workingMemoryRuntime.test.ts → src/agents/runtime/workingMemory.ts
-- `memory()` --calls--> `contentHash()`  [EXTRACTED]
-  tests/memoryKindConflictSemantics.test.ts → src/memory/application/access.ts
-- `principalFor()` --calls--> `verifyInternalPrincipalAssertion()`  [EXTRACTED]
-  tests/workingMemoryRuntime.test.ts → src/auth/internalPrincipal.ts
-- `requestFor()` --calls--> `createInternalPrincipalAssertion()`  [EXTRACTED]
-  tests/workingMemoryRuntime.test.ts → src/auth/internalPrincipal.ts
+- `gatewayFor()` --calls--> `createBrokerApp()`  [EXTRACTED]
+  tests/organizationExecutionSecurity.test.ts → src/broker/httpApp.ts
+- `ActionSpec` --references--> `StudioStore`  [EXTRACTED]
+  tests/organizationPermissions.test.ts → src/studio/contracts.ts
 
 ## Import Cycles
 - 3-file cycle: `src/agents/runtime/contextAssembler.ts -> src/agents/runtime/shortTermMemory.ts -> src/agents/runtime/types.ts -> src/agents/runtime/contextAssembler.ts`
+- 3-file cycle: `src/memory/infrastructure/index.ts -> src/memory/infrastructure/postgres-memory-store.ts -> src/studio/infrastructure/withOrganization.ts -> src/memory/infrastructure/index.ts`
+- 3-file cycle: `src/memory/infrastructure/index.ts -> src/memory/infrastructure/postgres-memory-job-store.ts -> src/studio/infrastructure/withOrganization.ts -> src/memory/infrastructure/index.ts`
 - 3-file cycle: `src/memory/application/memoryEvaluation.ts -> src/memory/application/memoryReliability.ts -> src/memory/contracts.ts -> src/memory/application/memoryEvaluation.ts`
+- 4-file cycle: `src/memory/infrastructure/index.ts -> src/memory/infrastructure/migrate.ts -> src/memory/infrastructure/postgres-memory-store.ts -> src/studio/infrastructure/withOrganization.ts -> src/memory/infrastructure/index.ts`
+- 4-file cycle: `src/memory/infrastructure/index.ts -> src/memory/infrastructure/postgres-memory-job-store.ts -> src/memory/infrastructure/postgres-memory-store.ts -> src/studio/infrastructure/withOrganization.ts -> src/memory/infrastructure/index.ts`
 - 4-file cycle: `src/memory/application/access.ts -> src/memory/contracts.ts -> src/memory/application/memoryEvaluation.ts -> src/memory/application/memoryReliability.ts -> src/memory/application/access.ts`
 
 ## Hyperedges (group relationships)
@@ -526,11 +539,11 @@
 - **Atomic Default materialization flow** — specs_006_project_workspace_hierarchy_data_model_default_transaction, specs_006_project_workspace_hierarchy_data_model_studioworkspace, specs_006_project_workspace_hierarchy_data_model_studiotask, specs_006_project_workspace_hierarchy_data_model_workspacerepositorystate [EXTRACTED 1.00]
 - **Hierarchy ownership model** — specs_006_project_workspace_hierarchy_data_model_organizationprofile, specs_006_project_workspace_hierarchy_data_model_studioproject, specs_006_project_workspace_hierarchy_data_model_studioworkspace, specs_006_project_workspace_hierarchy_data_model_studiotask [EXTRACTED 1.00]
 
-## Communities (503 total, 69 thin omitted)
+## Communities (523 total, 69 thin omitted)
 
 ### Community 0 - "InMemoryMemoryStore"
 Cohesion: 0.07
-Nodes (30): MemoryConflictError, MemoryStoreQuery, MemoryValidationError, InMemoryMemoryStore, columns, decode(), entries, fields (+22 more)
+Nodes (32): main(), { Pool }, { resolve }, { runMemoryMigrations }, runLiveEmbeddingEvaluation(), MemoryConflictError, MemoryStoreQuery, MemoryValidationError (+24 more)
 
 ### Community 1 - "design_system.py"
 Cohesion: 0.08
@@ -538,75 +551,75 @@ Nodes (30): ansi_ljust(), _detect_page_type(), format_ascii_box(), format_markdo
 
 ### Community 2 - "workerRuntime.ts"
 Cohesion: 0.05
-Nodes (42): activeContainers, assertRemoved(), Check, docker(), policy, runCheck(), workspace, CliRuntimePolicy (+34 more)
+Nodes (40): activeContainers, assertRemoved(), Check, docker(), policy, runCheck(), workspace, CliRuntimePolicy (+32 more)
 
-### Community 3 - "projectService.ts"
-Cohesion: 0.07
-Nodes (41): registerProjectRoutes(), applyWorkspaceMembership(), maybeDeriveProjectNameFromTask(), maybeDeriveWorkspaceNameFromTask(), normalizeDescription(), normalizeName(), normalizeSettings(), parseStatusFilter() (+33 more)
+### Community 3 - "RequestPrincipal"
+Cohesion: 0.11
+Nodes (24): registerProjectRoutes(), applyWorkspaceMembership(), maybeDeriveProjectNameFromTask(), maybeDeriveWorkspaceNameFromTask(), normalizeDescription(), normalizeName(), normalizeSettings(), parseStatusFilter() (+16 more)
 
-### Community 4 - "runExecutor.ts"
-Cohesion: 0.05
-Nodes (66): createDashboardRouter(), createMemoriesRouter(), RunListQuery, RunVariables, isOwnershipError(), PrincipalVariables, requireOrganizationContext(), requirePrincipal() (+58 more)
-
-### Community 5 - "principal.ts"
+### Community 4 - "server/src/index.ts"
 Cohesion: 0.08
-Nodes (34): INTERNAL_PRINCIPAL_HEADER, AssertionPayload, AuthenticatedPrincipal, createInternalPrincipalAssertion(), normalizePrincipal(), PrincipalAssertionInput, sign(), verifyInternalPrincipalAssertion() (+26 more)
+Nodes (32): createDashboardRouter(), createMemoriesRouter(), RunListQuery, RunVariables, requireOrganizationContext(), requirePrincipal(), respondWithApiError(), createStudioRouter() (+24 more)
+
+### Community 5 - "createInternalPrincipalAssertion"
+Cohesion: 0.05
+Nodes (44): api(), AssertionPayload, AuthenticatedPrincipal, checkAndRecordNonce(), createInternalPrincipalAssertion(), normalizePrincipal(), PrincipalAssertionInput, seenNonces (+36 more)
 
 ### Community 6 - "memory/contracts.ts"
 Cohesion: 0.04
-Nodes (47): feedbackLedger, integer(), MemoryApiService, namespaceFromUrl(), visible(), aggregateByAgent(), aggregateByKind(), computePopulationMetrics() (+39 more)
+Nodes (44): feedbackLedger, MemoryContextFormatterOptions, aggregateByAgent(), aggregateByKind(), computePopulationMetrics(), DeterministicRelevanceRule, emptyPopulationMetrics(), evaluateMemoryRelevance() (+36 more)
 
 ### Community 7 - "runtime/index.ts"
 Cohesion: 0.04
-Nodes (92): AssembledContext, ContextAssembler, ContextAssemblyRequest, ContextItem, ContextSource, DefaultContextAssembler, DefaultContextAssemblerOptions, PRIORITY (+84 more)
+Nodes (94): AssembledContext, ContextAssembler, ContextAssemblyRequest, ContextItem, ContextSource, DefaultContextAssembler, DefaultContextAssemblerOptions, PRIORITY (+86 more)
 
 ### Community 8 - "cn"
 Cohesion: 0.05
-Nodes (61): WorkflowEdgeComponent(), workflowEdgeTypes, EditorToolbar(), ToolButton(), FlowCanvas(), NodePalette(), PALETTE_ICON, PALETTE_ORDER (+53 more)
+Nodes (63): CardActionButton(), WorkflowEdgeComponent(), workflowEdgeTypes, EditorToolbar(), ToolButton(), FlowCanvas(), NodePalette(), PALETTE_ICON (+55 more)
 
 ### Community 9 - "Tasks: Organization-Centric Tenancy Migration (Phases 1–5)"
 Cohesion: 0.04
 Nodes (45): CRITICAL — completed isolation and authorization gaps, Critical repair verification (2026-10-12), Dependencies & Execution Order, Format: `[ID] [P?] [Story] Description`, HIGH — completed/foundational repairs and remaining core work, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3 (+37 more)
 
-### Community 10 - "agentService.ts"
-Cohesion: 0.09
-Nodes (11): ApiError, registerAgentRoutes(), AgentService, requireResource(), registerToolRoutes(), StudioToolService, WorkspaceImport, WorkspaceService (+3 more)
+### Community 10 - "studio.ts"
+Cohesion: 0.07
+Nodes (21): ApiError, isOwnershipError(), PrincipalVariables, registerAgentRoutes(), AgentService, registerToolRoutes(), StudioToolService, registerWorkflowRoutes() (+13 more)
 
 ### Community 11 - "types/src/index.ts"
 Cohesion: 0.03
-Nodes (63): AgentBackendType, AgentDiagnostics, AgentDiagnosticStatus, AgentExecutionPolicy, AgentHeartbeatSettings, AgentMemoryConfig, AgentNodeConfig, AgentTestRequest (+55 more)
+Nodes (63): AgentBackendType, AgentDiagnostics, AgentDiagnosticStatus, AgentExecutionPolicy, AgentMemoryConfig, AgentNodeConfig, AgentTestRequest, ApprovalNodeConfig (+55 more)
 
 ### Community 12 - "MemoryAccessContext"
-Cohesion: 0.06
-Nodes (55): boundedInteger(), canAccessMemory(), canUseNamespace(), contentHash(), IDEMPOTENCY_METADATA_KEY, isLive(), matchesFilters(), namespaceKey() (+47 more)
-
-### Community 13 - "useOrgPath"
 Cohesion: 0.07
-Nodes (47): Invitation, Invitations(), AgentRegistry(), KINDS, MemoryExplorer(), readToken(), SCOPES, ToolRegistry() (+39 more)
+Nodes (40): canUseNamespace(), contentHash(), isLive(), namespaceKey(), requireNamespaces(), sameNamespace(), ConsolidationBackfill, ConsolidationBackfillOptionsExtended (+32 more)
 
-### Community 14 - "RequestPrincipal"
-Cohesion: 0.11
-Nodes (17): fingerprintAnswers(), registerTaskRoutes(), boundedText(), hasDependencyCycle(), normalizeId(), TASK_PRIORITIES, TASK_STATUSES, TaskService (+9 more)
+### Community 13 - "services/memoryService.ts"
+Cohesion: 0.47
+Nodes (4): MemoryAuthContext, memoryService, request(), resolveAuth()
 
-### Community 15 - "AgentRuntime"
-Cohesion: 0.15
-Nodes (8): BudgetedAgentRuntime, number(), Rate, rates(), RunBudgetController, tokens(), AgentRuntime, originalEnv
+### Community 14 - "StudioTask"
+Cohesion: 0.12
+Nodes (18): fingerprintAnswers(), registerTaskRoutes(), boundedText(), hasDependencyCycle(), normalizeId(), TASK_PRIORITIES, TASK_STATUSES, TaskService (+10 more)
+
+### Community 15 - "organizationBackgroundIsolation.test.ts"
+Cohesion: 0.07
+Nodes (21): HeartbeatScheduler, HeartbeatSchedulerOptions, RoutineSchedulerOptions, TriggerOutboxProcessor, TriggerOutboxProcessorOptions, AgentHeartbeatSettings, DurableMemoryJob, assertOrganizationScope() (+13 more)
 
 ### Community 16 - "agentRuntime.ts"
-Cohesion: 0.13
-Nodes (16): emptyTokens(), memoryEvent(), RuntimeMemory, sameNamespace(), boundedInteger(), boundHistory(), boundText(), historyKey() (+8 more)
+Cohesion: 0.04
+Nodes (61): RuntimeState, AgentExecutorFactory, ApiAgentExecutor, assembledContextToMessages(), baseEvent(), buildMessages(), ChatModel, LLMFactoryLike (+53 more)
 
 ### Community 17 - "memorySemanticConflict.test.ts"
-Cohesion: 0.06
-Nodes (51): normalizeContent(), words(), classifyMemoryRelationship(), conflictGroupKey(), detectsTemporalReplacementOf(), episodeIdentity(), explicitConflict(), explicitSupersession() (+43 more)
+Cohesion: 0.07
+Nodes (44): normalizeContent(), words(), classifyMemoryRelationship(), conflictGroupKey(), detectsTemporalReplacementOf(), episodeIdentity(), explicitConflict(), explicitSupersession() (+36 more)
 
-### Community 18 - "server.ts"
-Cohesion: 0.14
-Nodes (15): AuditRecorder, PostgresAuditRecorder, BrokerServerConfig, StaticServiceAuth, startLeaseCleanup(), BrokerCompositionOptions, BrokerEnvironmentLike, createBrokerHttpApp() (+7 more)
+### Community 18 - "organizationExecutionSecurity.test.ts"
+Cohesion: 0.05
+Nodes (24): assertRunAccessTenant(), checkpointedApiCredentials(), RunAccessChecker, RunAccessCheckInput, RunAccessCheckpoint, deriveRunInitiatorKind(), InitiatorStartContext, isRunInitiatorKind() (+16 more)
 
-### Community 19 - "hybridMemoryRetriever.ts"
-Cohesion: 0.04
-Nodes (64): sameEmbedding(), conflictKey(), cosine(), KIND_RANK, Scores, suppressionReason(), VERIFICATION_RANK, winnerSort() (+56 more)
+### Community 19 - "memoryReliability.ts"
+Cohesion: 0.05
+Nodes (30): ConflictRelation, DEFAULT_FRESHNESS_CONFIG, DEFAULT_RELIABILITY_SCORING, DefaultMemoryReinforcementService, DefaultMemoryVerificationService, DeterministicConfidencePolicy, DeterministicConflictDetector, FreshnessConfig (+22 more)
 
 ### Community 20 - "validate_data.py"
 Cohesion: 0.08
@@ -617,56 +630,56 @@ Cohesion: 0.03
 Nodes (57): 10. Storage Abstraction, 11. Do Not Use Vector Search for Everything, 12. Hybrid Retrieval, 13. Retrieval Strategy, 14. Retrieval Query, 15. Memory Context Budget, 16. Embedding Provider Abstraction, 17. Embedding Configuration (+49 more)
 
 ### Community 22 - "InMemoryStudioStore"
-Cohesion: 0.06
-Nodes (4): ProjectRepository, StudioPrincipal, InMemoryStudioStore, decodeProjectRepository()
+Cohesion: 0.04
+Nodes (10): ProjectRepository, StudioWorkspaceImport, InMemoryStudioStore, membershipKey(), workspaceRepoStateKey(), removedMember(), seedFixtures(), seedTwoOrgs() (+2 more)
 
 ### Community 23 - "test_design_system_mode.py"
-Cohesion: 0.08
-Nodes (21): _contrast_ratio(), _derive_dark_palette(), _palette_is_dark(), _query_wants_dark(), WCAG relative luminance of a #RRGGBB string, or None if unparseable., True when a colors.csv row's Background is a dark surface., WCAG contrast ratio for two hex colors, or None if either is invalid., True when a styles.csv row describes itself as dark-first. (+13 more)
+Cohesion: 0.07
+Nodes (24): _contrast_ratio(), _derive_dark_palette(), _filter_anti_patterns_for_mode(), _palette_is_dark(), _query_wants_dark(), WCAG relative luminance of a #RRGGBB string, or None if unparseable., True when a colors.csv row's Background is a dark surface., WCAG contrast ratio for two hex colors, or None if either is invalid. (+16 more)
 
-### Community 24 - "QueueAndFailedSection.tsx"
-Cohesion: 0.13
-Nodes (30): CompletedAndCostSection(), GraphAgentNodeData, graphNodeTypes, MOUNT_SEED, QueueAndFailedSection(), RunningAgentsSection(), StatCards(), AppHeader() (+22 more)
+### Community 24 - "useOptionalOrg"
+Cohesion: 0.10
+Nodes (39): DashboardPage(), CompletedAndCostSection(), GraphAgentNodeData, graphNodeTypes, EDGE_COLORS, NODE_ICONS, sampleGraph(), workflowToGraph() (+31 more)
 
 ### Community 25 - "color"
 Cohesion: 0.21
 Nodes (14): $type, $value, 500, green, red, white, yellow, 500 (+6 more)
 
-### Community 26 - "PostgresStudioStore"
-Cohesion: 0.06
-Nodes (5): StudioWorkspaceImport, decodeRoutine(), decodeTask(), decodeTriggerEvent(), PostgresStudioStore
+### Community 26 - "StudioPrincipal"
+Cohesion: 0.07
+Nodes (6): StudioPrincipal, decodeRoutine(), decodeTask(), decodeTriggerEvent(), PostgresStudioStore, scopedDbClient()
 
 ### Community 27 - "broker/index.ts"
-Cohesion: 0.11
-Nodes (30): CREDENTIAL_BROKER_CONTRACT_VERSION, CREDENTIAL_PROVIDERS, CREDENTIAL_PURPOSES, CredentialConsumeRequest, CredentialLease, CredentialProvider, CredentialPurpose, CredentialRevokeRequest (+22 more)
+Cohesion: 0.09
+Nodes (35): BrokerServerConfig, BrokerErrorCode, brokerErrorMessage(), CREDENTIAL_BROKER_CONTRACT_VERSION, CREDENTIAL_PROVIDERS, CREDENTIAL_PURPOSES, CredentialConsumeRequest, CredentialLease (+27 more)
 
 ### Community 28 - "workflowCompiler.ts"
 Cohesion: 0.05
-Nodes (53): NODE_VALIDATORS, NodeValidator, validateAgentNode(), validateApprovalNode(), validateConditionNode(), validateInputNode(), validateMemoryNode(), validateOutputNode() (+45 more)
+Nodes (50): NODE_VALIDATORS, NodeValidator, validateAgentNode(), validateApprovalNode(), validateConditionNode(), validateInputNode(), validateMemoryNode(), validateOutputNode() (+42 more)
 
 ### Community 29 - "Design Search and Retrieval"
 Cohesion: 0.07
 Nodes (42): BM25, detect_domain(), get_cip_brief(), _load_csv(), Load CSV and return list of dicts, Core search function using BM25, Auto-detect the most relevant domain from query, Main search function with auto-domain detection (+34 more)
 
-### Community 30 - "studio.ts"
-Cohesion: 0.06
-Nodes (24): createStudioRouter(), registerOrganizationProfileRoutes(), normalizeConfig(), normalizeDescription(), normalizeName(), OrganizationProfileService, registerWorkflowRoutes(), registerWorkspaceRoutes() (+16 more)
-
-### Community 31 - "agentExecutorFactory.ts"
-Cohesion: 0.05
-Nodes (44): RuntimeState, defaultFactory, ApiAgentExecutor, assembledContextToMessages(), buildMessages(), ChatModel, LLMFactoryLike, serializeInput() (+36 more)
-
-### Community 32 - "application/index.ts"
+### Community 30 - "in-memory-studio-store.ts"
 Cohesion: 0.09
-Nodes (20): main(), { Pool }, { resolve }, { runMemoryMigrations }, embeddableMemoryText(), createEmbeddingProvider(), EmbeddingUsageStats, HttpEmbeddingConfig (+12 more)
+Nodes (23): UpdateOrganizationProfileInput, Collection, equal(), prepareInMemoryCommit(), State, backend, operations, roles (+15 more)
+
+### Community 31 - "episodicMemory.ts"
+Cohesion: 0.07
+Nodes (25): validateContent(), DeterministicEpisodeExtractor, DeterministicEpisodicPolicy, EpisodePolicyDecision, EpisodeServiceOptions, episodeToMemoryCandidate(), EPISODIC_EXTRACTOR_VERSION, EpisodicMemoryCandidate (+17 more)
+
+### Community 32 - "memoryLiveEmbeddingRunner.ts"
+Cohesion: 0.12
+Nodes (12): createEmbeddingProvider(), EmbeddingUsageStats, HttpEmbeddingConfig, HttpEmbeddingProvider, normalizeForCache(), RealisticSemanticEmbeddingProvider, FOREIGN_NAMESPACE, LIVE_NAMESPACE (+4 more)
 
 ### Community 33 - "memoryEvalRunner.ts"
-Cohesion: 0.06
-Nodes (47): CliOptions, main(), parseOptions(), HybridMemoryRetriever, DefaultMemoryContextFormatter, MemoryContextFormatterOptions, materializeScenarioMemory(), MemoryContextFormatter (+39 more)
+Cohesion: 0.09
+Nodes (39): CliOptions, main(), parseOptions(), materializeScenarioMemory(), daysAgo(), deterministicEvalEmbedding(), EVAL_STOP_WORDS, evalEmbeddingMetadata (+31 more)
 
-### Community 34 - "ExecutionTimeline.tsx"
+### Community 34 - "services/workflowService.ts"
 Cohesion: 0.06
-Nodes (39): initialStatus(), RunsHistoryContent(), STATUSES, ACTIVE_RUN_STATUSES, RunPage(), ApprovalCard(), ApprovalPanel(), decodeEscapedNewlines() (+31 more)
+Nodes (37): DEFAULT_CONFIG, Draft, loadDraft(), OrganizationOnboardingPage(), onSubmit(), onChange(), deleteCurrentWorkflow(), executionApiBase() (+29 more)
 
 ### Community 35 - "Punycode Package Metadata"
 Cohesion: 0.04
@@ -677,8 +690,8 @@ Cohesion: 0.05
 Nodes (43): Arbitrary Values, Aspect Ratio, Background Colors, Border Color, Border Radius, Border Style, Border Width, Borders (+35 more)
 
 ### Community 37 - "DesignSystemGenerator"
-Cohesion: 0.06
-Nodes (21): DesignSystemGenerator, Generates design system recommendations from aggregated searches., Load reasoning rules from CSV., Find matching reasoning rule for a category., Apply reasoning rules to search results., Select best matching result based on priority keywords., apply_decision_rules(), _object_without_duplicates() (+13 more)
+Cohesion: 0.05
+Nodes (26): DesignSystemGenerator, Generates design system recommendations from aggregated searches., Load reasoning rules from CSV., Execute searches across multiple domains., Find matching reasoning rule for a category., Apply reasoning rules to search results., Select best matching result based on priority keywords., Extract results list from search result dict. (+18 more)
 
 ### Community 38 - "memoryBenchmarkRunner.ts"
 Cohesion: 0.04
@@ -686,23 +699,23 @@ Nodes (73): CliOptions, main(), MODES, parseMemoryBenchmarkOptions(), apiGraphql
 
 ### Community 39 - "workerCredentials.ts"
 Cohesion: 0.06
-Nodes (54): assertNoSecretLeak(), CheckResult, docker(), git(), main(), waitForRun(), assertNoSecretLeak(), CheckResult (+46 more)
+Nodes (43): CredentialComposition, assertNoSecretLeak(), CheckResult, docker(), git(), main(), waitForRun(), assertNoSecretLeak() (+35 more)
 
 ### Community 40 - "Slide Search Utilities"
 Cohesion: 0.08
 Nodes (36): format_context(), format_result(), main(), Format a single search result for display, Format contextual recommendations for display., BM25, calculate_pattern_break(), detect_domain() (+28 more)
 
 ### Community 41 - "ExecutionTelemetry"
-Cohesion: 0.06
-Nodes (24): CredentialComposition, boundedNumber(), createObservabilityRuntime(), ObservabilityRuntime, parseCaptureMode(), AgentExecutorFactory, baseEvent(), KNOWN_MEMORY_MIGRATIONS (+16 more)
+Cohesion: 0.11
+Nodes (12): boundedNumber(), createObservabilityRuntime(), ObservabilityRuntime, parseCaptureMode(), AgentTelemetryContext, ExecutionTelemetry, isTelemetryFailure(), safeError() (+4 more)
 
 ### Community 42 - "organizationService.ts"
-Cohesion: 0.10
-Nodes (18): ensureTenantProjectWorkspaceDefaults(), findActiveTenantProjectId(), TenantProjectDefault, bodyObject(), registerOrganizationRoutes(), OrganizationService, roles, statuses (+10 more)
+Cohesion: 0.07
+Nodes (29): OrganizationPurgeDependencies, PurgeResult, bodyObject(), registerOrganizationRoutes(), OrganizationService, roles, statuses, text() (+21 more)
 
-### Community 43 - "httpApp.ts"
-Cohesion: 0.14
-Nodes (17): BrokerErrorCode, brokerErrorMessage(), BrokerServiceAuth, createBrokerApp(), ErrorResponder, failure(), jsonError(), normalizeIdempotencyKey() (+9 more)
+### Community 43 - "brokerHarness.ts"
+Cohesion: 0.09
+Nodes (23): BrokerServiceAuth, createBrokerApp(), ErrorResponder, failure(), jsonError(), normalizeIdempotencyKey(), readJson(), ServiceIdentity (+15 more)
 
 ### Community 44 - "Design Catalog Search"
 Cohesion: 0.08
@@ -712,9 +725,9 @@ Nodes (40): _contains_phrase(), _domain_keywords(), _exact_match_diagnostic(), _
 Cohesion: 0.05
 Nodes (40): Consolidation Findings, Context Quality, ContextAssembler Findings, Cost / Performance, Critical, Dormant / Incomplete Implementations, Episodic Memory Findings, Executive Summary (+32 more)
 
-### Community 46 - "episodicMemory.ts"
-Cohesion: 0.08
-Nodes (21): validateContent(), DefaultEpisodeService, DeterministicEpisodeExtractor, DeterministicEpisodicPolicy, EpisodePolicyDecision, EpisodeServiceOptions, episodeToMemoryCandidate(), EPISODIC_EXTRACTOR_VERSION (+13 more)
+### Community 46 - "operationalE2E.test.ts"
+Cohesion: 0.04
+Nodes (38): CompileOptions, createMemoryAccessResolver(), deriveMemoryAccessFromPrincipal(), DeriveMemoryAccessOptions, digest(), memoryAccessResolverFromEnvironment(), MemoryPrincipal, AgentRuntime (+30 more)
 
 ### Community 47 - "tls.ts"
 Cohesion: 0.09
@@ -736,25 +749,25 @@ Nodes (37): 1. Color Palette, 2. Typography, 3. Logo Usage, 4. Voice & Tone, 5. 
 Cohesion: 0.05
 Nodes (38): 1. Startup Observability (`apps/server/src/memory/composition.ts`), 2. Embedding Backfill Script (`scripts/memory/backfill-embeddings.mjs`), 3. Graceful pgvector Migration (`infrastructure/memory/migrations/002_pgvector.sql`), 4. Semantic Vector Integration Tests (`tests/memorySemanticVector.test.ts`), 5. Environment Documentation (`.env.example`), Abstraction, Backfill, Backfill (+30 more)
 
-### Community 53 - "memory/composition.ts"
-Cohesion: 0.06
-Nodes (26): createPostgresPool(), ManagedPool, PostgresPoolOptions, createMemoryComposition(), MemoryComposition, embeddingProviderFromEnvironment(), createStudioComposition(), end() (+18 more)
-
-### Community 54 - "graphRunner.ts"
+### Community 53 - "PostgresMemoryJobStore"
 Cohesion: 0.15
-Nodes (8): ApprovalManager, PausedContext, CompiledResult, GraphRunner, EpisodeExtractionInput, EpisodeExtractionResult, EpisodeService, MockStoreState
+Nodes (9): classifyError(), DurableMemoryJobWorker, DurableMemoryJobWorkerOptions, internalAccess(), decode(), iso(), MemoryJobKind, MemoryJobStatus (+1 more)
+
+### Community 54 - "memory/composition.ts"
+Cohesion: 0.06
+Nodes (18): integer(), MemoryApiService, namespaceFromUrl(), visible(), createMemoryComposition(), MemoryComposition, embeddingProviderFromEnvironment(), DurableMemoryJobHandler (+10 more)
 
 ### Community 55 - "StudioStore"
 Cohesion: 0.04
-Nodes (16): registerOrganizationMembershipRoutes(), object(), OrganizationMembershipService, role(), registerRoutineRoutes(), extractMentions(), registerTaskCommentRoutes(), OrganizationContextResolver (+8 more)
+Nodes (26): registerOrganizationMembershipRoutes(), object(), OrganizationMembershipService, role(), roles, registerRoutineRoutes(), extractMentions(), registerTaskCommentRoutes() (+18 more)
 
 ### Community 56 - ".agents/skills/speckit-analyze/SKILL.md"
 Cohesion: 0.08
 Nodes (25): 1. Initialize Analysis Context, 2. Load Artifacts (Progressive Disclosure), 3. Build Semantic Models, 4. Detection Passes (Token-Efficient Analysis), 5. Severity Assignment, 6. Produce Compact Analysis Report, 7. Provide Next Actions, 8. Offer Remediation (+17 more)
 
 ### Community 57 - "proceduralMemory.ts"
-Cohesion: 0.06
-Nodes (23): calculateTriggerScore(), DEFAULT_PROCEDURAL_EVIDENCE_CONFIG, DefaultProceduralService, DeterministicProceduralPolicy, PROCEDURAL_EXTRACTOR_VERSION, ProceduralEvidenceConfig, ProceduralExtractionInput, ProceduralExtractionResult (+15 more)
+Cohesion: 0.07
+Nodes (23): RELIABILITY_KEYS, calculateTriggerScore(), DEFAULT_PROCEDURAL_EVIDENCE_CONFIG, DefaultProceduralService, DeterministicProceduralPolicy, PROCEDURAL_EXTRACTOR_VERSION, ProceduralEvidenceConfig, ProceduralExtractionInput (+15 more)
 
 ### Community 58 - "Design Skill Routing"
 Cohesion: 0.06
@@ -765,32 +778,36 @@ Cohesion: 0.06
 Nodes (35): 1. Visual Communication First, 2. Minimal Text Integration, 3. Expert Craftsmanship, 4. Systematic Patterns, Analog Meditation, Approach, Canvas Boundaries, Canvas Design System (+27 more)
 
 ### Community 60 - "search"
-Cohesion: 0.08
-Nodes (10): Resolve a deprecated in-domain alias, or expose a cross-domain redirect., Main search function with auto-domain detection, search(), _style_search_destination(), TestSearchDomains, read_rows(), TestStyleTaxonomy, read_rows() (+2 more)
+Cohesion: 0.10
+Nodes (8): Resolve a deprecated in-domain alias, or expose a cross-domain redirect., Main search function with auto-domain detection, search(), _style_search_destination(), TestDiagnosticsContracts, TestSearchDomains, read_rows(), TestStyleTaxonomy
 
 ### Community 61 - "e2e-resilience-pg.ts"
 Cohesion: 0.12
 Nodes (32): ALICE, api(), assertNoSecretLeak(), authHeader(), BOB, buildAgents(), buildFailureWorkflow(), buildMainWorkflow() (+24 more)
 
+### Community 62 - "InMemoryRunStore"
+Cohesion: 0.06
+Nodes (20): recoverInterruptedRuns(), Listener, MemoryOwner, RunEntry, RunListFilters, boundedEventCount(), boundRunResult(), createBoundedRun() (+12 more)
+
 ### Community 63 - "Clarification Delivery Tasks"
 Cohesion: 0.06
 Nodes (34): Dependencies & Execution Order, Format: `[ID] [P?] [Story] Description`, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3, Implementation for User Story 4, Implementation for User Story 5, Implementation Strategy (+26 more)
 
-### Community 64 - "leaseStore.ts"
-Cohesion: 0.08
-Nodes (12): assertBinding(), assertConsumeable(), InMemoryLeaseStore, LEASE_COLUMNS, LeaseContext, LeasePgPool, LeaseRow, LeaseStatus (+4 more)
+### Community 64 - "server.ts"
+Cohesion: 0.04
+Nodes (50): { AUDIT_TABLE_DDL }, { LEASE_TABLE_DDL }, { Pool }, { readFileSync }, { resolve }, ALLOWED_KEYS, AUDIT_TABLE_DDL, auditEvent() (+42 more)
 
 ### Community 65 - "Platform Stack Search"
 Cohesion: 0.10
 Nodes (10): _exact_stack_identifier(), _project_row(), Resolve a standalone API identifier even when its BM25 IDF is low., Search stack-specific guidelines, search_stack(), _valid_max_results(), _rows(), TestNativeDesktopStackFreshness (+2 more)
 
-### Community 66 - "toaster.tsx"
-Cohesion: 0.33
-Nodes (5): metadata, QueryProvider(), Toaster(), ToastItem(), useToastStore
+### Community 66 - "Tasks: Phase 0.5 — Baseline Repair"
+Cohesion: 0.07
+Nodes (29): Dependencies & execution order, Format: `[ID] [P?] [Story] Description`, Implementation for User Story 2, Implementation for User Story 3, Implementation for User Story 4, Implementation strategy, Parallel example — User Story 2 tests, Parallel opportunities (+21 more)
 
 ### Community 67 - "nodeContract.ts"
-Cohesion: 0.08
-Nodes (32): clampPayloadBound(), ContractDeclarationIssue, ContractDiagnostic, ContractErrorInfo, ContractViolationError, createResultEnvelope(), DEFAULT_CONTRACT_PAYLOAD_BYTES, diagnosticsFromSchemaIssues() (+24 more)
+Cohesion: 0.09
+Nodes (30): clampPayloadBound(), ContractDeclarationIssue, ContractDiagnostic, ContractErrorInfo, ContractViolationError, createResultEnvelope(), DEFAULT_CONTRACT_PAYLOAD_BYTES, diagnosticsFromSchemaIssues() (+22 more)
 
 ### Community 68 - "Organization Hierarchy Specification"
 Cohesion: 0.06
@@ -808,9 +825,9 @@ Nodes (32): 1. Mobile-First Design, 2. Consistent Breakpoint Usage, 3. Test at B
 Cohesion: 0.12
 Nodes (19): RFC-1918, assertSafeDestinationUrl(), createPinnedSsrfDispatcher(), DnsLookupCallback, isForbiddenIp(), isForbiddenIpv4(), isForbiddenIpv6(), SsrfPolicyError (+11 more)
 
-### Community 72 - "audit.ts"
-Cohesion: 0.08
-Nodes (20): { AUDIT_TABLE_DDL }, { LEASE_TABLE_DDL }, { Pool }, ALLOWED_KEYS, AUDIT_TABLE_DDL, auditEvent(), AuditInput, AuditOperation (+12 more)
+### Community 72 - "workspaceWorkingCopyService.ts"
+Cohesion: 0.16
+Nodes (27): ensureWorkspaceRepoDurableState(), markWorkspaceRepoDirty(), classifyGitError(), execFileAsync, isPathInsideRoot(), isTestEnv(), listChangedFiles(), listCliWorkspaceRoots() (+19 more)
 
 ### Community 73 - "graphEngine.ts"
 Cohesion: 0.13
@@ -836,17 +853,17 @@ Nodes (16): Test adding colors multiple times., Test adding full color palette.,
 Cohesion: 0.06
 Nodes (34): Accessibility, Available Domains, Available Stacks, Common Rules for Professional UI, Common Sticking Points, Example Workflow, How to Use This Skill, Icons & Visual Elements (+26 more)
 
-### Community 79 - "RunStoreContract"
-Cohesion: 0.06
-Nodes (5): streamRunEvents(), recoverInterruptedRuns(), recoverInterruptedRunsDurable(), recoverInterruptedRunsInMemory(), RunStoreContract
+### Community 79 - "RunExecutor"
+Cohesion: 0.08
+Nodes (8): streamRunEvents(), recoverInterruptedRunsDurable(), recoverInterruptedRunsInMemory(), asCredentialPrincipal(), classifyRunFailure(), RunExecutor, assertMemoryAccessMatchesRun(), RunStoreContract
 
 ### Community 80 - "punycode.js"
 Cohesion: 0.22
 Nodes (13): adapt(), basicToDigit(), decode(), digitToBasic(), encode(), error(), errors, RFC-3492 (+5 more)
 
-### Community 81 - "Documentation Build Scripts"
+### Community 81 - "scripts"
 Cohesion: 0.06
-Nodes (31): scripts, build, build:docs, build:types, credentials:login-codex, credentials:status-codex, db:dev:down, db:dev:up (+23 more)
+Nodes (34): scripts, build, build:docs, build:types, credentials:login-codex, credentials:status-codex, db:dev:down, db:dev:up (+26 more)
 
 ### Community 82 - "Phase 1 Context Assembler Report"
 Cohesion: 0.06
@@ -864,13 +881,13 @@ Nodes (3): detect_domain(), Auto-detect the most relevant domain from query. Mat
 Cohesion: 0.11
 Nodes (19): $type, $value, $type, $value, $type, $value, $type, $value (+11 more)
 
-### Community 86 - "productionEpisodicMemory.test.ts"
-Cohesion: 0.05
-Nodes (21): BoundedMemoryBackgroundJobs, MemoryBackgroundJobsOptions, BoundedMemoryConsolidationScheduler, Scope, DeterministicMemoryExtractor, record(), MemoryBackgroundJobs, MemoryConsolidationScheduler (+13 more)
+### Community 86 - "compilerOptions"
+Cohesion: 0.07
+Nodes (26): apps/web/node_modules/next-auth, jest, packages/types/src/index.ts, src/**/*.test.ts, tests/**/*.ts, compilerOptions, baseUrl, esModuleInterop (+18 more)
 
-### Community 87 - "studio/infrastructure/migrate.ts"
-Cohesion: 0.12
-Nodes (13): main(), { Pool }, { resolve }, { runStudioMigrations }, LEGACY_SCHEMA_REQUIREMENTS, LegacySchemaRequirements, reconcileLegacySchema(), runStudioMigrations() (+5 more)
+### Community 87 - "organizationProfileService.ts"
+Cohesion: 0.10
+Nodes (14): registerOrganizationProfileRoutes(), normalizeConfig(), normalizeDescription(), normalizeName(), normalizeSlug(), OrganizationProfileService, OrganizationPurgeWorker, OrgFeatureFlags (+6 more)
 
 ### Community 88 - "فهرست نیازمندی‌های محصول Production و SaaS"
 Cohesion: 0.06
@@ -884,9 +901,9 @@ Nodes (30): Dashboard specification quality checklist, Project and workspace lis
 Cohesion: 0.07
 Nodes (29): Dependencies & Execution Order, Format: `[ID] [P?] [Story] Description`, Implementation for User Story 1, Implementation for User Story 2, Implementation for User Story 3, Implementation for User Story 4, Implementation for User Story 5, Implementation Strategy (+21 more)
 
-### Community 91 - "orchestratorAgent.ts"
-Cohesion: 0.20
-Nodes (6): VcsMode, DocumentEvaluator, LLMDocumentEvaluator, IntentClassifier, OrchestratorAgent, IssueTrackerClient
+### Community 91 - "e2e-multi-agent-workflow.ts"
+Cohesion: 0.12
+Nodes (24): AgentExecutionEvent, ApprovalManagerDependencies, bounded(), RuntimeGuardrails, runtimeGuardrailsFromEnvironment(), assertNoSecretLeak(), buildAgents(), buildRejectTool() (+16 more)
 
 ### Community 92 - "Logo and Platform Guidelines"
 Cohesion: 0.07
@@ -900,9 +917,9 @@ Nodes (28): Accordion, Alert, ARIA Labels, Checkbox and Radio, Color Contrast, C
 Cohesion: 0.13
 Nodes (24): get_context(), is_allowed_exception(), is_allowed_rgba(), is_inside_block(), load_css_variables(), main(), print_result(), print_summary() (+16 more)
 
-### Community 95 - "RunExecutor"
-Cohesion: 0.07
-Nodes (9): createRunsRouter(), RunApiService, replayRunEvents(), ReplaySnapshot, asCredentialPrincipal(), classifyRunFailure(), DurableMemoryJobEnqueuer, mapAgentEvents() (+1 more)
+### Community 95 - "createRunsRouter"
+Cohesion: 0.09
+Nodes (17): buildClarificationPackage(), BuildClarificationPackageInput, canonicalizeAnswers(), extractLegacyClarificationQuestions(), LEGACY_CLARIFICATION_OUTPUT, questionsFromNeedsHuman(), redactClarificationValue(), serializeOutputText() (+9 more)
 
 ### Community 96 - "Implementation Plan: Organization-Centric Tenancy Migration (Phases 1–5)"
 Cohesion: 0.12
@@ -918,11 +935,11 @@ Nodes (39): dependencies, hono, @hono/node-server, @langchain/core, @langchain/l
 
 ### Community 99 - "dependencies"
 Cohesion: 0.11
-Nodes (19): dependencies, eventsource-parser, lucide-react, @multi-agent/types, next, react, react-dom, react-markdown (+11 more)
+Nodes (19): dependencies, bcryptjs, lucide-react, @multi-agent/types, next, react, react-dom, react-markdown (+11 more)
 
 ### Community 100 - "dependencies"
 Cohesion: 0.06
-Nodes (33): axios, commander, dotenv, inquirer, @langchain/google-genai, @langchain/openai, langfuse, langfuse-langchain (+25 more)
+Nodes (33): axios, commander, dotenv, inquirer, @langchain/anthropic, @langchain/google-genai, @langchain/openai, langfuse (+25 more)
 
 ### Community 101 - "Memory Reliability Architecture"
 Cohesion: 0.07
@@ -948,9 +965,9 @@ Nodes (27): NameSource, Default materialization transaction, Hierarchy data mode
 Cohesion: 0.13
 Nodes (27): ProjectService, Default materialization validation, Disconnect durability validation, Hierarchy validation quickstart, Settings inheritance validation, Inline project validation, Multi-repo membership validation, Navigation and tenant isolation validation (+19 more)
 
-### Community 107 - "api/projects/[projectId]/repositories/route.ts"
-Cohesion: 0.39
-Nodes (6): dynamic, dynamic, GET(), POST(), attachProjectRepository(), listProjectRepositories()
+### Community 107 - "getAuthenticatedPrincipal"
+Cohesion: 0.23
+Nodes (12): dynamic, dynamic, GET(), PATCH(), dynamic, GET(), POST(), getAuthenticatedPrincipal() (+4 more)
 
 ### Community 108 - "Asset Approval Checks"
 Cohesion: 0.08
@@ -961,16 +978,16 @@ Cohesion: 0.08
 Nodes (25): Common Pitfalls, Core Prompt Structure, Detailed Brief, Eco/Sustainable, Effective Keywords by Style, Fashion Brand, Healthcare, Industry-Specific Prompts (+17 more)
 
 ### Community 110 - "webhookTriggerRoutes.ts"
-Cohesion: 0.15
+Cohesion: 0.13
 Nodes (13): createInboundWebhookRouter(), readBoundedRequestBody(), registerWebhookTriggerRoutes(), decryptWebhookSecret(), DEFAULT_TIMESTAMP_TOLERANCE_SECONDS, defaultReplayProtector, encryptWebhookSecret(), generateWebhookSecret() (+5 more)
 
 ### Community 111 - "verification-load-smoke.ts"
 Cohesion: 0.17
 Nodes (20): assert(), blocked(), check(), CheckResult, createBoundedLoop(), createLargeDag(), docker(), main() (+12 more)
 
-### Community 112 - "studioPostgresRollback.test.ts"
-Cohesion: 0.13
-Nodes (14): createWorkflowService(), ensureImported(), request(), FailingStore, createTestStudioService(), DEFAULT_TEST_PRINCIPAL, memoryStorage(), alice (+6 more)
+### Community 112 - "orchestratorAgent.ts"
+Cohesion: 0.14
+Nodes (11): getLLM(), ProjectMode, VcsMode, GenerateCodeOptions, DocumentEvaluator, LLMDocumentEvaluator, ClassifiedIntent, IntentClassifier (+3 more)
 
 ### Community 113 - "Specification Analysis Workflow"
 Cohesion: 0.08
@@ -1005,12 +1022,12 @@ Cohesion: 0.08
 Nodes (24): Accessibility Patterns, Alternative: Tailwind-Only Setup, Best Practices, Common Patterns, Component Layer: shadcn/ui, Component Library Guide, Component + Styling Setup, Core Stack (+16 more)
 
 ### Community 121 - "taskBoard.ts"
-Cohesion: 0.17
-Nodes (24): dynamic, dynamic, GET(), POST(), TaskActionBody, cancelTask(), createTask(), CreateTaskInput (+16 more)
+Cohesion: 0.19
+Nodes (23): dynamic, dynamic, GET(), POST(), TaskActionBody, cancelTask(), createTask(), CreateTaskInput (+15 more)
 
 ### Community 122 - "projectsWorkspaces.ts"
 Cohesion: 0.12
-Nodes (25): dynamic, dynamic, dynamic, GET(), POST(), dynamic, GET(), PATCH() (+17 more)
+Nodes (26): dynamic, dynamic, dynamic, GET(), POST(), dynamic, GET(), PATCH() (+18 more)
 
 ### Community 123 - "Event Routine Specification"
 Cohesion: 0.08
@@ -1024,17 +1041,17 @@ Nodes (23): Art Direction Styles (Reuse from Banner), Color & Contrast, Design B
 Cohesion: 0.10
 Nodes (21): devDependencies, eslint, eslint-config-next, @playwright/test, tailwindcss, @tailwindcss/postcss, @types/bcryptjs, @types/node (+13 more)
 
-### Community 126 - "runStore.ts"
-Cohesion: 0.17
-Nodes (15): Listener, MemoryOwner, RunEntry, RunListFilters, asIso(), boundedEventCount(), boundRunResult(), createBoundedRun() (+7 more)
+### Community 126 - "runExecutor.ts"
+Cohesion: 0.09
+Nodes (16): BranchRoutingError, NodeOutcomeError, UnsupportedPhase4NodeError, WorkflowStepLimitError, log, ApprovalManager, PausedContext, CompiledResult (+8 more)
 
 ### Community 127 - "Episodic Memory Architecture"
 Cohesion: 0.08
 Nodes (23): Consolidation Relationship, ContextAssembler Integration, Diagnostics, Episode Domain Model, Episode Semantics, Extraction Input, Failure Handling, Final Architecture (+15 more)
 
-### Community 128 - "tools/index.ts"
-Cohesion: 0.14
-Nodes (17): DatabaseToolExecutor, FunctionToolExecutor, HttpToolExecutor, ToolFetch, McpToolExecutor, NotImplementedToolExecutor, UnsupportedToolCategoryError, boundedLimit() (+9 more)
+### Community 128 - "[runId]/page.tsx"
+Cohesion: 0.15
+Nodes (15): ACTIVE_RUN_STATUSES, RunPage(), ApprovalCard(), ApprovalPanel(), applyRunEvent(), applyTerminalEvent(), findTerminalEvent(), mergeTimelineEvents() (+7 more)
 
 ### Community 129 - "Design Token Architecture"
 Cohesion: 0.09
@@ -1073,8 +1090,8 @@ Cohesion: 0.22
 Nodes (13): adapt(), basicToDigit(), decode(), digitToBasic(), encode(), error(), errors, RFC-3492 (+5 more)
 
 ### Community 138 - "BM25"
-Cohesion: 0.11
-Nodes (9): BM25, BM25 ranking algorithm for text search, Lowercase, normalize synonyms, split, remove punctuation, filter stopwords, Build BM25 index from documents, Score all documents against query, All indexed terms, for suggestion/typo-recovery purposes., TestBm25CoreBehavior, TestDiagnosticsContracts (+1 more)
+Cohesion: 0.12
+Nodes (8): BM25, BM25 ranking algorithm for text search, Lowercase, normalize synonyms, split, remove punctuation, filter stopwords, Build BM25 index from documents, Score all documents against query, All indexed terms, for suggestion/typo-recovery purposes., TestBm25CoreBehavior, TestTokenizer
 
 ### Community 139 - "User Scenarios & Testing *(mandatory)*"
 Cohesion: 0.12
@@ -1097,8 +1114,8 @@ Cohesion: 0.10
 Nodes (19): Authorization, Data Model: Organization → Project → Workspace Hierarchy, In-memory store, Lifecycle: default → explicit, Name derivation, Persistence (Postgres), Relationships, Automated checks (when implemented) (+11 more)
 
 ### Community 144 - "workingMemoryRuntime.test.ts"
-Cohesion: 0.10
-Nodes (10): access, alice, Built, contentTexts(), entriesOf(), eve, NodeBehaviour, principalFor() (+2 more)
+Cohesion: 0.11
+Nodes (8): access, alice, Built, contentTexts(), entriesOf(), eve, NodeBehaviour, RunState
 
 ### Community 145 - "Routing by Task Type"
 Cohesion: 0.10
@@ -1113,20 +1130,20 @@ Cohesion: 0.10
 Nodes (19): Base Color Presets, Best Practices, Color Customization, Color Format, Component Customization, CSS Variable System, Customize Styles, Customize Variants (+11 more)
 
 ### Community 148 - "scopedApiPath"
-Cohesion: 0.04
-Nodes (66): Alert, Budget, BudgetData, BudgetsPage(), Agent, Goal, GoalTask, Line (+58 more)
+Cohesion: 0.05
+Nodes (55): Alert, Budget, BudgetData, BudgetsPage(), Agent, Goal, GoalTask, Line (+47 more)
 
 ### Community 149 - "docs/README.md"
-Cohesion: 0.24
-Nodes (4): BookStack MCP in Agent Studio workflows, Build and smoke test, Immutable CLI worker image, Publish and select an immutable digest
+Cohesion: 0.15
+Nodes (12): BookStack MCP in Agent Studio workflows, Build and smoke test, Immutable CLI worker image, Publish and select an immutable digest, اصولی که نباید شکسته شوند, محدودیت‌ها و کارهای باقی‌مانده, محدودیت‌های عمدی, کارهای بعدی (+4 more)
 
 ### Community 150 - "Temporal Memory Semantics"
 Cohesion: 0.10
 Nodes (19): 10. Overlaps and Gaps, 11. Backward Compatibility and Migration, 12. Diagnostics, 13. Benchmark Delta, 14. Real Embedding Regression, 15. Security, 16. Tests, 17. Remaining Weaknesses (+11 more)
 
-### Community 151 - "config.ts"
-Cohesion: 0.17
-Nodes (18): ALL_SCOPES, assertFilesExist(), assertValidBrokerClientEnvironment(), boundedInt(), brokerClientConfigFromEnvironment(), BrokerEnvironment, brokerServerConfigFromEnvironment(), BrokerTlsConfig (+10 more)
+### Community 151 - "ExecutionTimeline.tsx"
+Cohesion: 0.22
+Nodes (14): decodeEscapedNewlines(), DetailView, durationFor(), eventLabel(), eventStatus(), ExecutionTimeline(), extractText(), formatValue() (+6 more)
 
 ### Community 152 - "Notification Outbox Storage"
 Cohesion: 0.14
@@ -1146,27 +1163,27 @@ Nodes (18): 1. Wordmark (Logotype), 2. Lettermark (Monogram), 3. Pictorial Mark 
 
 ### Community 156 - "color"
 Cohesion: 0.11
-Nodes (19): $type, $value, background, destructive, foreground, muted-foreground, primary-hover, secondary (+11 more)
+Nodes (19): $type, $value, background, destructive-foreground, muted, primary-foreground, secondary, secondary-foreground (+11 more)
 
 ### Community 157 - "devDependencies"
 Cohesion: 0.10
 Nodes (21): jest, devDependencies, bcryptjs, jest, ts-jest, ts-node, @types/bcryptjs, @types/inquirer (+13 more)
 
-### Community 158 - "queryExpansion.ts"
-Cohesion: 0.12
-Nodes (21): HybridMemoryRetrieverOptions, classifyQueryIntent(), computeOverlap(), CONCEPT_CLUSTERS, ConceptCluster, DefaultMemoryQueryExpander, evaluateMemoryMatch(), ExpandedQuery (+13 more)
+### Community 158 - "studio/infrastructure/migrate.ts"
+Cohesion: 0.09
+Nodes (24): main(), { Pool }, { resolve }, { runStudioMigrations }, assertNoRunningRuns(), BROKER_DATA_TABLES, clearWorkspaceStorage(), CONFIRM_FLAG (+16 more)
 
 ### Community 159 - "taskStatus.ts"
 Cohesion: 0.07
-Nodes (55): TaskBoardPage(), CreateTaskModal(), CreateTaskModalProps, ProjectOption, WorkspaceOption, ClarificationPanel(), DependencyEditor(), DependencyEditorProps (+47 more)
+Nodes (59): TaskBoardPage(), CreateTaskModal(), CreateTaskModalProps, ProjectOption, WorkspaceOption, ClarificationPanel(), DependencyEditor(), DependencyEditorProps (+51 more)
 
 ### Community 160 - "Live Execution Timeline"
 Cohesion: 0.11
 Nodes (18): 1. Shared domain package, 2. Execution server (`apps/server`), 3. Web: services, store, transport, 4. Execution Timeline UI + graph sync, 5. Tests & docs, Adapter (`adapters/langGraphEventAdapter.ts`), API, Approach (locked) (+10 more)
 
-### Community 161 - "clarificationResponse.test.ts"
-Cohesion: 0.14
-Nodes (14): buildClarificationPackage(), BuildClarificationPackageInput, canonicalizeAnswers(), extractLegacyClarificationQuestions(), LEGACY_CLARIFICATION_OUTPUT, questionsFromNeedsHuman(), redactClarificationValue(), serializeOutputText() (+6 more)
+### Community 161 - "Phase 0.5 Research — Baseline Repair"
+Cohesion: 0.13
+Nodes (15): Inspection facts, Out of scope (recorded, not changed), Phase 0.5 Research — Baseline Repair, R-10 Test TypeScript configuration, R-11 Fresh baseline on a clean committed SHA, R-12 CI alignment (review point), R-1 Atomicity across organization and studio stores, R-2 Calling task creation inside an outer transaction (+7 more)
 
 ### Community 162 - "Brand Consistency Checklist"
 Cohesion: 0.11
@@ -1185,32 +1202,36 @@ Cohesion: 0.17
 Nodes (17): generate_css_for_background(), get_background_image(), get_curated_images(), get_overlay_css(), get_pexels_search_url(), load_backgrounds_config(), load_brand_colors(), main() (+9 more)
 
 ### Community 166 - "llmFactory.ts"
-Cohesion: 0.11
-Nodes (12): AnthropicProvider, getLLM(), GoogleProvider, LLMFactory, LLMProvider, ModelCredentialOptions, OpenAIProvider, ProjectMode (+4 more)
+Cohesion: 0.14
+Nodes (7): AnthropicProvider, defaultFactory, GoogleProvider, LLMFactory, LLMProvider, ModelCredentialOptions, OpenAIProvider
 
-### Community 167 - "VersionControlClient"
-Cohesion: 0.16
-Nodes (3): CodeGenerator, DeveloperAgent, VersionControlClient
+### Community 167 - "developerAgent.ts"
+Cohesion: 0.19
+Nodes (4): CodeGenerator, LLMCodeGenerator, DeveloperAgent, VersionControlClient
 
 ### Community 168 - "Test Threshold Gate"
 Cohesion: 0.13
 Nodes (3): TestFixtureValidation, TestMetricMath, TestThresholdGate
 
 ### Community 169 - "[orgSlug]/execution/[...path]/route.ts"
-Cohesion: 0.12
-Nodes (18): dynamic, POST(), dynamic, GET(), DELETE, dynamic, GET, handle() (+10 more)
+Cohesion: 0.15
+Nodes (14): dynamic, POST(), dynamic, GET(), DELETE, dynamic, GET, handle() (+6 more)
+
+### Community 170 - "queryExpansion.ts"
+Cohesion: 0.14
+Nodes (19): classifyQueryIntent(), computeOverlap(), CONCEPT_CLUSTERS, ConceptCluster, DefaultMemoryQueryExpander, evaluateMemoryMatch(), ExpandedQuery, extractMemoryStructuredTokens() (+11 more)
 
 ### Community 171 - "executionBff.ts"
 Cohesion: 0.20
 Nodes (13): dynamic, GET(), POST(), DELETE, GET, PATCH, POST, PUT (+5 more)
 
-### Community 172 - "brokerHarness.ts"
-Cohesion: 0.10
-Nodes (14): CredentialLeaseRequest, AuthorizationSource, BrokerPolicy, BrokerPolicyConfig, PolicyDecisionContext, QuotaUsageSource, DEFAULT_RATE_LIMITS, RateLimitConfig (+6 more)
+### Community 172 - "policy.ts"
+Cohesion: 0.18
+Nodes (6): CredentialLeaseRequest, AuthorizationSource, BrokerPolicyConfig, PolicyDecisionContext, QuotaUsageSource, mutableAuthorization
 
 ### Community 173 - "postgres-studio-store.ts"
-Cohesion: 0.11
-Nodes (19): AcceptWebhookDeliveryParams, AcceptWebhookDeliveryResult, OrganizationProfile, StudioNameSource, asIso(), decodeAgentHeartbeat(), decodeComment(), decodeMembership() (+11 more)
+Cohesion: 0.09
+Nodes (23): AcceptWebhookDeliveryParams, AcceptWebhookDeliveryResult, OrganizationStatus, StudioEntityStatusFilter, StudioNameSource, WorkspaceRepositoryState, matchesStatus(), asIso() (+15 more)
 
 ### Community 174 - "Design Principles"
 Cohesion: 0.12
@@ -1233,7 +1254,7 @@ Cohesion: 0.11
 Nodes (20): $type, $value, $type, $value, $type, $value, $type, $value (+12 more)
 
 ### Community 180 - "src/agentConfiguration.ts"
-Cohesion: 0.17
+Cohesion: 0.15
 Nodes (15): API_PROVIDER_SCHEMAS, assertNoCredentials(), ConfigurationValidationError, credentialIssues(), modelSettingsSchema(), removeAgentNodes(), sampling, SettingSchema (+7 more)
 
 ### Community 181 - "API Components"
@@ -1241,8 +1262,8 @@ Cohesion: 0.12
 Nodes (15): API, Author, For maintainers, How to publish a new release, Installation, License, `punycode.decode(string)`, `punycode.encode(string)` (+7 more)
 
 ### Community 182 - "cliAgentExecutor.ts"
-Cohesion: 0.07
-Nodes (42): apply, developerPolicy, edge(), main(), node(), now, pool, qaPolicy (+34 more)
+Cohesion: 0.09
+Nodes (34): main(), configuredAgentTimeout(), AGY_BLOCKED_FLAGS, agyArgs(), agyStreamInput(), assembledContextToPrompt(), claudeArgs(), CliAgentExecutor (+26 more)
 
 ### Community 183 - "Execution Steps"
 Cohesion: 0.12
@@ -1288,9 +1309,9 @@ Nodes (9): Test adding components in dry run mode., Test ShadcnInstaller class.,
 Cohesion: 0.07
 Nodes (27): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+19 more)
 
-### Community 194 - ".generate"
-Cohesion: 0.16
-Nodes (8): _filter_anti_patterns_for_mode(), Drop "avoid dark mode" advice once dark mode is the resolved answer., Execute searches across multiple domains., Extract results list from search result dict., Generate complete design system recommendation. variance/motion/density are…, Bucket a 1-10 dial value into its tier config. Returns None if value is None., _resolve_dial(), TestAntiPatternGating
+### Community 194 - "Implementation Plan: Phase 0.5 — Baseline Repair"
+Cohesion: 0.17
+Nodes (12): Acceptance gates (Definition of Done), Complexity Tracking, Constitution Check, Documentation (this phase), Implementation Plan: Phase 0.5 — Baseline Repair, Project Structure, Review points for approval, Rollback (+4 more)
 
 ### Community 195 - "compilerOptions"
 Cohesion: 0.07
@@ -1300,13 +1321,13 @@ Nodes (28): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModu
 Cohesion: 0.14
 Nodes (15): Hierarchy implementation plan, InMemoryStudioStore, OrganizationProfileService, PostgresStudioStore, Existing Studio stack extension, TaskService, STUDIO_WORKSPACE_STORAGE_ROOT, WorkspaceEntityService (+7 more)
 
-### Community 197 - "services/workflowService.ts"
-Cohesion: 0.14
-Nodes (13): ToolDetail(), options, useToolDetail(), publicAgent(), BrowserStorage, CreateAgentInput, findToolUsages(), readLegacyWorkspace() (+5 more)
+### Community 197 - "PgPool"
+Cohesion: 0.13
+Nodes (9): createPostgresPool(), ManagedPool, PostgresPoolOptions, createStudioComposition(), end(), StudioComposition, PgClient, PgPool (+1 more)
 
 ### Community 198 - "functionToolExecutor.ts"
-Cohesion: 0.10
-Nodes (23): boundedBytesFromEnvironment(), boundJsonValue(), TruncatedValue, truncateUtf8(), ToolInputValidationError, ToolPolicyError, assertAllowedWorkspace(), createRepoTestWorkerRuntime() (+15 more)
+Cohesion: 0.14
+Nodes (17): CliWorkerMode, WorkerResult, WorkerRuntime, assertAllowedWorkspace(), createRepoTestWorkerRuntime(), packageManagerCommand(), packagePisaEvidence(), parseObject() (+9 more)
 
 ### Community 199 - "types-bundle Components"
 Cohesion: 0.24
@@ -1348,21 +1369,21 @@ Nodes (27): $type, $value, lg, sm, $type, $value, $type, $value (+19 more)
 Cohesion: 0.14
 Nodes (13): Card Styles, Component Variants, CSS Structures, Feature Grid (3 columns), Layout Decision Flow, Layout Patterns, Layout Selection by Use Case, Metric Styles (+5 more)
 
-### Community 209 - "AppSidebar.tsx"
-Cohesion: 0.10
-Nodes (19): OrganizationSettings(), roles, DEFAULT_CONFIG, Draft, loadDraft(), OrganizationOnboardingPage(), onSubmit(), AppShell() (+11 more)
+### Community 209 - "useOrgPath"
+Cohesion: 0.06
+Nodes (56): Invitation, Invitations(), AgentRegistry(), ALL_SCOPES, KINDS, MemoryExplorer(), readToken(), ToolRegistry() (+48 more)
 
 ### Community 210 - "Local Development Guidance"
 Cohesion: 0.14
 Nodes (14): agy local setup, Clarification answers, CLI worker, Credential Broker, Cursor CLI (env API key), Guardrailهای سرور, Separate developer vs agent Codex accounts, Velora workbook delivery intake (+6 more)
 
-### Community 211 - "Studio Routine Migrations"
-Cohesion: 0.16
-Nodes (11): studio_tasks, studio_projects, studio_task_projects, studio_workspaces, studio_agent_heartbeats, studio_routine_history, studio_routines, studio_task_comments (+3 more)
+### Community 211 - "012_event_routines_triggers.sql"
+Cohesion: 0.07
+Nodes (26): studio_tasks, studio_users, studio_projects, studio_task_projects, studio_workspaces, studio_agent_heartbeats, studio_routine_history, studio_routines (+18 more)
 
 ### Community 212 - "toolConfiguration.ts"
-Cohesion: 0.21
-Nodes (13): asConfiguration(), asJsonObject(), createToolRecord(), LegacyToolRecord, migrateToolRecord(), nowIso(), TOOL_CATEGORIES, TOOL_IMPACTS (+5 more)
+Cohesion: 0.19
+Nodes (14): RunCreateRequest, asConfiguration(), asJsonObject(), createToolRecord(), LegacyToolRecord, migrateToolRecord(), nowIso(), TOOL_CATEGORIES (+6 more)
 
 ### Community 214 - "Clarification Feature Specification"
 Cohesion: 0.14
@@ -1372,9 +1393,9 @@ Nodes (14): Assumptions, Edge Cases, Feature Specification: Clarification Respon
 Cohesion: 0.14
 Nodes (13): R10 — Web UX surfaces, R11 — Authorization, R1 — Organization entity vs today`s tenant UUID, R2 — Project owns Workspace (hierarchy), R3 — Single project per task; optional explicit workspace, R4 — Implicit default workspace and materialization, R5 — Settings inheritance and overrides, R6 — Project / workspace repositories (+5 more)
 
-### Community 216 - "getAuthenticatedPrincipal"
-Cohesion: 0.19
-Nodes (16): dynamic, dynamic, dynamic, GET(), PATCH(), dynamic, GET(), POST() (+8 more)
+### Community 216 - "api/projects/route.ts"
+Cohesion: 0.36
+Nodes (7): dynamic, dynamic, GET(), POST(), createProject(), listProjects(), retireProject()
 
 ### Community 217 - "update Components"
 Cohesion: 0.15
@@ -1428,9 +1449,9 @@ Nodes (13): Assumptions, Edge Cases, Feature Specification: Server-Owned Agent A
 Cohesion: 0.15
 Nodes (13): 1.1 What is cleared, 1.2 Mechanism, 1.3 Ordering in the maintenance window, 1. Reset (Phase 1, once), 2. Schema evolution, 3. Users and organizations after the reset, 4. Dev identity, 5. Executions across the reset (+5 more)
 
-### Community 231 - "databaseToolExecutor.ts"
-Cohesion: 0.18
-Nodes (11): credentialEnvironmentName(), assertReadOnlyQuery(), boundedRows(), boundedTimeout(), DatabaseClient, databaseCredentialEnvironmentName(), DatabasePool, isSqlParameter() (+3 more)
+### Community 231 - "Phase 5 Integrated Verification Report: Organization-Centric Tenancy & RLS Activation"
+Cohesion: 0.12
+Nodes (16): 1. Summary of Gate Results, 2.1 Migration 024 (`infrastructure/studio/migrations/024_enable_rls.sql`), 2.2 Pool Role Mapping (`apps/server/src/infrastructure/postgresPool.ts`), 2.3 Verification Evidence, 2. RLS Migration & Role Mapping (T065 / T066 / T096 / F19), 3.1 Strict V2 Shape, 3.2 Nonce Replay Protection, 3. Assertion V2 & Replay Hardening (T067 / T102 / F20 / D-3) (+8 more)
 
 ### Community 232 - "Primitive Tokens"
 Cohesion: 0.17
@@ -1440,9 +1461,9 @@ Nodes (11): Border Radius, Color Scales, Gray Scale, Motion / Duration, Primary 
 Cohesion: 0.24
 Nodes (11): extensions, formatReport(), fs, getFiles(), main(), parseArgs(), path, patterns (+3 more)
 
-### Community 234 - "card Components"
-Cohesion: 0.20
-Nodes (12): $type, $value, bg, bg, padding, shadow, card, bg (+4 more)
+### Community 234 - "card"
+Cohesion: 0.15
+Nodes (17): $type, $value, $type, $value, bg, bg, border, padding (+9 more)
 
 ### Community 235 - "ShadcnInstaller"
 Cohesion: 0.20
@@ -1457,8 +1478,8 @@ Cohesion: 0.20
 Nodes (6): Generate configuration file content. Returns: Configuration file as string, Generate TypeScript configuration., Generate JavaScript configuration., Format plugins array for config. Validates each plugin name against a strict…, Add indentation to JSON string., Write configuration to file. Returns: Tuple of (success, message)
 
 ### Community 238 - "redact"
-Cohesion: 0.31
-Nodes (8): isSensitiveKey(), isWorkingMemoryKey(), LangGraphEventAdapter, redact(), redactUrls(), redactWorkingMemory(), summarizeWorkingMemoryEntry(), write()
+Cohesion: 0.27
+Nodes (9): isSensitiveKey(), isWorkingMemoryKey(), LangGraphEventAdapter, redact(), redactUrls(), redactWorkingMemory(), summarizeWorkingMemoryEntry(), LogContext (+1 more)
 
 ### Community 239 - "compilerOptions"
 Cohesion: 0.10
@@ -1504,6 +1525,10 @@ Nodes (8): Tests for tailwind_config_gen.py, Reduce a generated TS/JS config to 
 Cohesion: 0.16
 Nodes (17): belongsToAgent(), DashboardService, DEFAULT_AGENTS(), DEFAULT_MODEL(), duration(), metadataNumber(), periodOf(), AgentInstance (+9 more)
 
+### Community 252 - "test_text_layout_resilience.py"
+Cohesion: 0.22
+Nodes (3): read_rows(), TestTextLayoutDataContracts, TestTextLayoutRetrieval
+
 ### Community 253 - "web package"
 Cohesion: 0.18
 Nodes (10): name, packageManager, private, scripts, build, dev, lint, start (+2 more)
@@ -1524,9 +1549,9 @@ Nodes (10): Checklist Format (REQUIRED), Completion Report, Done When, Mandatory
 Cohesion: 0.18
 Nodes (11): Backup and disaster recovery, Commercial SaaS billing, Tenant privacy and data governance, Production and SaaS readiness gaps, Enterprise security and compliance, Organization SaaS RBAC maturity, Real provider canaries, Reproducible deployment CI (+3 more)
 
-### Community 258 - "Agent Record Migration"
-Cohesion: 0.31
-Nodes (11): createAgentRecord(), createApiBackend(), createEdge(), createEmptyDefinition(), createNode(), createSingleAgentWorkflow(), inferApiProvider(), migrateAgentRecord() (+3 more)
+### Community 258 - "nowIso"
+Cohesion: 0.28
+Nodes (13): createAgentRecord(), createApiBackend(), createEdge(), createEmptyDefinition(), createNode(), createSingleAgentWorkflow(), inferApiProvider(), migrateAgentRecord() (+5 more)
 
 ### Community 259 - "Core Principles"
 Cohesion: 0.18
@@ -1540,13 +1565,13 @@ Nodes (10): Core Principles, Governance, [PRINCIPLE_1_NAME], [PRINCIPLE_2_NAME],
 Cohesion: 0.18
 Nodes (11): A. Happy path delete (open workflow), Acceptance mapping, B. Delete when multiple workflows exist, C. Delete last workflow, D. Authorization, E. Failure surfacing, Focused automated checks, Manual / contract scenarios (expected outcomes) (+3 more)
 
-### Community 262 - "Plugin Runtime Registry"
+### Community 262 - "PluginRegistry"
 Cohesion: 0.24
 Nodes (3): PlatformPlugin, PluginManifest, PluginRegistry
 
-### Community 263 - "credentialGateway.ts"
-Cohesion: 0.14
-Nodes (19): createCredentialComposition(), BrokerClientConfig, assertLeaseBinding(), assertRequest(), boundedTtl(), buildTlsDispatcher(), clampInt(), credentialGatewayFromEnvironment() (+11 more)
+### Community 263 - "config.ts"
+Cohesion: 0.18
+Nodes (18): createCredentialComposition(), ALL_SCOPES, assertFilesExist(), assertValidBrokerClientEnvironment(), boundedInt(), BrokerClientConfig, brokerClientConfigFromEnvironment(), BrokerEnvironment (+10 more)
 
 ### Community 265 - "Credential Broker Verification"
 Cohesion: 0.20
@@ -1645,8 +1670,8 @@ Cohesion: 0.28
 Nodes (8): Path, Regression tests for validate-tokens.cjs. The validator used to skip any line…, A hardcoded hex on the same line as a var() token is still a violation., A line that references only tokens produces no false positives., _run(), test_flags_hardcoded_hex_sharing_line_with_token(), test_token_only_line_reports_no_violation(), CompletedProcess
 
 ### Community 289 - "auth.ts"
-Cohesion: 0.20
-Nodes (12): loadMembershipContext(), OrganizationLayout(), AuthenticatedHomePage(), registerUser(), RegisterPage(), authConfig, AuthenticatedPrincipal, DatabaseUnavailableError (+4 more)
+Cohesion: 0.13
+Nodes (20): dynamic, POST(), dynamic, POST(), loadMembershipContext(), OrganizationLayout(), AuthenticatedHomePage(), registerUser() (+12 more)
 
 ### Community 290 - "Fix Codex trusted-directory workflow failure"
 Cohesion: 0.22
@@ -1660,9 +1685,9 @@ Nodes (9): Persistence و memory, Tools و approval, Workflow و اجرا, اج�
 Cohesion: 0.22
 Nodes (8): Browser scenarios exercised, Decision, Defects fixed during validation, Independent evidence, Readiness boundary, Real-world readiness validation — 2026-09-17, Remaining release gates and non-blocking warnings, Runtime, persistence, and isolation scenarios exercised
 
-### Community 293 - "CredentialGateway"
-Cohesion: 0.17
-Nodes (8): CredentialGateway, BrokerApiCredentialResolver, endpointEnvironmentName(), McpFetch, parseResponse(), rpc(), safeEndpoint(), serverAlias()
+### Community 293 - "web/src/app/layout.tsx"
+Cohesion: 0.27
+Nodes (6): metadata, AuthProvider(), QueryProvider(), Toaster(), ToastItem(), useToastStore
 
 ### Community 294 - "Memory Audit Findings"
 Cohesion: 0.22
@@ -1692,21 +1717,21 @@ Nodes (9): 1. Does the server already support workflow deletion?, 2. Where shoul
 Cohesion: 0.22
 Nodes (8): 1. AgentBackend Union Extension (`@multi-agent/types`), 2. Server Runtime Policies (`src/agents/runtime/`), 3. Credential Broker Provider Extension (`src/broker/contract.ts`), 4. Onboarding Report (`src/cli/onboard.ts`), Data Model: Server-Owned Agent Adapters and Guided First-Run Onboarding, Entity Models & Contracts, Process Runtime Policy, Webhook Destination Policy
 
-### Community 301 - "evaluation/index.ts"
-Cohesion: 0.38
-Nodes (4): EvaluationCase, EvaluationResult, EvaluationRunner, EvaluationSuite
+### Community 301 - "api/projects/[projectId]/route.ts"
+Cohesion: 0.36
+Nodes (7): dynamic, dynamic, GET(), PATCH(), getProject(), getProjectDashboard(), patchProject()
 
 ### Community 302 - "compilerOptions"
 Cohesion: 0.12
 Nodes (15): src/broker/server.ts, src/broker/tls.ts, src/security/credentialGateway.ts, compilerOptions, incremental, lib, noEmit, tsBuildInfoFile (+7 more)
 
 ### Community 303 - "input"
-Cohesion: 0.20
-Nodes (12): padding-x, padding-y, input, $type, $value, focus-ring, padding-x, padding-y (+4 more)
+Cohesion: 0.29
+Nodes (8): padding-x, input, $type, $value, focus-ring, padding-x, $type, $value
 
-### Community 304 - "PostgresBudgetStore"
-Cohesion: 0.18
-Nodes (5): currentPeriodView(), decode(), key(), month(), PostgresBudgetStore
+### Community 304 - "budgetStore.ts"
+Cohesion: 0.07
+Nodes (17): BudgetedAgentRuntime, BudgetAlert, BudgetScope, BudgetStore, currentPeriodView(), decode(), InMemoryBudgetStore, key() (+9 more)
 
 ### Community 305 - "56 Testing Requirements"
 Cohesion: 0.25
@@ -1821,12 +1846,16 @@ Cohesion: 0.29
 Nodes (7): Phase 1: Core Types & Broker Contract Extension, Phase 2: Anti-SSRF Protection & Webhook Agent Executor, Phase 3: Process Agent Executor & Policy, Phase 4: Guided Onboarding Assistant, Phase 5: Testing & Verification, Task Breakdown, Tasks: Server-Owned Agent Adapters and Guided First-Run Onboarding
 
 ### Community 335 - "007-organization-tenancy-audit/tasks.md"
-Cohesion: 0.19
-Nodes (8): Behavior, Critical repairs T081–T083, Evidence limits and remaining work, Executed TDD evidence, 1. Risks, 2. Dependencies, 3. Unresolved design decisions, Dependency & Risk Register
+Cohesion: 0.15
+Nodes (9): Phase 0.5 Data Model, State transitions, Transactional boundary (new, in code only), Validation rules, 1. Prerequisites, 2. Targeted validation (during implementation), 3. Fresh baseline on a clean committed SHA, 4. Expected outcome (+1 more)
 
 ### Community 336 - "Slides Components"
 Cohesion: 0.33
 Nodes (5): References (Knowledge Base), Routing, Slides, Subcommands, When to Use
+
+### Community 338 - "Feature Specification: Phase 0.5 — Baseline Repair"
+Cohesion: 0.22
+Nodes (9): Explicit deferrals, Feature Specification: Phase 0.5 — Baseline Repair, Functional Requirements, Success Criteria, US1 — Repaired fixtures (P1), US2 — Explicit project and atomic strategy (P1), US3 — Explicit project for delegation (P2), US4 — Effective test typecheck (P2) (+1 more)
 
 ### Community 340 - "speckit-constitution SKILL"
 Cohesion: 0.33
@@ -1872,25 +1901,25 @@ Nodes (5): Content Quality, Feature Readiness, Notes, Requirement Completeness, 
 Cohesion: 0.40
 Nodes (4): Brand Guidelines Template, Document Structure, Extractable Fields, Usage
 
-### Community 353 - "type Components"
-Cohesion: 0.60
-Nodes (5): $type, $value, border, border, border
+### Community 353 - "HttpCredentialGateway"
+Cohesion: 0.33
+Nodes (5): assertLeaseBinding(), assertRequest(), errorFromResponse(), HttpCredentialGateway, normalizeLease()
 
 ### Community 354 - "radius Components"
 Cohesion: 0.60
 Nodes (5): radius, radius, radius, $type, $value
 
+### Community 355 - "agents/index.ts"
+Cohesion: 0.28
+Nodes (4): EvaluationCase, EvaluationResult, EvaluationRunner, EvaluationSuite
+
 ### Community 356 - ".agents/skills/speckit-plan/SKILL.md"
 Cohesion: 0.18
 Nodes (10): Completion Report, Done When, Key rules, Mandatory Post-Execution Hooks, Outline, Phase 0: Outline & Research, Phase 1: Design & Contracts, Phases (+2 more)
 
-### Community 358 - "graphMappers.tsx"
-Cohesion: 0.31
-Nodes (5): EDGE_COLORS, NODE_ICONS, sampleGraph(), workflowToGraph(), GraphFlowPreview()
-
-### Community 359 - "StudioWorkspace"
-Cohesion: 0.17
-Nodes (4): StudioEntityStatusFilter, StudioProject, StudioWorkspace, matchesStatus()
+### Community 358 - "AppSidebar.tsx"
+Cohesion: 0.29
+Nodes (6): AppShell(), AppSidebar(), AppSidebarProps, NAV_GROUPS, NavGroup, NavItem
 
 ### Community 360 - "Edge Authentication"
 Cohesion: 0.50
@@ -1940,9 +1969,9 @@ Nodes (4): Answer, Outcome, Q: is it possible to use cursor as an agent's backen
 Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: How can we completely fix weaker CLI agent codebase understanding caused by lack of IDE-style indexing?, Source Nodes
 
-### Community 372 - "Hierarchy Database Migration"
-Cohesion: 0.40
-Nodes (4): studio_organizations, studio_project_repositories, studio_workspace_repo_states, studio_workspace_repositories
+### Community 372 - "Studio memory persistence"
+Cohesion: 0.50
+Nodes (3): Optional HNSW index, Studio memory persistence, Verification
 
 ### Community 373 - "Main Gaps"
 Cohesion: 0.40
@@ -2000,21 +2029,21 @@ Nodes (3): Deploy on Vercel, Getting Started, Learn More
 Cohesion: 0.50
 Nodes (4): 58. Implementation Priority, P0 — Required, P1 — Important, P2 — Can Be Simpler Initially
 
-### Community 388 - "محدودیت ها و کارهای باقی"
+### Community 388 - "US5 Independent Test Verification — Clean Start Without Legacy Tenants"
 Cohesion: 0.50
-Nodes (4): اصولی که نباید شکسته شوند, محدودیت‌ها و کارهای باقی‌مانده, محدودیت‌های عمدی, کارهای بعدی
+Nodes (3): Delivered behavior and verified invariants, US5 Independent Test Verification — Clean Start Without Legacy Tenants, Verification commands and transcript
 
 ### Community 389 - "Documentation Evidence Index"
 Cohesion: 0.50
 Nodes (4): Architecture and trust boundaries, Current documentation index, Verification evidence, Canonical documentation index
 
-### Community 390 - "Roadmap و وضعیت فعلی"
-Cohesion: 0.50
-Nodes (4): Roadmap و وضعیت فعلی, معماری هدف, وضعیت فازها, کارهای بعدی با اولویت
+### Community 390 - "foreground"
+Cohesion: 0.67
+Nodes (3): foreground, $type, $value
 
-### Community 391 - "PostgreSQL Memory Storage"
-Cohesion: 0.50
-Nodes (3): Optional HNSW index, Studio memory persistence, Verification
+### Community 391 - "US3 implementation verification — 2026-10-12"
+Cohesion: 0.29
+Nodes (6): Delivered behavior, Evidence mapping (threat model T-7…T-12), Known gaps intentionally left to later phases, TDD and enforcement transition, US3 implementation verification — 2026-10-12, Verification commands and results
 
 ### Community 392 - "001_studio_entities Components"
 Cohesion: 0.50
@@ -2072,25 +2101,21 @@ Nodes (5): $type, $value, 700, 700, 700
 Cohesion: 0.40
 Nodes (4): Outline, Post-Execution Checks, Pre-Execution Checks, User Input
 
-### Community 409 - "destructive-foreground Components"
+### Community 409 - "muted-foreground"
 Cohesion: 0.67
-Nodes (3): destructive-foreground, $type, $value
+Nodes (3): muted-foreground, $type, $value
 
-### Community 410 - "muted Components"
+### Community 410 - "primary"
 Cohesion: 0.67
-Nodes (3): muted, $type, $value
+Nodes (3): primary, $type, $value
 
-### Community 411 - "primary-foreground Components"
+### Community 411 - "primary-hover"
 Cohesion: 0.67
-Nodes (3): primary-foreground, $type, $value
+Nodes (3): primary-hover, $type, $value
 
 ### Community 412 - "ring Components"
 Cohesion: 0.67
 Nodes (3): ring, $type, $value
-
-### Community 413 - "secondary-foreground Components"
-Cohesion: 0.67
-Nodes (3): secondary-foreground, $type, $value
 
 ### Community 418 - "Background Memory Writing"
 Cohesion: 0.67
@@ -2100,9 +2125,9 @@ Nodes (3): 22. Hot-Path vs Background Memory Writing, Background, Hot Path
 Cohesion: 0.67
 Nodes (3): 2. Short-Term vs Long-Term Memory, Long-Term Memory, Short-Term Memory
 
-### Community 420 - "StudioEntityError"
-Cohesion: 0.21
-Nodes (8): dynamic, dynamic, GET(), dynamic, PUT(), getOrganizationCurrent(), putWorkspaceRepositories(), StudioEntityError
+### Community 420 - "api/workspaces/[workspaceId]/repositories/route.ts"
+Cohesion: 0.47
+Nodes (4): dynamic, dynamic, PUT(), putWorkspaceRepositories()
 
 ### Community 422 - "Existing Architecture"
 Cohesion: 0.67
@@ -2112,67 +2137,91 @@ Nodes (3): ASCII Diagram: Memory Layers, Data Flow, Existing Architecture
 Cohesion: 0.67
 Nodes (3): Context Growth Control, Context Management Findings, How Prompts/Model Context Are Assembled
 
-### Community 431 - "primary"
-Cohesion: 0.67
-Nodes (3): primary, $type, $value
-
 ### Community 435 - "Current vs. Target Gap Analysis"
 Cohesion: 0.22
 Nodes (9): 1. Identity and membership, 2. Organization entity, 3. Persistence and scoping, 4. Authorization of existing organization features, 5. Execution and infrastructure, 6. Memory, 7. Frontend, 8. Verification tooling (+1 more)
 
+### Community 463 - "hybridMemoryRetriever.ts"
+Cohesion: 0.05
+Nodes (61): boundedInteger(), canAccessMemory(), IDEMPOTENCY_METADATA_KEY, matchesFilters(), publicMemory(), requireAccess(), embeddableMemoryText(), embedSafely() (+53 more)
+
 ### Community 493 - "Specification Quality Checklist: Organization-Centric Tenancy — Phase 0"
-Cohesion: 0.33
-Nodes (5): Content Quality, Feature Readiness, Notes, Requirement Completeness, Specification Quality Checklist: Organization-Centric Tenancy — Phase 0
+Cohesion: 0.29
+Nodes (6): Content Quality, Feature Readiness, Notes, Requirement Completeness, Review corrections (2026-10-10), Specification Quality Checklist: Organization-Centric Tenancy — Phase 0
 
 ### Community 494 - "Tenant Boundary & Threat Model"
 Cohesion: 0.33
 Nodes (6): 1. Assets, 2. Trust boundaries, 3. Threats (STRIDE-oriented) and required controls, 4. Security invariants for the target (must hold after every phase), 5. Abuse-case tests required (summary), Tenant Boundary & Threat Model
 
-### Community 495 - "in-memory-studio-store.ts"
-Cohesion: 0.08
-Nodes (12): OrganizationContextDeniedError, OrganizationAuditEntry, OrganizationMembership, WorkspaceRepositoryMembership, WorkspaceRepositoryState, membershipKey(), slugifyOrganizationName(), workspaceRepoMembershipKey() (+4 more)
+### Community 495 - "OrganizationProfile"
+Cohesion: 0.14
+Nodes (6): OrganizationAuditEntry, OrganizationProfile, slugifyOrganizationName(), seedOrg(), seedUser(), seedOrg()
 
 ### Community 496 - "US2 implementation verification — 2026-10-11"
 Cohesion: 0.33
 Nodes (5): Delivered behavior, TDD and enforcement transition, Threat-model evidence, US2 implementation verification — 2026-10-11, Verification commands and results
 
-### Community 500 - "verification-real-tools.ts"
-Cohesion: 0.25
-Nodes (6): assert(), main(), methods, server, EnvironmentCredentialGateway, sameRequest()
+### Community 500 - "credentialGateway.ts"
+Cohesion: 0.05
+Nodes (54): assert(), main(), methods, server, boundedTtl(), buildTlsDispatcher(), clampInt(), credentialEnvironmentName() (+46 more)
 
-### Community 501 - "api/projects/[projectId]/repositories/[repoId]/route.ts"
-Cohesion: 0.47
-Nodes (4): dynamic, DELETE(), dynamic, removeProjectRepository()
+### Community 501 - "StudioEntityError"
+Cohesion: 0.32
+Nodes (5): dynamic, DELETE(), dynamic, removeProjectRepository(), StudioEntityError
+
+### Community 502 - "Phase 0.5 — Verified implementation baseline"
+Cohesion: 0.16
+Nodes (10): Applied migration inventory, Commands and gates, Complete Jest result, Failure history and verification boundary, Phase 0.5 — Verified implementation baseline, Source and runtime, Behavior, Critical repairs T081–T083 (+2 more)
+
+### Community 503 - "Phase 0.5 workflow recheck — first implementation pass"
+Cohesion: 0.33
+Nodes (6): Final convergence outcome, Final requirement and acceptance coverage, Fresh clean-source baseline, Generated task pass, Phase 0.5 workflow recheck — first implementation pass, Second implementation pass — convergence findings closed
 
 ### Community 504 - "Q: Should InMemoryMemoryStore be split into smaller, more focused modules?"
 Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: Should InMemoryMemoryStore be split into smaller, more focused modules?, Source Nodes
 
+### Community 506 - "Contract: Organization Strategy, Delegation, and Goal Project Validation (Phase 0.5)"
+Cohesion: 0.40
+Nodes (5): Contract: Organization Strategy, Delegation, and Goal Project Validation (Phase 0.5), POST /studio/organization/goals, POST /studio/organization/goals/:id/delegate, POST /studio/organization/strategy, Unchanged
+
+### Community 508 - "Dependency & Risk Register"
+Cohesion: 0.40
+Nodes (5): 1. Risks, 2. Dependencies, 3. Unresolved design decisions, Dependency & Risk Register, Review corrections (2026-10-10)
+
+### Community 509 - "padding-y"
+Cohesion: 0.67
+Nodes (4): padding-y, padding-y, $type, $value
+
+### Community 510 - "destructive"
+Cohesion: 0.67
+Nodes (3): destructive, $type, $value
+
 ## Knowledge Gaps
-- **3335 isolated node(s):** `Behavior`, `Executed TDD evidence`, `Evidence limits and remaining work`, `Delivered behavior`, `TDD and enforcement transition` (+3330 more)
+- **3463 isolated node(s):** `fs`, `path`, `fs`, `path`, `fs` (+3458 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **69 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Work-memory lessons
 
 **Preferred sources** — corroborated by past sessions; start here.
-- `CliAgentExecutor` (2× useful, score=1.211683885)
-- `web/package.json` (2× useful, score=0.969425363)
+- `CliAgentExecutor` (2× useful, score=1.211676015)
+- `web/package.json` (2× useful, score=0.969419067)
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `MemoryAccessContext` connect `MemoryAccessContext` to `InMemoryMemoryStore`, `runExecutor.ts`, `memory/contracts.ts`, `runtime/index.ts`, `agentRuntime.ts`, `memorySemanticConflict.test.ts`, `workingMemoryRuntime.test.ts`, `hybridMemoryRetriever.ts`, `workflowCompiler.ts`, `queryExpansion.ts`, `agentExecutorFactory.ts`, `application/index.ts`, `memoryEvalRunner.ts`, `memoryBenchmarkRunner.ts`, `episodicMemory.ts`, `PostgresRunStore`, `memory/composition.ts`, `proceduralMemory.ts`, `RunStoreContract`, `productionEpisodicMemory.test.ts`, `in-memory-studio-store.ts`, `runStore.ts`?**
-  _High betweenness centrality (0.026) - this node is a cross-community bridge._
-- **Why does `InMemoryStudioStore` connect `InMemoryStudioStore` to `clarificationResponse.test.ts`, `runExecutor.ts`, `principal.ts`, `StudioWorkspace`, `organizationService.ts`, `postgres-studio-store.ts`, `in-memory-studio-store.ts`, `studioPostgresRollback.test.ts`, `AgentRuntime`, `memory/composition.ts`, `studio/infrastructure/migrate.ts`, `StudioStore`, `workflowCompiler.ts`, `studio.ts`?**
+- **Why does `MemoryAccessContext` connect `MemoryAccessContext` to `InMemoryMemoryStore`, `memory/contracts.ts`, `runtime/index.ts`, `organizationBackgroundIsolation.test.ts`, `agentRuntime.ts`, `memorySemanticConflict.test.ts`, `workingMemoryRuntime.test.ts`, `memoryReliability.ts`, `workflowCompiler.ts`, `episodicMemory.ts`, `memoryLiveEmbeddingRunner.ts`, `memoryEvalRunner.ts`, `memoryBenchmarkRunner.ts`, `queryExpansion.ts`, `operationalE2E.test.ts`, `PostgresRunStore`, `src/agentConfiguration.ts`, `PostgresMemoryJobStore`, `memory/composition.ts`, `proceduralMemory.ts`, `InMemoryRunStore`, `RunExecutor`, `hybridMemoryRetriever.ts`, `runExecutor.ts`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
+- **Why does `StudioStore` connect `StudioStore` to `RequestPrincipal`, `server/src/index.ts`, `createInternalPrincipalAssertion`, `studio.ts`, `StudioTask`, `organizationBackgroundIsolation.test.ts`, `organizationExecutionSecurity.test.ts`, `InMemoryStudioStore`, `StudioPrincipal`, `studio/infrastructure/migrate.ts`, `in-memory-studio-store.ts`, `organizationService.ts`, `postgres-studio-store.ts`, `budgetStore.ts`, `PgPool`, `workspaceWorkingCopyService.ts`, `RunExecutor`, `organizationProfileService.ts`, `webhookTriggerRoutes.ts`, `dashboardService.ts`?**
+  _High betweenness centrality (0.015) - this node is a cross-community bridge._
+- **Why does `RequestPrincipal` connect `RequestPrincipal` to `server/src/index.ts`, `studio.ts`, `organizationService.ts`, `redact`, `StudioTask`, `operationalE2E.test.ts`, `RunExecutor`, `PostgresRunStore`, `hybridMemoryRetriever.ts`, `cliAgentExecutor.ts`, `StudioStore`, `organizationProfileService.ts`, `InMemoryRunStore`, `dashboardService.ts`, `runExecutor.ts`, `createRunsRouter`?**
   _High betweenness centrality (0.014) - this node is a cross-community bridge._
-- **Why does `PostgresStudioStore` connect `PostgresStudioStore` to `principal.ts`, `StudioWorkspace`, `postgres-studio-store.ts`, `webhookTriggerRoutes.ts`, `in-memory-studio-store.ts`, `studioPostgresRollback.test.ts`, `memory/composition.ts`, `studio/infrastructure/migrate.ts`, `StudioStore`, `InMemoryStudioStore`?**
-  _High betweenness centrality (0.013) - this node is a cross-community bridge._
-- **What connects `Behavior`, `Executed TDD evidence`, `Evidence limits and remaining work` to the rest of the system?**
-  _3335 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `fs`, `path`, `fs` to the rest of the system?**
+  _3463 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `InMemoryMemoryStore` be split into smaller, more focused modules?**
-  _Cohesion score 0.07418788410886742 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06912280701754386 - nodes in this community are weakly interconnected._
 - **Should `design_system.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.08235294117647059 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08253968253968254 - nodes in this community are weakly interconnected._
 - **Should `workerRuntime.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.05146242132543503 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05359937402190924 - nodes in this community are weakly interconnected._

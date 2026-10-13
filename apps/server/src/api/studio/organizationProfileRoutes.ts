@@ -14,6 +14,9 @@ export function registerOrganizationProfileRoutes(
   app.post("/organizations", async (c) =>
     c.json(await profiles.create(await c.req.json().catch(() => ({})), c.get("principal")), 201),
   );
+  app.patch("/organizations/current", async (c) =>
+    c.json(await profiles.updateCurrent(await c.req.json().catch(() => ({})), c.get("principal"))),
+  );
   app.delete("/organizations/current", async (c) =>
     c.json(await profiles.deleteCurrent(await c.req.json().catch(() => ({})), c.get("principal"))),
   );

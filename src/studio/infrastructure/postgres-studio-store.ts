@@ -13,14 +13,17 @@ import {
   type WebhookDeliveryRecord,
   type AgentHeartbeatSettings,
 } from "@multi-agent/types";
+import { randomUUID } from "node:crypto";
 import type { PgClient, PgPool } from "../../memory/infrastructure";
-import { scopedDbClient } from "./organizationJobScope";
+import { withOrganization, scopedDbClient, type PrincipalKind } from "./withOrganization";
+
 import type {
   AcceptWebhookDeliveryParams,
   AcceptWebhookDeliveryResult,
   OrganizationProfile,
   OrganizationStatus,
   ProjectRepository,
+  UpdateOrganizationProfileInput,
   StudioEntityStatusFilter,
   StudioNameSource,
   StudioPrincipal,
@@ -322,15 +325,44 @@ function decodeTask(row: Record<string, unknown>): StudioTask {
 
 export class PostgresStudioStore implements StudioStore {
   constructor(private readonly pool: PgPool, private readonly client?: PgClient) {}
+
+  getPool(): PgPool {
+    return this.pool;
+  }
+
   private query(text: string, values?: unknown[]) {
-    // US3/T050: statements issued while an organization scope owns a
-    // transaction for this pool run on that connection, so `app.tenant_id`
-    // (RLS prerequisite) applies to background handler work.
+    // Statements issued while an organization scope owns a transaction
+    // for this pool run on that connection, so `app.tenant_id`
+    // (RLS prerequisite) applies to request and background handler work.
     return (this.client ?? scopedDbClient(this.pool) ?? this.pool).query(text, values);
+  }
+
+  private scopedExecution<T>(
+    tenantId: string | undefined,
+    principalKind: PrincipalKind | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    if (this.client || scopedDbClient(this.pool) || !tenantId?.trim()) {
+      return fn();
+    }
+    return withOrganization(this.pool, tenantId.trim(), principalKind ?? "user", () => fn());
   }
 
   async transaction<T>(operation: (store: StudioStore) => Promise<T>): Promise<T> {
     if (this.client) throw new Error("Nested Studio transactions are unsupported.");
+    const scoped = scopedDbClient(this.pool);
+    if (scoped) {
+      const sp = `studio_tx_${randomUUID().replace(/-/g, "")}`;
+      await scoped.query(`SAVEPOINT ${sp}`);
+      try {
+        const result = await operation(this);
+        await scoped.query(`RELEASE SAVEPOINT ${sp}`);
+        return result;
+      } catch (err) {
+        try { await scoped.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch { /* ignore */ }
+        throw err;
+      }
+    }
     const client = await this.pool.connect();
     const transactionStore = new PostgresStudioStore(this.pool, client);
     try {
@@ -348,7 +380,7 @@ export class PostgresStudioStore implements StudioStore {
     const result = principal
       ? await this.query(
           "SELECT definition FROM studio_workflows WHERE tenant_id = $1 AND (owner_id = $2 OR $3::boolean) ORDER BY updated_at DESC, id",
-          [principal.tenantId, principal.userId, principal.principalKind === "service"],
+          [principal.tenantId, principal.userId, principal.principalKind === "service" && principal.allowOwnershipBypass !== false],
         )
       : await this.query("SELECT definition FROM studio_workflows ORDER BY updated_at DESC, id");
     return result.rows.map((row) => row.definition as WorkflowDefinition);
@@ -358,7 +390,7 @@ export class PostgresStudioStore implements StudioStore {
     const result = principal
       ? await this.query(
           "SELECT definition FROM studio_workflows WHERE id = $1 AND tenant_id = $2 AND (owner_id = $3 OR $4::boolean)",
-          [id, principal.tenantId, principal.userId, principal.principalKind === "service"],
+          [id, principal.tenantId, principal.userId, principal.principalKind === "service" && principal.allowOwnershipBypass !== false],
         )
       : await this.query("SELECT definition FROM studio_workflows WHERE id = $1", [id]);
     return result.rows[0]?.definition as WorkflowDefinition ?? null;
@@ -410,7 +442,7 @@ export class PostgresStudioStore implements StudioStore {
     const result = principal
       ? await this.query(
           "SELECT record FROM studio_agents WHERE is_system = true OR (tenant_id = $1 AND (owner_id = $2 OR owner_id IS NULL OR $3::boolean)) ORDER BY updated_at DESC, id",
-          [principal.tenantId, principal.userId, principal.principalKind === "service"],
+          [principal.tenantId, principal.userId, principal.principalKind === "service" && principal.allowOwnershipBypass !== false],
         )
       : await this.query("SELECT record FROM studio_agents ORDER BY updated_at DESC, id");
     return result.rows.map((row) => row.record as AgentRecord);
@@ -420,7 +452,7 @@ export class PostgresStudioStore implements StudioStore {
     const result = principal
       ? await this.query(
           "SELECT record FROM studio_agents WHERE id = $1 AND (is_system = true OR (tenant_id = $2 AND (owner_id = $3 OR owner_id IS NULL OR $4::boolean)))",
-          [id, principal.tenantId, principal.userId, principal.principalKind === "service"],
+          [id, principal.tenantId, principal.userId, principal.principalKind === "service" && principal.allowOwnershipBypass !== false],
         )
       : await this.query("SELECT record FROM studio_agents WHERE id = $1", [id]);
     return result.rows[0]?.record as AgentRecord ?? null;
@@ -429,14 +461,18 @@ export class PostgresStudioStore implements StudioStore {
   async saveAgent(agent: AgentRecord, principal?: StudioPrincipal): Promise<AgentRecord> {
     if (principal) {
       const existing = await this.query("SELECT is_system, tenant_id, owner_id FROM studio_agents WHERE id = $1", [agent.id]);
+      let targetOwnerId: string | null = principal.userId;
       if (existing.rows.length) {
         const row = existing.rows[0];
         if (row.is_system) throw new Error("Cannot modify system agent");
         if (!row.tenant_id || row.tenant_id !== principal.tenantId || (row.owner_id && row.owner_id !== principal.userId)) {
           throw new Error("Access denied to agent");
         }
+        targetOwnerId = row.owner_id ? String(row.owner_id) : null;
+      } else if (agent.ownerId === undefined || agent.ownerId === null) {
+        targetOwnerId = null;
       }
-      agent = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+      agent = { ...agent, ownerId: targetOwnerId ?? undefined, tenantId: principal.tenantId, isSystem: false };
       const written = await this.query(
         `INSERT INTO studio_agents (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
          VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
@@ -444,7 +480,7 @@ export class PostgresStudioStore implements StudioStore {
            owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system
          WHERE studio_agents.tenant_id = EXCLUDED.tenant_id AND NOT studio_agents.is_system AND (studio_agents.owner_id IS NULL OR studio_agents.owner_id = EXCLUDED.owner_id)
          RETURNING id`,
-        [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt, principal.userId, principal.tenantId],
+        [agent.id, agent.name, JSON.stringify(agent), agent.createdAt, agent.updatedAt, targetOwnerId, principal.tenantId],
       );
       if (!written.rowCount) throw new Error("Access denied to agent");
     } else {
@@ -475,8 +511,8 @@ export class PostgresStudioStore implements StudioStore {
   async listTools(principal?: StudioPrincipal): Promise<ToolRecord[]> {
     const result = principal
       ? await this.query(
-          "SELECT record FROM studio_tools WHERE is_system = true OR (tenant_id = $1 AND (owner_id = $2 OR owner_id IS NULL)) ORDER BY updated_at DESC, id",
-          [principal.tenantId, principal.userId],
+          "SELECT record FROM studio_tools WHERE is_system = true OR (tenant_id = $1 AND (owner_id = $2 OR owner_id IS NULL OR $3::boolean)) ORDER BY updated_at DESC, id",
+          [principal.tenantId, principal.userId, principal.principalKind === "service" && principal.allowOwnershipBypass !== false],
         )
       : await this.query("SELECT record FROM studio_tools ORDER BY updated_at DESC, id");
     return result.rows.map((row) => row.record as ToolRecord);
@@ -485,8 +521,8 @@ export class PostgresStudioStore implements StudioStore {
   async getTool(id: string, principal?: StudioPrincipal): Promise<ToolRecord | null> {
     const result = principal
       ? await this.query(
-          "SELECT record FROM studio_tools WHERE id = $1 AND (is_system = true OR (tenant_id = $2 AND (owner_id = $3 OR owner_id IS NULL)))",
-          [id, principal.tenantId, principal.userId],
+          "SELECT record FROM studio_tools WHERE id = $1 AND (is_system = true OR (tenant_id = $2 AND (owner_id = $3 OR owner_id IS NULL OR $4::boolean)))",
+          [id, principal.tenantId, principal.userId, principal.principalKind === "service" && principal.allowOwnershipBypass !== false],
         )
       : await this.query("SELECT record FROM studio_tools WHERE id = $1", [id]);
     return result.rows[0]?.record as ToolRecord ?? null;
@@ -495,14 +531,18 @@ export class PostgresStudioStore implements StudioStore {
   async saveTool(tool: ToolRecord, principal?: StudioPrincipal): Promise<ToolRecord> {
     if (principal) {
       const existing = await this.query("SELECT is_system, tenant_id, owner_id FROM studio_tools WHERE id = $1", [tool.id]);
+      let targetOwnerId: string | null = principal.userId;
       if (existing.rows.length) {
         const row = existing.rows[0];
         if (row.is_system) throw new Error("Cannot modify system tool");
         if (!row.tenant_id || row.tenant_id !== principal.tenantId || (row.owner_id && row.owner_id !== principal.userId)) {
           throw new Error("Access denied to tool");
         }
+        targetOwnerId = row.owner_id ? String(row.owner_id) : null;
+      } else if (tool.ownerId === undefined || tool.ownerId === null) {
+        targetOwnerId = null;
       }
-      tool = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+      tool = { ...tool, ownerId: targetOwnerId ?? undefined, tenantId: principal.tenantId, isSystem: false };
       const written = await this.query(
         `INSERT INTO studio_tools (id, name, record, created_at, updated_at, owner_id, tenant_id, is_system)
          VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7, false)
@@ -510,7 +550,7 @@ export class PostgresStudioStore implements StudioStore {
            owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id, is_system = EXCLUDED.is_system
          WHERE studio_tools.tenant_id = EXCLUDED.tenant_id AND NOT studio_tools.is_system AND (studio_tools.owner_id IS NULL OR studio_tools.owner_id = EXCLUDED.owner_id)
          RETURNING id`,
-        [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt, principal.userId, principal.tenantId],
+        [tool.id, tool.name, JSON.stringify(tool), tool.createdAt, tool.updatedAt, targetOwnerId, principal.tenantId],
       );
       if (!written.rowCount) throw new Error("Access denied to tool");
     } else {
@@ -991,6 +1031,49 @@ export class PostgresStudioStore implements StudioStore {
     return record;
   }
 
+  async updateOrganizationProfile(
+    updates: UpdateOrganizationProfileInput,
+    principal: StudioPrincipal,
+  ): Promise<OrganizationProfile> {
+    if (!principal?.tenantId?.trim()) {
+      throw new Error("Organization profile requires tenant context");
+    }
+    const existing = await this.getOrganizationProfile(principal);
+    if (!existing) throw new Error("Organization not found");
+
+    let slug = existing.slug;
+    if (updates.slug !== undefined) {
+      const candidate = updates.slug.trim().toLowerCase();
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(candidate) || candidate.length > 80) {
+        throw new Error("slug must be lowercase URL-safe (a-z, 0-9, hyphen) and at most 80 characters");
+      }
+      slug = candidate;
+    }
+
+    const name = updates.name !== undefined ? updates.name : existing.name;
+    const description = updates.description !== undefined ? updates.description : existing.description;
+    const config = updates.config !== undefined ? updates.config : existing.config;
+    const updatedAt = nowIso();
+
+    try {
+      const result = await this.query(
+        `UPDATE studio_organizations
+         SET name = $1, description = $2, config = $3::jsonb, slug = $4, updated_at = $5::timestamptz
+         WHERE id = $6
+         RETURNING *`,
+        [name, description, JSON.stringify(config), slug, updatedAt, principal.tenantId],
+      );
+      if (!result.rows[0]) throw new Error("Organization not found");
+      return decodeOrganization(result.rows[0]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("studio_organizations_slug") || message.toLowerCase().includes("duplicate key")) {
+        throw new Error("Organization slug already in use");
+      }
+      throw error;
+    }
+  }
+
   async listOrganizationsForUser(userId: string): Promise<OrganizationProfile[]> {
     const result = await this.query(
       `SELECT o.* FROM studio_organizations o
@@ -1030,7 +1113,6 @@ export class PostgresStudioStore implements StudioStore {
       await client.query("DELETE FROM studio_agent_heartbeats WHERE tenant_id = $1", [organizationId]);
       await client.query("DELETE FROM studio_approvals WHERE tenant_id = $1", [organizationId]);
       await client.query("DELETE FROM studio_run_events WHERE tenant_id = $1", [organizationId]);
-      await client.query("DELETE FROM studio_run_execution_leases WHERE tenant_id = $1", [organizationId]);
       await client.query("DELETE FROM studio_runs WHERE tenant_id = $1", [organizationId]);
       await client.query("DELETE FROM studio_tasks WHERE tenant_id = $1", [organizationId]);
       await client.query("DELETE FROM studio_workspaces WHERE tenant_id = $1", [organizationId]);

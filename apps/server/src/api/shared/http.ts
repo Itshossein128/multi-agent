@@ -11,6 +11,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { resolveRequestPrincipal } from "../../auth/principal";
 import type { RequestPrincipal } from "../../auth/principal";
 import type { PrincipalResolver } from "../../auth/authorization";
+import { withOrganization } from "../../../../../src/studio/infrastructure/withOrganization";
+
 
 export interface PrincipalVariables {
   principal: RequestPrincipal;
@@ -73,13 +75,17 @@ export function requireOrganizationContext(store: StudioStore, routePrefix = "")
     try {
       let context: OrganizationContext;
       if (principal.principalKind === "service") {
-        const org = await store.getOrganizationProfile(principal);
-        if (!org || org.status !== "active") throw new OrganizationContextDeniedError();
-        context = { organizationId, userId: principal.userId, principalKind: "service", role: "viewer", permissions: ["org.read", "resources.read", "resources.write", "runs.execute"], membershipVersion: 0, resolvedAt: Date.now() };
-      } else context = await contexts.resolve(organizationId, principal.userId);
+        context = await contexts.resolveService(organizationId, principal.userId);
+      } else {
+        context = await contexts.resolve(organizationId, principal.userId);
+      }
       c.set("organizationContext", context);
       // Discard incoming permission hints and attach only server-derived permissions.
-      c.set("principal", { ...principal, permissions: context.permissions });
+      c.set("principal", {
+        ...principal,
+        permissions: context.permissions,
+        allowOwnershipBypass: context.allowOwnershipBypass,
+      });
       requirePermission(context, organizationRoutePermission(c.req.method, path));
       if (!["GET", "HEAD"].includes(c.req.method) && /^\/tools(?:\/[^/]+)?$/.test(path)) {
         const body = await c.req.raw.clone().json().catch(() => null);
@@ -108,6 +114,14 @@ export function requireOrganizationContext(store: StudioStore, routePrefix = "")
     // Shadow evaluates policy for diagnostics only. Never serve with weaker checks,
     // regardless of current membership count, prior admission, or a process restart.
     if (membershipEnforcement === "shadow") return c.json({ error: "Organization enforcement required" }, 503);
+    const orgContext = c.get("organizationContext");
+    const isStream = path.endsWith("/events") || c.req.header("Accept") === "text/event-stream";
+    const pool = (store as any).getPool?.() ?? (store as any).pool;
+    if (pool && orgContext && !isStream) {
+      return withOrganization(pool, orgContext.organizationId, orgContext.principalKind, async () => {
+        await next();
+      });
+    }
     await next();
   };
 }

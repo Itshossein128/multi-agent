@@ -10,6 +10,7 @@ export type AuthenticatedPrincipal = {
   tenantId: string;
   /** Present on v2 assertions; mirrors tenantId. */
   organizationId?: string;
+  allowOwnershipBypass?: boolean;
 };
 
 export type PrincipalAssertionInput = { principalKind?: "user" | "service" } & (
@@ -19,7 +20,6 @@ export type PrincipalAssertionInput = { principalKind?: "user" | "service" } & (
 type AssertionPayload = {
   userId: string;
   organizationId: string;
-  tenantId: string;
   exp: number;
   nonce: string;
   v: 2;
@@ -28,16 +28,44 @@ type AssertionPayload = {
 
 const sign = (body: string, secret: string) => createHmac("sha256", secret).update(body).digest("base64url");
 
-function normalizePrincipal(principal: PrincipalAssertionInput): { userId: string; organizationId: string; tenantId: string } {
+// Bounded in-memory store for seen nonces to prevent assertion replay attacks (T067 / T102 / D-3).
+const seenNonces = new Map<string, number>();
+const MAX_SEEN_NONCES = 10_000;
+
+export function clearSeenNonces(): void {
+  seenNonces.clear();
+}
+
+function checkAndRecordNonce(nonce: string, exp: number, now: number): boolean {
+  if (seenNonces.size > MAX_SEEN_NONCES) {
+    for (const [n, e] of seenNonces.entries()) {
+      if (e <= now) seenNonces.delete(n);
+    }
+    if (seenNonces.size > MAX_SEEN_NONCES) {
+      const keys = Array.from(seenNonces.keys()).slice(0, 1000);
+      for (const k of keys) seenNonces.delete(k);
+    }
+  }
+
+  const existingExp = seenNonces.get(nonce);
+  if (existingExp !== undefined && existingExp > now) {
+    return false;
+  }
+  seenNonces.set(nonce, exp);
+  return true;
+}
+
+function normalizePrincipal(principal: PrincipalAssertionInput): { userId: string; organizationId: string } {
   const organizationId = ("organizationId" in principal && principal.organizationId) || principal.tenantId;
-  const tenantId = ("tenantId" in principal && principal.tenantId) || principal.organizationId;
-  if (!principal.userId || !organizationId || !tenantId) {
+  if (!principal.userId?.trim() || !organizationId?.trim()) {
     throw new Error("Internal principal secret and identity are required.");
   }
-  if (organizationId !== tenantId) {
-    throw new Error("organizationId and tenantId must refer to the same organization.");
+  if ("organizationId" in principal && "tenantId" in principal && principal.organizationId && principal.tenantId) {
+    if (principal.organizationId !== principal.tenantId) {
+      throw new Error("organizationId and tenantId must refer to the same organization.");
+    }
   }
-  return { userId: principal.userId, organizationId, tenantId };
+  return { userId: principal.userId.trim(), organizationId: organizationId.trim() };
 }
 
 export function createInternalPrincipalAssertion(
@@ -48,7 +76,8 @@ export function createInternalPrincipalAssertion(
   if (!secret) throw new Error("Internal principal secret and identity are required.");
   const normalized = normalizePrincipal(principal);
   const payload: AssertionPayload = {
-    ...normalized,
+    userId: normalized.userId,
+    organizationId: normalized.organizationId,
     principalKind: principal.principalKind ?? "user",
     exp: now + 60_000,
     nonce: randomUUID(),
@@ -58,10 +87,15 @@ export function createInternalPrincipalAssertion(
   return `${body}.${sign(body, secret)}`;
 }
 
+export interface VerifyAssertionOptions {
+  checkReplay?: boolean;
+}
+
 export function verifyInternalPrincipalAssertion(
   value: string | null,
   secret: string,
   now = Date.now(),
+  options: VerifyAssertionOptions = {},
 ): AuthenticatedPrincipal | null {
   if (!value || !secret) return null;
   const [body, signature, extra] = value.split(".");
@@ -70,27 +104,28 @@ export function verifyInternalPrincipalAssertion(
   const received = Buffer.from(signature);
   if (expected.length !== received.length || !timingSafeEqual(expected, received)) return null;
   try {
-    const parsed = JSON.parse(Buffer.from(body, "base64url").toString()) as Partial<AssertionPayload> & {
-      tenantId?: string;
-      organizationId?: string;
-    };
-    if (typeof parsed.userId !== "string" || typeof parsed.nonce !== "string" || typeof parsed.exp !== "number") {
+    const parsed = JSON.parse(Buffer.from(body, "base64url").toString()) as Partial<AssertionPayload>;
+    // Strict v2 validation (T067 / T102 / D-3)
+    if (parsed.v !== 2) return null;
+    if (typeof parsed.organizationId !== "string" || !parsed.organizationId.trim()) return null;
+    if (typeof parsed.userId !== "string" || !parsed.userId.trim()) return null;
+    if (typeof parsed.nonce !== "string" || !parsed.nonce.trim()) return null;
+    if (typeof parsed.exp !== "number" || parsed.exp <= now) return null;
+    if (parsed.exp > now + 300_000) return null;
+    if (parsed.principalKind !== undefined && parsed.principalKind !== "user" && parsed.principalKind !== "service") return null;
+
+    const checkReplay = options.checkReplay ?? true;
+    if (checkReplay && !checkAndRecordNonce(parsed.nonce, parsed.exp, now)) {
       return null;
     }
-    if (parsed.exp <= now || !parsed.userId.trim() || !parsed.nonce.trim()) return null;
-    if (parsed.principalKind !== undefined && parsed.principalKind !== "user" && parsed.principalKind !== "service") return null;
-    const organizationId =
-      typeof parsed.organizationId === "string" && parsed.organizationId
-        ? parsed.organizationId
-        : typeof parsed.tenantId === "string"
-          ? parsed.tenantId
-          : null;
-    const tenantId =
-      typeof parsed.tenantId === "string" && parsed.tenantId
-        ? parsed.tenantId
-        : organizationId;
-    if (!organizationId || !tenantId || organizationId !== tenantId) return null;
-    return { userId: parsed.userId, tenantId, organizationId, principalKind: parsed.principalKind ?? "user" };
+
+    const orgId = parsed.organizationId.trim();
+    return {
+      userId: parsed.userId.trim(),
+      organizationId: orgId,
+      tenantId: orgId,
+      principalKind: parsed.principalKind ?? "user",
+    };
   } catch {
     return null;
   }

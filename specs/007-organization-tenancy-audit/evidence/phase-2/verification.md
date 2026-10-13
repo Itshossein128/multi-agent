@@ -18,7 +18,7 @@ Executed red logs are retained, not just newly written tests: core 27 failures /
 
 `shadow-gate.txt` records valid owner traffic over representative reads and budget writes with zero `authz.would_deny`. Its deliberately denied viewer request emits one explained shadow denial and fails closed for a multi-member org. Only after that check was membership enforcement made the default and `.env.example` set to `enforce`. Compiled-server browser traffic also recorded zero shadow denials.
 
-`enforce-final.txt`: 14 suites, 813 tests, zero skips, with `ORG_MEMBERSHIP_ENFORCEMENT=enforce` and real PostgreSQL. The gate matrices independently declare policy and cover all 87 scoped Studio routes and 26 execution/tool/dashboard/memory routes against owner/admin/member/viewer/non-member/removed users. Allowed rows establish passage through the permission gate; deliberately invalid/missing-resource requests can then return typed validation/404 errors. Successful operations, real owner concurrency, audit rollback, run visibility and live-session revocation have separate behavioral checks. Memory-data retrieval is not claimed by this gate; the memory server was disabled for browser checks.
+`enforce-final.txt`: 14 suites, 834 tests, zero skips, with `ORG_MEMBERSHIP_ENFORCEMENT=enforce` and real PostgreSQL. The gate matrices independently declare policy and cover all 87 scoped Studio routes and 26 execution/tool/dashboard/memory routes against owner/admin/member/viewer/non-member/removed users. Allowed rows establish passage through the permission gate with non-500 assertions, valid 200/404 responses, credential-bearing mutations, and two-organization member foreign resource isolation in both memory and PostgreSQL. Successful operations, real owner concurrency, audit rollback, run visibility and live-session revocation have separate behavioral checks. Memory-data retrieval is not claimed by this gate; the memory server was disabled for browser checks.
 
 Legacy domain-router tests lack accounts/membership fixtures and explicitly use the pre-admission shadow setup in `tests/organizationLegacyFixtures.cjs`. The authorization suites explicitly override it with enforcement. Production defaults are enforce; the fixture setup cannot change production configuration.
 
@@ -27,7 +27,7 @@ Legacy domain-router tests lack accounts/membership fixtures and explicitly use 
 | Gate | Result |
 |---|---|
 | Full Jest + PostgreSQL | 126 suites / 2164 tests passed, zero skipped |
-| Enforcement-focused Jest + PostgreSQL | 14 suites / 813 tests passed, zero skipped |
+| Enforcement-focused Jest + PostgreSQL | 14 suites / 834 tests passed, zero skipped |
 | `pnpm exec tsc --noEmit` | passed |
 | `pnpm --filter server exec tsc --noEmit` | passed |
 | `pnpm --filter web exec tsc --noEmit` | passed |

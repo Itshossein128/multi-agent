@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Memory, MemoryNamespace, MemoryStore, MemoryStoreQuery } from "../contracts";
 import { MemoryValidationError } from "../contracts";
 import { bounds, MemoryDuplicateError, MemoryVersionConflictError, validateEmbedding, validateMemory, validateScope } from "./storage-utils";
+import { scopedDbClient } from "../../studio/infrastructure/withOrganization";
+
 
 /** Structural node-postgres compatible boundary; infrastructure owns no driver dependency. */
 export interface PgQueryable { query(text: string, values?: any[]): Promise<{ rows: any[]; rowCount: number | null }> }
@@ -41,13 +43,27 @@ export class PostgresMemoryStore implements MemoryStore {
   constructor(private readonly pool: PgPool, private readonly options: PostgresMemoryStoreOptions = {}, private readonly client?: PgClient) {}
   private async query(sql: string, parameters: unknown[] = []) {
     if (!this.active) throw new Error("Memory transaction is closed");
-    try { return await (this.client ?? this.pool).query(sql, parameters); }
+    try { return await (this.client ?? scopedDbClient(this.pool) ?? this.pool).query(sql, parameters); }
     catch (error) { if ((error as { code?: string }).code === "23505") throw new MemoryDuplicateError(); throw error; }
   }
   async transaction<T>(key: string, operation: (store: MemoryStore) => Promise<T>): Promise<T> {
     if (!this.active) throw new Error("Memory transaction is closed");
     if (!key) throw new MemoryValidationError("Memory transaction key is required");
     if (this.client) throw new MemoryValidationError("Nested PostgreSQL memory transactions are unsupported");
+    const scoped = scopedDbClient(this.pool);
+    if (scoped) {
+      const sp = `memory_tx_${randomUUID().replace(/-/g, "")}`;
+      await scoped.query(`SAVEPOINT ${sp}`);
+      try {
+        await scoped.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key]);
+        const result = await operation(this);
+        await scoped.query(`RELEASE SAVEPOINT ${sp}`);
+        return result;
+      } catch (err) {
+        try { await scoped.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch { /* ignore */ }
+        throw err;
+      }
+    }
     const client = await this.pool.connect();
     const store = new PostgresMemoryStore(this.pool, this.options, client);
     try {

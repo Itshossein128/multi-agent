@@ -77,7 +77,7 @@ async function main() {
   const studio = createStudioComposition();
   if (!studio.store) throw new Error("Organization authority storage is required by the execution API.");
   if (studio.store) app.use("/*", requireOrganizationContext(studio.store));
-  const resolveMemoryAccess = memoryAccessResolverFromEnvironment();
+  const resolveMemoryAccess = memoryAccessResolverFromEnvironment(resolveRequestPrincipal);
 
   const connectionString = process.env.MEMORY_DATABASE_URL ?? process.env.STUDIO_DATABASE_URL;
   const instanceId = process.env.RUN_EXECUTOR_INSTANCE_ID ?? randomUUID();

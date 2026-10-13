@@ -5484,15 +5484,15 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/critical-repairs/full.txt": {
-    "mtime": 1791776581.7188425,
-    "seen": 1791776716.9736006,
-    "ast_hash": "6c3610477b088f7d0fb99373785a0b4b",
+    "mtime": 1791776721.9156659,
+    "seen": 1791776741.2794292,
+    "ast_hash": "9ca85eca0e29da6836c9d1c2575ea22a",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/critical-repairs/server-build.txt": {
-    "mtime": 1791749977.7833126,
-    "seen": 1791776716.973602,
-    "ast_hash": "48370508d75684b0dfc2479f12c3f1a7",
+    "mtime": 1791776721.917666,
+    "seen": 1791776741.2794316,
+    "ast_hash": "1657e1ccaeb957a442da5df2c18729e5",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/critical-repairs/t081-green.txt": {
@@ -5580,21 +5580,21 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/critical-repairs/types-build.txt": {
-    "mtime": 1791749865.6098392,
-    "seen": 1791776716.9736173,
-    "ast_hash": "d357f41da99233fd5d17798aaa6406f0",
+    "mtime": 1791776721.914666,
+    "seen": 1791776741.2794662,
+    "ast_hash": "3802fde44c4f9e639932a8891b6a3f47",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/critical-repairs/verification.md": {
-    "mtime": 1791776659.0727456,
-    "seen": 1791776716.9736183,
-    "ast_hash": "a20f132941cd9710ee1f58c1c1bd6e78",
+    "mtime": 1791776721.917666,
+    "seen": 1791776741.2794683,
+    "ast_hash": "aa6b9ec4c51a88b781b236d5fede09cb",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/critical-repairs/web-build.txt": {
-    "mtime": 1791750091.7668202,
-    "seen": 1791776716.9736192,
-    "ast_hash": "5c59b31759df27704708cc8a59a009d2",
+    "mtime": 1791776721.916666,
+    "seen": 1791776741.27947,
+    "ast_hash": "92a3f519c8b746cac1540535803fde6c",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/browser-final.txt": {
@@ -5610,9 +5610,9 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/full-final-verified.txt": {
-    "mtime": 1791744860.7007537,
-    "seen": 1791776716.9736228,
-    "ast_hash": "61920cce0bac7fb19a4dd50f20323b83",
+    "mtime": 1791776721.909666,
+    "seen": 1791776741.279477,
+    "ast_hash": "a692836f5b469b989fc42553da6e3707",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/lint.txt": {
@@ -5652,9 +5652,9 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/server-build-final.txt": {
-    "mtime": 1791744796.848846,
-    "seen": 1791776716.9736304,
-    "ast_hash": "48370508d75684b0dfc2479f12c3f1a7",
+    "mtime": 1791776721.910666,
+    "seen": 1791776741.2794938,
+    "ast_hash": "1657e1ccaeb957a442da5df2c18729e5",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/shadow-gate.txt": {
@@ -5676,9 +5676,9 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/typecheck-tests-final.txt": {
-    "mtime": 1791744860.7017534,
-    "seen": 1791776716.9736342,
-    "ast_hash": "158420bc5b97c8114af6d05bc78d5da2",
+    "mtime": 1791776721.910666,
+    "seen": 1791776741.2795026,
+    "ast_hash": "d3e919784562b92ede9c7763c0b77fdc",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/typecheck-web-final.txt": {
@@ -5688,27 +5688,27 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/types-build.txt": {
-    "mtime": 1791744860.7007537,
-    "seen": 1791776716.9736362,
-    "ast_hash": "dd5d0031c8d13e162dfe100aa7af2553",
+    "mtime": 1791776721.903666,
+    "seen": 1791776741.2795064,
+    "ast_hash": "1f06c1b9b7b2ff35b658617a61c55f26",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/verification.md": {
-    "mtime": 1791744860.7017534,
-    "seen": 1791776716.9736373,
-    "ast_hash": "a498882b207fee0a2892223aa9ffa392",
+    "mtime": 1791776721.910666,
+    "seen": 1791776741.2795086,
+    "ast_hash": "c16c2ca830598292366ffa3d2e78b1cc",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/phase-2/web-build-final.txt": {
-    "mtime": 1791744796.848846,
-    "seen": 1791776716.9736383,
-    "ast_hash": "d38382e140c2916ca2f36cfb973c2c77",
+    "mtime": 1791776721.910666,
+    "seen": 1791776741.2795105,
+    "ast_hash": "950168170ad289b2a8114833a906d07d",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/browser-head-red.txt": {
-    "mtime": 1791741494.1066718,
-    "seen": 1791776716.9736395,
-    "ast_hash": "698ff533bb755cc1e8a0d38a858b4f75",
+    "mtime": 1791776721.894666,
+    "seen": 1791776741.2795124,
+    "ast_hash": "49333b241837c1780be06c04ca743df1",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/browser-production-green.txt": {
@@ -5730,9 +5730,9 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/full-green.txt": {
-    "mtime": 1791741494.113672,
-    "seen": 1791776716.9736438,
-    "ast_hash": "d2921054fdb0abdeda5fd7484b91faee",
+    "mtime": 1791776721.899666,
+    "seen": 1791776741.2795212,
+    "ast_hash": "e1431415f0b607ec7f03d0da4f35c093",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/jest-red.txt": {
@@ -5748,9 +5748,9 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/original-head-baseline.txt": {
-    "mtime": 1791741494.108672,
-    "seen": 1791776716.9736476,
-    "ast_hash": "af3d56ba04c40a1bc5768d7220d784ae",
+    "mtime": 1791776721.9026659,
+    "seen": 1791776741.2795284,
+    "ast_hash": "ffcfa546e968fe2780f192f201396657",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/root-typecheck.txt": {
@@ -5766,9 +5766,9 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/server-build.txt": {
-    "mtime": 1791741494.1146722,
-    "seen": 1791776716.9736507,
-    "ast_hash": "48370508d75684b0dfc2479f12c3f1a7",
+    "mtime": 1791776721.901666,
+    "seen": 1791776741.2795348,
+    "ast_hash": "1657e1ccaeb957a442da5df2c18729e5",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/targeted-green.txt": {
@@ -5778,21 +5778,21 @@
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/test-typecheck.txt": {
-    "mtime": 1791741494.1146722,
-    "seen": 1791776716.9736538,
-    "ast_hash": "158420bc5b97c8114af6d05bc78d5da2",
+    "mtime": 1791776721.901666,
+    "seen": 1791776741.2795393,
+    "ast_hash": "d3e919784562b92ede9c7763c0b77fdc",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/verification.md": {
-    "mtime": 1791741494.1146722,
-    "seen": 1791776716.973655,
-    "ast_hash": "1230ab796fd5baea6338706459be8915",
+    "mtime": 1791776721.903666,
+    "seen": 1791776741.2795417,
+    "ast_hash": "66d3bfcce68c98eca10e5c6760bd990b",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/web-build.txt": {
-    "mtime": 1791741494.1146722,
-    "seen": 1791776716.9736562,
-    "ast_hash": "29dfe5a1bc633dfaa192bfad2aac71b6",
+    "mtime": 1791776721.901666,
+    "seen": 1791776741.2795439,
+    "ast_hash": "f86fc895a3637858672ba6092a016a7b",
     "semantic_hash": ""
   },
   "specs/007-organization-tenancy-audit/evidence/us1/web-typecheck.txt": {
@@ -5865,6 +5865,24 @@
     "mtime": 1791661109.5410423,
     "seen": 1791776716.9740174,
     "ast_hash": "c182dfcb7bdb8ef69abedad3d4aa1906",
+    "semantic_hash": ""
+  },
+  "specs/007-organization-tenancy-audit/evidence/critical-repairs/full-report.json": {
+    "mtime": 1791776581.7188425,
+    "seen": 1791776741.2782617,
+    "ast_hash": "b3a5afdd82e5897be68e6191889fddaf",
+    "semantic_hash": ""
+  },
+  "specs/007-organization-tenancy-audit/evidence/phase-2/full-report.json": {
+    "mtime": 1791744860.7007537,
+    "seen": 1791776741.2782853,
+    "ast_hash": "033a56c9e24b0fa45b910e521904ad31",
+    "semantic_hash": ""
+  },
+  "specs/007-organization-tenancy-audit/evidence/us1/source-files-sha256.json": {
+    "mtime": 1791741494.1396728,
+    "seen": 1791776741.2782872,
+    "ast_hash": "d62cabc8f43f55e09a663ff16970883b",
     "semantic_hash": ""
   }
 }

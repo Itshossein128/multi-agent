@@ -1,4 +1,7 @@
 import type { PgPool, PgClient } from "../../../../src/memory/infrastructure";
+import { withOrganization, scopedDbClient, type PrincipalKind } from "../../../../src/studio/infrastructure/withOrganization";
+
+
 import { prepareInMemoryCommit } from "../../../../src/studio/infrastructure/in-memory-transaction";
 
 export type GoalStatus = "proposed" | "active" | "completed" | "cancelled";
@@ -81,32 +84,51 @@ function goalFromRow(row: Record<string, unknown>): OrganizationGoal {
 
 export class PostgresOrganizationStore implements OrganizationStore {
   constructor(private readonly pool: PgPool, private readonly client?: PgClient) {}
-  private query(text: string, values?: unknown[]) { return (this.client ?? this.pool).query(text, values); }
+  private query(text: string, values?: unknown[]) { return (this.client ?? scopedDbClient(this.pool) ?? this.pool).query(text, values); }
+
+  private scopedExecution<T>(
+    tenantId: string | undefined,
+    principalKind: PrincipalKind | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    if (this.client || scopedDbClient(this.pool) || !tenantId?.trim()) {
+      return fn();
+    }
+    return withOrganization(this.pool, tenantId.trim(), principalKind ?? "service", () => fn());
+  }
+
   async goals(tenantId: string): Promise<OrganizationGoal[]> {
-    const result = await this.query("SELECT * FROM studio_organization_goals WHERE tenant_id=$1 ORDER BY created_at", [tenantId]);
-    return result.rows.map(goalFromRow);
+    return this.scopedExecution(tenantId, "service", async () => {
+      const result = await this.query("SELECT * FROM studio_organization_goals WHERE tenant_id=$1 ORDER BY created_at", [tenantId]);
+      return result.rows.map(goalFromRow);
+    });
   }
+
   async saveGoal(goal: OrganizationGoal): Promise<OrganizationGoal> {
-    const result = await this.query(
-      `INSERT INTO studio_organization_goals (id,tenant_id,title,description,status,parent_goal_id,project_id,owner_agent_id,proposed_by_agent_id,created_by,created_at,updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,status=EXCLUDED.status,
-         parent_goal_id=EXCLUDED.parent_goal_id,project_id=EXCLUDED.project_id,owner_agent_id=EXCLUDED.owner_agent_id,updated_at=EXCLUDED.updated_at
-       WHERE studio_organization_goals.tenant_id=EXCLUDED.tenant_id RETURNING *`,
-      [goal.id,goal.tenantId,goal.title,goal.description,goal.status,goal.parentGoalId,goal.projectId,goal.ownerAgentId,goal.proposedByAgentId,goal.createdBy,goal.createdAt,goal.updatedAt],
-    );
-    if (!result.rows[0]) throw new Error("Goal tenant mismatch");
-    return goalFromRow(result.rows[0]);
+    return this.scopedExecution(goal.tenantId, "service", async () => {
+      const result = await this.query(
+        `INSERT INTO studio_organization_goals (id,tenant_id,title,description,status,parent_goal_id,project_id,owner_agent_id,proposed_by_agent_id,created_by,created_at,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,status=EXCLUDED.status,
+           parent_goal_id=EXCLUDED.parent_goal_id,project_id=EXCLUDED.project_id,owner_agent_id=EXCLUDED.owner_agent_id,updated_at=EXCLUDED.updated_at
+         WHERE studio_organization_goals.tenant_id=EXCLUDED.tenant_id RETURNING *`,
+        [goal.id,goal.tenantId,goal.title,goal.description,goal.status,goal.parentGoalId,goal.projectId,goal.ownerAgentId,goal.proposedByAgentId,goal.createdBy,goal.createdAt,goal.updatedAt],
+      );
+      if (!result.rows[0]) throw new Error("Goal tenant mismatch");
+      return goalFromRow(result.rows[0]);
+    });
   }
+
   async reportingLines(tenantId: string): Promise<ReportingLine[]> {
-    const result = await this.query("SELECT tenant_id,agent_id,manager_agent_id,role FROM studio_agent_reporting WHERE tenant_id=$1", [tenantId]);
-    return result.rows.map(row => ({ tenantId: String(row.tenant_id), agentId: String(row.agent_id), managerAgentId: row.manager_agent_id as string | null, role: row.role as ReportingLine["role"] }));
+    return this.scopedExecution(tenantId, "service", async () => {
+      const result = await this.query("SELECT tenant_id,agent_id,manager_agent_id,role FROM studio_agent_reporting WHERE tenant_id=$1", [tenantId]);
+      return result.rows.map(row => ({ tenantId: String(row.tenant_id), agentId: String(row.agent_id), managerAgentId: row.manager_agent_id as string | null, role: row.role as ReportingLine["role"] }));
+    });
   }
+
   async saveReportingLine(line: ReportingLine): Promise<ReportingLine> {
     if (this.client) throw new Error("Reporting-line updates are not supported inside an organization unit of work");
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
+    return withOrganization(this.pool, line.tenantId, "service", async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`organization:${line.tenantId}`]);
       const current = await client.query("SELECT agent_id,manager_agent_id,role FROM studio_agent_reporting WHERE tenant_id=$1", [line.tenantId]);
       const lines = current.rows.map(row => ({ agentId: String(row.agent_id), managerAgentId: row.manager_agent_id as string | null, role: row.role as ReportingLine["role"] }));
@@ -124,9 +146,7 @@ export class PostgresOrganizationStore implements OrganizationStore {
          ON CONFLICT (tenant_id,agent_id) DO UPDATE SET manager_agent_id=EXCLUDED.manager_agent_id,role=EXCLUDED.role`,
         [line.tenantId,line.agentId,line.managerAgentId,line.role],
       );
-      await client.query("COMMIT");
       return line;
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    });
   }
 }

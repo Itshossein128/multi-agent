@@ -1,4 +1,6 @@
 import type { PgPool } from "../../../../src/memory/infrastructure";
+import { withOrganization, scopedDbClient } from "../../../../src/studio/infrastructure/withOrganization";
+
 
 export type BudgetScope = "company" | "agent" | "project";
 export interface BudgetRecord {
@@ -86,39 +88,42 @@ function decode(row: Record<string, unknown>): BudgetRecord {
 
 export class PostgresBudgetStore implements BudgetStore {
   constructor(private readonly pool: PgPool) {}
-  async list(tenantId: string) {
-    const result = await this.pool.query("SELECT * FROM studio_budgets WHERE tenant_id=$1 ORDER BY scope,scope_id", [tenantId]);
-    return result.rows.map(row => currentPeriodView(decode(row)));
+
+  private query(text: string, values?: unknown[]) {
+    return (scopedDbClient(this.pool) ?? this.pool).query(text, values);
   }
+
+  async list(tenantId: string) {
+    return withOrganization(this.pool, tenantId, "service", async (client) => {
+      const result = await client.query("SELECT * FROM studio_budgets WHERE tenant_id=$1 ORDER BY scope,scope_id", [tenantId]);
+      return result.rows.map(row => currentPeriodView(decode(row)));
+    });
+  }
+
   async setBudget(input: Pick<BudgetRecord, "tenantId" | "scope" | "scopeId" | "limitUsd" | "thresholdPercent">) {
     const period = month();
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
+    return withOrganization(this.pool, input.tenantId, "service", async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`budget-tenant:${input.tenantId}`]);
       const result = await client.query(
-      `INSERT INTO studio_budgets (tenant_id,scope,scope_id,limit_usd,threshold_percent,period_start,period_end)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (tenant_id,scope,scope_id) DO UPDATE SET limit_usd=EXCLUDED.limit_usd,threshold_percent=EXCLUDED.threshold_percent,
-         spent_usd=CASE WHEN studio_budgets.period_start=EXCLUDED.period_start OR studio_budgets.reserved_usd>0 THEN studio_budgets.spent_usd ELSE 0 END,
-         reserved_usd=studio_budgets.reserved_usd,
-         period_start=CASE WHEN studio_budgets.reserved_usd>0 THEN studio_budgets.period_start ELSE EXCLUDED.period_start END,
-         period_end=CASE WHEN studio_budgets.reserved_usd>0 THEN studio_budgets.period_end ELSE EXCLUDED.period_end END RETURNING *`,
-      [input.tenantId,input.scope,input.scopeId,input.limitUsd,input.thresholdPercent,period.start,period.end],
-    );
-      await client.query("COMMIT");
+        `INSERT INTO studio_budgets (tenant_id,scope,scope_id,limit_usd,threshold_percent,period_start,period_end)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (tenant_id,scope,scope_id) DO UPDATE SET limit_usd=EXCLUDED.limit_usd,threshold_percent=EXCLUDED.threshold_percent,
+           spent_usd=CASE WHEN studio_budgets.period_start=EXCLUDED.period_start OR studio_budgets.reserved_usd>0 THEN studio_budgets.spent_usd ELSE 0 END,
+           reserved_usd=studio_budgets.reserved_usd,
+           period_start=CASE WHEN studio_budgets.reserved_usd>0 THEN studio_budgets.period_start ELSE EXCLUDED.period_start END,
+           period_end=CASE WHEN studio_budgets.reserved_usd>0 THEN studio_budgets.period_end ELSE EXCLUDED.period_end END RETURNING *`,
+        [input.tenantId,input.scope,input.scopeId,input.limitUsd,input.thresholdPercent,period.start,period.end],
+      );
       return decode(result.rows[0]);
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    });
   }
+
   async reserve(runId: string, tenantId: string, scopeKeys: { scope: BudgetScope; scopeId: string }[], amountUsd: number) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
+    return withOrganization(this.pool, tenantId, "service", async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`budget:${runId}`]);
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`budget-tenant:${tenantId}`]);
       const existing = await client.query("SELECT run_id FROM studio_budget_reservations WHERE run_id=$1", [runId]);
-      if (existing.rows.length) { await client.query("COMMIT"); return true; }
+      if (existing.rows.length) return true;
       const period = month();
       const sorted = [...scopeKeys].sort((a,b) => `${a.scope}:${a.scopeId}`.localeCompare(`${b.scope}:${b.scopeId}`));
       const selected: { scope: BudgetScope; scopeId: string }[] = [];
@@ -132,15 +137,18 @@ export class PostgresBudgetStore implements BudgetStore {
            WHERE tenant_id=$1 AND scope=$2 AND scope_id=$3 AND spent_usd+reserved_usd+$4::numeric<=limit_usd RETURNING 1`,
           [tenantId,scope.scope,scope.scopeId,amountUsd],
         );
-        if (!admitted.rows.length) { await client.query("ROLLBACK"); return false; }
+        if (!admitted.rows.length) { throw new Error("BUDGET_EXCEEDED"); }
         selected.push(scope);
       }
-      if (selected.length === 0) { await client.query("COMMIT"); return true; }
+      if (selected.length === 0) return true;
       await client.query("INSERT INTO studio_budget_reservations (run_id,tenant_id,amount_usd,scopes) VALUES ($1,$2,$3,$4::jsonb)", [runId,tenantId,amountUsd,JSON.stringify(selected)]);
-      await client.query("COMMIT"); return true;
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+      return true;
+    }).catch(err => {
+      if (err.message === "BUDGET_EXCEEDED") return false;
+      throw err;
+    });
   }
+
   async settle(runId: string, actualUsd: number) {
     const client = await this.pool.connect();
     try {
@@ -148,6 +156,9 @@ export class PostgresBudgetStore implements BudgetStore {
       const result = await client.query("SELECT * FROM studio_budget_reservations WHERE run_id=$1 FOR UPDATE", [runId]);
       if (!result.rows.length || result.rows[0].settled_at) { await client.query("COMMIT"); return; }
       const reservation = result.rows[0];
+      const tenantId = String(reservation.tenant_id);
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+      await client.query("SELECT set_config('app.principal_kind', $1, true)", ["service"]);
       const scopes = reservation.scopes as { scope: BudgetScope; scopeId: string }[];
       for (const scope of scopes) {
         const update = await client.query(
@@ -170,12 +181,16 @@ export class PostgresBudgetStore implements BudgetStore {
     } catch (error) { await client.query("ROLLBACK"); throw error; }
     finally { client.release(); }
   }
+
   async alerts(tenantId: string): Promise<BudgetAlert[]> {
-    const result = await this.pool.query("SELECT * FROM studio_budget_alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100", [tenantId]);
-    return result.rows.map(row => ({ tenantId: String(row.tenant_id), scope: row.scope as BudgetScope, scopeId: String(row.scope_id), level: row.level as BudgetAlert["level"], createdAt: new Date(row.created_at as string).toISOString(), spentUsd: Number(row.spent_usd), limitUsd: Number(row.limit_usd) }));
+    return withOrganization(this.pool, tenantId, "service", async (client) => {
+      const result = await client.query("SELECT * FROM studio_budget_alerts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 100", [tenantId]);
+      return result.rows.map(row => ({ tenantId: String(row.tenant_id), scope: row.scope as BudgetScope, scopeId: String(row.scope_id), level: row.level as BudgetAlert["level"], createdAt: new Date(row.created_at as string).toISOString(), spentUsd: Number(row.spent_usd), limitUsd: Number(row.limit_usd) }));
+    });
   }
+
   async openReservations() {
-    const result = await this.pool.query("SELECT run_id FROM studio_budget_reservations WHERE settled_at IS NULL", []);
+    const result = await this.query("SELECT run_id FROM studio_budget_reservations WHERE settled_at IS NULL", []);
     return result.rows.map(row => String(row.run_id));
   }
 }

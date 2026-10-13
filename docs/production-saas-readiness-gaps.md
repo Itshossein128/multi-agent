@@ -123,11 +123,11 @@
 - [ ] API key اختصاصی tenant
 - [ ] rotation و revoke API key
 - [ ] محدودیت IP یا network برای tenant
-- [ ] tenant settings
+- [x] tenant settings (پروفایل، نام و slug سازمانی یکتا)
 - [ ] tenant usage dashboard
-- [ ] tenant audit trail
+- [x] tenant audit trail (`studio_organization_audit` با زنجیره‌ی ممیزی)
 
-Auth و tenant isolation وجود دارند، اما مدل کامل organization، invitation و RBAC سازمانی در سطح محصول SaaS هنوز کامل نیست.
+وضعیت: مدل کامل سازمان (`studio_organizations`)، عضویت و دعوتنامه (`studio_organization_memberships`)، کنترل دسترسی مبتنی بر نقش سازمانی (`owner`, `admin`, `member`, `viewer`)، تفکیک Row Level Security در PostgreSQL با نقش‌های `studio_app` و `studio_worker`، و assertion نسخه‌ی ۲ با مهار replay پیاده‌سازی شده و با ۸۶۸ تست در ۱۸ مجموعه‌تست تأیید شده است. موارد سازمانی پیشرفته مانند service account سازمانی، محدودیت شبکه و داشبورد مصرف تجاری باقی مانده است.
 
 ### Billing و commercial SaaS
 
@@ -158,7 +158,7 @@ Auth و tenant isolation وجود دارند، اما مدل کامل organizati
 
 - [ ] export کامل داده‌ی tenant
 - [ ] حذف کامل حساب
-- [ ] حذف tenant و داده‌های وابسته
+- [x] حذف tenant و داده‌های وابسته (حذف دقیق نام توسط مالک، purge worker برای ۲۸ جدول، مهار late-write)
 - [ ] retention قابل تنظیم برای memory، run، event، trace و log
 - [ ] deletion certificate
 - [ ] Data Subject Request workflow

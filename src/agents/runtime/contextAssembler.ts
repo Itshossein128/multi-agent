@@ -290,7 +290,17 @@ export class DefaultContextAssembler implements ContextAssembler {
         const parsed = JSON.parse(ltmContext) as {
           type?: string;
           warning?: string;
-          memories?: Array<{ id: string; kind?: string; content?: string }>;
+          memories?: Array<{
+            id: string;
+            kind?: string;
+            subject?: string;
+            content?: string;
+            namespace?: { scope?: string; id?: string };
+            updatedAt?: string;
+            supersededByMemoryId?: string;
+            supersedesMemoryId?: string;
+            [key: string]: unknown;
+          }>;
         };
         if (parsed && Array.isArray(parsed.memories) && parsed.memories.length > 0) {
           const higherPriorityTexts: string[] = [];
@@ -305,8 +315,69 @@ export class DefaultContextAssembler implements ContextAssembler {
             higherPriorityTexts.push(serializeWorkingMemoryForContext(workingMemorySelection.selected).toLowerCase());
           }
 
+          // 1. Explicit temporal supersession
+          const droppedIds = new Set<string>();
+          for (const a of parsed.memories) {
+            for (const b of parsed.memories) {
+              if (a.id === b.id) continue;
+              if (a.supersededByMemoryId === b.id || b.supersedesMemoryId === a.id) {
+                droppedIds.add(a.id);
+              }
+            }
+          }
+
+          // 2. Cross-scope precedence & conflict resolution: run > agent > project > organization
+          const SCOPE_PRECEDENCE: Record<string, number> = {
+            workflow: 4,
+            run: 4,
+            agent: 3,
+            project: 2,
+            user: 2,
+            organization: 1,
+          };
+
+          for (let i = 0; i < parsed.memories.length; i++) {
+            const a = parsed.memories[i];
+            if (droppedIds.has(a.id)) continue;
+            for (let j = i + 1; j < parsed.memories.length; j++) {
+              const b = parsed.memories[j];
+              if (droppedIds.has(b.id)) continue;
+
+              const isConflict = Boolean(
+                (a.subject && b.subject && a.subject.toLowerCase() === b.subject.toLowerCase()) ||
+                (a.supersededByMemoryId && a.supersededByMemoryId === b.id) ||
+                (b.supersededByMemoryId && b.supersededByMemoryId === a.id)
+              );
+
+              if (isConflict) {
+                const rankA = SCOPE_PRECEDENCE[a.namespace?.scope ?? "organization"] ?? 1;
+                const rankB = SCOPE_PRECEDENCE[b.namespace?.scope ?? "organization"] ?? 1;
+                if (rankA > rankB) {
+                  droppedIds.add(b.id);
+                } else if (rankB > rankA) {
+                  droppedIds.add(a.id);
+                  break;
+                } else {
+                  // Same scope rank: newer updatedAt wins
+                  const timeA = Date.parse(a.updatedAt ?? "") || 0;
+                  const timeB = Date.parse(b.updatedAt ?? "") || 0;
+                  if (timeB > timeA) {
+                    droppedIds.add(a.id);
+                    break;
+                  } else if (timeA > timeB) {
+                    droppedIds.add(b.id);
+                  }
+                }
+              }
+            }
+          }
+
           const retainedMemories: Array<{ id: string; kind?: string; content?: string }> = [];
           for (const mem of parsed.memories) {
+            if (droppedIds.has(mem.id)) {
+              duplicateMemoryIds.push(mem.id);
+              continue;
+            }
             const content = typeof mem.content === "string" ? mem.content.toLowerCase().trim() : "";
             const isSubsumed = content.length > 10 && higherPriorityTexts.some(src => src.includes(content));
             if (isSubsumed) {

@@ -88,6 +88,13 @@ export interface OrganizationProfile {
   updatedAt: string;
 }
 
+export interface UpdateOrganizationProfileInput {
+  name?: string;
+  description?: string;
+  config?: Record<string, unknown>;
+  slug?: string;
+}
+
 export interface OrganizationMembership {
   organizationId: string;
   userId: string;
@@ -227,6 +234,7 @@ export interface StudioPrincipal {
   principalKind?: "user" | "service";
   userId: string;
   tenantId: string;
+  allowOwnershipBypass?: boolean;
 }
 
 export type StudioEntityStatusFilter = "active" | "retired" | "all";
@@ -289,6 +297,10 @@ export interface StudioStore {
   getOrganizationBySlug(slug: string): Promise<OrganizationProfile | null>;
   createOrganizationProfile(
     profile: OrganizationProfile,
+    principal: StudioPrincipal,
+  ): Promise<OrganizationProfile>;
+  updateOrganizationProfile(
+    updates: UpdateOrganizationProfileInput,
     principal: StudioPrincipal,
   ): Promise<OrganizationProfile>;
   /** List organizations where the user has an active membership. */

@@ -36,7 +36,7 @@ export function orgFeatureFlagsFromEnvironment(
   return {
     membershipEnforcement: parseMembership(env.ORG_MEMBERSHIP_ENFORCEMENT),
     memoryScope: parseBool(env.ORG_MEMORY_SCOPE, false),
-    deletionEnabled: parseBool(env.ORG_DELETION_ENABLED, false),
+    deletionEnabled: parseBool(env.ORG_DELETION_ENABLED, true),
     rls: parseRls(env.ORG_RLS),
   };
 }

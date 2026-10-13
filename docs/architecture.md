@@ -24,8 +24,11 @@ LangGraph StateGraph
 ## مرزهای اعتماد
 
 - مرورگر فقط control plane است و هیچ workflow، agent، tool، credential یا principal ارسالی از browser را authoritative نمی‌کند.
-- Auth.js در Next.js هویت کاربر را از session resolve می‌کند. BFF فقط headerهای مجاز را forward کرده و یک assertion کوتاه‌عمر HMAC با `userId` و `tenantId` می‌سازد.
-- Execution Server assertion را verify می‌کند و ownership/tenant را در Store و APIها اعمال می‌کند. نبودن یا نامعتبر بودن assertion باید fail-closed باشد.
+- Auth.js در Next.js هویت کاربر را از session resolve می‌کند. BFF فقط headerهای مجاز را forward کرده و یک assertion کوتاه‌عمر HMAC نسخه‌ی ۲ با `{ userId, organizationId, exp, nonce, v: 2 }` می‌سازد. شناسه و دسترسی سازمانی با membership کاربر resolve می‌شود و حملات replay با رد nonceهای تکراری مهار می‌شوند.
+- Execution Server assertion را verify می‌کند و ownership/organization را در Store و APIها اعمال می‌کند. نبودن یا نامعتبر بودن assertion باید fail-closed باشد.
+- مدل چندمستاجری بر پایه‌ی `studio_organizations` و `studio_organization_memberships` استوار است. دسترسی‌ها بر اساس چهار نقش سازمانی (`owner`, `admin`, `member`, `viewer`) و مجوزهای صریح اعتبارسنجی می‌شوند.
+- لایه‌ی پایگاه‌داده از PostgreSQL Row Level Security (`ENABLE` + `FORCE ROW LEVEL SECURITY`) در تمام ۲۸ جدول سازمانی استفاده می‌کند؛ اتصالات وب با نقش کمینه‌دسترسی `studio_app` و workerها با `studio_worker` اجرا می‌شوند.
+- فرآیند حذف سازمان (`ORG_DELETION_ENABLED`) نیازمند تأیید دقیق نام توسط مالک است، فوراً سازمان را در وضعیت `deleting` قرار می‌دهد تا از نوشتن مجدد جلوگیری شود، تمام ۲۸ منبع ذخیره‌سازی را پاکسازی می‌کند و رکوردهای audit بروکر را بدون اطلاعات حساس حفظ می‌نماید.
 - Workflow validation و انتخاب agent/tool در سرور انجام می‌شود. داده‌ی client فقط پیشنهاد یا درخواست است.
 - credentialهای provider در AgentRecord، WorkflowDefinition، ToolRecord، run input، event و `WorkerSpec.env` ذخیره نمی‌شوند.
 - در production هیچ long-lived secretی از process environment برای providerها و ابزارها استفاده نمی‌شود؛ execution server فقط lease تک‌مصرف و کوتاه‌عمر از credential broker خارجی می‌گیرد و نبود آن fail-closed است.

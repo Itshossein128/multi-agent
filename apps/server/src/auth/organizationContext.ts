@@ -7,6 +7,15 @@ import { permissionsForRole } from "./organizationPermissions";
 
 export type PrincipalKind = "user" | "service";
 
+export interface OrganizationServiceGrant {
+  serviceId: string;
+  permissions: OrganizationPermission[];
+  status?: "active" | "revoked";
+  allowOwnershipBypass?: boolean;
+  role?: OrganizationMembershipRole;
+  organizationId?: string;
+}
+
 export interface OrganizationContext {
   organizationId: string;
   userId: string;
@@ -15,6 +24,7 @@ export interface OrganizationContext {
   permissions: OrganizationPermission[];
   membershipVersion: number;
   resolvedAt: number;
+  allowOwnershipBypass?: boolean;
 }
 
 export class OrganizationContextDeniedError extends Error {
@@ -93,5 +103,55 @@ export class OrganizationContextResolver {
     if (!profile) throw new OrganizationContextDeniedError("Organization access denied");
     const context = await this.resolve(profile.id, userId);
     return { ...context, slug: profile.slug };
+  }
+
+  async resolveService(organizationId: string, serviceId: string): Promise<OrganizationContext> {
+    if (!organizationId?.trim() || !serviceId?.trim()) {
+      throw new OrganizationContextDeniedError("Organization access denied");
+    }
+    const profile = await this.store.getOrganizationProfile({ userId: serviceId, tenantId: organizationId });
+    if (!profile || profile.status !== "active") {
+      throw new OrganizationContextDeniedError("Organization access denied");
+    }
+
+    const grants: OrganizationServiceGrant[] = Array.isArray((profile.config as any)?.serviceGrants)
+      ? ((profile.config as any).serviceGrants as OrganizationServiceGrant[])
+      : [];
+
+    const grant = grants.find((g) => g.serviceId === serviceId);
+    if (grant) {
+      if (grant.organizationId && grant.organizationId !== organizationId) {
+        throw new OrganizationContextDeniedError("Organization access denied");
+      }
+      if (grant.status === "revoked") {
+        throw new OrganizationContextDeniedError("Organization access denied");
+      }
+      return {
+        organizationId,
+        userId: serviceId,
+        principalKind: "service",
+        role: grant.role ?? "viewer",
+        permissions: grant.permissions,
+        membershipVersion: 0,
+        resolvedAt: this.now(),
+        allowOwnershipBypass: grant.allowOwnershipBypass ?? false,
+      };
+    }
+
+    const SYSTEM_SERVICES = new Set(["system-heartbeat", "system-trigger"]);
+    if (SYSTEM_SERVICES.has(serviceId)) {
+      return {
+        organizationId,
+        userId: serviceId,
+        principalKind: "service",
+        role: "admin",
+        permissions: ["org.read", "resources.read", "resources.write", "runs.execute"],
+        membershipVersion: 0,
+        resolvedAt: this.now(),
+        allowOwnershipBypass: true,
+      };
+    }
+
+    throw new OrganizationContextDeniedError("Organization access denied");
   }
 }

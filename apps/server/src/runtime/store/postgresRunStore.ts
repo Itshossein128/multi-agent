@@ -7,6 +7,8 @@ import { InMemoryRunStore } from "./inMemoryRunStore";
 import { asIso } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { log } from "../../logging";
+import { scopedDbClient } from "../../../../../src/studio/infrastructure/withOrganization";
+
 
 type Listener = (event: RunEvent) => void;
 
@@ -51,6 +53,10 @@ export class PostgresRunStore implements RunStoreContract {
     }
   }
 
+  private query(text: string, values?: unknown[]) {
+    return (scopedDbClient(this.pool) ?? this.pool).query(text, values);
+  }
+
   private startLeaseHeartbeat(): void {
     if (this.leaseRenewalIntervalMs <= 0 || this.leaseHeartbeatTimer) return;
     this.leaseHeartbeatTimer = setInterval(() => {
@@ -75,7 +81,7 @@ export class PostgresRunStore implements RunStoreContract {
       );
       if (!activeRuns.length) return [];
       const ids = activeRuns.map(r => r.id);
-      const res = await this.pool.query(
+      const res = await this.query(
         `UPDATE studio_runs
             SET execution_lease_expires_at = now() + ($1 || ' milliseconds')::interval,
                 execution_heartbeat_at = now(),
@@ -159,7 +165,7 @@ export class PostgresRunStore implements RunStoreContract {
     if (this.initiatorColumns === false) return;
     if (run.initiatorKind === undefined && run.membershipVersionAtStart === undefined) return;
     try {
-      await this.pool.query(
+      await this.query(
         `UPDATE studio_runs SET initiator_kind = COALESCE($2, initiator_kind),
            membership_version_at_start = COALESCE($3, membership_version_at_start), updated_at = now()
          WHERE id = $1`,
@@ -203,18 +209,18 @@ export class PostgresRunStore implements RunStoreContract {
 
   /** PostgreSQL execution must not start without the fencing columns from migration 016. */
   async assertLeaseSchema(): Promise<void> {
-    await this.pool.query("SELECT execution_owner_id, execution_lease_expires_at FROM studio_runs LIMIT 0");
+    await this.query("SELECT execution_owner_id, execution_lease_expires_at FROM studio_runs LIMIT 0");
     this.hasLeaseColumns = true;
   }
 
   /** Read authoritative status for cross-replica budget recovery. */
   async getDurableStatus(runId: string): Promise<RunStatus | undefined> {
-    const result = await this.pool.query("SELECT status FROM studio_runs WHERE id = $1", [runId]);
+    const result = await this.query("SELECT status FROM studio_runs WHERE id = $1", [runId]);
     return result.rows[0]?.status as RunStatus | undefined;
   }
 
   async hydrate(): Promise<void> {
-    const runs = await this.pool.query("SELECT * FROM studio_runs ORDER BY started_at ASC");
+    const runs = await this.query("SELECT * FROM studio_runs ORDER BY started_at ASC");
     if (runs.rows.length > 0) {
       this.hasLeaseColumns = Object.prototype.hasOwnProperty.call(runs.rows[0], "execution_owner_id");
     }
@@ -260,14 +266,14 @@ export class PostgresRunStore implements RunStoreContract {
       if (hydrated && row.procedural_memory_status) hydrated.proceduralMemoryStatus = row.procedural_memory_status;
       if (row.paused_context) this.memory.setPausedContext(run.id, row.paused_context as RunEntry["pausedContext"]);
 
-      const events = await this.pool.query("SELECT event FROM studio_run_events WHERE run_id = $1 ORDER BY sequence ASC", [run.id]);
+      const events = await this.query("SELECT event FROM studio_run_events WHERE run_id = $1 ORDER BY sequence ASC", [run.id]);
       const entry = this.memory.get(run.id)!;
       for (const eventRow of events.rows) {
         const event = eventRow.event as RunEvent;
         entry.events.push(event);
       }
 
-      const approvals = await this.pool.query("SELECT * FROM studio_approvals WHERE run_id = $1 ORDER BY requested_at ASC", [run.id]);
+      const approvals = await this.query("SELECT * FROM studio_approvals WHERE run_id = $1 ORDER BY requested_at ASC", [run.id]);
       for (const approvalRow of approvals.rows) {
         entry.approvals.push({
           id: String(approvalRow.id),
@@ -333,7 +339,7 @@ export class PostgresRunStore implements RunStoreContract {
       try {
         if (this.hasLeaseColumns !== false) {
           try {
-            await this.pool.query(
+            await this.query(
               `INSERT INTO studio_runs (
                  id, workflow_id, task_id, status, started_at, completed_at, input, output, result, error, current_node_id, metadata,
                  memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, tools_snapshot, updated_at,
@@ -382,7 +388,7 @@ export class PostgresRunStore implements RunStoreContract {
           }
         }
 
-        await this.pool.query(
+        await this.query(
           `INSERT INTO studio_runs (
              id, workflow_id, task_id, status, started_at, completed_at, input, output, result, error, current_node_id, metadata,
              memory_owner_principal_id, memory_owner_tenant_id, workflow_snapshot, agents_snapshot, tools_snapshot, updated_at,
@@ -451,7 +457,7 @@ export class PostgresRunStore implements RunStoreContract {
   async findDurableRunIdByTriggerDispatchKey(key: string, tenantId?: string): Promise<string | null> {
     const memoryHit = this.memory.findByTriggerDispatchKey?.(key, tenantId);
     if (memoryHit) return memoryHit.run.id;
-    const res = await this.pool.query(
+    const res = await this.query(
       "SELECT id FROM studio_runs WHERE metadata->>'triggerDispatchKey' = $1 AND ($2::text IS NULL OR tenant_id = $2::text) LIMIT 1",
       [key, tenantId ?? null]
     );
@@ -480,7 +486,7 @@ export class PostgresRunStore implements RunStoreContract {
         }
         if (this.hasLeaseColumns !== false) {
           try {
-            await this.pool.query(
+            await this.query(
               `INSERT INTO studio_run_events (run_id, sequence, event, tenant_id)
                SELECT $1, $2, $3::jsonb, r.tenant_id FROM studio_runs r
                 WHERE r.id = $1 AND r.execution_owner_id = $4 AND r.execution_lease_expires_at > now()
@@ -494,7 +500,7 @@ export class PostgresRunStore implements RunStoreContract {
             this.hasLeaseColumns = false;
           }
         }
-        await this.pool.query(
+        await this.query(
           `INSERT INTO studio_run_events (run_id, sequence, event, tenant_id)
            SELECT $1, $2, $3::jsonb, tenant_id FROM studio_runs WHERE id = $1
            ON CONFLICT (run_id, sequence) DO NOTHING`,
@@ -589,7 +595,7 @@ export class PostgresRunStore implements RunStoreContract {
         if (isTerminal) {
           if (this.hasLeaseColumns !== false) {
             try {
-              const updated = await this.pool.query(
+              const updated = await this.query(
                 `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
                    result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb,
                    execution_owner_id = $10,
@@ -621,7 +627,7 @@ export class PostgresRunStore implements RunStoreContract {
               }
             }
           }
-          await this.pool.query(
+          await this.query(
             `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
                result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb, updated_at = now()
              WHERE id = $1`,
@@ -640,7 +646,7 @@ export class PostgresRunStore implements RunStoreContract {
         } else {
           if (this.hasLeaseColumns !== false) {
             try {
-              const updated = await this.pool.query(
+              const updated = await this.query(
                 `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
                    result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb,
                    execution_owner_id = COALESCE(execution_owner_id, $10),
@@ -674,7 +680,7 @@ export class PostgresRunStore implements RunStoreContract {
               }
             }
           }
-          await this.pool.query(
+          await this.query(
             `UPDATE studio_runs SET status = $2, completed_at = $3::timestamptz, input = $4::jsonb, output = $5::jsonb,
                result = $6::jsonb, error = $7, current_node_id = $8, metadata = $9::jsonb, updated_at = now()
              WHERE id = $1`,
@@ -823,7 +829,7 @@ export class PostgresRunStore implements RunStoreContract {
         ];
       if (this.hasLeaseColumns !== false) {
         try {
-          const inserted = await this.pool.query(
+          const inserted = await this.query(
             `INSERT INTO studio_approvals (id, run_id, node_id, status, message, requested_at, resolved_at, context, response, metadata, timeout_seconds, tenant_id)
              SELECT $1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8::jsonb,$9,$10::jsonb,$11, r.tenant_id
                FROM studio_runs r WHERE r.id=$2 AND r.execution_owner_id=$12 AND r.execution_lease_expires_at > now()
@@ -839,7 +845,7 @@ export class PostgresRunStore implements RunStoreContract {
           this.hasLeaseColumns = false;
         }
       }
-      await this.pool.query(
+      await this.query(
         `INSERT INTO studio_approvals (id, run_id, node_id, status, message, requested_at, resolved_at, context, response, metadata, timeout_seconds, tenant_id)
          SELECT $1,$2,$3,$4,$5,$6::timestamptz,$7::timestamptz,$8::jsonb,$9,$10::jsonb,$11, tenant_id
            FROM studio_runs WHERE id=$2
@@ -872,7 +878,7 @@ export class PostgresRunStore implements RunStoreContract {
         ];
         if (this.hasLeaseColumns !== false) {
           try {
-            const updated = await this.pool.query(
+            const updated = await this.query(
               `UPDATE studio_approvals SET status = $2, resolved_at = $3::timestamptz, response = $4, context = $5::jsonb, metadata = $6::jsonb
                WHERE run_id = $7 AND id = $1 AND EXISTS (
                  SELECT 1 FROM studio_runs WHERE id=$7 AND execution_owner_id=$8 AND execution_lease_expires_at > now()
@@ -887,7 +893,7 @@ export class PostgresRunStore implements RunStoreContract {
             this.hasLeaseColumns = false;
           }
         }
-        await this.pool.query(
+        await this.query(
           `UPDATE studio_approvals SET status = $2, resolved_at = $3::timestamptz, response = $4, context = $5::jsonb, metadata = $6::jsonb
            WHERE run_id = $7 AND id = $1`,
           values,
@@ -910,7 +916,7 @@ export class PostgresRunStore implements RunStoreContract {
     this.enqueue(async () => {
       if (this.hasLeaseColumns !== false) {
         try {
-          const updated = await this.pool.query(
+          const updated = await this.query(
             `UPDATE studio_runs SET paused_context = $2::jsonb, updated_at = now()
              WHERE id = $1 AND execution_owner_id = $3 AND execution_lease_expires_at > now()
                AND status IN ('queued','running','waiting_for_human')`,
@@ -924,7 +930,7 @@ export class PostgresRunStore implements RunStoreContract {
           this.hasLeaseColumns = false;
         }
       }
-      await this.pool.query("UPDATE studio_runs SET paused_context = $2::jsonb, updated_at = now() WHERE id = $1", [
+      await this.query("UPDATE studio_runs SET paused_context = $2::jsonb, updated_at = now() WHERE id = $1", [
         runId,
         context ? JSON.stringify(context) : null,
       ]);
@@ -947,7 +953,7 @@ export class PostgresRunStore implements RunStoreContract {
     this.assertHealthy();
     this.memory.markEpisodicMemoryPending(runId);
     this.enqueue(async () => {
-      await this.pool.query("UPDATE studio_runs SET episodic_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
+      await this.query("UPDATE studio_runs SET episodic_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
     });
   }
 
@@ -955,7 +961,7 @@ export class PostgresRunStore implements RunStoreContract {
     this.assertHealthy();
     this.memory.setEpisodicMemoryStatus(runId, status);
     this.enqueue(async () => {
-      await this.pool.query("UPDATE studio_runs SET episodic_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
+      await this.query("UPDATE studio_runs SET episodic_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
     });
   }
 
@@ -963,7 +969,7 @@ export class PostgresRunStore implements RunStoreContract {
     this.assertHealthy();
     this.memory.markProceduralMemoryPending(runId);
     this.enqueue(async () => {
-      await this.pool.query("UPDATE studio_runs SET procedural_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
+      await this.query("UPDATE studio_runs SET procedural_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
     });
   }
 
@@ -971,7 +977,7 @@ export class PostgresRunStore implements RunStoreContract {
     this.assertHealthy();
     this.memory.setProceduralMemoryStatus(runId, status);
     this.enqueue(async () => {
-      await this.pool.query("UPDATE studio_runs SET procedural_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
+      await this.query("UPDATE studio_runs SET procedural_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
     });
   }
 }

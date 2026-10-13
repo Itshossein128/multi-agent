@@ -21,6 +21,7 @@ import type {
   OrganizationProfile,
   OrganizationStatus,
   ProjectRepository,
+  UpdateOrganizationProfileInput,
   StudioEntityStatusFilter,
   StudioPrincipal,
   StudioProject,
@@ -123,7 +124,7 @@ export class InMemoryStudioStore implements StudioStore {
     return [...this.workflows.values()]
       .filter((wf) => {
         if (!principal) return true;
-        const isSystem = principal.principalKind === "service";
+        const isSystem = principal.principalKind === "service" && principal.allowOwnershipBypass !== false;
         return Boolean(wf.tenantId && wf.tenantId === principal.tenantId && (isSystem || !wf.ownerId || wf.ownerId === principal.userId));
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -133,7 +134,7 @@ export class InMemoryStudioStore implements StudioStore {
     const wf = this.workflows.get(id);
     if (!wf) return null;
     if (principal) {
-      const isSystem = principal.principalKind === "service";
+      const isSystem = principal.principalKind === "service" && principal.allowOwnershipBypass !== false;
       if (!wf.tenantId || wf.tenantId !== principal.tenantId) return null;
       if (!isSystem && wf.ownerId && wf.ownerId !== principal.userId) return null;
     }
@@ -191,7 +192,7 @@ export class InMemoryStudioStore implements StudioStore {
       .filter((agent) => {
         if (!principal) return true;
         if (agent.isSystem) return true;
-        const isSystem = principal.principalKind === "service";
+        const isSystem = principal.principalKind === "service" && principal.allowOwnershipBypass !== false;
         return Boolean(agent.tenantId && agent.tenantId === principal.tenantId && (isSystem || !agent.ownerId || agent.ownerId === principal.userId));
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -203,7 +204,7 @@ export class InMemoryStudioStore implements StudioStore {
     if (principal) {
       if (agent.isSystem) return structuredClone(agent);
       if (!agent.tenantId || agent.tenantId !== principal.tenantId) return null;
-      const isSystem = principal.principalKind === "service";
+      const isSystem = principal.principalKind === "service" && principal.allowOwnershipBypass !== false;
       if (!isSystem && agent.ownerId && agent.ownerId !== principal.userId) return null;
     }
     return structuredClone(agent);
@@ -213,13 +214,17 @@ export class InMemoryStudioStore implements StudioStore {
     this.assertWriteIdentity(this.agents.get(agent.id), agent, principal, true);
     if (principal) {
       const existing = this.agents.get(agent.id);
+      let targetOwnerId: string | undefined = principal.userId;
       if (existing) {
         if (existing.isSystem) throw new Error("Cannot modify system agent");
         if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
           throw new Error("Access denied to agent");
         }
+        targetOwnerId = existing.ownerId ? existing.ownerId : undefined;
+      } else if (agent.ownerId === undefined || agent.ownerId === null) {
+        targetOwnerId = undefined;
       }
-      agent = { ...agent, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+      agent = { ...agent, ownerId: targetOwnerId, tenantId: principal.tenantId, isSystem: false };
     }
     this.agents.set(agent.id, structuredClone(agent));
     return structuredClone(agent);
@@ -243,7 +248,8 @@ export class InMemoryStudioStore implements StudioStore {
       .filter((tool) => {
         if (!principal) return true;
         if (tool.isSystem) return true;
-        return Boolean(tool.tenantId && tool.tenantId === principal.tenantId && (!tool.ownerId || tool.ownerId === principal.userId));
+        const allowBypass = principal.principalKind === "service" && principal.allowOwnershipBypass !== false;
+        return Boolean(tool.tenantId && tool.tenantId === principal.tenantId && (!tool.ownerId || tool.ownerId === principal.userId || allowBypass));
       })
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
@@ -254,7 +260,8 @@ export class InMemoryStudioStore implements StudioStore {
     if (principal) {
       if (tool.isSystem) return structuredClone(tool);
       if (!tool.tenantId || tool.tenantId !== principal.tenantId) return null;
-      if (tool.ownerId && tool.ownerId !== principal.userId) return null;
+      const allowBypass = principal.principalKind === "service" && principal.allowOwnershipBypass !== false;
+      if (tool.ownerId && tool.ownerId !== principal.userId && !allowBypass) return null;
     }
     return structuredClone(tool);
   }
@@ -263,13 +270,17 @@ export class InMemoryStudioStore implements StudioStore {
     this.assertWriteIdentity(this.tools.get(tool.id), tool, principal, true);
     if (principal) {
       const existing = this.tools.get(tool.id);
+      let targetOwnerId: string | undefined = principal.userId;
       if (existing) {
         if (existing.isSystem) throw new Error("Cannot modify system tool");
         if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
           throw new Error("Access denied to tool");
         }
+        targetOwnerId = existing.ownerId ? existing.ownerId : undefined;
+      } else if (tool.ownerId === undefined || tool.ownerId === null) {
+        targetOwnerId = undefined;
       }
-      tool = { ...tool, ownerId: principal.userId, tenantId: principal.tenantId, isSystem: false };
+      tool = { ...tool, ownerId: targetOwnerId, tenantId: principal.tenantId, isSystem: false };
     }
     this.tools.set(tool.id, structuredClone(tool));
     return structuredClone(tool);
@@ -540,6 +551,44 @@ export class InMemoryStudioStore implements StudioStore {
       });
       await store.setUserLastOrganization(principal.userId, record.id);
       return structuredClone(record);
+    });
+  }
+
+  async updateOrganizationProfile(
+    updates: UpdateOrganizationProfileInput,
+    principal: StudioPrincipal,
+  ): Promise<OrganizationProfile> {
+    if (!principal?.tenantId?.trim()) {
+      throw new Error("Organization profile requires tenant context");
+    }
+    return this.transaction(async (store) => {
+      const existing = (store as InMemoryStudioStore).organizations.get(principal.tenantId);
+      if (!existing) throw new Error("Organization not found");
+
+      let slug = existing.slug;
+      if (updates.slug !== undefined) {
+        const candidate = updates.slug.trim().toLowerCase();
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(candidate) || candidate.length > 80) {
+          throw new Error("slug must be lowercase URL-safe (a-z, 0-9, hyphen) and at most 80 characters");
+        }
+        for (const [orgId, org] of (store as InMemoryStudioStore).organizations.entries()) {
+          if (orgId !== existing.id && org.slug === candidate) {
+            throw new Error("Organization slug already in use");
+          }
+        }
+        slug = candidate;
+      }
+
+      const updated: OrganizationProfile = {
+        ...existing,
+        name: updates.name !== undefined ? updates.name : existing.name,
+        description: updates.description !== undefined ? updates.description : existing.description,
+        config: updates.config !== undefined ? updates.config : existing.config,
+        slug,
+        updatedAt: nowIso(),
+      };
+      (store as InMemoryStudioStore).organizations.set(existing.id, structuredClone(updated));
+      return structuredClone(updated);
     });
   }
 

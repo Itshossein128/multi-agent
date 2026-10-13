@@ -32,11 +32,45 @@ export default function OrganizationSettings() {
     finally { setBusy(false); }
   }
   const ownerCount = members.filter(m => m.role === "owner" && m.status === "active").length;
-  const deletionEnabled = process.env.NEXT_PUBLIC_ORG_DELETION_ENABLED === "true";
+  const deletionEnabled = process.env.NEXT_PUBLIC_ORG_DELETION_ENABLED !== "false";
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleteStatus, setDeleteStatus] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
+
+  const [profileName, setProfileName] = useState(org.name);
+  const [profileSlug, setProfileSlug] = useState(org.slug);
+  const [profileError, setProfileError] = useState("");
+  const [profileSuccess, setProfileSuccess] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+
+  async function handleUpdateProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setProfileBusy(true);
+    setProfileError("");
+    setProfileSuccess("");
+    try {
+      const response = await fetch("/api/organizations/current", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: profileName, slug: profileSlug }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Failed to update profile.");
+      if (result.slug && result.slug !== org.slug) {
+        setProfileSuccess("Organization renamed. Redirecting to new address...");
+        setTimeout(() => {
+          window.location.href = `/o/${encodeURIComponent(result.slug)}/settings`;
+        }, 500);
+      } else {
+        setProfileSuccess("Organization profile updated successfully.");
+      }
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Failed to update profile.");
+    } finally {
+      setProfileBusy(false);
+    }
+  }
 
   async function handleDeleteOrg(e: React.FormEvent) {
     e.preventDefault();
@@ -73,8 +107,45 @@ export default function OrganizationSettings() {
   }
 
   return <main className="mx-auto w-full max-w-5xl space-y-6 p-6">
-    <div><h1 className="text-2xl font-semibold">Organization settings</h1><p className="mt-2 text-sm text-zinc-400">Manage membership in {org.name}. Your role: {org.role}.</p></div>
+    <div><h1 className="text-2xl font-semibold">Organization settings</h1><p className="mt-2 text-sm text-zinc-400">Manage {org.name}. Your role: {org.role}.</p></div>
     {(error || loadError) && <p role="alert" className="text-sm text-red-400">{error || loadError?.message}</p>}
+
+    {canManage && (
+      <section className="rounded-lg border border-zinc-800 p-4 space-y-4">
+        <h2 className="text-lg font-medium">Organization profile</h2>
+        {profileError && <p role="alert" className="text-sm text-red-400">{profileError}</p>}
+        {profileSuccess && <p role="status" className="text-sm text-emerald-400">{profileSuccess}</p>}
+        <form onSubmit={handleUpdateProfile} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              Organization name
+              <input
+                className="block w-full rounded border border-zinc-700 bg-zinc-950 p-2 text-sm text-zinc-100"
+                type="text"
+                required
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              Organization slug
+              <input
+                className="block w-full rounded border border-zinc-700 bg-zinc-950 p-2 text-sm text-zinc-100"
+                type="text"
+                required
+                value={profileSlug}
+                onChange={(e) => setProfileSlug(e.target.value.toLowerCase())}
+              />
+            </label>
+          </div>
+          <p className="text-xs text-zinc-400">
+            The slug is used in organization URLs (e.g. <code>/o/{profileSlug}/...</code>). If changed, existing bookmarks or links using the previous slug will return 404 without redirects.
+          </p>
+          <Button disabled={profileBusy} type="submit">Save changes</Button>
+        </form>
+      </section>
+    )}
+
     {isPending && <p role="status">Loading members…</p>}
     {canManage && <form className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-800 p-4" onSubmit={e => { e.preventDefault(); void change(base, "POST", { email, role }); }}>
       <label className="flex-1 space-y-2 text-sm">Registered user email<input className="block w-full rounded border border-zinc-700 bg-zinc-950 p-2" type="email" required value={email} onChange={e => setEmail(e.target.value)} /></label>

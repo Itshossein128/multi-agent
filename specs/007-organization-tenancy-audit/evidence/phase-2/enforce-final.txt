@@ -2,23 +2,23 @@
 > multi-agent-platform@1.0.0 test /home/hossein/Desktop/projects/multi-agent
 > node --experimental-vm-modules node_modules/jest/bin/jest.js --detectOpenHandles --forceExit --runInBand tests/organizationPermissions.test.ts tests/organizationServerRouteMatrix.test.ts tests/organizationExecutionRouteMatrix.test.ts tests/organizationMembershipAdmin.test.ts tests/organizationMembershipRevocation.test.ts tests/organizationRunVisibility.test.ts tests/organizationServicePrincipal.test.ts tests/organizationMembershipPostgres.test.ts tests/organizationContextResolver.test.ts tests/organizationRouteMatrix.test.ts tests/organizationBffPrincipal.test.ts tests/organizationAssertionV2.test.ts tests/orgFeatureFlags.test.ts tests/organizationShadowGate.test.ts
 
-PASS tests/organizationExecutionRouteMatrix.test.ts
-PASS tests/organizationRunVisibility.test.ts
+PASS tests/organizationPermissions.test.ts (11.429 s)
 PASS tests/organizationServerRouteMatrix.test.ts
-PASS tests/organizationMembershipPostgres.test.ts
-PASS tests/organizationPermissions.test.ts
-PASS tests/organizationMembershipAdmin.test.ts
-PASS tests/organizationRouteMatrix.test.ts
-PASS tests/organizationShadowGate.test.ts
-PASS tests/organizationMembershipRevocation.test.ts
+PASS tests/organizationExecutionRouteMatrix.test.ts
 PASS tests/organizationServicePrincipal.test.ts
-PASS tests/organizationBffPrincipal.test.ts
+PASS tests/organizationMembershipPostgres.test.ts
+PASS tests/organizationRunVisibility.test.ts
+PASS tests/organizationMembershipAdmin.test.ts
+PASS tests/organizationMembershipRevocation.test.ts
+PASS tests/organizationRouteMatrix.test.ts
 PASS tests/organizationContextResolver.test.ts
+PASS tests/organizationShadowGate.test.ts
+PASS tests/organizationBffPrincipal.test.ts
 PASS tests/organizationAssertionV2.test.ts
 PASS tests/orgFeatureFlags.test.ts
 
 Test Suites: 14 passed, 14 total
-Tests:       813 passed, 813 total
+Tests:       834 passed, 834 total
 Snapshots:   0 total
-Time:        8.901 s
+Time:        27.17 s, estimated 36 s
 Ran all test suites matching /tests\/organizationPermissions.test.ts|tests\/organizationServerRouteMatrix.test.ts|tests\/organizationExecutionRouteMatrix.test.ts|tests\/organizationMembershipAdmin.test.ts|tests\/organizationMembershipRevocation.test.ts|tests\/organizationRunVisibility.test.ts|tests\/organizationServicePrincipal.test.ts|tests\/organizationMembershipPostgres.test.ts|tests\/organizationContextResolver.test.ts|tests\/organizationRouteMatrix.test.ts|tests\/organizationBffPrincipal.test.ts|tests\/organizationAssertionV2.test.ts|tests\/orgFeatureFlags.test.ts|tests\/organizationShadowGate.test.ts/i.

@@ -54,9 +54,9 @@ Feature flags (server env; safe defaults keep later phases off):
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ORG_MEMBERSHIP_ENFORCEMENT` | `enforce` | Route-level membership/permission checks; `shadow` runs diagnostics under maintenance |
-| `ORG_MEMORY_SCOPE` | `false` | Organization memory namespace exposure |
-| `ORG_DELETION_ENABLED` | `false` | Hard-delete organization API/UI |
-| `ORG_RLS` | `off` | Activate Postgres RLS + least-privilege app role (`off` \| `enforce`) |
+| `ORG_MEMORY_SCOPE` | `false` | Organization memory namespace exposure (`false` \| `true`) |
+| `ORG_DELETION_ENABLED` | `true` | Hard-delete organization API/UI (`false` \| `true`; enabled after Phase 5 verification) |
+| `ORG_RLS` | `off` | Activate Postgres RLS + least-privilege roles (`off` \| `enforce`; maps app to `studio_app` and workers to `studio_worker`) |
 
 `shadow` evaluates authorization and logs `authz.would_deny`, but every organization-scoped request
 returns 503 without executing its handler. It is a diagnostic maintenance mode, including for valid
@@ -67,16 +67,21 @@ suites use the actual boundary, and shadow-safety suites explicitly unmock it.
 
 ### Database reset runbook (maintenance window)
 
-One-time clean start before organization foundation migrations (`018+`). Irreversible unless the operator passed `--backup`.
+One-time clean start before organization foundation migrations (`018+`). Irreversible without an operator database and filesystem backup.
 
 1. Stop schedulers/workers; drain or cancel running runs (reset refuses if the execution server reports active runs).
 2. `pnpm db:reset -- --confirm-destroy-all-data` (optional `--backup <file.dump>`). Prints per-table counts, truncates studio/memory/broker data (keeps migration ledgers), clears `STUDIO_WORKSPACE_STORAGE_ROOT` working copies. Refuses without the confirmation flag.
-3. `pnpm db:migrate` (applies `018+`; migration `018` aborts if legacy tenant data exists without membership tables).
+3. `pnpm db:migrate` (applies `018–024`; migration `018` aborts if legacy tenant data exists without membership tables; `024` enables and forces RLS across all organization tables).
 4. Deploy execution server, then web/BFF.
 5. Register the first user (user only — no private tenant), create an organization (owner membership), or `pnpm db:seed:dev` for non-production `AUTH_DEV_*` identity.
 6. Run gate commands from `specs/007-organization-tenancy-audit/test-baseline.md` §7.
 
 Vault/secret-store entries are **not** cleared by reset (operator task).
+
+### Recovery and rollback safety runbook (SC-006)
+
+- **Phase 1 reset irreversibility**: `pnpm db:reset -- --confirm-destroy-all-data` permanently destroys all 26 application entity tables and filesystem workspace folders. Recovery is impossible without an external operator backup (`pg_dump`) and filesystem snapshot.
+- **Phases 2–5 rollback**: Only a security-compatible rollback build preserving tenant, membership, role, lifecycle, and credential guarantees may serve traffic; otherwise maintenance mode (`503`) plus forward-fix. Additive columns alone do not establish rollback safety. Disabling feature exposure or RLS must preserve effective authorization.
 
 ## Verification
 
