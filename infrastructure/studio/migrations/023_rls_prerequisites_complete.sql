@@ -7,7 +7,6 @@
 --   studio_budget_alerts
 --   studio_webhook_deliveries
 --   studio_agent_heartbeats
---   studio_task_projects
 -- RLS remains disabled until Phase 5 (T065/T069).
 
 DO $$
@@ -20,8 +19,7 @@ DECLARE
     'studio_budget_reservations',
     'studio_budget_alerts',
     'studio_webhook_deliveries',
-    'studio_agent_heartbeats',
-    'studio_task_projects'
+    'studio_agent_heartbeats'
   ];
 BEGIN
   FOREACH tbl IN ARRAY tables LOOP

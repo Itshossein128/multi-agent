@@ -75,11 +75,19 @@ const migration018 = readFileSync(
       "018_organization_foundation.sql",
       "019_tenant_constraints.sql",
       "020_rls_prerequisites.sql",
+      "023_rls_prerequisites_complete.sql",
+      "024_enable_rls.sql",
     ]));
     const memberships = await pool.query(
       `SELECT 1 FROM information_schema.tables
         WHERE table_schema = current_schema() AND table_name = 'studio_organization_memberships'`,
     );
     expect(memberships.rows).toHaveLength(1);
+
+    const retiredTaskProjects = await pool.query(
+      `SELECT 1 FROM information_schema.tables
+        WHERE table_schema = current_schema() AND table_name = 'studio_task_projects'`,
+    );
+    expect(retiredTaskProjects.rows).toHaveLength(0);
   });
 });

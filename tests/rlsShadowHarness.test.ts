@@ -178,7 +178,6 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
       "studio_budget_alerts",
       "studio_webhook_deliveries",
       "studio_agent_heartbeats",
-      "studio_task_projects",
     ];
 
     for (const tbl of omittedTables) {
