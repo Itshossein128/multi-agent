@@ -24,7 +24,7 @@ async function seedFixtures(store: StudioStore, org = 'org-a') {
     isSystem: false,
     createdAt: stamp,
     updatedAt: stamp,
-  } as any, { userId: 'owner', tenantId: org });
+  } as any);
 
   await store.saveWorkflow({
     id: `wf-1-${org}`,
