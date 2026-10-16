@@ -69,6 +69,10 @@ describe("shared agent and tool edit ownership (T084 / F4)", () => {
       expect(shared).not.toBeNull();
       expect(shared?.ownerId).toBeFalsy();
 
+      // User A creates an unowned (organization-shared) agent explicitly passing ownerId: null with userA principal context
+      const newShared = await store.saveAgent({ ...sampleAgent("agent-shared-new", orgId), ownerId: null as any }, userA);
+      expect(newShared.ownerId).toBeFalsy();
+
       // User A edits the shared agent
       const updatedByA = await store.saveAgent(
         { ...shared!, description: "Updated by User A", updatedAt: nowIso() },

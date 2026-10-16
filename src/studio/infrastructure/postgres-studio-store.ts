@@ -461,7 +461,7 @@ export class PostgresStudioStore implements StudioStore {
   async saveAgent(agent: AgentRecord, principal?: StudioPrincipal): Promise<AgentRecord> {
     if (principal) {
       const existing = await this.query("SELECT is_system, tenant_id, owner_id FROM studio_agents WHERE id = $1", [agent.id]);
-      let targetOwnerId: string | null = principal.userId;
+      let targetOwnerId: string | null = agent.ownerId === null ? null : principal.userId;
       if (existing.rows.length) {
         const row = existing.rows[0];
         if (row.is_system) throw new Error("Cannot modify system agent");
@@ -529,7 +529,7 @@ export class PostgresStudioStore implements StudioStore {
   async saveTool(tool: ToolRecord, principal?: StudioPrincipal): Promise<ToolRecord> {
     if (principal) {
       const existing = await this.query("SELECT is_system, tenant_id, owner_id FROM studio_tools WHERE id = $1", [tool.id]);
-      let targetOwnerId: string | null = principal.userId;
+      let targetOwnerId: string | null = tool.ownerId === null ? null : principal.userId;
       if (existing.rows.length) {
         const row = existing.rows[0];
         if (row.is_system) throw new Error("Cannot modify system tool");
