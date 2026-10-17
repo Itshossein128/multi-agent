@@ -277,16 +277,6 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     child.stdout?.on("data", (chunk) => handleChunk(chunk, false));
     child.stderr?.on("data", (chunk) => handleChunk(chunk, true));
 
-    child.on("error", (error) => {
-      if (!state.completed && state.reason === "completed") {
-        state.reason = "spawn_error";
-        state.errorMsg = redactLaunchSecretValues(error.message, redactionEnvironment);
-      }
-      const safeError = new Error(redactLaunchSecretValues(error.message, redactionEnvironment));
-      emit({ type: "error", error: safeError });
-      this.log("worker.error", { workerId, runId: spec.runId, error: safeError.message, durationMs: Date.now() - startMs });
-    });
-
     if (spec.timeoutMs > 0) {
       state.timeoutTimer = setTimeout(() => {
         if (!state.completed) {
@@ -315,7 +305,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       let stdoutClosed = !child.stdout;
       let stderrClosed = !child.stderr;
       const finish = () => {
-        if (!childClosed || !stdoutClosed || !stderrClosed) return;
+        if (state.completed || !childClosed || !stdoutClosed || !stderrClosed) return;
         state.completed = true;
         clearTimeout(state.timeoutTimer);
         clearTimeout(state.killTimer);
@@ -326,6 +316,29 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
         this.log("worker.completed", { workerId, runId: spec.runId, reason: state.reason, exitCode: code, durationMs: Date.now() - startMs });
         resolve({ code, stdout: state.stdout, stderr: state.stderr, reason: state.reason, error: state.errorMsg });
       };
+      child.on("error", (error) => {
+        if (!state.completed && state.reason === "completed") {
+          state.reason = "spawn_error";
+          state.errorMsg = redactLaunchSecretValues(error.message, redactionEnvironment);
+        }
+        const safeError = new Error(redactLaunchSecretValues(error.message, redactionEnvironment));
+        emit({ type: "error", error: safeError });
+        this.log("worker.error", { workerId, runId: spec.runId, error: safeError.message, durationMs: Date.now() - startMs });
+        stdoutClosed = true;
+        stderrClosed = true;
+        finish();
+      });
+
+      child.stdout?.on("error", () => {
+        stdoutClosed = true;
+        finish();
+      });
+
+      child.stderr?.on("error", () => {
+        stderrClosed = true;
+        finish();
+      });
+
       child.stdout?.on("close", () => { appendSafeText(stdoutRedactor.flush(), false); stdoutClosed = true; finish(); });
       child.stderr?.on("close", () => { appendSafeText(stderrRedactor.flush(), true); stderrClosed = true; finish(); });
       child.on("close", (exitCode) => { code = exitCode ?? null; childClosed = true; finish(); });
