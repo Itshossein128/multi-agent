@@ -197,6 +197,10 @@ pnpm test --runInBand tests/brokerContract.test.ts tests/brokerService.test.ts t
 
 suiteهای PostgreSQL این تست‌ها فقط با `MEMORY_TEST_DATABASE_URL` فعال می‌شوند و هر اجرا schema ایزوله می‌سازد و در پایان حذف می‌کند؛ Vault در تست‌ها fake است و هیچ secret واقعی خوانده نمی‌شود.
 
+Organization creation/discovery and deletion recovery require Studio migration `028`.
+For deletion configuration, response semantics, and restart recovery, see
+[organization-lifecycle.md](organization-lifecycle.md).
+
 ## Guardrailهای سرور
 
 سرور قبل از ساخت run، workflow را validate و سپس ownership، agent/tool registry و execution policy را اعمال می‌کند. limits مهم از environment خوانده می‌شوند:

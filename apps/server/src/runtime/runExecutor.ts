@@ -50,6 +50,8 @@ import {
   deriveRunInitiatorKind,
 } from "./runOrganizationAccess";
 import { assertRunAccessTenant } from "./runAccessCheckpoint";
+import { runDispatchContext } from "./runDispatchContext";
+import { organizationStorage } from "../../../../src/studio/infrastructure/withOrganization";
 import { runInOrganizationScope } from "../../../../src/studio/infrastructure/organizationJobScope";
 
 interface DurableMemoryJobEnqueuer { enqueue(input: EnqueueMemoryJob): Promise<{ job: DurableMemoryJob; duplicate: boolean }>; }
@@ -257,7 +259,7 @@ export class RunExecutor {
     const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
     const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
     this.store.create(
-      { id, workflowId: `agent-test:${request.agent.id}`, status: "running", startedAt: stamp, input: request.input, metadata: { kind: "agent-test" }, ownerId, tenantId },
+      { id, workflowId: `agent-test:${request.agent.id}`, status: "running", startedAt: stamp, input: request.input, metadata: { kind: "agent-test" }, ownerId, tenantId, initiatorKind: principal?.principalKind === "service" ? "service" : "user", serverInitiated: principal?.principalKind === "service" },
       memoryOwnerId && memoryOwnerTenantId ? { principalId: memoryOwnerId, tenantId: memoryOwnerTenantId } : undefined,
       undefined,
       principal,
@@ -265,19 +267,21 @@ export class RunExecutor {
     );
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.created", timestamp: stamp, sequence: 0, payload: {} });
     this.store.append(id, { id: uid("event"), runId: id, agentId: request.agent.id, type: "run.started", timestamp: stamp, sequence: 0, payload: {} });
-    void this.executeAgentTest(id, request, memoryAccess, principal);
+    void this.inRunScope(id, () => this.executeAgentTest(id, request, memoryAccess, principal));
     return id;
   }
 
   private async executeAgentTest(runId: string, request: AgentTestRequest, memoryAccess?: MemoryAccessContext, principal?: RequestPrincipal) {
     try {
       await this.store.waitForPersistence?.(runId);
+      if (this.store.hasExecutionLease && !await this.store.hasExecutionLease(runId)) return;
     } catch (error) {
       this.store.cancel(runId);
       log.error("run.persistence_unavailable_before_agent_test", { runId, error: error instanceof Error ? error.message : String(error) });
       return;
     }
     try {
+      await this.assertRunAccess(runId);
       let output: Record<string, unknown> = {};
       for await (const event of this.agentRuntime.execute({ agent: request.agent, input: request.input, runId, nodeId: `test:${request.agent.id}`, signal: this.store.signal(runId), memoryStore: new Map(), memoryAccess, credentialPrincipal: asCredentialPrincipal(principal), onBackgroundEvent: event => { this.appendAgentEvent(runId, event); } })) {
         this.appendAgentEvent(runId, event);
@@ -306,6 +310,13 @@ export class RunExecutor {
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
     assertMemoryAccessMatchesRun({ tenantId }, memoryAccess);
+    const dispatch = runDispatchContext.getStore();
+    const trustedDispatch = dispatch?.organizationId === tenantId ? dispatch : undefined;
+    const metadata = { ...request.metadata };
+    if (!trustedDispatch) {
+      for (const key of ["initiatorKind", "triggerDispatchKey", "triggerEventId", "triggerEventType", "serverInitiated"]) delete metadata[key];
+    }
+    request = { ...request, metadata };
     const triggerDispatchKey = typeof request.metadata?.triggerDispatchKey === "string" ? request.metadata.triggerDispatchKey : undefined;
     if (triggerDispatchKey) {
       const existing = this.store.findByTriggerDispatchKey?.(triggerDispatchKey, tenantId);
@@ -318,8 +329,8 @@ export class RunExecutor {
     const id = uid("run"); const stamp = nowIso();
     const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
     const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
-    const initiatorKind = deriveRunInitiatorKind({ metadata: request.metadata, principalKind: principal?.principalKind });
-    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId, initiatorKind };
+    const initiatorKind = trustedDispatch?.kind ?? deriveRunInitiatorKind({ principalKind: principal?.principalKind });
+    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId, initiatorKind, serverInitiated: Boolean(trustedDispatch || principal?.principalKind === "service") };
     this.store.create(
       run,
       memoryOwnerId && memoryOwnerTenantId ? { principalId: memoryOwnerId, tenantId: memoryOwnerTenantId } : undefined,
@@ -566,7 +577,10 @@ export class RunExecutor {
 
   /** Delegate approval resolution to ApprovalManager. */
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
-    return this.approvalManager.resolveApproval(runId, approvalId, decision);
+    const tenantId = this.store.get(runId)?.run.tenantId;
+    // ApprovalManager starts an asynchronous continuation; detach it too.
+    return organizationStorage.run(tenantId ? Object.freeze({ organizationId: tenantId, principalKind: "service" as const, source: "run.approval" }) : undefined,
+      () => this.approvalManager.resolveApproval(runId, approvalId, decision));
   }
 
   /** Delegate approval timer rearming to ApprovalManager. */
@@ -582,6 +596,11 @@ export class RunExecutor {
     return this.telemetry.withWorkflow({ runId, workflowId: request.workflow.id, taskId: request.taskId, input: request.input }, () => this.executeWorkflow(runId, request, memoryAccess, principal));
   }
 
+  private inRunScope<T>(runId: string, fn: () => Promise<T>): Promise<T> {
+    const tenantId = this.store.get(runId)?.run.tenantId;
+    return tenantId ? runInOrganizationScope({ organizationId: tenantId, source: "run.execution" }, fn) : fn();
+  }
+
   private pumpQueue() {
     while (this.activeRuns.size < this.maxConcurrentRuns) {
       const next = this.pendingRequests.keys().next().value as string | undefined;
@@ -590,7 +609,7 @@ export class RunExecutor {
       if (!pending) continue;
       this.pendingRequests.delete(next);
       this.activeRuns.add(next);
-      void this.execute(next, pending.request, pending.memoryAccess, pending.principal)
+      void this.inRunScope(next, () => this.execute(next, pending.request, pending.memoryAccess, pending.principal))
         .finally(() => { this.activeRuns.delete(next); this.pumpQueue(); });
     }
   }
@@ -610,6 +629,7 @@ export class RunExecutor {
 
     try {
       const persistenceResult = await this.store.waitForPersistence?.(runId);
+      if (this.store.hasExecutionLease && !await this.store.hasExecutionLease(runId)) return;
       if (persistenceResult?.duplicate) {
         log.info("run.suppressed_duplicate_execution", { runId, triggerDispatchKey });
         this.store.cancel(runId);

@@ -180,7 +180,9 @@ export class CliAgentExecutor implements AgentExecutor {
 
         if (result.code !== 0) {
           const detail = (result.stderr || result.stdout || "no output").trim();
-          const clipped = detail.length > 2_000 ? `${detail.slice(0, 2_000)}…` : detail;
+          // CLI stderr often starts with a banner and the entire prompt. The
+          // actionable failure (quota, authentication, transport) is at the end.
+          const clipped = detail.length > 2_000 ? `…${detail.slice(-2_000)}` : detail;
           throw new Error(`CLI command "${executable}" exited with code ${result.code}: ${clipped || "no output"}`);
         }
         const outputContent = backend.provider === "agy" ? parseAgyStreamOutput(result.stdout) : result.stdout;

@@ -204,6 +204,30 @@ export class VaultSecretStore implements SecretStore {
     return version ? { version } : {};
   }
 
+  async deleteTenantSecrets(tenantId: string): Promise<void> {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(tenantId)) throw new BrokerError("invalid_request");
+    const root = `${this.baseUrl}/v1/${this.mount}/metadata/${encodeURIComponent(tenantId)}`;
+    let visited = 0;
+    const remove = async (path: string, depth: number): Promise<void> => {
+      if (++visited > 10_000 || depth > 8) throw new BrokerError("secretstore_unavailable");
+      let body: unknown;
+      try { body = await this.request(`${path}?list=true`, "GET"); }
+      catch (error) {
+        if (error instanceof BrokerError && error.code === "credential_not_provisioned") return;
+        throw error;
+      }
+      const keys = (body as {data?:{keys?:unknown}})?.data?.keys;
+      if (!Array.isArray(keys) || !keys.every(key => typeof key === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]*\/?$/.test(key))) throw new BrokerError("secretstore_unavailable");
+      for (const key of keys as string[]) {
+        const segment = key.replace(/\/$/, "");
+        const child = `${path}/${encodeURIComponent(segment)}`;
+        if (key.endsWith("/")) await remove(child, depth + 1);
+        else await this.request(child, "DELETE"); // KV v2 metadata deletion destroys every version.
+      }
+    };
+    await remove(root, 0);
+  }
+
   private async read(tenantId: string, provider: string, alias: string): Promise<StoredSecret | undefined> {
     const body = await this.request(this.dataPath(tenantId, provider, alias), "GET");
     const data = unwrapKv2(body);
@@ -219,7 +243,7 @@ export class VaultSecretStore implements SecretStore {
   private dataPath(tenantId: string, provider: string, alias: string): string {
     // All three segments are contract-validated ([A-Za-z0-9._-] only), so they
     // can never contain path traversal characters.
-    return `${this.baseUrl}/v1/data/${this.mount}/${encodeURIComponent(tenantId)}/${encodeURIComponent(provider)}/${encodeURIComponent(alias)}`;
+    return `${this.baseUrl}/v1/${this.mount}/data/${encodeURIComponent(tenantId)}/${encodeURIComponent(provider)}/${encodeURIComponent(alias)}`;
   }
 
   private async request(path: string, method: string, body?: unknown): Promise<unknown> {

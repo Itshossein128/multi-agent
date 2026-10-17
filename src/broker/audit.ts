@@ -21,6 +21,7 @@ export type AuditOperation =
   | "lease.consume.denied"
   | "lease.expired"
   | "lease.revoked"
+  | "tenant.purge.succeeded"
   | "secret.rotate.requested"
   | "secret.rotate.succeeded"
   | "secret.rotate.failed";
@@ -171,6 +172,7 @@ export class InMemoryAuditRecorder implements AuditRecorder {
 
 /** Minimal queryable pool surface (subset of pg.Pool). */
 export interface AuditPgPool {
+  connect(): Promise<Pick<AuditPgPool, "query"> & { release(): void }>;
   query<T = Record<string, unknown>>(config: { text: string; values?: unknown[] }): Promise<{ rows: T[]; rowCount: number | null }>;
 }
 
@@ -222,10 +224,9 @@ function rowToRecord(row: AuditRow): AuditRecord {
 /**
  * PostgreSQL audit recorder.
  *
- * The chain head is the highest existing sequence. The UNIQUE constraint on
- * sequence is the serialization backstop: two concurrent appends cannot both
- * claim the same sequence, so a losing writer fails loudly instead of forking
- * the chain. The table is append-only by trigger (see AUDIT_TABLE_DDL):
+ * A transaction advisory lock serializes chain-head lookup and insertion across
+ * connections, including genesis. The UNIQUE sequence constraint is a final
+ * backstop. The table is append-only by trigger (see AUDIT_TABLE_DDL):
  * UPDATE and DELETE are blocked at the database layer, making records
  * immutable for ordinary principals.
  */
@@ -233,14 +234,19 @@ export class PostgresAuditRecorder implements AuditRecorder {
   constructor(private readonly pool: AuditPgPool) {}
 
   async record(input: AuditInput, now: number = Date.now()): Promise<AuditRecord> {
-    const head = await this.pool.query<{ sequence: string | number; record_hash: string }>({
+    const client = await this.pool.connect();
+    try {
+    await client.query({ text: "BEGIN" });
+    // All writers serialize before reading the head, including the empty-chain case.
+    await client.query({ text: "SELECT pg_advisory_xact_lock(hashtextextended('credential_broker_audit.chain', 0))" });
+    const head = await client.query<{ sequence: string | number; record_hash: string }>({
       text: `SELECT sequence, record_hash FROM credential_broker_audit ORDER BY sequence DESC LIMIT 1 FOR UPDATE`,
     });
     const previous = head.rows[0];
     const sequence = previous ? Number(previous.sequence) + 1 : 1;
     const previousHash = previous ? previous.record_hash : GENESIS_HASH;
     const record = auditEvent(input, sequence, previousHash, now);
-    await this.pool.query({
+    await client.query({
       text: `INSERT INTO credential_broker_audit
         (event_id, recorded_at, tenant_id, principal_id, run_id, agent_id, tool_id,
          provider, alias, operation, result, reason_code, correlation_id,
@@ -254,7 +260,12 @@ export class PostgresAuditRecorder implements AuditRecorder {
         record.leaseId ?? null, record.sequence, record.previousHash, record.recordHash,
       ],
     });
+    await client.query({ text: "COMMIT" });
     return record;
+    } catch (error) {
+      await client.query({ text: "ROLLBACK" }).catch(() => undefined);
+      throw error;
+    } finally { client.release(); }
   }
 
   async query(query: AuditQuery): Promise<AuditRecord[]> {

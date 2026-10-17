@@ -94,7 +94,9 @@ export default function OrganizationSettings() {
       if (!response.ok) {
         throw new Error(result.error ?? "Failed to delete organization.");
       }
-      setDeleteStatus("Organization deleted successfully. Redirecting...");
+      setDeleteStatus(result.status === "pending"
+        ? "Organization deletion is in progress. Redirecting..."
+        : "Organization deleted successfully. Redirecting...");
       setTimeout(() => {
         window.location.href = "/";
       }, 500);

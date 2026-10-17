@@ -355,7 +355,14 @@ export class PostgresStudioStore implements StudioStore {
       const sp = `studio_tx_${randomUUID().replace(/-/g, "")}`;
       await scoped.query(`SAVEPOINT ${sp}`);
       try {
-        const result = await operation(this);
+        // Borrow the request client without taking ownership of its release.
+        const result = await operation(new PostgresStudioStore(this.pool, {
+          query: async (text, values) => {
+            const result = await scoped.query(text, values);
+            return { ...result, rowCount: result.rowCount ?? null };
+          },
+          release: () => {},
+        }));
         await scoped.query(`RELEASE SAVEPOINT ${sp}`);
         return result;
       } catch (err) {
@@ -949,8 +956,10 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async getOrganizationProfile(principal: StudioPrincipal): Promise<OrganizationProfile | null> {
-    const result = await this.query("SELECT * FROM studio_organizations WHERE id = $1", [principal.tenantId]);
-    return result.rows[0] ? decodeOrganization(result.rows[0]) : null;
+    return this.scopedExecution(principal.tenantId, principal.principalKind, async () => {
+      const result = await this.query("SELECT * FROM studio_organizations WHERE id = $1", [principal.tenantId]);
+      return result.rows[0] ? decodeOrganization(result.rows[0]) : null;
+    });
   }
 
   async getOrganizationBySlug(slug: string): Promise<OrganizationProfile | null> {
@@ -970,9 +979,8 @@ export class PostgresStudioStore implements StudioStore {
     if (this.client) {
       return this.createOrganizationProfileInTx(profile, principal);
     }
-    return this.transaction((store) =>
-      (store as PostgresStudioStore).createOrganizationProfileInTx(profile, principal),
-    );
+    return this.scopedExecution(principal.tenantId, principal.principalKind, () =>
+      this.transaction((store) => (store as PostgresStudioStore).createOrganizationProfileInTx(profile, principal)));
   }
 
   private async createOrganizationProfileInTx(
@@ -1072,11 +1080,7 @@ export class PostgresStudioStore implements StudioStore {
 
   async listOrganizationsForUser(userId: string): Promise<OrganizationProfile[]> {
     const result = await this.query(
-      `SELECT o.* FROM studio_organizations o
-         INNER JOIN studio_organization_memberships m
-           ON m.organization_id = o.id
-        WHERE m.user_id = $1 AND m.status = 'active' AND o.status = 'active'
-        ORDER BY o.name ASC, o.id ASC`,
+      "SELECT * FROM studio_user_organizations($1)",
       [userId],
     );
     return result.rows.map(decodeOrganization);
@@ -1091,8 +1095,9 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async purgeOrganizationData(organizationId: string): Promise<void> {
-    const client = this.client ?? await this.pool.connect();
-    const ownsClient = !this.client;
+    const ambient = this.client ?? scopedDbClient(this.pool);
+    const client = ambient ?? await this.pool.connect();
+    const ownsClient = !ambient;
     try {
       if (ownsClient) await client.query("BEGIN");
       await client.query("DELETE FROM studio_organization_audit WHERE organization_id = $1", [organizationId]);
@@ -1128,7 +1133,7 @@ export class PostgresStudioStore implements StudioStore {
       if (ownsClient) await client.query("ROLLBACK").catch(() => {});
       throw err;
     } finally {
-      if (ownsClient) client.release();
+      if (ownsClient) (client as PgClient).release();
     }
   }
 
@@ -1148,7 +1153,7 @@ export class PostgresStudioStore implements StudioStore {
   }
 
   async listInvitationsForUser(userId: string) {
-    const result = await this.query("SELECT m.* FROM studio_organization_memberships m JOIN studio_organizations o ON o.id = m.organization_id WHERE m.user_id = $1 AND m.status = 'invited' AND o.status = 'active' ORDER BY m.created_at", [userId]);
+    const result = await this.query("SELECT * FROM studio_user_invitations($1)", [userId]);
     return result.rows.map(decodeMembership);
   }
 

@@ -11,6 +11,7 @@ import { Pool, type PoolClient } from "pg";
 export const CONFIRM_FLAG = "--confirm-destroy-all-data";
 
 const STUDIO_DATA_TABLES = [
+  "studio_deleted_organizations",
   "studio_organization_audit",
   "studio_organization_memberships",
   "studio_workspace_repo_states",
@@ -43,8 +44,9 @@ const STUDIO_DATA_TABLES = [
 ];
 
 const MEMORY_DATA_TABLES = ["studio_memory_jobs", "studio_memories"];
-const BROKER_DATA_TABLES = ["credential_broker_leases", "credential_broker_audit"];
-export const LEDGER_TABLES = ["studio_migrations", "studio_memory_migrations"];
+const BROKER_DATA_TABLES = ["credential_broker_leases", "credential_broker_audit", "credential_broker_deleted_tenants"];
+const CHECKPOINT_DATA_TABLES = ["checkpoint_writes", "checkpoint_blobs", "checkpoints"];
+export const LEDGER_TABLES = ["studio_migrations", "studio_memory_migrations", "checkpoint_migrations"];
 
 type Queryable = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 
@@ -114,7 +116,7 @@ export async function resetApplicationData(
     skipRunningCheck?: boolean;
   },
 ): Promise<{ truncated: string[]; ledgerCounts: Record<string, number | null> }> {
-  const allTables = [...STUDIO_DATA_TABLES, ...MEMORY_DATA_TABLES, ...BROKER_DATA_TABLES];
+  const allTables = [...STUDIO_DATA_TABLES, ...MEMORY_DATA_TABLES, ...BROKER_DATA_TABLES, ...CHECKPOINT_DATA_TABLES];
   const counts: Record<string, number | null> = {};
   for (const table of allTables) counts[table] = await countRows(db, table);
   const ledgerCounts: Record<string, number | null> = {};
@@ -158,7 +160,7 @@ async function main() {
 
   const pool = new Pool({ connectionString: url });
   try {
-    const allTables = [...STUDIO_DATA_TABLES, ...MEMORY_DATA_TABLES, ...BROKER_DATA_TABLES];
+    const allTables = [...STUDIO_DATA_TABLES, ...MEMORY_DATA_TABLES, ...BROKER_DATA_TABLES, ...CHECKPOINT_DATA_TABLES];
     console.log("Row counts before reset:");
     for (const table of allTables) {
       const count = await countRows(pool, table);

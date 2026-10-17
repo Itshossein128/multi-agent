@@ -253,6 +253,7 @@ export class InMemoryRunStore implements RunStoreContract {
   purgeTenantRuns(tenantId: string): void {
     for (const [runId, entry] of Array.from(this.entries.entries())) {
       if (entry.run.tenantId === tenantId) {
+        for (const timer of entry.approvalTimers.values()) clearTimeout(timer);
         try { entry.abort.abort(); } catch {}
         entry.run.status = "cancelled";
         this.entries.delete(runId);

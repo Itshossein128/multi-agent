@@ -33,6 +33,7 @@ import { log } from "./logging";
  */
 
 export interface CredentialComposition {
+  tenantCleanup?: { purgeTenantCredentials(tenantId: string): Promise<void> };
   gateway: CredentialGateway;
   workerCredentials: WorkerCredentialResolver;
   apiCredentials: ApiProviderCredentialResolver;
@@ -51,6 +52,15 @@ export function createCredentialComposition(
 
   const gateway = credentialGatewayFromEnvironment(env);
   const mode = gateway instanceof HttpCredentialGateway ? "broker" : "environment";
+  // Destructive tenant cleanup uses a separately provisioned service scope.
+  const cleanupGateway = mode === "broker"
+    ? (env.CREDENTIAL_BROKER_PURGE_TOKEN?.trim()
+      ? credentialGatewayFromEnvironment({ ...env, CREDENTIAL_BROKER_SERVICE_TOKEN: env.CREDENTIAL_BROKER_PURGE_TOKEN })
+      : undefined)
+    : gateway;
+  const tenantCleanup = cleanupGateway?.purgeTenantCredentials
+    ? { purgeTenantCredentials: (tenantId: string) => cleanupGateway.purgeTenantCredentials!(tenantId) }
+    : undefined;
 
   const workerCredentials = workerCredentialResolverFromEnvironment(env);
   const apiCredentials = env.API_CREDENTIAL_LEASED_PROVIDERS?.trim()
@@ -68,6 +78,7 @@ export function createCredentialComposition(
   });
 
   return {
+    tenantCleanup,
     gateway,
     workerCredentials,
     apiCredentials,

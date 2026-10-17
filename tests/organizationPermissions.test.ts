@@ -24,7 +24,7 @@ async function seedFixtures(store: StudioStore, org = 'org-a') {
     isSystem: false,
     createdAt: stamp,
     updatedAt: stamp,
-  } as any, { userId: 'owner', tenantId: org });
+  } as any);
 
   await store.saveWorkflow({
     id: `wf-1-${org}`,
@@ -289,6 +289,17 @@ describe('US2 role permission matrix', () => {
       }
     });
   }
+
+  test('admin can diagnose a shared agent but cannot read another user\'s private agent', async () => {
+    const store = new InMemoryStudioStore();
+    await seedFixtures(store);
+    const shared = await store.getAgent('agent-1-org-a');
+    expect(shared?.ownerId).toBeNull();
+    await store.saveAgent({ ...shared!, id: 'private-agent' }, { userId: 'owner', tenantId: 'org-a' });
+    const app = createStudioRouter(store, () => ({ userId: 'admin', tenantId: 'org-a', organizationId: 'org-a' }));
+    expect((await app.request('/agents/agent-1-org-a/diagnostics')).status).toBe(200);
+    expect((await app.request('/agents/private-agent/diagnostics')).status).toBe(404);
+  });
 
   test('uniform 404 for missing resources on allowed roles', async () => {
     const store = new InMemoryStudioStore();

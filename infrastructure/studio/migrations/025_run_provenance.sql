@@ -1,0 +1,1 @@
+ALTER TABLE studio_runs ADD COLUMN IF NOT EXISTS server_initiated BOOLEAN NOT NULL DEFAULT false;

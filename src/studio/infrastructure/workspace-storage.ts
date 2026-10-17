@@ -13,7 +13,7 @@ function requireSafeSegment(value: string, label: string): string {
 }
 
 /** Resolve STUDIO_WORKSPACE_STORAGE_ROOT (absolute) or throw. */
-export function getWorkspaceStorageRoot(env: NodeJS.ProcessEnv = process.env): string {
+export function getWorkspaceStorageRoot(env: Readonly<Record<string, string | undefined>> = process.env): string {
   const raw = env.STUDIO_WORKSPACE_STORAGE_ROOT?.trim();
   if (!raw) {
     throw new Error("STUDIO_WORKSPACE_STORAGE_ROOT is not configured");
@@ -80,7 +80,7 @@ function isPathInsideRoot(candidate: string, root: string): boolean {
 }
 
 /** Configured workspace roots: the storage root plus optional CLI agent roots. */
-export function workspaceStorageRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+export function workspaceStorageRoots(env: Readonly<Record<string, string | undefined>> = process.env): string[] {
   const roots: string[] = [];
   try {
     roots.push(getWorkspaceStorageRoot(env));

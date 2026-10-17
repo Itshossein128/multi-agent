@@ -32,6 +32,7 @@ export interface CredentialLease {
 }
 
 export interface CredentialGateway {
+  purgeTenantCredentials?(tenantId: string): Promise<void>;
   issue(request: CredentialGatewayRequest): Promise<CredentialLease>;
   consume(lease: CredentialLease, request: CredentialGatewayRequest): Promise<string | undefined>;
 }
@@ -104,6 +105,14 @@ export class HttpCredentialGateway implements CredentialGateway {
       const serverName = options.tls.serverName?.trim() || this.baseUrl.hostname;
       this.dispatcher = buildTlsDispatcher(options.tls!, serverName);
     }
+  }
+
+  async purgeTenantCredentials(tenantId: string): Promise<void> {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(tenantId)) throw new Error("Invalid tenant identity");
+    const response = await this.request(`v1/tenants/${encodeURIComponent(tenantId)}/purge`, {method:"POST",body:JSON.stringify({tenantId})});
+    const payload = await this.readJson(response);
+    if (!response.ok) throw errorFromResponse(payload);
+    if ((payload as {purged?:unknown}).purged !== true) throw new CredentialGatewayError("Credential cleanup was not confirmed", "gateway_unavailable");
   }
 
   async issue(request: CredentialGatewayRequest): Promise<CredentialLease> {
@@ -278,6 +287,11 @@ function buildTlsDispatcher(tls: NonNullable<HttpCredentialGatewayOptions["tls"]
  * events, argv, or returned after a lease has been consumed.
  */
 export class EnvironmentCredentialGateway implements CredentialGateway {
+  private readonly blockedTenants = new Set<string>();
+  async purgeTenantCredentials(tenantId: string): Promise<void> {
+    this.blockedTenants.add(tenantId);
+    for (const [id, lease] of this.leases) if (lease.request.tenantId === tenantId) this.leases.delete(id);
+  }
   private readonly leases = new Map<string, { request: CredentialGatewayRequest; secret?: string; expiresAt: number }>();
 
   constructor(
@@ -289,6 +303,7 @@ export class EnvironmentCredentialGateway implements CredentialGateway {
   async issue(request: CredentialGatewayRequest): Promise<CredentialLease> {
     if (!this.enabled) throw new Error("Credential gateway is disabled; refusing real tool credentials.");
     assertRequest(request);
+    if (this.blockedTenants.has(request.tenantId)) throw new Error("Credential tenant has been deleted");
     for (const [id, lease] of this.leases) if (lease.expiresAt < Date.now()) this.leases.delete(id);
     const secret = this.environment[credentialEnvironmentName(request)];
     if (!secret) throw new Error(`Credential gateway has no configured credential for ${request.provider}/${request.alias}.`);
@@ -301,7 +316,7 @@ export class EnvironmentCredentialGateway implements CredentialGateway {
   async consume(lease: CredentialLease, request: CredentialGatewayRequest): Promise<string | undefined> {
     const stored = this.leases.get(lease.leaseId);
     this.leases.delete(lease.leaseId);
-    if (!stored || stored.expiresAt < Date.now() || stored.expiresAt !== lease.expiresAt || !sameRequest(stored.request, request)) {
+    if (this.blockedTenants.has(request.tenantId) || !stored || stored.expiresAt < Date.now() || stored.expiresAt !== lease.expiresAt || !sameRequest(stored.request, request)) {
       throw new Error("Credential lease is invalid, expired, or bound to another execution context.");
     }
     return stored.secret;

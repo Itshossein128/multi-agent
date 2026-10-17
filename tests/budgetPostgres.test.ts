@@ -27,8 +27,8 @@ describeDb("PostgreSQL budget admission", () => {
     const admissions = await Promise.all([store.reserve("r-a", "tenant-a", scopes, 1), store.reserve("r-b", "tenant-a", scopes, 1)]);
     expect([...admissions].sort()).toEqual([false, true]);
     const winner = admissions[0] ? "r-a" : "r-b";
-    await store.settle(winner, 1);
-    await store.settle(winner, 1);
+    await store.settle(winner, 1, "tenant-a");
+    await store.settle(winner, 1, "tenant-a");
     const [budget] = await store.list("tenant-a");
     expect(budget.spentUsd).toBe(1);
     expect(budget.reservedUsd).toBe(0);

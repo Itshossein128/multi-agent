@@ -1,3 +1,4 @@
+import { runDispatchContext } from "../runtime/runDispatchContext";
 import { nowIso, uid, type TriggerEvent } from "@multi-agent/types";
 import type { StudioPrincipal, StudioStore } from "../../../../src/studio/contracts";
 import {
@@ -99,7 +100,9 @@ export class TriggerOutboxProcessor {
                 throw error;
               }
             }
-            return { revoked: false as const, runId: await this.processEvent(event) };
+            const runId = await runDispatchContext.run(Object.freeze({ organizationId: event.tenantId, kind: event.eventType === "routine_tick" ? "schedule" : "trigger" }), () => this.processEvent(event));
+            if (runId) await this.executor?.getStore().waitForPersistence?.(runId);
+            return { revoked: false as const, runId };
           },
         );
         if (dispatchedRunId && "revoked" in dispatchedRunId && dispatchedRunId.revoked) {

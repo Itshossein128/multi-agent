@@ -35,6 +35,7 @@ export function requirePrincipal(
   resolvePrincipal: PrincipalResolver = resolveRequestPrincipal,
 ): MiddlewareHandler<{ Variables: PrincipalVariables }> {
   return async (context, next) => {
+    if (context.get("principal")) return next();
     const principal = await resolvePrincipal(context.req.raw);
     if (!principal) return context.json({ error: "Authentication required." }, 401);
     context.set("principal", principal);
@@ -72,6 +73,8 @@ export function requireOrganizationContext(store: StudioStore, routePrefix = "")
     }
     const organizationId = principal.organizationId ?? principal.tenantId;
     if (!organizationId || principal.tenantId !== organizationId) return c.json({ error: "Not found" }, 404);
+    const pool = (store as any).getPool?.() ?? (store as any).pool;
+    const authorize = async () => {
     try {
       let context: OrganizationContext;
       if (principal.principalKind === "service") {
@@ -114,10 +117,15 @@ export function requireOrganizationContext(store: StudioStore, routePrefix = "")
     // Shadow evaluates policy for diagnostics only. Never serve with weaker checks,
     // regardless of current membership count, prior admission, or a process restart.
     if (membershipEnforcement === "shadow") return c.json({ error: "Organization enforcement required" }, 503);
+    };
+    // The verified transport identity establishes RLS before the first profile or membership read.
+    const denied = pool
+      ? await withOrganization(pool, organizationId, principal.principalKind === "service" ? "service" : "user", authorize)
+      : await authorize();
+    if (denied) return denied;
     const orgContext = c.get("organizationContext");
     const isStream = path.endsWith("/events") || c.req.header("Accept") === "text/event-stream";
-    const pool = (store as any).getPool?.() ?? (store as any).pool;
-    if (pool && orgContext && !isStream) {
+    if (pool && orgContext && !isStream && !(c.req.method === "DELETE" && path === "/organizations/current")) {
       return withOrganization(pool, orgContext.organizationId, orgContext.principalKind, async () => {
         await next();
       });

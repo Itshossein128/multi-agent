@@ -4,7 +4,8 @@ import type { OrganizationProfile, StudioStore } from "../../../../../src/studio
 import type { RequestPrincipal } from "../../auth/principal";
 import { ApiError } from "../shared/http";
 import { orgFeatureFlagsFromEnvironment } from "../../organization/orgFeatureFlags";
-import { OrganizationPurgeWorker } from "../../organization/organizationPurgeWorker";
+import { OrganizationCleanupUnavailableError, OrganizationPurgeWorker } from "../../organization/organizationPurgeWorker";
+import { withOrganization } from "../../../../../src/studio/infrastructure/withOrganization";
 
 const NAME_MAX = 120;
 const DESCRIPTION_MAX = 2000;
@@ -129,7 +130,13 @@ export class OrganizationProfileService {
     if (!deletionEnabled) {
       throw new ApiError(403, "Organization deletion is disabled");
     }
-    const profile = await this.getCurrent(principal);
+    // Deletion deliberately has no enclosing request transaction: the deleting
+    // marker must commit even when cleanup fails. Scope the confirmation read
+    // separately so FORCE RLS can see the already-authorized organization.
+    const pool = (this.store as any).getPool?.();
+    const profile = pool
+      ? await withOrganization(pool, principal.tenantId, principal.principalKind === "service" ? "service" : "user", () => this.getCurrent(principal))
+      : await this.getCurrent(principal);
     const confirmation =
       typeof body.confirmationName === "string"
         ? body.confirmationName.trim()
@@ -139,7 +146,16 @@ export class OrganizationProfileService {
     if (confirmation !== profile.name) {
       throw new ApiError(400, "Organization name confirmation mismatch");
     }
-    return this.purgeWorker.purgeOrganization(profile.id);
+    try {
+      return await this.purgeWorker.purgeOrganization(profile.id);
+    } catch (error) {
+      if (error instanceof OrganizationCleanupUnavailableError) throw new ApiError(503, "Organization cleanup is not configured");
+      const pending = pool
+        ? await withOrganization(pool, principal.tenantId, "service", () => this.store.getOrganizationProfile(principal))
+        : await this.store.getOrganizationProfile(principal);
+      if (pending?.status === "deleting") return { status: "pending" as const, organizationId: profile.id };
+      throw error;
+    }
   }
 
   async listMine(principal: RequestPrincipal): Promise<OrganizationProfile[]> {

@@ -46,6 +46,7 @@ export class CredentialBrokerService {
 
   async issue(input: unknown, idempotencyKey?: string): Promise<CredentialLease> {
     const request = validateLeaseRequest(input, this.deps.limits);
+    await this.assertTenantNotDeleted(request.tenantId);
     return this.issueValidated(request, idempotencyKey);
   }
 
@@ -118,6 +119,7 @@ export class CredentialBrokerService {
 
   async consume(input: unknown): Promise<string> {
     const request = validateConsumeRequest(input);
+    await this.assertTenantNotDeleted(request.tenantId);
     const now = this.now();
     const auditBase = {
       tenantId: request.tenantId,
@@ -171,7 +173,8 @@ export class CredentialBrokerService {
         throw error instanceof BrokerError ? error : new BrokerError("secretstore_unavailable");
       }
 
-      await this.deps.audit.record({ ...auditBase, operation: "lease.consume.succeeded", result: "succeeded" }, this.now()).catch(() => undefined);
+      await this.deps.audit.record({ ...auditBase, operation: "lease.consume.succeeded", result: "succeeded" }, this.now());
+      await this.assertTenantNotDeleted(request.tenantId);
       return secret;
     } catch (error) {
       return deny(error);
@@ -207,6 +210,21 @@ export class CredentialBrokerService {
       await this.deps.audit.record({ ...auditBase, operation: "lease.revoked", result: "denied", reasonCode: code }, this.now()).catch(() => undefined);
       throw error;
     }
+  }
+
+  async purgeTenantCredentials(tenantId: string): Promise<{ purged: true }> {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(tenantId)) throw new BrokerError("invalid_request");
+    if (!this.deps.leases.blockTenant || !this.deps.leases.isTenantBlocked || !this.deps.leases.deleteTenantLeases || !this.deps.secrets.deleteTenantSecrets) throw new BrokerError("secretstore_unavailable");
+    // The durable denial precedes external cleanup and survives any retry/restart.
+    await this.deps.leases.blockTenant(tenantId);
+    await this.deps.secrets.deleteTenantSecrets(tenantId);
+    await this.deps.leases.deleteTenantLeases(tenantId);
+    await this.deps.audit.record({tenantId, principalId:"organization-cleanup", operation:"tenant.purge.succeeded", result:"succeeded", sourceService:this.deps.sourceService}, this.now());
+    return { purged: true };
+  }
+
+  private async assertTenantNotDeleted(tenantId: string): Promise<void> {
+    if (await this.deps.leases.isTenantBlocked?.(tenantId)) throw new BrokerError("tenant_inactive");
   }
 
   async cleanupExpired(): Promise<number> {

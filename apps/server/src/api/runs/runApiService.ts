@@ -62,7 +62,9 @@ export class RunApiService {
       access = deriveMemoryAccessFromPrincipal(principal, { agentId: authoritativeAgent.id });
     }
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required for this agent.");
-    return this.executor.startAgentTest({ agent: authoritativeAgent, input: body.input }, access ?? undefined, principal);
+    const runId = this.executor.startAgentTest({ agent: authoritativeAgent, input: body.input }, access ?? undefined, principal);
+    await this.store.waitForPersistence?.(runId);
+    return runId;
   }
 
   async startRun(body: Partial<RunCreateRequest>, request: Request, principal?: RequestPrincipal) {
@@ -88,7 +90,9 @@ export class RunApiService {
     }
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required for this workflow.");
     const tools = this.studioStore ? await this.studioStore.listTools(principal) : (body.tools ?? []);
-    return this.executor.start({ ...(body as RunCreateRequest), workflow, agents, tools }, access ?? undefined, principal);
+    const runId = this.executor.start({ ...(body as RunCreateRequest), workflow, agents, tools }, access ?? undefined, principal);
+    await this.store.waitForPersistence?.(runId);
+    return runId;
   }
 
   definition(runId: string) {

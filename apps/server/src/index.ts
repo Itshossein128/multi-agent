@@ -1,3 +1,4 @@
+import { createPostgresPool } from "./infrastructure/postgresPool";
 import "dotenv/config";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -31,14 +32,23 @@ import { PostgresOrganizationUnitOfWork } from "./organization/organizationUnitO
 import { InMemoryBudgetStore, PostgresBudgetStore } from "./budgets/budgetStore";
 import { RunBudgetController } from "./budgets/runBudgetController";
 import { BudgetedAgentRuntime } from "./budgets/budgetedAgentRuntime";
+import { createOrganizationPurgeWorker } from "./organization/purgeComposition";
+import type { OrganizationPurgeWorker } from "./organization/organizationPurgeWorker";
+import { log } from "./logging";
+import { prepareOrganizationCheckpoints } from "./organization/checkpointCleanup";
 
 async function createDurableCheckpointer(connectionString: string): Promise<(BaseCheckpointSaver & { end?: () => Promise<void> }) | undefined> {
+  let saver: (BaseCheckpointSaver & { setup(): Promise<void>; end(): Promise<void> }) | undefined;
   try {
     const { PostgresSaver } = await import("@langchain/langgraph-checkpoint-postgres");
-    const saver = PostgresSaver.fromConnString(connectionString);
+    saver = PostgresSaver.fromConnString(connectionString);
     await saver.setup();
+    const setupPool = createPostgresPool(connectionString, {skipRole:true});
+    try { await prepareOrganizationCheckpoints(setupPool); }
+    finally { await setupPool.end(); }
     return saver;
   } catch (error) {
+    await saver?.end().catch(() => undefined);
     console.warn("Postgres checkpointer unavailable; approval recovery will be limited.", error instanceof Error ? error.message : error);
     return undefined;
   }
@@ -81,14 +91,17 @@ async function main() {
 
   const connectionString = process.env.MEMORY_DATABASE_URL ?? process.env.STUDIO_DATABASE_URL;
   const instanceId = process.env.RUN_EXECUTOR_INSTANCE_ID ?? randomUUID();
+  const recoveryPool = studio.pool && connectionString ? createPostgresPool(connectionString, {isWorker:true}) : undefined;
   const runStore = studio.mode === "postgres" && studio.pool
-    ? new PostgresRunStore(studio.pool, { durableMemoryJobs: !!memory.durableJobs, instanceId })
+    // Request authorization can occupy every application connection while awaiting
+    // durable admission. Keep independent run writes on the worker pool.
+    ? new PostgresRunStore(recoveryPool ?? studio.pool, { durableMemoryJobs: !!memory.durableJobs, instanceId, recoveryPool })
     : new InMemoryRunStore();
   if (runStore instanceof PostgresRunStore) {
     await runStore.assertLeaseSchema();
     await runStore.hydrate();
   }
-  const budgetStore = studio.pool ? new PostgresBudgetStore(studio.pool) : new InMemoryBudgetStore();
+  const budgetStore = studio.pool ? new PostgresBudgetStore(studio.pool, recoveryPool) : new InMemoryBudgetStore();
   const budgetController = new RunBudgetController(budgetStore);
   // D-5: one checkpoint instance guards every credential lease and resume path.
   const runAccessCheckpoint = new RunAccessCheckpoint();
@@ -128,9 +141,9 @@ async function main() {
     procedural_learning: async job => executor.processDurableProceduralJob(job),
   });
   const recovery = await recoverInterruptedRuns(executor, runStore, checkpointer, { instanceId });
-  await budgetController.recover(await budgetStore.openReservations(), async runId => {
+  await budgetController.recover(await budgetStore.openReservations(), async (runId, tenantId) => {
     const status = runStore instanceof PostgresRunStore
-      ? await runStore.getDurableStatus(runId)
+      ? await runStore.getDurableStatus(runId, tenantId)
       : runStore.get(runId)?.run.status;
     return !status || status === "completed" || status === "failed" || status === "cancelled";
   });
@@ -146,8 +159,8 @@ async function main() {
         if (second.restored.length || second.failed.length) {
           console.log(`Run recovery (deferred): restored=${second.restored.length} failed=${second.failed.length}`);
         }
-        await budgetController.recover(await budgetStore.openReservations(), async runId => {
-          const status = await runStore.getDurableStatus(runId);
+        await budgetController.recover(await budgetStore.openReservations(), async (runId, tenantId) => {
+          const status = await runStore.getDurableStatus(runId, tenantId);
           return !status || status === "completed" || status === "failed" || status === "cancelled";
         });
       }).catch((error) => {
@@ -160,6 +173,7 @@ async function main() {
   let outboxProcessor: TriggerOutboxProcessor | undefined;
   let heartbeatScheduler: HeartbeatScheduler | undefined;
   let routineScheduler: RoutineScheduler | undefined;
+  let organizationPurgeWorker: OrganizationPurgeWorker | undefined;
 
   if (studio.store) {
     const organizationStore = studio.pool ? new PostgresOrganizationStore(studio.pool) : new InMemoryOrganizationStore();
@@ -167,8 +181,14 @@ async function main() {
     // US3/T050: each background item claims across organizations but executes
     // inside its own organization scope (RLS GUCs on PostgreSQL).
     const scopeRunner = studio.pool ? createPgOrganizationScopeRunner(studio.pool) : undefined;
+    organizationPurgeWorker = createOrganizationPurgeWorker({
+      studioStore: studio.store, runStore, organizationStore, budgetStore, memory,
+      credentialCleanup: credentials.tenantCleanup, discoveryPool: recoveryPool,
+    });
     app.route("/studio", createStudioRouter(studio.store, undefined, executor, organizationStore, budgetStore,
-      studio.pool ? new PostgresOrganizationUnitOfWork(studio.pool) : undefined));
+      studio.pool ? new PostgresOrganizationUnitOfWork(studio.pool) : undefined, organizationPurgeWorker));
+    try { organizationPurgeWorker.assertReady(); organizationPurgeWorker.startRecovery(); }
+    catch { log.warn("organization.purge.not_configured", {}); }
     app.route("/api/webhooks", createInboundWebhookRouter(studio.store));
 
     outboxProcessor = new TriggerOutboxProcessor(studio.store, executor, undefined, { scopeRunner }, organizationAccess);
@@ -196,7 +216,10 @@ async function main() {
     server.close(() => {
       credentials.close();
       const persistenceFlush = "flush" in runStore ? runStore.flush() : Promise.resolve();
-      void Promise.all([memory.close(), studio.close(), persistenceFlush, observability.shutdown()]).then(
+      void Promise.resolve(organizationPurgeWorker?.stopRecovery()).then(async () => {
+        await persistenceFlush;
+        await Promise.all([memory.close(), studio.close(), observability.shutdown(), recoveryPool?.end()]);
+      }).then(
         () => process.exit(0),
         () => { console.error("Shutdown failed."); process.exit(1); },
       );

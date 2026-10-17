@@ -14,7 +14,7 @@ describe("cost budgets", () => {
     const scopes = [{ scope: "company" as const, scopeId: "t" }, { scope: "agent" as const, scopeId: "a" }];
     expect(await store.reserve("r1", "t", scopes, 0.75)).toBe(true);
     expect(await store.reserve("r2", "t", scopes, 0.75)).toBe(false);
-    await store.settle("r1", 0.75);
+    await store.settle("r1", 0.75, "t");
     expect((await store.list("t")).find(row => row.scope === "agent")?.spentUsd).toBe(0.75);
     expect((await store.alerts("t")).some(alert => alert.scope === "agent" && alert.level === "threshold")).toBe(true);
     expect(await store.reserve("r3", "t", scopes, 0.3)).toBe(false);
@@ -26,7 +26,7 @@ describe("cost budgets", () => {
       const store = new InMemoryBudgetStore();
       await store.setBudget({ tenantId: "tenant", scope: "company", scopeId: "tenant", limitUsd: 2, thresholdPercent: 80 });
       await store.reserve("september", "tenant", [{ scope: "company", scopeId: "tenant" }], 1);
-      await store.settle("september", 0.5);
+      await store.settle("september", 0.5, "tenant");
       jest.setSystemTime(new Date("2026-10-01T01:00:00Z"));
       expect((await store.list("tenant"))[0]).toMatchObject({ spentUsd: 0, reservedUsd: 0, periodStart: "2026-10-01T00:00:00.000Z" });
     } finally {

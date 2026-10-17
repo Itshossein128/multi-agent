@@ -173,6 +173,22 @@ describePostgres("PostgreSQL lease store persistence", () => {
     expect(errors).toBe(0);
     expect(await store.get(record.leaseId)).toBeNull();
   });
+
+  test("tenant denial survives restart and serializes with concurrent issuance without affecting neighbors", async () => {
+    const tenantId = 'tenant-deleted';
+    const old = lease({tenantId});
+    await store.create(old);
+    const attempts = Array.from({length:20}, () => store.create(lease({tenantId})));
+    const results = await Promise.allSettled([...attempts, store.blockTenant(tenantId)]);
+    expect(results[results.length - 1].status).toBe('fulfilled');
+    await store.deleteTenantLeases(tenantId);
+    const restarted = new PostgresLeaseStore(pool);
+    expect(await restarted.isTenantBlocked(tenantId)).toBe(true);
+    await expect(restarted.create(lease({tenantId}))).rejects.toMatchObject({code:'tenant_inactive'});
+    expect((await pool.query('SELECT lease_id FROM credential_broker_leases WHERE tenant_id=$1',[tenantId])).rows).toHaveLength(0);
+    expect(await restarted.isTenantBlocked('tenant-b')).toBe(false);
+    await expect(restarted.create(lease({tenantId:'tenant-b'}))).resolves.toBeUndefined();
+  });
 });
 
 describePostgres("PostgreSQL audit trail", () => {
@@ -267,7 +283,7 @@ describe("fake Vault secret store", () => {
     const secret = await store.getSecret({ tenantId: "tenant-a", provider: "database", alias: "main" });
     expect(secret.value).toBe("fake-db-secret");
     expect(secret.version).toBe("3");
-    expect(seen[0]).toBe("https://vault.internal/v1/data/secret/tenant-a/database/main");
+    expect(seen[0]).toBe("https://vault.internal/v1/secret/data/tenant-a/database/main");
     // Tenant scoping: another tenant reads its own path.
     await store.getSecret({ tenantId: "tenant-b", provider: "database", alias: "main" });
     expect(seen[1]).toContain("/tenant-b/");

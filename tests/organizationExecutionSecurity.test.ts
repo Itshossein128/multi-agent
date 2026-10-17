@@ -175,6 +175,7 @@ describe('US3 execution security — broker leases cannot cross organizations', 
     const resolver = new BrokerApiCredentialResolver(gateway, { openai: 'team' });
 
     const store = new InMemoryStudioStore();
+    await store.createOrganizationProfile({id:'tenant-a',name:'A',slug:'tenant-a',description:'',config:{},ownerId:'user-a',status:'active',createdAt:nowIso(),updatedAt:nowIso()}, {userId:'user-a',tenantId:'tenant-a'});
     const runStore = new InMemoryRunStore();
     runStore.create({
       id: 'run-a', workflowId: 'wf-a', status: 'running', startedAt: nowIso(),

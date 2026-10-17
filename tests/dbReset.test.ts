@@ -70,4 +70,18 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
     expect(await countRows(pool, "studio_migrations")).toBe(ledgerBefore);
     expect(readdirSync(storageRoot)).toEqual([]);
   });
+
+  it("also removes durable LangGraph checkpoint data while keeping its migration ledger", async () => {
+    await pool.query("INSERT INTO studio_deleted_organizations (id) VALUES ('old-deleted-org')");
+    for (const table of ['checkpoints', 'checkpoint_blobs', 'checkpoint_writes', 'checkpoint_migrations']) {
+      await pool.query(`CREATE TABLE ${table} (id text PRIMARY KEY)`);
+      await pool.query(`INSERT INTO ${table} VALUES ('old')`);
+    }
+    await resetApplicationData(pool, { confirm: true, skipRunningCheck: true });
+    for (const table of ['checkpoints', 'checkpoint_blobs', 'checkpoint_writes']) {
+      expect(await countRows(pool, table)).toBe(0);
+    }
+    expect(await countRows(pool, 'checkpoint_migrations')).toBe(1);
+    expect(await countRows(pool, 'studio_deleted_organizations')).toBe(0);
+  });
 });

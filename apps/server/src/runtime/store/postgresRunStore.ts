@@ -7,7 +7,7 @@ import { InMemoryRunStore } from "./inMemoryRunStore";
 import { asIso } from "./helpers";
 import { randomUUID } from "node:crypto";
 import { log } from "../../logging";
-import { scopedDbClient } from "../../../../../src/studio/infrastructure/withOrganization";
+import { scopedDbClient, withOrganization, currentOrganizationScope, organizationStorage } from "../../../../../src/studio/infrastructure/withOrganization";
 
 
 type Listener = (event: RunEvent) => void;
@@ -21,6 +21,7 @@ class RunLeaseLostError extends Error {
 
 export interface PostgresRunStoreOptions {
   durableMemoryJobs?: boolean;
+  recoveryPool?: PgPool;
   instanceId?: string;
   leaseDurationMs?: number;
   leaseRenewalIntervalMs?: number;
@@ -54,7 +55,12 @@ export class PostgresRunStore implements RunStoreContract {
   }
 
   private query(text: string, values?: unknown[]) {
-    return (scopedDbClient(this.pool) ?? this.pool).query(text, values);
+    const client = scopedDbClient(this.pool);
+    if (client) return client.query(text, values);
+    const scope = currentOrganizationScope();
+    return scope
+      ? withOrganization(this.pool, scope.organizationId, scope.principalKind, c => c.query(text, values))
+      : this.pool.query(text, values);
   }
 
   private startLeaseHeartbeat(): void {
@@ -68,6 +74,16 @@ export class PostgresRunStore implements RunStoreContract {
   }
 
   async renewActiveLeases(): Promise<string[]> {
+    const tenants = [...new Set(this.memory.list().filter(r => ["queued", "running", "waiting_for_human"].includes(r.status)).map(r => r.tenantId))];
+    const renewed: string[] = [];
+    for (const tenantId of tenants) {
+      const scope = tenantId ? { organizationId: tenantId, principalKind: "service" as const, source: "run.heartbeat" } : undefined;
+      renewed.push(...await organizationStorage.run(scope, () => this.renewTenantLeases(tenantId)));
+    }
+    return renewed;
+  }
+
+  private async renewTenantLeases(tenantId?: string): Promise<string[]> {
     if (this.persistenceError) return [];
     if (this.hasLeaseColumns === false) return [];
     if ((this.pool as any).ended || (this.pool as any).ending) {
@@ -76,7 +92,7 @@ export class PostgresRunStore implements RunStoreContract {
     }
     try {
       const activeRuns = this.memory.list().filter(r =>
-        ["queued", "running", "waiting_for_human"].includes(r.status) &&
+        ["queued", "running", "waiting_for_human"].includes(r.status) && r.tenantId === tenantId &&
         (!r.executionOwnerId || r.executionOwnerId === this.instanceId)
       );
       if (!activeRuns.length) return [];
@@ -129,6 +145,24 @@ export class PostgresRunStore implements RunStoreContract {
     }
   }
 
+  async purgeTenantRuns(tenantId: string): Promise<void> {
+    this.memory.purgeTenantRuns(tenantId);
+    // Drain already-admitted writes before deleting durable rows.
+    await this.writeChain;
+    await withOrganization(this.pool,tenantId,"service", async client => {
+      // Checkpoint threads use run ids. Remove payloads while the tenant-to-run
+      // mapping still exists; never truncate another organization's threads.
+      for (const table of ["checkpoint_writes", "checkpoint_blobs", "checkpoints"]) {
+        if ((await client.query("SELECT to_regclass($1) AS name", [table])).rows[0]?.name) {
+          await client.query(`DELETE FROM ${table} WHERE thread_id IN (SELECT id FROM studio_runs WHERE tenant_id=$1)`, [tenantId]);
+        }
+      }
+      await client.query("DELETE FROM studio_approvals WHERE tenant_id=$1",[tenantId]);
+      await client.query("DELETE FROM studio_run_events WHERE tenant_id=$1",[tenantId]);
+      await client.query("DELETE FROM studio_runs WHERE tenant_id=$1",[tenantId]);
+    });
+  }
+
   close(): void {
     if (this.leaseHeartbeatTimer) {
       clearInterval(this.leaseHeartbeatTimer);
@@ -136,10 +170,16 @@ export class PostgresRunStore implements RunStoreContract {
     }
   }
 
-  private enqueue(operation: () => Promise<void>): void {
+  private enqueueFor(runId: string, operation: () => Promise<void>): void {
+    const ambient = currentOrganizationScope();
+    const tenantId = this.memory.get(runId)?.run.tenantId ?? ambient?.organizationId;
+    // Never capture a request transaction. Each queued write commits independently.
+    const scope = tenantId ? Object.freeze({ organizationId: tenantId, principalKind: ambient?.principalKind ?? "service" as const, source: "run.persistence" }) : undefined;
     this.writeChain = this.writeChain.then(async () => {
       if (this.persistenceError) return;
-      await operation();
+      await organizationStorage.run(scope, () => scope
+        ? withOrganization(this.pool, scope.organizationId, scope.principalKind, operation)
+        : operation());
     }).catch((error) => {
       if (error instanceof RunLeaseLostError) {
         this.memory.cancel(error.runId);
@@ -164,21 +204,26 @@ export class PostgresRunStore implements RunStoreContract {
   private async applyInitiatorColumns(runId: string, run: Partial<Run>): Promise<void> {
     if (this.initiatorColumns === false) return;
     if (run.initiatorKind === undefined && run.membershipVersionAtStart === undefined) return;
+    const client = scopedDbClient(this.pool);
+    const savepoint = `initiator_${randomUUID().replace(/-/g, "")}`;
+    if (client) await client.query(`SAVEPOINT ${savepoint}`);
     try {
       await this.query(
         `UPDATE studio_runs SET initiator_kind = COALESCE($2, initiator_kind),
-           membership_version_at_start = COALESCE($3, membership_version_at_start), updated_at = now()
+           membership_version_at_start = COALESCE($3, membership_version_at_start), server_initiated = COALESCE($4, server_initiated), updated_at = now()
          WHERE id = $1`,
-        [runId, run.initiatorKind ?? null, run.membershipVersionAtStart ?? null],
+        [runId, run.initiatorKind ?? null, run.membershipVersionAtStart ?? null, run.serverInitiated ?? false],
       );
       this.initiatorColumns = true;
+      if (client) await client.query(`RELEASE SAVEPOINT ${savepoint}`);
     } catch (err: any) {
+      if (client) { await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`); await client.query(`RELEASE SAVEPOINT ${savepoint}`); }
       if (err?.code === "42703") {
         this.initiatorColumns = false;
         log.info("run.initiator_columns_unavailable", { runId });
         return;
       }
-      log.warn("run.initiator_persist_failed", { runId, error: err?.message ?? String(err) });
+      throw err;
     }
   }
 
@@ -209,17 +254,23 @@ export class PostgresRunStore implements RunStoreContract {
 
   /** PostgreSQL execution must not start without the fencing columns from migration 016. */
   async assertLeaseSchema(): Promise<void> {
-    await this.query("SELECT execution_owner_id, execution_lease_expires_at FROM studio_runs LIMIT 0");
+    await this.query("SELECT server_initiated, execution_owner_id, execution_lease_expires_at FROM studio_runs LIMIT 0");
     this.hasLeaseColumns = true;
   }
 
   /** Read authoritative status for cross-replica budget recovery. */
-  async getDurableStatus(runId: string): Promise<RunStatus | undefined> {
+  async getDurableStatus(runId: string, tenantId?: string): Promise<RunStatus | undefined> {
+    if (tenantId && !scopedDbClient(this.pool)) return withOrganization(this.pool, tenantId, "service", () => this.getDurableStatus(runId));
     const result = await this.query("SELECT status FROM studio_runs WHERE id = $1", [runId]);
     return result.rows[0]?.status as RunStatus | undefined;
   }
 
   async hydrate(): Promise<void> {
+    if (!currentOrganizationScope() && this.options.recoveryPool) {
+      const tenants = await this.options.recoveryPool.query("SELECT tenant_id FROM studio_recovery_organizations()");
+      for (const row of tenants.rows) await withOrganization(this.pool, String(row.tenant_id), "service", () => this.hydrate());
+      return;
+    }
     const runs = await this.query("SELECT * FROM studio_runs ORDER BY started_at ASC");
     if (runs.rows.length > 0) {
       this.hasLeaseColumns = Object.prototype.hasOwnProperty.call(runs.rows[0], "execution_owner_id");
@@ -240,6 +291,7 @@ export class PostgresRunStore implements RunStoreContract {
         metadata: (row.metadata ?? {}) as Record<string, unknown>,
         ownerId: (row.owner_id as string | null) ?? (row.memory_owner_principal_id as string | null) ?? undefined,
         tenantId: (row.tenant_id as string | null) ?? (row.memory_owner_tenant_id as string | null) ?? undefined,
+        serverInitiated: row.server_initiated === true,
         initiatorKind: row.initiator_kind ? (String(row.initiator_kind) as Run["initiatorKind"]) : undefined,
         membershipVersionAtStart:
           row.membership_version_at_start === null || row.membership_version_at_start === undefined
@@ -335,8 +387,12 @@ export class PostgresRunStore implements RunStoreContract {
     runPromise.catch(() => {});
     this.runPromises.set(run.id, runPromise);
 
-    this.enqueue(async () => {
+    this.enqueueFor(run.id, async () => {
       try {
+        if (this.hasLeaseColumns === undefined) {
+          const columns = await this.query("SELECT EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid='studio_runs'::regclass AND attname='execution_owner_id' AND NOT attisdropped) AS present");
+          this.hasLeaseColumns = columns.rows[0]?.present === true;
+        }
         if (this.hasLeaseColumns !== false) {
           try {
             await this.query(
@@ -442,9 +498,19 @@ export class PostgresRunStore implements RunStoreContract {
     return created;
   }
 
+  async hasExecutionLease(runId: string): Promise<boolean> {
+    const tenantId = this.memory.get(runId)?.run.tenantId;
+    const check = async () => {
+      const result = await this.query("SELECT id FROM studio_runs WHERE id=$1 AND execution_owner_id=$2 AND execution_lease_expires_at>now() AND status IN ('queued','running','waiting_for_human')", [runId,this.instanceId]);
+      return result.rows.length === 1;
+    };
+    return tenantId && !scopedDbClient(this.pool) ? withOrganization(this.pool,tenantId,"service",check) : check();
+  }
+
   async waitForPersistence(runId: string): Promise<{ success: boolean; duplicate?: boolean }> {
     const promise = this.runPromises.get(runId);
     if (!promise) return { success: true };
+    await this.flush();
     const result = await promise;
     if (!result.duplicate) this.runPromises.delete(runId);
     return result;
@@ -478,7 +544,7 @@ export class PostgresRunStore implements RunStoreContract {
     this.assertHealthy();
     const next = this.memory.append(runId, event);
     if (next) {
-      this.enqueue(async () => {
+      this.enqueueFor(runId, async () => {
         const promise = this.runPromises.get(runId);
         if (promise) {
           const res = await promise;
@@ -531,10 +597,10 @@ export class PostgresRunStore implements RunStoreContract {
     }
     const run = this.memory.update(runId, patch);
     if (run && (patch.initiatorKind !== undefined || patch.membershipVersionAtStart !== undefined)) {
-      this.enqueue(() => this.applyInitiatorColumns(runId, patch));
+      this.enqueueFor(runId, () => this.applyInitiatorColumns(runId, patch));
     }
     if (run) {
-      this.enqueue(async () => {
+      this.enqueueFor(runId, async () => {
         const promise = this.runPromises.get(runId);
         if (promise) {
           const res = await promise;
@@ -547,9 +613,8 @@ export class PostgresRunStore implements RunStoreContract {
         // PostgreSQL database. Terminal state and its episodic work intent are
         // committed together; a failed insert rolls both back.
         if (this.options.durableMemoryJobs && isTerminal && namespace && entry?.memoryAccess) {
-          const client = await this.pool.connect();
-          try {
-            await client.query("BEGIN");
+          const client = scopedDbClient(this.pool)!;
+          {
             if (this.hasLeaseColumns !== false) {
               try {
                 const updated = await client.query(
@@ -588,8 +653,7 @@ export class PostgresRunStore implements RunStoreContract {
                ON CONFLICT (tenant_id,job_kind,handler_version,idempotency_key) DO NOTHING`,
               [randomUUID(), `episodic:${runId}:v1`, entry.memoryAccess.tenantId, namespace.scope, namespace.id, runId],
             );
-            await client.query("COMMIT");
-          } catch (error) { try { await client.query("ROLLBACK"); } catch {} throw error; } finally { client.release(); }
+          }
           return;
         }
         if (isTerminal) {
@@ -708,6 +772,15 @@ export class PostgresRunStore implements RunStoreContract {
     statuses?: RunStatus[];
   }): Promise<Array<{ id: string; status: RunStatus }>> {
     this.assertHealthy();
+    if (!currentOrganizationScope() && this.options.recoveryPool) {
+      const tenants = await this.options.recoveryPool.query("SELECT tenant_id FROM studio_recovery_organizations()");
+      const claimed: Array<{id:string;status:RunStatus}> = [];
+      for (const row of tenants.rows) {
+        const scope = {organizationId:String(row.tenant_id),principalKind:"service" as const,source:"run.recovery"};
+        claimed.push(...await organizationStorage.run(scope, () => this.claimOrphanedRuns(options)));
+      }
+      return claimed;
+    }
     if (this.hasLeaseColumns === false) {
       return [];
     }
@@ -718,6 +791,11 @@ export class PostgresRunStore implements RunStoreContract {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const scope = currentOrganizationScope();
+      if (scope) {
+        await client.query("SELECT set_config('app.tenant_id', $1, true)", [scope.organizationId]);
+        await client.query("SELECT set_config('app.principal_kind', $1, true)", [scope.principalKind]);
+      }
       const res = await client.query(
         `UPDATE studio_runs
             SET execution_owner_id = $1,
@@ -731,7 +809,7 @@ export class PostgresRunStore implements RunStoreContract {
              ORDER BY started_at ASC
              FOR UPDATE SKIP LOCKED
           )
-          RETURNING id, status, workflow_id, task_id, workflow_snapshot, agents_snapshot, tools_snapshot, input, output, metadata, paused_context, memory_access, owner_id, tenant_id, started_at, completed_at`,
+          RETURNING id, status, server_initiated, initiator_kind, workflow_id, task_id, workflow_snapshot, agents_snapshot, tools_snapshot, input, output, metadata, paused_context, memory_access, owner_id, tenant_id, started_at, completed_at`,
         [ownerId, leaseDurationMs, statuses]
       );
       await client.query("COMMIT");
@@ -764,6 +842,8 @@ export class PostgresRunStore implements RunStoreContract {
             metadata: (row.metadata ?? {}) as Record<string, unknown>,
             ownerId: row.owner_id ? String(row.owner_id) : undefined,
             tenantId: row.tenant_id ? String(row.tenant_id) : undefined,
+            serverInitiated: row.server_initiated === true,
+            initiatorKind: row.initiator_kind ?? undefined,
             executionOwnerId: ownerId,
             executionLeaseExpiresAt: leaseExpiresIso,
             executionHeartbeatAt: heartbeatIso,
@@ -813,7 +893,7 @@ export class PostgresRunStore implements RunStoreContract {
   addApproval(runId: string, approval: ApprovalRequest, timeoutSeconds?: number) {
     this.assertHealthy();
     this.memory.addApproval(runId, approval);
-    this.enqueue(async () => {
+    this.enqueueFor(runId, async () => {
       const values = [
           approval.id,
           approval.runId,
@@ -866,7 +946,7 @@ export class PostgresRunStore implements RunStoreContract {
     this.assertHealthy();
     const approval = this.memory.updateApproval(runId, approvalId, patch);
     if (approval) {
-      this.enqueue(async () => {
+      this.enqueueFor(runId, async () => {
         const values = [
           approvalId,
           approval.status,
@@ -913,7 +993,7 @@ export class PostgresRunStore implements RunStoreContract {
   setPausedContext(runId: string, context: RunEntry["pausedContext"] | null) {
     this.assertHealthy();
     this.memory.setPausedContext(runId, context);
-    this.enqueue(async () => {
+    this.enqueueFor(runId, async () => {
       if (this.hasLeaseColumns !== false) {
         try {
           const updated = await this.query(
@@ -952,7 +1032,7 @@ export class PostgresRunStore implements RunStoreContract {
   markEpisodicMemoryPending(runId: string) {
     this.assertHealthy();
     this.memory.markEpisodicMemoryPending(runId);
-    this.enqueue(async () => {
+    this.enqueueFor(runId, async () => {
       await this.query("UPDATE studio_runs SET episodic_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
     });
   }
@@ -960,7 +1040,7 @@ export class PostgresRunStore implements RunStoreContract {
   setEpisodicMemoryStatus(runId: string, status: "processed" | "failed") {
     this.assertHealthy();
     this.memory.setEpisodicMemoryStatus(runId, status);
-    this.enqueue(async () => {
+    this.enqueueFor(runId, async () => {
       await this.query("UPDATE studio_runs SET episodic_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
     });
   }
@@ -968,7 +1048,7 @@ export class PostgresRunStore implements RunStoreContract {
   markProceduralMemoryPending(runId: string) {
     this.assertHealthy();
     this.memory.markProceduralMemoryPending(runId);
-    this.enqueue(async () => {
+    this.enqueueFor(runId, async () => {
       await this.query("UPDATE studio_runs SET procedural_memory_status = 'pending', updated_at = now() WHERE id = $1", [runId]);
     });
   }
@@ -976,7 +1056,7 @@ export class PostgresRunStore implements RunStoreContract {
   setProceduralMemoryStatus(runId: string, status: "processed" | "failed") {
     this.assertHealthy();
     this.memory.setProceduralMemoryStatus(runId, status);
-    this.enqueue(async () => {
+    this.enqueueFor(runId, async () => {
       await this.query("UPDATE studio_runs SET procedural_memory_status = $2, updated_at = now() WHERE id = $1", [runId, status]);
     });
   }

@@ -1,5 +1,5 @@
 import type { PgPool } from "../../../../src/memory/infrastructure";
-import { withOrganization, scopedDbClient } from "../../../../src/studio/infrastructure/withOrganization";
+import { withOrganization, scopedDbClient, currentOrganizationScope } from "../../../../src/studio/infrastructure/withOrganization";
 
 
 export type BudgetScope = "company" | "agent" | "project";
@@ -16,12 +16,13 @@ export interface BudgetRecord {
 }
 export interface BudgetAlert { tenantId: string; scope: BudgetScope; scopeId: string; level: "threshold" | "limit"; createdAt: string; spentUsd: number; limitUsd: number }
 export interface BudgetStore {
+  purgeTenantBudgets?(tenantId: string): void | Promise<void>;
   list(tenantId: string): Promise<BudgetRecord[]>;
   setBudget(input: Pick<BudgetRecord, "tenantId" | "scope" | "scopeId" | "limitUsd" | "thresholdPercent">): Promise<BudgetRecord>;
   reserve(runId: string, tenantId: string, scopeKeys: { scope: BudgetScope; scopeId: string }[], amountUsd: number): Promise<boolean>;
-  settle(runId: string, actualUsd: number): Promise<void>;
+  settle(runId: string, actualUsd: number, tenantId: string): Promise<void>;
   alerts(tenantId: string): Promise<BudgetAlert[]>;
-  openReservations(): Promise<string[]>;
+  openReservations(): Promise<{ runId: string; tenantId: string }[]>;
 }
 
 function month(): { start: string; end: string } {
@@ -38,7 +39,7 @@ function currentPeriodView(row: BudgetRecord): BudgetRecord {
 
 export class InMemoryBudgetStore implements BudgetStore {
   private readonly records = new Map<string, BudgetRecord>();
-  private readonly reservations = new Map<string, { keys: string[]; amount: number }>();
+  private readonly reservations = new Map<string, { keys: string[]; amount: number; tenantId: string }>();
   private readonly notifications: BudgetAlert[] = [];
   async list(tenantId: string) { return [...this.records.values()].filter(row => row.tenantId === tenantId).map(row => structuredClone(currentPeriodView(row))); }
   async setBudget(input: Pick<BudgetRecord, "tenantId" | "scope" | "scopeId" | "limitUsd" | "thresholdPercent">) {
@@ -55,10 +56,10 @@ export class InMemoryBudgetStore implements BudgetStore {
     if (keys.length === 0) return true;
     if (keys.some(id => { const row = this.records.get(id)!; if (row.periodStart !== month().start && row.reservedUsd === 0) { const period = month(); row.spentUsd = 0; row.periodStart = period.start; row.periodEnd = period.end; } return row.spentUsd + row.reservedUsd + amountUsd > row.limitUsd; })) return false;
     for (const id of keys) this.records.get(id)!.reservedUsd += amountUsd;
-    this.reservations.set(runId, { keys, amount: amountUsd }); return true;
+    this.reservations.set(runId, { keys, amount: amountUsd, tenantId }); return true;
   }
-  async settle(runId: string, actualUsd: number) {
-    const reservation = this.reservations.get(runId); if (!reservation) return;
+  async settle(runId: string, actualUsd: number, tenantId: string) {
+    const reservation = this.reservations.get(runId); if (!reservation || reservation.tenantId !== tenantId) return;
     this.reservations.delete(runId);
     for (const id of reservation.keys) {
       const row = this.records.get(id)!;
@@ -71,13 +72,16 @@ export class InMemoryBudgetStore implements BudgetStore {
     }
   }
   async alerts(tenantId: string) { return this.notifications.filter(row => row.tenantId === tenantId).map(row => structuredClone(row)); }
-  async openReservations() { return [...this.reservations.keys()]; }
+  async openReservations() { return [...this.reservations].map(([runId, r]) => ({runId, tenantId: r.tenantId})); }
   purgeTenantBudgets(tenantId: string): void {
     for (const [key, record] of Array.from(this.records.entries())) {
       if (record.tenantId === tenantId) this.records.delete(key);
     }
-    for (const [key] of Array.from(this.reservations.entries())) {
-      this.reservations.delete(key);
+    for (const [key, reservation] of Array.from(this.reservations.entries())) {
+      if (reservation.tenantId === tenantId) this.reservations.delete(key);
+    }
+    for (let index = this.notifications.length - 1; index >= 0; index--) {
+      if (this.notifications[index].tenantId === tenantId) this.notifications.splice(index, 1);
     }
   }
 }
@@ -87,7 +91,15 @@ function decode(row: Record<string, unknown>): BudgetRecord {
 }
 
 export class PostgresBudgetStore implements BudgetStore {
-  constructor(private readonly pool: PgPool) {}
+  constructor(private readonly pool: PgPool, private readonly recoveryPool?: PgPool) {}
+
+  async purgeTenantBudgets(tenantId: string): Promise<void> {
+    await withOrganization(this.pool, tenantId, "service", async client => {
+      for (const table of ["studio_budget_alerts", "studio_budget_reservations", "studio_budgets"]) {
+        await client.query(`DELETE FROM ${table} WHERE tenant_id=$1`, [tenantId]);
+      }
+    });
+  }
 
   private query(text: string, values?: unknown[]) {
     return (scopedDbClient(this.pool) ?? this.pool).query(text, values);
@@ -149,16 +161,14 @@ export class PostgresBudgetStore implements BudgetStore {
     });
   }
 
-  async settle(runId: string, actualUsd: number) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const result = await client.query("SELECT * FROM studio_budget_reservations WHERE run_id=$1 FOR UPDATE", [runId]);
-      if (!result.rows.length || result.rows[0].settled_at) { await client.query("COMMIT"); return; }
+  async settle(runId: string, actualUsd: number, tenantId: string) {
+    if (!tenantId?.trim()) throw new Error("Trusted tenant identity is required for settlement");
+    if (!Number.isFinite(actualUsd) || actualUsd < 0) throw new Error("Invalid settlement amount");
+    return withOrganization(this.pool, tenantId, "service", async (client) => {
+      const result = await client.query("SELECT * FROM studio_budget_reservations WHERE run_id=$1 AND tenant_id=$2 FOR UPDATE", [runId,tenantId]);
+      if (!result.rows.length || result.rows[0].settled_at) { return; }
       const reservation = result.rows[0];
-      const tenantId = String(reservation.tenant_id);
-      await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
-      await client.query("SELECT set_config('app.principal_kind', $1, true)", ["service"]);
+
       const scopes = reservation.scopes as { scope: BudgetScope; scopeId: string }[];
       for (const scope of scopes) {
         const update = await client.query(
@@ -177,9 +187,7 @@ export class PostgresBudgetStore implements BudgetStore {
         }
       }
       await client.query("UPDATE studio_budget_reservations SET settled_at=now(),actual_usd=$2 WHERE run_id=$1", [runId,actualUsd]);
-      await client.query("COMMIT");
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    });
   }
 
   async alerts(tenantId: string): Promise<BudgetAlert[]> {
@@ -189,8 +197,14 @@ export class PostgresBudgetStore implements BudgetStore {
     });
   }
 
-  async openReservations() {
-    const result = await this.query("SELECT run_id FROM studio_budget_reservations WHERE settled_at IS NULL", []);
-    return result.rows.map(row => String(row.run_id));
+  async openReservations(): Promise<{runId:string;tenantId:string}[]> {
+    if (!currentOrganizationScope() && this.recoveryPool) {
+      const tenants = await this.recoveryPool.query("SELECT tenant_id FROM studio_recovery_organizations()");
+      const reservations: {runId:string;tenantId:string}[] = [];
+      for (const row of tenants.rows) reservations.push(...await withOrganization(this.pool, String(row.tenant_id), "service", () => this.openReservations()));
+      return reservations;
+    }
+    const result = await this.query("SELECT run_id,tenant_id FROM studio_budget_reservations WHERE settled_at IS NULL", []);
+    return result.rows.map(row => ({runId: String(row.run_id),tenantId: String(row.tenant_id)}));
   }
 }

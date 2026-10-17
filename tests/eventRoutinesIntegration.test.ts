@@ -1,3 +1,8 @@
+import type { RunExecutor as DispatchExecutor } from "../apps/server/src/runtime/runExecutor";
+function startDispatched(executor: DispatchExecutor, ...args: Parameters<DispatchExecutor["start"]>) {
+  return runDispatchContext.run({organizationId: args[2]?.tenantId ?? "",kind:"trigger"}, () => executor.start(...args));
+}
+import { runDispatchContext } from "../apps/server/src/runtime/runDispatchContext";
 import { randomUUID } from "node:crypto";
 import crypto from "node:crypto";
 import { Pool } from "pg";
@@ -15,6 +20,18 @@ import type {
   AgentHeartbeatSettings,
 } from "@multi-agent/types";
 import { nowIso, uid, createSingleAgentWorkflow } from "@multi-agent/types";
+
+async function finishRun(store: PostgresRunStore, runId: string) {
+  for (let i = 0; i < 400; i++) {
+    const status = store.get(runId)?.run.status;
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      await store.flush();
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`Run ${runId} did not finish before fixture teardown`);
+}
 
 const databaseUrl =
   process.env.STUDIO_DATABASE_URL ||
@@ -492,7 +509,7 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
       const dispatchKey = `trigger:evt-unique-boundary-${randomUUID()}`;
 
       // Worker 1 starts run with dispatch key
-      const runId1 = executor.start(
+      const runId1 = startDispatched(executor,
         {
           workflow: workflow as any,
           agents: [agent as any],
@@ -514,7 +531,7 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
 
       // Simulate Worker 1 crashing before updating outbox event to processed.
       // Worker 2 (or Worker 1 on retry) calls executor.start with the same dispatchKey.
-      const runId2 = executor.start(
+      const runId2 = startDispatched(executor,
         {
           workflow: workflow as any,
           agents: [agent as any],
@@ -534,6 +551,8 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
         [dispatchKey]
       );
       expect(totalRuns.rows[0].count).toBe(1);
+      await finishRun(runStore, runId1);
+      runStore.close();
     });
 
     it("ensures atomic heartbeat transaction, slot-based stable idempotency, and cross-process busy detection (Defect 3)", async () => {
@@ -824,7 +843,7 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
       const dispatchKey = `trigger:evt-race-spy-${randomUUID()}`;
 
       const [runIdA, runIdB] = await Promise.all([
-        Promise.resolve().then(() => executorA.start(
+        Promise.resolve().then(() => startDispatched(executorA,
           {
             workflow: workflow as any,
             agents: [agent as any],
@@ -834,7 +853,7 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
           undefined,
           userA,
         )),
-        Promise.resolve().then(() => executorB.start(
+        Promise.resolve().then(() => startDispatched(executorB,
           {
             workflow: workflow as any,
             agents: [agent as any],
@@ -846,8 +865,7 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
         )),
       ]);
 
-      await Promise.all([runStoreA.flush?.(), runStoreB.flush?.()]);
-      await new Promise((r) => setTimeout(r, 100));
+      await Promise.all([finishRun(runStoreA, runIdA), finishRun(runStoreB, runIdB)]);
 
       expect(spyInvocations).toBe(1);
 
@@ -861,7 +879,7 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
       await runStoreC.hydrate?.();
       const executorC = new RunExecutor(runStoreC, spyRuntime);
 
-      const runIdC = executorC.start(
+      const runIdC = startDispatched(executorC,
         {
           workflow: workflow as any,
           agents: [agent as any],
@@ -873,9 +891,14 @@ describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
       );
 
       await runStoreC.flush?.();
-      await new Promise((r) => setTimeout(r, 50));
 
       expect(spyInvocations).toBe(1);
+      const durable = await pool.query("SELECT status FROM studio_runs WHERE metadata->>'triggerDispatchKey'=$1", [dispatchKey]);
+      expect(durable.rows).toHaveLength(1);
+      expect(durable.rows[0].status).toBe("completed");
+      runStoreA.close();
+      runStoreB.close();
+      runStoreC.close();
     });
 
     it("prevents partial ID false-positives and enforces tenant isolation in isAgentBusy across separate store instances (Defect 3)", async () => {

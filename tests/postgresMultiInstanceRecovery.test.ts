@@ -139,7 +139,7 @@ describe("PostgreSQL Multi-Instance Run Recovery & Lease Management", () => {
 
     // Reservation MUST still be open and not prematurely settled!
     const openReservations = await budgetStore.openReservations();
-    expect(openReservations.includes(runIdA)).toBe(true);
+    expect(openReservations.some(r=>r.runId===runIdA)).toBe(true);
 
     storeA.close();
     storeB.close();
@@ -189,11 +189,11 @@ describe("PostgreSQL Multi-Instance Run Recovery & Lease Management", () => {
     const budgetStore = new PostgresBudgetStore(pool);
     expect(await budgetStore.reserve(runId, tenantId, [{ scope: "company", scopeId: tenantId }], 1)).toBe(true);
     const controllerB = new RunBudgetController(budgetStore);
-    await controllerB.recover(await budgetStore.openReservations(), async id => {
-      const status = await storeB.getDurableStatus(id);
+    await controllerB.recover(await budgetStore.openReservations(), async (id, reservationTenantId) => {
+      const status = await storeB.getDurableStatus(id, reservationTenantId);
       return !status || status === "completed" || status === "failed" || status === "cancelled";
     });
-    expect(await budgetStore.openReservations()).toContain(runId);
+    expect(await budgetStore.openReservations()).toContainEqual({ runId, tenantId });
     storeA.close();
     storeB.close();
   });
@@ -219,7 +219,7 @@ describe("PostgreSQL Multi-Instance Run Recovery & Lease Management", () => {
       [{ scope: "company", scopeId: tenantId }],
       15.0
     );
-    expect((await budgetStore.openReservations()).includes(runIdOrphaned)).toBe(true);
+    expect((await budgetStore.openReservations()).some(r=>r.runId===runIdOrphaned)).toBe(true);
 
     // Replica B starts up
     const storeB = new PostgresRunStore(pool, {
@@ -254,7 +254,7 @@ describe("PostgreSQL Multi-Instance Run Recovery & Lease Management", () => {
 
     // Budget reservation for genuinely terminal run IS now settled!
     const openAfter = await budgetStore.openReservations();
-    expect(openAfter.includes(runIdOrphaned)).toBe(false);
+    expect(openAfter.some(r=>r.runId===runIdOrphaned)).toBe(false);
 
     storeB.close();
   });

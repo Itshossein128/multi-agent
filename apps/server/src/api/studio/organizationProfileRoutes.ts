@@ -17,7 +17,8 @@ export function registerOrganizationProfileRoutes(
   app.patch("/organizations/current", async (c) =>
     c.json(await profiles.updateCurrent(await c.req.json().catch(() => ({})), c.get("principal"))),
   );
-  app.delete("/organizations/current", async (c) =>
-    c.json(await profiles.deleteCurrent(await c.req.json().catch(() => ({})), c.get("principal"))),
-  );
+  app.delete("/organizations/current", async (c) => {
+    const result = await profiles.deleteCurrent(await c.req.json().catch(() => ({})), c.get("principal"));
+    return c.json(result, result.status === "pending" ? 202 : 200);
+  });
 }

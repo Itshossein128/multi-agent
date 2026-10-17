@@ -22,6 +22,7 @@ export interface OrganizationGoal {
 export interface ReportingLine { tenantId: string; agentId: string; managerAgentId: string | null; role: "ceo" | "manager" | "member" }
 
 export interface OrganizationStore {
+  purgeTenantGoals?(tenantId: string): void | Promise<void>;
   goals(tenantId: string): Promise<OrganizationGoal[]>;
   saveGoal(goal: OrganizationGoal): Promise<OrganizationGoal>;
   reportingLines(tenantId: string): Promise<ReportingLine[]>;
@@ -84,6 +85,12 @@ function goalFromRow(row: Record<string, unknown>): OrganizationGoal {
 
 export class PostgresOrganizationStore implements OrganizationStore {
   constructor(private readonly pool: PgPool, private readonly client?: PgClient) {}
+  async purgeTenantGoals(tenantId: string): Promise<void> {
+    await this.scopedExecution(tenantId, "service", async () => {
+      await this.query("DELETE FROM studio_organization_goals WHERE tenant_id=$1", [tenantId]);
+      await this.query("DELETE FROM studio_agent_reporting WHERE tenant_id=$1", [tenantId]);
+    });
+  }
   private query(text: string, values?: unknown[]) { return (this.client ?? scopedDbClient(this.pool) ?? this.pool).query(text, values); }
 
   private scopedExecution<T>(

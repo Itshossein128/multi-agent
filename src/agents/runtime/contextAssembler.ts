@@ -203,6 +203,22 @@ export class DefaultContextAssembler implements ContextAssembler {
       required: true,
     });
 
+    // Node input may be replaced by a predecessor's output. Preserve the
+    // user's original workflow request as required, executor-visible context.
+    const runtimeState = { ...request.runtimeState };
+    if (Object.prototype.hasOwnProperty.call(runtimeState, "workflowInput")) {
+      const originalText = `ORIGINAL WORKFLOW INPUT:\n${JSON.stringify(runtimeState.workflowInput ?? {})}`;
+      items.push({
+        id: `workflow-input:${request.workflowId}`,
+        source: "task",
+        priority: PRIORITY.TASK + 1,
+        content: { type: "task", text: originalText },
+        estimatedTokens: this.estimator.estimate(originalText),
+        required: true,
+      });
+      delete runtimeState.workflowInput;
+    }
+
     // Structured handoffs from predecessor agents
     if (request.handoffs) {
       const handoffEntries = Object.entries(request.handoffs)
@@ -258,15 +274,15 @@ export class DefaultContextAssembler implements ContextAssembler {
     }
 
     if (request.runtimeState) {
-      const stateText = JSON.stringify(request.runtimeState);
+      const stateText = JSON.stringify(runtimeState);
       if (stateText !== "{}") {
         items.push({
           id: `runtime:${request.nodeId}`,
           source: "runtime_state",
           priority: PRIORITY.RUNTIME_STATE,
-          content: { type: "runtime_state", data: request.runtimeState },
+          content: { type: "runtime_state", data: runtimeState },
           estimatedTokens: this.estimator.estimate(stateText),
-          metadata: { keys: Object.keys(request.runtimeState) },
+          metadata: { keys: Object.keys(runtimeState) },
         });
       }
     }

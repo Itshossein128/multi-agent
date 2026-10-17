@@ -34,6 +34,7 @@ export interface RunListFilters {
 }
 
 export interface RunStoreContract {
+  purgeTenantRuns?(tenantId: string): void | Promise<void>;
   create(
     run: Run,
     memoryOwner?: MemoryOwner,
@@ -67,6 +68,7 @@ export interface RunStoreContract {
   setProceduralMemoryStatus?(runId: string, status: "processed" | "failed"): void;
   /** Throws when a durable adapter has entered a persistence-failure state. */
   assertHealthy?(): void;
+  hasExecutionLease?(runId: string): Promise<boolean>;
   hydrate?(): Promise<void>;
   flush?(): Promise<void>;
   findByTriggerDispatchKey?(key: string, tenantId?: string): RunEntry | undefined;

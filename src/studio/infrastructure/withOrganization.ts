@@ -25,7 +25,7 @@ export class OrganizationScopeError extends Error {
   }
 }
 
-export const organizationStorage = new AsyncLocalStorage<OrganizationScope>();
+export const organizationStorage = new AsyncLocalStorage<OrganizationScope | undefined>();
 
 export function currentOrganizationScope(): OrganizationScope | undefined {
   return organizationStorage.getStore();
@@ -86,12 +86,13 @@ export async function withOrganization<T>(
   }
 
   const client = await pool.connect();
+  const scope: OrganizationScope = { organizationId: normalizedOrgId, principalKind, source, client, pool };
   try {
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.tenant_id', $1, true)", [normalizedOrgId]);
     await client.query("SELECT set_config('app.principal_kind', $1, true)", [principalKind]);
     const result = await organizationStorage.run(
-      { organizationId: normalizedOrgId, principalKind, source, client, pool },
+      scope,
       () => fn(client),
     );
     await client.query("COMMIT");
@@ -104,6 +105,9 @@ export async function withOrganization<T>(
     }
     throw error;
   } finally {
+    // Async descendants retain this scope object after the request returns.
+    // Revoke the borrowed transaction client before returning it to the pool.
+    scope.client = undefined;
     client.release();
   }
 }

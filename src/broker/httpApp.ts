@@ -29,7 +29,7 @@ export interface ServiceIdentity {
   scopes: ReadonlySet<string>;
 }
 
-export type Scope = "leases:issue" | "leases:consume" | "leases:revoke" | "audit:read";
+export type Scope = "leases:issue" | "leases:consume" | "leases:revoke" | "audit:read" | "tenants:purge";
 
 export interface BrokerServiceAuth {
   /** Returns the identity for a bearer token, or null when unknown/invalid. */
@@ -93,7 +93,9 @@ export function createBrokerApp(options: BrokerAppOptions): Hono {
     const identity = options.auth.identify(token);
     if (!identity) return jsonError(c, "unauthenticated", 401);
 
-    const scope = path === "/v1/audit/leases"
+    const scope = c.req.method === "POST" && /^\/v1\/tenants\/[^/]+\/purge$/.test(path)
+      ? "tenants:purge" as Scope
+      : path === "/v1/audit/leases"
       ? "audit:read" as Scope
       : c.req.method === "POST" && path === "/v1/leases"
         ? "leases:issue" as Scope
@@ -151,6 +153,13 @@ export function createBrokerApp(options: BrokerAppOptions): Hono {
     } catch (error) {
       return failure(c, error);
     }
+  });
+
+  app.post("/v1/tenants/:tenantId/purge", async c => {
+    const body = await readJson(c.req.raw);
+    if (!body || body.tenantId !== c.req.param("tenantId")) return jsonError(c, "invalid_request", 400);
+    try { return c.json(await options.service.purgeTenantCredentials(c.req.param("tenantId")), 200); }
+    catch (error) { return failure(c, error); }
   });
 
   app.get("/v1/health", async (c) => {

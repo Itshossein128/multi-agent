@@ -106,7 +106,9 @@ describe("Production Episodic Memory Wiring Tests", () => {
     expect(learned).toHaveLength(1);
     expect(learned[0].procedure).toContain("Authentication middleware was updated");
 
-    const agent = { ...mockAgent, backend: { type: "api" as const, provider: "openai" as const, model: "test-model" }, memory: { enabled: true, type: "run" as const, scope: "agent" as const, mode: "read" as const, maxEntries: 5, shortTerm: { enabled: false }, longTerm: { enabled: true, readableNamespaces: [namespaceA], writableNamespace: namespaceA, retrieval: { maxTokens: 1024 } } } };
+    // This wiring test needs room for all three episodes plus the learned procedure.
+    // A 1024-byte budget can legitimately select only episodes as their scores vary.
+    const agent = { ...mockAgent, backend: { type: "api" as const, provider: "openai" as const, model: "test-model" }, memory: { enabled: true, type: "run" as const, scope: "agent" as const, mode: "read" as const, maxEntries: 5, shortTerm: { enabled: false }, longTerm: { enabled: true, readableNamespaces: [namespaceA], writableNamespace: namespaceA, retrieval: { maxTokens: 4096 } } } };
     const seen: any[] = [];
     const runtime = new AgentRuntime({ create: () => ({ async *execute(input: any) { seen.push(input); yield { type: "agent.completed", agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, timestamp: new Date().toISOString(), payload: { content: "ok" } }; } }) }, {
       service,
@@ -118,6 +120,7 @@ describe("Production Episodic Memory Wiring Tests", () => {
     for await (const _event of runtime.execute({ agent, input: "authentication middleware modified", runId: "run-d", nodeId: "agentNode", workflowId: workflow.id, memoryAccess: accessA })) { /* consume normal runtime path */ }
     expect(seen[0].context?.memoryContext).toContain("Trigger:");
     expect(seen[0].context?.memoryContext).toContain("Authentication middleware was updated");
+    expect(seen[0].context?.memoryContext).toContain(learned[0].id);
   });
 
   test("Scenario A — Successful meaningful run automatically creates an episodic memory and is retrievable", async () => {

@@ -23,7 +23,7 @@ function tokens(usage: Record<string, unknown>, ...keys: string[]): number {
 /** Charges actual token usage when a rate is configured; otherwise charges the full reservation conservatively. */
 export class RunBudgetController {
   private readonly usage = new Map<string, { cost: number; known: boolean; unknown: boolean; input: number; output: number }>();
-  private readonly trackedReservations = new Set<string>();
+  private readonly trackedReservations = new Map<string, string>();
   private readonly enforcedReservations = new Set<string>();
   readonly reservationUsd: number;
   constructor(private readonly store: BudgetStore) {
@@ -38,23 +38,23 @@ export class RunBudgetController {
     const selected = [...new Map(scopeKeys.map(item => [`${item.scope}:${item.scopeId}`, item])).values()];
     const admitted = await this.store.reserve(reservationId, tenantId, selected, this.reservationUsd);
     if (admitted) {
-      this.trackedReservations.add(reservationId);
+      this.trackedReservations.set(reservationId, tenantId);
       try {
         const configured = await this.store.list(tenantId);
         const enforced = selected.some(scope => configured.some(budget => budget.scope === scope.scope && budget.scopeId === scope.scopeId));
         if (enforced) this.enforcedReservations.add(reservationId);
       } catch (error) {
         this.trackedReservations.delete(reservationId);
-        await this.store.settle(reservationId, 0);
+        await this.store.settle(reservationId, 0, tenantId);
         throw error;
       }
     }
     return admitted;
   }
-  async recover(reservations: string[], isTerminal: (runId: string) => boolean | Promise<boolean>): Promise<void> {
-    for (const reservationId of reservations) {
+  async recover(reservations: {runId: string; tenantId: string}[], isTerminal: (runId: string, tenantId: string) => boolean | Promise<boolean>): Promise<void> {
+    for (const {runId: reservationId, tenantId} of reservations) {
       const runId = reservationId.split(":", 1)[0];
-      if (await isTerminal(runId)) await this.store.settle(reservationId, this.reservationUsd);
+      if (await isTerminal(runId, tenantId)) await this.store.settle(reservationId, this.reservationUsd, tenantId);
     }
   }
   record(runId: string, event: AgentExecutionEvent): void {
@@ -69,11 +69,13 @@ export class RunBudgetController {
   }
   async settle(runId: string, overrideCost?: number): Promise<{ cost: number; input: number; output: number; estimated: boolean }> {
     const usage = this.usage.get(runId);
-    this.usage.delete(runId);
-    const tracked = this.trackedReservations.delete(runId);
-    const enforced = this.enforcedReservations.delete(runId);
+    const tenantId = this.trackedReservations.get(runId);
+    const enforced = this.enforcedReservations.has(runId);
     const cost = overrideCost ?? (usage?.known && !usage.unknown ? usage.cost : enforced ? Math.max(this.reservationUsd, usage?.cost ?? 0) : usage?.cost ?? 0);
-    if (tracked) await this.store.settle(runId, cost);
+    if (tenantId) await this.store.settle(runId, cost, tenantId);
+    this.usage.delete(runId);
+    this.trackedReservations.delete(runId);
+    this.enforcedReservations.delete(runId);
     return { cost, input: usage?.input ?? 0, output: usage?.output ?? 0, estimated: !usage?.known || usage.unknown };
   }
 }

@@ -771,6 +771,8 @@ export interface Run {
   tenantId?: string;
   /** Who started the run (US3 / D-5): user, service, schedule or trigger. */
   initiatorKind?: "user" | "service" | "schedule" | "trigger";
+  /** Server-owned durable provenance; absent on legacy runs. Never read from metadata. */
+  serverInitiated?: boolean;
   /** Membership version observed when execution started; D-5 audit field. */
   membershipVersionAtStart?: number;
   executionOwnerId?: string;

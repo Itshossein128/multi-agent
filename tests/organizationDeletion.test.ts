@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { nowIso } from '@multi-agent/types';
 import { createStudioRouter } from '../apps/server/src/api/studio';
 import { InMemoryStudioStore } from '../src/studio/infrastructure/in-memory-studio-store';
@@ -11,6 +14,11 @@ import { OrganizationPurgeWorker } from '../apps/server/src/organization/organiz
 import { seedUs2, jsonRequest } from './organizationUs2Fixtures';
 
 describe('US6 Organization Deletion (Phase 7)', () => {
+  let workspaceRoot: string;
+  beforeEach(async () => { workspaceRoot = await mkdtemp(join(tmpdir(), 'purge-test-')); });
+  afterEach(async () => { await rm(workspaceRoot, {recursive:true,force:true}); });
+  const completeWorker = (store: InMemoryStudioStore) => new OrganizationPurgeWorker({ studioStore:store,
+    runStore: new InMemoryRunStore(), secretStore:new InMemorySecretStore(), leaseStore:new InMemoryLeaseStore(), memoryStore:new InMemoryMemoryStore(), organizationStore:new InMemoryOrganizationStore(), budgetStore:new InMemoryBudgetStore(),workspaceStorageRoot:workspaceRoot });
   const originalEnforcement = process.env.ORG_MEMBERSHIP_ENFORCEMENT;
   const originalDeletion = process.env.ORG_DELETION_ENABLED;
 
@@ -45,7 +53,7 @@ describe('US6 Organization Deletion (Phase 7)', () => {
     process.env.ORG_DELETION_ENABLED = 'true';
     const store = new InMemoryStudioStore();
     await seedUs2(store, 'org-a');
-    const purgeWorker = new OrganizationPurgeWorker({ studioStore: store });
+    const purgeWorker = completeWorker(store);
     const ownerApp = appFor(store, 'owner', 'org-a', purgeWorker);
 
     const res = await ownerApp.request(
@@ -65,7 +73,7 @@ describe('US6 Organization Deletion (Phase 7)', () => {
     process.env.ORG_DELETION_ENABLED = 'true';
     const store = new InMemoryStudioStore();
     await seedUs2(store, 'org-a');
-    const purgeWorker = new OrganizationPurgeWorker({ studioStore: store });
+    const purgeWorker = completeWorker(store);
 
     for (const role of ['admin', 'member', 'viewer']) {
       const app = appFor(store, role, 'org-a', purgeWorker);
@@ -86,7 +94,7 @@ describe('US6 Organization Deletion (Phase 7)', () => {
     process.env.ORG_DELETION_ENABLED = 'false';
     const store = new InMemoryStudioStore();
     await seedUs2(store, 'org-a');
-    const purgeWorker = new OrganizationPurgeWorker({ studioStore: store });
+    const purgeWorker = completeWorker(store);
     const ownerApp = appFor(store, 'owner', 'org-a', purgeWorker);
 
     const res = await ownerApp.request(
@@ -217,6 +225,7 @@ describe('US6 Organization Deletion (Phase 7)', () => {
 
     const purgeWorker = new OrganizationPurgeWorker({
       studioStore: store,
+      workspaceStorageRoot: workspaceRoot,
       organizationStore: orgStore,
       budgetStore,
       runStore,
@@ -294,7 +303,7 @@ describe('US6 Organization Deletion (Phase 7)', () => {
     const profile = await store.getOrganizationProfile({ userId: 'owner', tenantId: 'org-a' });
     expect(profile?.status).toBe('deleting');
 
-    const purgeWorker = new OrganizationPurgeWorker({ studioStore: store });
+    const purgeWorker = completeWorker(store);
     const pending = await purgeWorker.findPendingPurges();
     expect(pending).toContain('org-a');
 
@@ -310,7 +319,7 @@ describe('US6 Organization Deletion (Phase 7)', () => {
     const store = new InMemoryStudioStore();
     await seedUs2(store, 'org-a');
 
-    const purgeWorker = new OrganizationPurgeWorker({ studioStore: store });
+    const purgeWorker = completeWorker(store);
     // Spy on assertClean or simulate lingering row
     jest.spyOn(purgeWorker, 'assertClean').mockRejectedValueOnce(new Error('Residual rows detected'));
 
@@ -339,7 +348,7 @@ describe('US6 Organization Deletion (Phase 7)', () => {
     ).rejects.toThrow(/deleting|not active|does not exist/i);
 
     // After purge completes and org row is gone
-    const purgeWorker = new OrganizationPurgeWorker({ studioStore: store });
+    const purgeWorker = completeWorker(store);
     await purgeWorker.purgeOrganization('org-a');
 
     // Attempted writes after deletion fail

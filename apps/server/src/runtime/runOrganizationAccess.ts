@@ -1,3 +1,4 @@
+import { withOrganization, scopedDbClient } from "../../../../src/studio/infrastructure/withOrganization";
 import type { Run } from "@multi-agent/types";
 import type {
   OrganizationMembership,
@@ -47,20 +48,15 @@ export interface RunAccessInput {
   tenantId?: string;
   ownerId?: string;
   initiatorKind?: RunInitiatorKind;
+  serverInitiated?: boolean;
   metadata?: Record<string, unknown>;
 }
 
-/** Who started this run: explicit metadata wins, then trigger shape, then principal kind. */
+/** Transport identity supplies provenance; client metadata cannot grant service privileges. */
 export function deriveRunInitiatorKind(input: {
   metadata?: Record<string, unknown>;
   principalKind?: string;
 }): RunInitiatorKind {
-  const metadata = input.metadata ?? {};
-  if (isRunInitiatorKind(metadata.initiatorKind)) return metadata.initiatorKind;
-  if (typeof metadata.triggerEventId === "string" && metadata.triggerEventId) {
-    return metadata.triggerEventType === "routine_tick" ? "schedule" : "trigger";
-  }
-  if (typeof metadata.triggerDispatchKey === "string" && metadata.triggerDispatchKey) return "trigger";
   return input.principalKind === "service" ? "service" : "user";
 }
 
@@ -90,7 +86,9 @@ export class RunOrganizationAccess {
   async resolveStartContext(
     run: RunAccessInput & { principalKind?: string },
   ): Promise<InitiatorStartContext> {
-    const initiatorKind = deriveRunInitiatorKind({ metadata: run.metadata, principalKind: run.principalKind });
+    const pool = (this.store as any).getPool?.();
+    if (pool && run.tenantId && !scopedDbClient(pool)) return withOrganization(pool,run.tenantId,"service",()=>this.resolveStartContext(run));
+    const initiatorKind = run.serverInitiated ? run.initiatorKind ?? "service" : deriveRunInitiatorKind({ principalKind: run.principalKind });
     let membershipVersionAtStart: number | undefined;
     if (run.tenantId && run.ownerId && initiatorKind === "user") {
       const membership = await this.store.getMembership(run.tenantId, run.ownerId);
@@ -101,21 +99,25 @@ export class RunOrganizationAccess {
 
   /** Throws OrganizationAccessRevokedError when execution must stop. */
   async assertRunActive(run: RunAccessInput): Promise<void> {
+    const pool = (this.store as any).getPool?.();
+    if (pool && run.tenantId && !scopedDbClient(pool)) {
+      return withOrganization(pool, run.tenantId, "service", () => this.assertRunActive(run));
+    }
     const organizationId = run.tenantId?.trim();
     if (!organizationId) return; // no organization boundary recorded on the run
     const profile = await this.store.getOrganizationProfile({
       userId: run.ownerId ?? "system",
       tenantId: organizationId,
     });
-    if (profile && profile.status !== "active") {
+    if (!profile || profile.status !== "active") {
       throw new OrganizationAccessRevokedError(
         "organization_inactive",
-        `organization ${organizationId} is ${profile.status}`,
+        `organization ${organizationId} is ${profile?.status ?? "missing"}`,
       );
     }
     const ownerId = run.ownerId?.trim();
     if (!ownerId) return;
-    const initiatorKind = run.initiatorKind ?? deriveRunInitiatorKind({ metadata: run.metadata });
+    const initiatorKind = run.serverInitiated === true ? run.initiatorKind ?? "service" : "user";
     if (initiatorKind !== "user") {
       // schedule/trigger/service runs are organization-bound; routine owners are
       // revalidated where the schedule fires (RoutineScheduler).

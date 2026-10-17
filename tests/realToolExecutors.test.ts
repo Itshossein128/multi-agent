@@ -90,7 +90,7 @@ test("tool executors safely parse non-JSON text responses without stream errors"
   const httpFetch = jest.fn(async () => new Response(plainTextHtml, { status: 200, headers: { "content-type": "text/html" } }));
   const httpTool = createToolRecord({ category: "http" });
   httpTool.configuration = { url: "https://service.internal/endpoint", method: "GET" };
-  const httpResult = await new HttpToolExecutor(httpFetch).execute({ tool: httpTool, input: {} });
+  const httpResult = await new HttpToolExecutor(httpFetch, { resolve: async () => [{ address: "93.184.216.34", family: 4 }] }).execute({ tool: httpTool, input: {} });
   expect(httpResult).toEqual({ status: 200, body: plainTextHtml });
 
   // 2. SearchToolExecutor

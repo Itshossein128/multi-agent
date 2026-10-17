@@ -233,7 +233,8 @@ export function brokerServerConfigFromEnvironment(env: BrokerEnvironment = proce
     .map((entry) => entry.trim())
     .filter(Boolean)
     .map((entry) => {
-      const [name, token, scopes] = entry.split(":");
+      const [name, token, ...scopeParts] = entry.split(":");
+      const scopes = scopeParts.length ? scopeParts.join(":") : undefined;
       return {
         name: name?.trim() || "service",
         token: token?.trim() || "",

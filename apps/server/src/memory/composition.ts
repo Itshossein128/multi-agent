@@ -4,8 +4,10 @@ import { PostgresMemoryStore, PostgresMemoryJobStore, InMemoryMemoryStore, type 
 import { createPostgresPool, type ManagedPool } from "../infrastructure/postgresPool";
 import { embeddingProviderFromEnvironment } from "./embeddingProvider";
 import { log } from "../logging";
+import { withOrganization } from "../../../../src/studio/infrastructure/withOrganization";
 
 export interface MemoryComposition {
+  purgeTenantMemories(tenantId: string): Promise<void>;
   service?: MemoryService; runtime?: RuntimeMemoryDependencies; episodeService?: EpisodeService; proceduralService?: ProceduralService; jobs?: MemoryBackgroundJobs; consolidationScheduler?: MemoryConsolidationScheduler; evaluationSink?: InMemoryMemoryEvaluationSink;
   durableJobs?: PostgresMemoryJobStore;
   startDurableWorkers(handlers: Partial<Record<"episodic_extraction" | "procedural_learning", DurableMemoryJobHandler>>): void;
@@ -16,7 +18,21 @@ export interface MemoryComposition {
 export function createMemoryComposition(): MemoryComposition {
   const connectionString = process.env.MEMORY_DATABASE_URL;
   const mode = process.env.MEMORY_STORE ?? (connectionString ? "postgres" : "disabled");
-  if (mode === "disabled") { log.info("memory.store", { mode: "disabled" }); return { startDurableWorkers: () => {}, recover: async () => 0, close: async () => {} }; }
+  if (mode === "disabled") {
+    log.info("memory.store", { mode: "disabled" });
+    // Disabled retrieval does not imply that an existing database has no old data.
+    const cleanupUrl = connectionString ?? process.env.STUDIO_DATABASE_URL;
+    const cleanupPool = cleanupUrl ? createPostgresPool(cleanupUrl) : undefined;
+    return { startDurableWorkers: () => {}, recover: async () => 0,
+      purgeTenantMemories: async tenantId => {
+        if (!cleanupPool) return;
+        await withOrganization(cleanupPool, tenantId, "service", async client => {
+          for (const table of ["studio_memory_jobs", "studio_memories"]) {
+            if ((await client.query("SELECT to_regclass($1) AS name", [table])).rows[0]?.name) await client.query(`DELETE FROM ${table} WHERE tenant_id=$1`, [tenantId]);
+          }
+        });
+      }, close: async () => { await cleanupPool?.end(); } };
+  }
   if (!["postgres", "in-memory"].includes(mode)) throw new Error("Invalid MEMORY_STORE mode.");
   if (mode === "postgres" && !connectionString) throw new Error("MEMORY_DATABASE_URL is required for PostgreSQL memory.");
   if (mode === "in-memory" && process.env.NODE_ENV === "production") throw new Error("Volatile memory storage is not supported in production.");
@@ -134,6 +150,9 @@ export function createMemoryComposition(): MemoryComposition {
   }
 
   return { service, runtime, episodeService, proceduralService, jobs, consolidationScheduler, evaluationSink, durableJobs, startDurableWorkers,
+    purgeTenantMemories: tenantId => pool
+      ? withOrganization(pool, tenantId, "service", () => store.deleteTenantMemories(tenantId))
+      : store.deleteTenantMemories(tenantId),
     recover: async () => {
       const reconciled = durableJobs ? await durableJobs.reconcileTerminalRuns(Number(process.env.MEMORY_JOB_RECONCILE_LIMIT ?? 100)) : 0;
       if (reconciled) log.info("memory.work_intent.reconciled", { recovered: reconciled });

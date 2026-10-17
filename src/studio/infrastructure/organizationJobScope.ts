@@ -24,7 +24,7 @@ export function runInOrganizationScope<T>(scope: OrganizationScopeInput, fn: () 
   const organizationId = scope.organizationId?.trim();
   if (!organizationId) throw new OrganizationScopeError("organizationId is required for an organization scope");
   const principalKind: PrincipalKind = scope.principalKind ?? "service";
-  return organizationStorage.run({ organizationId, principalKind, source: scope.source }, fn);
+  return organizationStorage.run(Object.freeze({ organizationId, principalKind, source: scope.source }), fn);
 }
 
 /**

@@ -78,6 +78,7 @@ describePg("durable PostgreSQL memory jobs", () => {
     expect(missing.rows[0].count).toBe(0);
   }, 30000);
   test("injected episodic job insertion failure rolls back the terminal run, then retry commits both", async () => {
+    await pool.query('CREATE TABLE studio_run_events (run_id text, sequence bigint, event jsonb); CREATE TABLE studio_approvals (run_id text, requested_at timestamptz)');
     await pool.query(`CREATE TABLE IF NOT EXISTS studio_runs (
       id text PRIMARY KEY, workflow_id text NOT NULL, task_id text, status text NOT NULL, started_at timestamptz NOT NULL,
       completed_at timestamptz, input jsonb, output jsonb, result jsonb, error text, current_node_id text, metadata jsonb NOT NULL DEFAULT '{}'::jsonb,

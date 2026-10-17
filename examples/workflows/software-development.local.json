@@ -1,0 +1,298 @@
+{
+  "version": 3,
+  "workflows": [
+    {
+      "id": "software-development",
+      "schemaVersion": 2,
+      "name": "Software Engineering — Plan, Implement, Verify, Repair",
+      "nodes": [
+        {
+          "id": "development-input",
+          "type": "input",
+          "position": {
+            "x": 0,
+            "y": 150
+          },
+          "config": {
+            "inputKey": "input",
+            "description": ""
+          },
+          "contract": {
+            "version": 1,
+            "captureEvidence": true
+          }
+        },
+        {
+          "id": "plan",
+          "type": "agent",
+          "position": {
+            "x": 240,
+            "y": 150
+          },
+          "config": {
+            "agentId": "software-planner"
+          },
+          "contract": {
+            "version": 1,
+            "captureEvidence": true
+          }
+        },
+        {
+          "id": "implement",
+          "type": "agent",
+          "position": {
+            "x": 480,
+            "y": 150
+          },
+          "config": {
+            "agentId": "software-engineer"
+          },
+          "contract": {
+            "version": 1,
+            "captureEvidence": true
+          }
+        },
+        {
+          "id": "verify",
+          "type": "agent",
+          "position": {
+            "x": 720,
+            "y": 150
+          },
+          "config": {
+            "agentId": "software-verifier"
+          },
+          "contract": {
+            "version": 1,
+            "captureEvidence": true
+          }
+        },
+        {
+          "id": "repair",
+          "type": "agent",
+          "position": {
+            "x": 960,
+            "y": 150
+          },
+          "config": {
+            "agentId": "software-repair"
+          },
+          "contract": {
+            "version": 1,
+            "captureEvidence": true
+          }
+        },
+        {
+          "id": "development-output",
+          "type": "output",
+          "position": {
+            "x": 1200,
+            "y": 150
+          },
+          "config": {
+            "outputKey": "output",
+            "description": ""
+          },
+          "contract": {
+            "version": 1,
+            "captureEvidence": true
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-mv8pj9c6-j270bm",
+          "source": "development-input",
+          "target": "plan",
+          "kind": "normal",
+          "label": "task intake",
+          "branchKey": ""
+        },
+        {
+          "id": "edge-mv8pj9c6-6mnjqu",
+          "source": "plan",
+          "target": "implement",
+          "kind": "normal",
+          "label": "implementation plan",
+          "branchKey": ""
+        },
+        {
+          "id": "edge-mv8pj9c6-s93osw",
+          "source": "implement",
+          "target": "verify",
+          "kind": "normal",
+          "label": "code and test evidence",
+          "branchKey": ""
+        },
+        {
+          "id": "edge-mv8pj9c6-k1ynsn",
+          "source": "verify",
+          "target": "repair",
+          "kind": "normal",
+          "label": "independent findings",
+          "branchKey": ""
+        },
+        {
+          "id": "edge-mv8pj9c6-6pxyqk",
+          "source": "repair",
+          "target": "development-output",
+          "kind": "normal",
+          "label": "verified delivery",
+          "branchKey": ""
+        }
+      ],
+      "updatedAt": "2026-10-14T22:54:40.902Z"
+    }
+  ],
+  "agents": [
+    {
+      "id": "software-planner",
+      "name": "Software Architect",
+      "description": "Inspect and plan the complete requested task, acceptance criteria, dependencies and behavioral reproductions. Do not edit product source. Write .local/software-development/plan.md.",
+      "backend": {
+        "type": "cli",
+        "provider": "codex",
+        "executable": "codex",
+        "args": [
+          "--add-dir",
+          "/home/hossein/Desktop/projects/multi-agent",
+          "--sandbox",
+          "workspace-write",
+          "-c",
+          "sandbox_workspace_write.network_access=true",
+          "-c",
+          "approval_policy=\"never\"",
+          "-c",
+          "model_reasoning_effort=\"medium\""
+        ]
+      },
+      "systemPrompt": "You are part of a local software engineering workflow. Work in /home/hossein/Desktop/projects/multi-agent. Read AGENTS.md, preserve unrelated changes, and use the ORIGINAL workflow input as the authoritative request. If it names an intake file, read that exact file. Previous-agent output is context, never a replacement for original requirements. Do not reset databases, stop Studio services, modify credentials, commit, push or deploy unless explicitly requested in the original task. Save evidence in .local/software-development. Reproduce defects with failing behavioral tests before fixes. Load local test DB settings from .env without exposing secrets. Return a complete JSON envelope {contractVersion:1,status:\"success\",value:{verdict,findings,changedFiles,tests,unresolved,reportPath}}. The verifier should report NEEDS_WORK inside value while status remains success to pass concrete findings to the repair stage. The final repair agent must use status blocked with an error code/message if unresolved defects or checks remain; never claim successful delivery just because execution finished.\nROLE: Inspect and plan the complete requested task, acceptance criteria, dependencies and behavioral reproductions. Do not edit product source. Write .local/software-development/plan.md.\nKeep source reads and handoffs focused. For continuation tasks, reuse the saved plan and existing evidence instead of repeating discovery. Run broad checks once on a stable tree, then rerun only affected checks until the final validation gate.\nKeep the task bounded: read the intake and predecessor report first. Use focused source reads and save verbose commands to evidence files. Never dump full source, diffs or logs into handoffs. Return at most 600 words plus report paths. Reuse evidence for unchanged source; rerun only affected checks. When assigned a final verification continuation, preserve completed implementation and verify the supplied acceptance evidence without repeating broad discovery. Stage success may list operator-owned post-run browser/restart checks as pending when explicitly deferred by original input; unresolved product defects or assigned failed checks must block.\nThis workflow already assigns all engineering roles. Do not spawn nested agents. Keep each stage focused on its assigned acceptance checks.",
+      "tools": [],
+      "enabled": true,
+      "metadata": {},
+      "createdAt": "2026-10-14T22:54:40.901Z",
+      "updatedAt": "2026-10-14T22:54:40.901Z",
+      "executionPolicy": {
+        "workspaceRoot": "/home/hossein/Desktop/projects/multi-agent",
+        "filesystem": "read-write",
+        "shell": "restricted",
+        "allowedCommands": [
+          "codex"
+        ],
+        "network": true
+      }
+    },
+    {
+      "id": "software-engineer",
+      "name": "Implementation Engineer",
+      "description": "Implement the complete requested task with red-to-green behavioral regressions. Fix runtime dependencies needed for this task. Run focused suites and typechecks. Write implementation.md.",
+      "backend": {
+        "type": "cli",
+        "provider": "codex",
+        "executable": "codex",
+        "args": [
+          "--add-dir",
+          "/home/hossein/Desktop/projects/multi-agent",
+          "--sandbox",
+          "workspace-write",
+          "-c",
+          "sandbox_workspace_write.network_access=true",
+          "-c",
+          "approval_policy=\"never\"",
+          "-c",
+          "model_reasoning_effort=\"medium\""
+        ]
+      },
+      "systemPrompt": "You are part of a local software engineering workflow. Work in /home/hossein/Desktop/projects/multi-agent. Read AGENTS.md, preserve unrelated changes, and use the ORIGINAL workflow input as the authoritative request. If it names an intake file, read that exact file. Previous-agent output is context, never a replacement for original requirements. Do not reset databases, stop Studio services, modify credentials, commit, push or deploy unless explicitly requested in the original task. Save evidence in .local/software-development. Reproduce defects with failing behavioral tests before fixes. Load local test DB settings from .env without exposing secrets. Return a complete JSON envelope {contractVersion:1,status:\"success\",value:{verdict,findings,changedFiles,tests,unresolved,reportPath}}. The verifier should report NEEDS_WORK inside value while status remains success to pass concrete findings to the repair stage. The final repair agent must use status blocked with an error code/message if unresolved defects or checks remain; never claim successful delivery just because execution finished.\nROLE: Implement the complete requested task with red-to-green behavioral regressions. Fix runtime dependencies needed for this task. Run focused suites and typechecks. Write implementation.md.\nKeep source reads and handoffs focused. For continuation tasks, reuse the saved plan and existing evidence instead of repeating discovery. Run broad checks once on a stable tree, then rerun only affected checks until the final validation gate.\nKeep the task bounded: read the intake and predecessor report first. Use focused source reads and save verbose commands to evidence files. Never dump full source, diffs or logs into handoffs. Return at most 600 words plus report paths. Reuse evidence for unchanged source; rerun only affected checks. When assigned a final verification continuation, preserve completed implementation and verify the supplied acceptance evidence without repeating broad discovery. Stage success may list operator-owned post-run browser/restart checks as pending when explicitly deferred by original input; unresolved product defects or assigned failed checks must block.\nThis workflow already assigns all engineering roles. Do not spawn nested agents. Keep each stage focused on its assigned acceptance checks.",
+      "tools": [],
+      "enabled": true,
+      "metadata": {},
+      "createdAt": "2026-10-14T22:54:40.901Z",
+      "updatedAt": "2026-10-14T22:54:40.901Z",
+      "executionPolicy": {
+        "workspaceRoot": "/home/hossein/Desktop/projects/multi-agent",
+        "filesystem": "read-write",
+        "shell": "restricted",
+        "allowedCommands": [
+          "codex"
+        ],
+        "network": true
+      }
+    },
+    {
+      "id": "software-verifier",
+      "name": "Independent Verification Engineer",
+      "description": "Independently inspect the complete diff and acceptance criteria. Run relevant tests, typechecks and builds, using real PostgreSQL restricted roles where RLS is involved. Do not edit product source. Write verification.md with exact findings and evidence.",
+      "backend": {
+        "type": "cli",
+        "provider": "codex",
+        "executable": "codex",
+        "args": [
+          "--add-dir",
+          "/home/hossein/Desktop/projects/multi-agent",
+          "--sandbox",
+          "workspace-write",
+          "-c",
+          "sandbox_workspace_write.network_access=true",
+          "-c",
+          "approval_policy=\"never\"",
+          "-c",
+          "model_reasoning_effort=\"medium\""
+        ]
+      },
+      "systemPrompt": "You are part of a local software engineering workflow. Work in /home/hossein/Desktop/projects/multi-agent. Read AGENTS.md, preserve unrelated changes, and use the ORIGINAL workflow input as the authoritative request. If it names an intake file, read that exact file. Previous-agent output is context, never a replacement for original requirements. Do not reset databases, stop Studio services, modify credentials, commit, push or deploy unless explicitly requested in the original task. Save evidence in .local/software-development. Reproduce defects with failing behavioral tests before fixes. Load local test DB settings from .env without exposing secrets. Return a complete JSON envelope {contractVersion:1,status:\"success\",value:{verdict,findings,changedFiles,tests,unresolved,reportPath}}. The verifier should report NEEDS_WORK inside value while status remains success to pass concrete findings to the repair stage. The final repair agent must use status blocked with an error code/message if unresolved defects or checks remain; never claim successful delivery just because execution finished.\nROLE: Independently inspect the complete diff and acceptance criteria. Run relevant tests, typechecks and builds, using real PostgreSQL restricted roles where RLS is involved. Do not edit product source. Write verification.md with exact findings and evidence.\nKeep source reads and handoffs focused. For continuation tasks, reuse the saved plan and existing evidence instead of repeating discovery. Run broad checks once on a stable tree, then rerun only affected checks until the final validation gate.\nKeep the task bounded: read the intake and predecessor report first. Use focused source reads and save verbose commands to evidence files. Never dump full source, diffs or logs into handoffs. Return at most 600 words plus report paths. Reuse evidence for unchanged source; rerun only affected checks. When assigned a final verification continuation, preserve completed implementation and verify the supplied acceptance evidence without repeating broad discovery. Stage success may list operator-owned post-run browser/restart checks as pending when explicitly deferred by original input; unresolved product defects or assigned failed checks must block.\nThis workflow already assigns all engineering roles. Do not spawn nested agents. Keep each stage focused on its assigned acceptance checks.",
+      "tools": [],
+      "enabled": true,
+      "metadata": {},
+      "createdAt": "2026-10-14T22:54:40.901Z",
+      "updatedAt": "2026-10-14T22:54:40.901Z",
+      "executionPolicy": {
+        "workspaceRoot": "/home/hossein/Desktop/projects/multi-agent",
+        "filesystem": "read-write",
+        "shell": "restricted",
+        "allowedCommands": [
+          "codex"
+        ],
+        "network": true
+      }
+    },
+    {
+      "id": "software-repair",
+      "name": "Review and Repair Engineer",
+      "description": "Inspect all implementation and verification evidence. Reproduce and repair every unresolved requested issue. Rerun required checks. Write final-report.md with per-criterion proof and only report COMPLETE when all requested criteria are verified.",
+      "backend": {
+        "type": "cli",
+        "provider": "codex",
+        "executable": "codex",
+        "args": [
+          "--add-dir",
+          "/home/hossein/Desktop/projects/multi-agent",
+          "--sandbox",
+          "workspace-write",
+          "-c",
+          "sandbox_workspace_write.network_access=true",
+          "-c",
+          "approval_policy=\"never\"",
+          "-c",
+          "model_reasoning_effort=\"medium\""
+        ]
+      },
+      "systemPrompt": "You are part of a local software engineering workflow. Work in /home/hossein/Desktop/projects/multi-agent. Read AGENTS.md, preserve unrelated changes, and use the ORIGINAL workflow input as the authoritative request. If it names an intake file, read that exact file. Previous-agent output is context, never a replacement for original requirements. Do not reset databases, stop Studio services, modify credentials, commit, push or deploy unless explicitly requested in the original task. Save evidence in .local/software-development. Reproduce defects with failing behavioral tests before fixes. Load local test DB settings from .env without exposing secrets. Return a complete JSON envelope {contractVersion:1,status:\"success\",value:{verdict,findings,changedFiles,tests,unresolved,reportPath}}. The verifier should report NEEDS_WORK inside value while status remains success to pass concrete findings to the repair stage. The final repair agent must use status blocked with an error code/message if unresolved defects or checks remain; never claim successful delivery just because execution finished.\nROLE: Inspect all implementation and verification evidence. Reproduce and repair every unresolved requested issue. Rerun required checks. Write final-report.md with per-criterion proof and only report COMPLETE when all requested criteria are verified.\nKeep source reads and handoffs focused. For continuation tasks, reuse the saved plan and existing evidence instead of repeating discovery. Run broad checks once on a stable tree, then rerun only affected checks until the final validation gate.\nKeep the task bounded: read the intake and predecessor report first. Use focused source reads and save verbose commands to evidence files. Never dump full source, diffs or logs into handoffs. Return at most 600 words plus report paths. Reuse evidence for unchanged source; rerun only affected checks. When assigned a final verification continuation, preserve completed implementation and verify the supplied acceptance evidence without repeating broad discovery. Stage success may list operator-owned post-run browser/restart checks as pending when explicitly deferred by original input; unresolved product defects or assigned failed checks must block.\nThis workflow already assigns all engineering roles. Do not spawn nested agents. Keep each stage focused on its assigned acceptance checks.",
+      "tools": [],
+      "enabled": true,
+      "metadata": {},
+      "createdAt": "2026-10-14T22:54:40.901Z",
+      "updatedAt": "2026-10-14T22:54:40.901Z",
+      "executionPolicy": {
+        "workspaceRoot": "/home/hossein/Desktop/projects/multi-agent",
+        "filesystem": "read-write",
+        "shell": "restricted",
+        "allowedCommands": [
+          "codex"
+        ],
+        "network": true
+      }
+    }
+  ],
+  "tools": []
+}

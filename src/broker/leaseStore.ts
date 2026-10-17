@@ -49,6 +49,8 @@ export interface LeaseContext {
 }
 
 export interface LeaseStore {
+  blockTenant?(tenantId: string): Promise<void>;
+  isTenantBlocked?(tenantId: string): Promise<boolean>;
   create(lease: CredentialLeaseRecord): Promise<void>;
   get(leaseId: string): Promise<CredentialLeaseRecord | null>;
   /** Atomic single-use consumption; throws lease_expired/consumed/revoked/context_mismatch. */
@@ -85,9 +87,13 @@ export function generateLeaseId(): string {
 
 /** Process-local store. Development/tests only; replaced by PostgresLeaseStore in production. */
 export class InMemoryLeaseStore implements LeaseStore {
+  private readonly blockedTenants = new Set<string>();
+  async blockTenant(tenantId: string): Promise<void> { this.blockedTenants.add(tenantId); }
+  async isTenantBlocked(tenantId: string): Promise<boolean> { return this.blockedTenants.has(tenantId); }
   private readonly leases = new Map<string, CredentialLeaseRecord>();
 
   async create(lease: CredentialLeaseRecord): Promise<void> {
+    if (this.blockedTenants.has(lease.tenantId)) throw new BrokerError("tenant_inactive");
     if (this.leases.has(lease.leaseId)) throw new BrokerError("invalid_request");
     this.leases.set(lease.leaseId, { ...lease });
   }
@@ -98,6 +104,7 @@ export class InMemoryLeaseStore implements LeaseStore {
   }
 
   async consume(leaseId: string, context: LeaseContext): Promise<CredentialLeaseRecord> {
+    if (this.blockedTenants.has(context.tenantId)) throw new BrokerError("tenant_inactive");
     const record = this.leases.get(leaseId);
     if (!record) throw new BrokerError("lease_not_found");
     assertBinding(record, context);
@@ -162,6 +169,7 @@ export class InMemoryLeaseStore implements LeaseStore {
 
 /** Minimal queryable pool surface (subset of pg.Pool), so tests can inject fakes. */
 export interface LeasePgPool {
+  connect(): Promise<Pick<LeasePgPool, "query"> & { release(): void }>;
   query<T = Record<string, unknown>>(config: { text: string; values?: unknown[] }): Promise<{ rows: T[]; rowCount: number | null }>;
 }
 
@@ -235,6 +243,29 @@ function mapRow(row: LeaseRow): CredentialLeaseRecord {
 export class PostgresLeaseStore implements LeaseStore {
   constructor(private readonly pool: LeasePgPool) {}
 
+  private async tenantWrite<T>(tenantId: string, fn: (client: Pick<LeasePgPool, "query">) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query({text:"BEGIN"});
+      await client.query({text:"SELECT pg_advisory_xact_lock(hashtextextended($1,0))",values:[`broker-tenant:${tenantId}`]});
+      const result = await fn(client);
+      await client.query({text:"COMMIT"});
+      return result;
+    } catch (error) {
+      await client.query({text:"ROLLBACK"}).catch(()=>undefined); throw error;
+    } finally { client.release(); }
+  }
+
+  async blockTenant(tenantId: string): Promise<void> {
+    await this.tenantWrite(tenantId, async client => {
+      await client.query({text:"INSERT INTO credential_broker_deleted_tenants(tenant_id) VALUES($1) ON CONFLICT DO NOTHING",values:[tenantId]});
+    });
+  }
+
+  async isTenantBlocked(tenantId: string): Promise<boolean> {
+    return (await this.pool.query({text:"SELECT tenant_id FROM credential_broker_deleted_tenants WHERE tenant_id=$1",values:[tenantId]})).rows.length > 0;
+  }
+
   async create(lease: CredentialLeaseRecord): Promise<void> {
     const text = `INSERT INTO credential_broker_leases (${LEASE_COLUMNS})
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,to_timestamp($13 / 1000.0),to_timestamp($14 / 1000.0),$15,NULL,NULL,NULL,$16)
@@ -245,8 +276,11 @@ export class PostgresLeaseStore implements LeaseStore {
       lease.audience ?? null, lease.correlationId ?? null, lease.issuedAt, lease.expiresAt,
       lease.status, lease.idempotencyKey ?? null,
     ];
-    const result = await this.pool.query({ text, values });
-    if (result.rowCount === 0) throw new BrokerError("contract_idempotency_conflict");
+    await this.tenantWrite(lease.tenantId, async client => {
+      if ((await client.query({text:"SELECT tenant_id FROM credential_broker_deleted_tenants WHERE tenant_id=$1",values:[lease.tenantId]})).rows.length) throw new BrokerError("tenant_inactive");
+      const result = await client.query({ text, values });
+      if (result.rowCount === 0) throw new BrokerError("contract_idempotency_conflict");
+    });
   }
 
   async get(leaseId: string): Promise<CredentialLeaseRecord | null> {
@@ -320,6 +354,10 @@ export class PostgresLeaseStore implements LeaseStore {
 
 /** DDL for the lease table. Idempotent; applied by infrastructure/broker/migrate.cjs. */
 export const LEASE_TABLE_DDL = `
+CREATE TABLE IF NOT EXISTS credential_broker_deleted_tenants (
+  tenant_id TEXT PRIMARY KEY,
+  deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS credential_broker_leases (
   lease_id TEXT PRIMARY KEY,
   contract_version TEXT NOT NULL,
