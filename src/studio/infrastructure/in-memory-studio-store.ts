@@ -214,7 +214,7 @@ export class InMemoryStudioStore implements StudioStore {
     this.assertWriteIdentity(this.agents.get(agent.id), agent, principal, true);
     if (principal) {
       const existing = this.agents.get(agent.id);
-      let targetOwnerId: string | undefined = principal.userId;
+      let targetOwnerId: string | undefined = agent.ownerId === null ? undefined : principal.userId;
       if (existing) {
         if (existing.isSystem) throw new Error("Cannot modify system agent");
         if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
@@ -268,7 +268,7 @@ export class InMemoryStudioStore implements StudioStore {
     this.assertWriteIdentity(this.tools.get(tool.id), tool, principal, true);
     if (principal) {
       const existing = this.tools.get(tool.id);
-      let targetOwnerId: string | undefined = principal.userId;
+      let targetOwnerId: string | undefined = tool.ownerId === null ? undefined : principal.userId;
       if (existing) {
         if (existing.isSystem) throw new Error("Cannot modify system tool");
         if (!existing.tenantId || existing.tenantId !== principal.tenantId || (existing.ownerId && existing.ownerId !== principal.userId)) {
