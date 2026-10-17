@@ -274,17 +274,27 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
       appendSafeText((isErr ? stderrRedactor : stdoutRedactor).push(rawText), isErr);
     };
 
-    child.stdout?.on("data", (chunk) => handleChunk(chunk, false));
-    child.stderr?.on("data", (chunk) => handleChunk(chunk, true));
-
-    child.on("error", (error) => {
+    const handleStreamError = (error: Error) => {
+      const safeMessage = redactLaunchSecretValues(error.message, redactionEnvironment);
       if (!state.completed && state.reason === "completed") {
         state.reason = "spawn_error";
-        state.errorMsg = redactLaunchSecretValues(error.message, redactionEnvironment);
+        state.errorMsg = safeMessage;
       }
-      const safeError = new Error(redactLaunchSecretValues(error.message, redactionEnvironment));
+      const safeError = new Error(safeMessage);
       emit({ type: "error", error: safeError });
-      this.log("worker.error", { workerId, runId: spec.runId, error: safeError.message, durationMs: Date.now() - startMs });
+      this.log("worker.error", { workerId, runId: spec.runId, error: safeMessage, durationMs: Date.now() - startMs });
+    };
+
+    child.stdout?.on("data", (chunk) => handleChunk(chunk, false));
+    child.stdout?.on("error", handleStreamError);
+    child.stderr?.on("data", (chunk) => handleChunk(chunk, true));
+    child.stderr?.on("error", handleStreamError);
+    child.stdin?.on("error", () => {
+      // EPIPE or stream reset on child stdin when worker process closes early is handled gracefully
+    });
+
+    child.on("error", (error) => {
+      handleStreamError(error);
     });
 
     if (spec.timeoutMs > 0) {
@@ -336,7 +346,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     if (signal?.aborted) abort();
 
     if (input && !signal?.aborted) {
-      child.stdin?.write(input);
+      child.stdin?.write(input, () => {});
       child.stdin?.end();
     }
 
@@ -770,7 +780,9 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
     return new Promise((resolve, reject) => {
       const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["ignore", "pipe", "pipe"] });
       let stderr = "";
+      child.stdout?.on("error", () => {});
       child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+      child.stderr?.on("error", () => {});
       child.once("error", reject);
       child.once("close", (code) => {
         if (code === 0) resolve();
@@ -785,7 +797,9 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
       const chunks: Buffer[] = [];
       let stderr = "";
       child.stdout?.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      child.stdout?.on("error", () => {});
       child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+      child.stderr?.on("error", () => {});
       child.once("error", reject);
       child.once("close", (code) => {
         if (code === 0) resolve(Buffer.concat(chunks));
@@ -798,13 +812,16 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
     return new Promise((resolve, reject) => {
       const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["pipe", "pipe", "pipe"] });
       let stderr = "";
+      child.stdout?.on("error", () => {});
       child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+      child.stderr?.on("error", () => {});
+      child.stdin?.on("error", () => {});
       child.once("error", reject);
       child.once("close", (code) => {
         if (code === 0) resolve();
         else reject(new Error(`Docker inject failed with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
       });
-      child.stdin?.write(input);
+      child.stdin?.write(input, () => {});
       child.stdin?.end();
     });
   }
