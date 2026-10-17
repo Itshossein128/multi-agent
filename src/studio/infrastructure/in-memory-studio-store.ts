@@ -171,7 +171,8 @@ export class InMemoryStudioStore implements StudioStore {
       if (existing && (!existing.tenantId || !existing.ownerId || existing.tenantId !== principal.tenantId || existing.ownerId !== principal.userId)) {
         throw new Error("Access denied to workflow");
       }
-      definition = { ...definition, ownerId: principal.userId, tenantId: principal.tenantId };
+      const targetOwnerId = existing ? existing.ownerId : (definition.ownerId === null ? undefined : principal.userId);
+      definition = { ...definition, ownerId: targetOwnerId, tenantId: principal.tenantId };
     }
     this.workflows.set(definition.id, structuredClone(definition));
     return structuredClone(definition);
@@ -221,6 +222,8 @@ export class InMemoryStudioStore implements StudioStore {
           throw new Error("Access denied to agent");
         }
         targetOwnerId = existing.ownerId ? existing.ownerId : undefined;
+      } else if (agent.ownerId === null) {
+        targetOwnerId = undefined;
       }
       agent = { ...agent, ownerId: targetOwnerId, tenantId: principal.tenantId, isSystem: false };
     }
@@ -275,6 +278,8 @@ export class InMemoryStudioStore implements StudioStore {
           throw new Error("Access denied to tool");
         }
         targetOwnerId = existing.ownerId ? existing.ownerId : undefined;
+      } else if (tool.ownerId === null) {
+        targetOwnerId = undefined;
       }
       tool = { ...tool, ownerId: targetOwnerId, tenantId: principal.tenantId, isSystem: false };
     }
