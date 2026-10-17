@@ -35,10 +35,10 @@ async function finishRun(store: PostgresRunStore, runId: string) {
 
 const databaseUrl =
   process.env.STUDIO_DATABASE_URL ||
-  process.env.MEMORY_TEST_DATABASE_URL ||
-  "postgresql://studio_memory:studio_memory_local@127.0.0.1:55432/studio_memory";
+  process.env.MEMORY_TEST_DATABASE_URL;
+const describePostgres = databaseUrl ? describe : describe.skip;
 
-describe("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
+describePostgres("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
   let pool: Pool;
   let adminPool: Pool;
   let schema: string;
