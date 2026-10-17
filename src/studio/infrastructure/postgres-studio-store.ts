@@ -399,21 +399,25 @@ export class PostgresStudioStore implements StudioStore {
   async saveWorkflow(definition: WorkflowDefinition, principal?: StudioPrincipal): Promise<WorkflowDefinition> {
     if (principal) {
       const existing = await this.query("SELECT tenant_id, owner_id FROM studio_workflows WHERE id = $1", [definition.id]);
+      let targetOwnerId: string | null = principal.userId;
       if (existing.rows.length) {
         const row = existing.rows[0];
-        if (!row.tenant_id || !row.owner_id || row.tenant_id !== principal.tenantId || row.owner_id !== principal.userId) {
+        if (!row.tenant_id || (row.owner_id && row.owner_id !== principal.userId) || row.tenant_id !== principal.tenantId) {
           throw new Error("Access denied to workflow");
         }
+        targetOwnerId = row.owner_id ? String(row.owner_id) : null;
+      } else if (definition.ownerId === null) {
+        targetOwnerId = null;
       }
-      definition = { ...definition, ownerId: principal.userId, tenantId: principal.tenantId };
+      definition = { ...definition, ownerId: targetOwnerId ?? undefined, tenantId: principal.tenantId };
       const written = await this.query(
         `INSERT INTO studio_workflows (id, name, definition, created_at, updated_at, owner_id, tenant_id)
          VALUES ($1, $2, $3::jsonb, $4::timestamptz, $5::timestamptz, $6, $7)
          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, definition = EXCLUDED.definition, updated_at = EXCLUDED.updated_at,
            owner_id = EXCLUDED.owner_id, tenant_id = EXCLUDED.tenant_id
-         WHERE studio_workflows.tenant_id = EXCLUDED.tenant_id AND studio_workflows.owner_id = EXCLUDED.owner_id
+         WHERE studio_workflows.tenant_id = EXCLUDED.tenant_id AND (studio_workflows.owner_id IS NULL OR studio_workflows.owner_id = EXCLUDED.owner_id)
          RETURNING id`,
-        [definition.id, definition.name, JSON.stringify(definition), definition.updatedAt, definition.updatedAt, principal.userId, principal.tenantId],
+        [definition.id, definition.name, JSON.stringify(definition), definition.updatedAt, definition.updatedAt, targetOwnerId, principal.tenantId],
       );
       if (!written.rowCount) throw new Error("Access denied to workflow");
     } else {
@@ -469,6 +473,8 @@ export class PostgresStudioStore implements StudioStore {
           throw new Error("Access denied to agent");
         }
         targetOwnerId = row.owner_id ? String(row.owner_id) : null;
+      } else if (agent.ownerId === null) {
+        targetOwnerId = null;
       }
       agent = { ...agent, ownerId: targetOwnerId ?? undefined, tenantId: principal.tenantId, isSystem: false };
       const written = await this.query(
@@ -537,6 +543,8 @@ export class PostgresStudioStore implements StudioStore {
           throw new Error("Access denied to tool");
         }
         targetOwnerId = row.owner_id ? String(row.owner_id) : null;
+      } else if (tool.ownerId === null) {
+        targetOwnerId = null;
       }
       tool = { ...tool, ownerId: targetOwnerId ?? undefined, tenantId: principal.tenantId, isSystem: false };
       const written = await this.query(
