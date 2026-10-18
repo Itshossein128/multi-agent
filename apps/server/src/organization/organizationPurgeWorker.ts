@@ -162,7 +162,14 @@ export class OrganizationPurgeWorker {
     // 7. Delete budgets
     await this.deps.budgetStore?.purgeTenantBudgets?.(organizationId);
 
-    // 8. Filesystem cleanup
+    // 8. Purge all studio tables and the organization profile row itself
+    await scoped(() => this.deps.studioStore.transaction(async tx => {
+      await tx.purgeOrganizationData(organizationId);
+      // Retain the deleting profile if final verification fails.
+      await this.assertClean(organizationId, tx);
+    }));
+
+    // 9. Filesystem cleanup (executed only after database purge transaction commits and passes verification)
     if (this.deps.workspaceCleanup) {
       await this.deps.workspaceCleanup(organizationId);
     } else if (this.deps.workspaceStorageRoot) {
@@ -172,13 +179,6 @@ export class OrganizationPurgeWorker {
       if (dirname(tenantRoot) !== root) throw new Error("Invalid organization workspace path");
       await rm(tenantRoot, {recursive: true, force: true});
     }
-
-    // 9. Purge all studio tables and the organization profile row itself
-    await scoped(() => this.deps.studioStore.transaction(async tx => {
-      await tx.purgeOrganizationData(organizationId);
-      // Retain the deleting profile if final verification fails.
-      await this.assertClean(organizationId, tx);
-    }));
     });
   }
 
