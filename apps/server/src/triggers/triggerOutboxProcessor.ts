@@ -13,6 +13,11 @@ import {
 } from "../runtime/runOrganizationAccess";
 import type { TaskService } from "../api/studio/taskService";
 import { log } from "../logging";
+import {
+  assertRoutineDispatchTarget,
+  routineActor,
+  RoutineTargetAccessError,
+} from "./routineTargetAccess";
 
 export interface TriggerOutboxProcessorOptions {
   workerId?: string;
@@ -100,8 +105,17 @@ export class TriggerOutboxProcessor {
                 throw error;
               }
             }
+            const routineOwnerId = await this.routineOwnerForDispatch(event);
+            if (routineOwnerId && this.organizationAccess) {
+              try {
+                await this.organizationAccess.assertRoutineActive({ tenantId: event.tenantId, ownerId: routineOwnerId });
+              } catch (error) {
+                if (error instanceof OrganizationAccessRevokedError) return { revoked: true as const };
+                throw error;
+              }
+            }
             const runId = await runDispatchContext.run(Object.freeze({ organizationId: event.tenantId, kind: event.eventType === "routine_tick" ? "schedule" : "trigger" }), () => this.processEvent(event));
-            if (runId) await this.executor?.getStore().waitForPersistence?.(runId);
+            if (runId) await this.executor?.getStore?.().waitForPersistence?.(runId);
             return { revoked: false as const, runId };
           },
         );
@@ -151,6 +165,26 @@ export class TriggerOutboxProcessor {
         });
         return event;
       } catch (error) {
+        if (error instanceof RoutineTargetAccessError) {
+          const denied = await this.store.updateTriggerEvent(
+            event.id,
+            {
+              status: "dead_letter",
+              lastError: `${error.code}: ${error.message}`,
+              lockedBy: null,
+              lockedUntil: null,
+            },
+            this.workerId,
+          );
+          log.warn("trigger.routine_target_forbidden", {
+            eventId: event.id,
+            tenantId: event.tenantId,
+            targetType: event.targetType,
+            targetId: event.targetId,
+            leaseLost: !denied,
+          });
+          return event;
+        }
         const message = error instanceof Error ? error.message : String(error);
         const nextRetry = event.retryCount + 1;
         const isDeadLetter = nextRetry >= event.maxRetries;
@@ -193,12 +227,47 @@ export class TriggerOutboxProcessor {
     }
   }
 
-  private async processEvent(event: TriggerEvent): Promise<string | undefined> {
-    const principal: StudioPrincipal = {
+  /**
+   * User routines carry a routine id. The stored routine owner is the only actor
+   * allowed to execute that target. Heartbeats reuse routine_tick without a routine
+   * id and keep the service principal, as do webhooks and task wakeups.
+   */
+  private async routineOwnerForDispatch(event: TriggerEvent): Promise<string | null> {
+    if (event.eventType !== "routine_tick" || event.payload?.heartbeat === true) return null;
+    const routineId = event.payload?.routineId;
+    if (typeof routineId !== "string" || !routineId.trim()) return null;
+    const routine = await this.store.getRoutine(routineId.trim(), {
       tenantId: event.tenantId,
+      userId: "system-trigger",
       principalKind: "service",
-      userId: (event.payload?.userId as string) ?? "system-trigger",
-    };
+      allowOwnershipBypass: false,
+    });
+    if (!routine || routine.tenantId !== event.tenantId || !routine.ownerId?.trim()) {
+      throw new RoutineTargetAccessError(`Routine "${routineId}" cannot be executed`);
+    }
+    if (routine.targetType !== event.targetType || routine.targetId !== event.targetId) {
+      throw new RoutineTargetAccessError(`Routine "${routineId}" is not allowed to execute this target`);
+    }
+    return routine.ownerId;
+  }
+
+  private async dispatchPrincipal(event: TriggerEvent): Promise<StudioPrincipal> {
+    const ownerId = await this.routineOwnerForDispatch(event);
+    if (!ownerId) {
+      const payloadUserId = event.payload?.userId;
+      return {
+        tenantId: event.tenantId,
+        principalKind: "service",
+        userId: typeof payloadUserId === "string" && payloadUserId.trim() ? payloadUserId : "system-trigger",
+      };
+    }
+    const actor = routineActor({ tenantId: event.tenantId, userId: ownerId });
+    await assertRoutineDispatchTarget(this.store, actor, event.targetType, event.targetId);
+    return actor;
+  }
+
+  private async processEvent(event: TriggerEvent): Promise<string | undefined> {
+    const principal = await this.dispatchPrincipal(event);
 
     const triggerDispatchKey = `trigger:${event.id}`;
 

@@ -108,6 +108,7 @@ describe("Routine Scheduler & Cron Engine", () => {
       expect(events).toHaveLength(1);
       expect(events[0].eventType).toBe("routine_tick");
       expect(events[0].targetId).toBe("wf-1");
+      expect(events[0].payload.routineOwnerId).toBe("user-test");
 
       // Verify routine execution history was recorded
       const history = await store.listRoutineHistory("routine-1", principal);

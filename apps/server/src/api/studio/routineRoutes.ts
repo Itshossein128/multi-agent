@@ -2,8 +2,23 @@ import { nowIso, uid, type RoutineRecord, type RoutineScheduleType, type Routine
 import type { Hono } from "hono";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import { computeNextRun, previewNextRuns } from "../../triggers/routineScheduler";
+import { assertRoutineDispatchTarget, RoutineTargetAccessError } from "../../triggers/routineTargetAccess";
 import type { PrincipalVariables } from "../shared/http";
 import { ApiError } from "../shared/http";
+
+async function requireRoutineTarget(
+  store: StudioStore,
+  principal: { tenantId: string; userId: string },
+  targetType: RoutineRecord["targetType"],
+  targetId: string,
+): Promise<void> {
+  try {
+    await assertRoutineDispatchTarget(store, principal, targetType, targetId);
+  } catch (error) {
+    if (error instanceof RoutineTargetAccessError) throw new ApiError(400, error.message);
+    throw error;
+  }
+}
 
 export function registerRoutineRoutes(
   app: Hono<{ Variables: PrincipalVariables }>,
@@ -41,6 +56,7 @@ export function registerRoutineRoutes(
     const targetType = body.targetType === "agent" ? "agent" : body.targetType === "task" ? "task" : "workflow";
     const targetId = typeof body.targetId === "string" ? body.targetId.trim() : "";
     if (!targetId) throw new ApiError(400, "Target ID is required");
+    await requireRoutineTarget(store, principal, targetType, targetId);
 
     const misfirePolicy: RoutineMisfirePolicy =
       body.misfirePolicy === "coalesce" ? "coalesce" : body.misfirePolicy === "enqueue" ? "enqueue" : "skip";
@@ -102,6 +118,7 @@ export function registerRoutineRoutes(
         ? body.targetType
         : existing.targetType;
     const targetId = typeof body.targetId === "string" && body.targetId.trim() ? body.targetId.trim() : existing.targetId;
+    await requireRoutineTarget(store, principal, targetType, targetId);
     const misfirePolicy: RoutineMisfirePolicy =
       body.misfirePolicy === "skip" || body.misfirePolicy === "coalesce" || body.misfirePolicy === "enqueue"
         ? body.misfirePolicy
@@ -168,6 +185,7 @@ export function registerRoutineRoutes(
     const id = c.req.param("id");
     const existing = await store.getRoutine(id, principal);
     if (!existing) throw new ApiError(404, `Routine "${id}" not found`);
+    await requireRoutineTarget(store, principal, existing.targetType, existing.targetId);
 
     let nextRunAt: string | null = null;
     try {

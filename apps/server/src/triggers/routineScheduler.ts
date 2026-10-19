@@ -328,6 +328,7 @@ export class RoutineScheduler {
             payload: {
               routineId: routine.id,
               routineName: routine.name,
+              routineOwnerId: routine.ownerId,
               input: routine.inputPayload,
               scheduledAt,
             },
