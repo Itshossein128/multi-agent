@@ -24,7 +24,7 @@ export function RunningAgentsSection() {
       <CardHeader className="flex flex-row items-center justify-between pb-3">
         <div>
           <div className="flex items-center gap-2">
-            <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+            <CardTitle className="text-base font-semibold text-zinc-100 flex items-center gap-2">
               <Bot className="h-5 w-5 text-emerald-400" />
               Active Agents Overview
             </CardTitle>
@@ -70,7 +70,7 @@ export function RunningAgentsSection() {
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-semibold text-zinc-100 group-hover:text-white">
+                        <h4 className="text-sm font-semibold text-zinc-100 group-hover:text-zinc-50">
                           {agent.name}
                         </h4>
                       </div>

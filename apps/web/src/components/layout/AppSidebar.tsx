@@ -102,7 +102,7 @@ export function AppSidebar({
         )}
       >
         <div className="flex h-16 shrink-0 items-center border-b border-zinc-800/80 px-4 lg:hidden">
-          <span className="text-sm font-semibold tracking-tight text-white">Navigation</span>
+          <span className="text-sm font-semibold tracking-tight text-zinc-100">Navigation</span>
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 sticky top-0 max-h-screen">
@@ -143,7 +143,7 @@ export function AppSidebar({
                             "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
                             collapsed && "lg:justify-center lg:px-0",
                             active
-                              ? "bg-zinc-800/80 font-medium text-white"
+                              ? "bg-zinc-800/80 font-medium text-zinc-100"
                               : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
                           )}
                         >

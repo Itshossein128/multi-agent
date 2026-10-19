@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { APPEARANCE_STORAGE_KEY, readAppearance } from "@/lib/appearance";
 import { AppHeader } from "./AppHeader";
 import { AppSidebar } from "./AppSidebar";
 
@@ -20,6 +21,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     } catch {
       // Ignore storage access failures (private mode, disabled storage).
     }
+  }, []);
+
+  useLayoutEffect(() => {
+    const apply = () => {
+      document.documentElement.dataset.appearance = readAppearance(window.localStorage);
+    };
+    apply();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== APPEARANCE_STORAGE_KEY) return;
+      apply();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") apply();
+    };
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // Close mobile drawer on route change
@@ -67,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onCollapseClick={() => handleCollapsedChange(!sidebarCollapsed)}
           collapsed={sidebarCollapsed}
         />
-        <main className="flex flex-1 flex-col">{children}</main>
+        <main className="flex flex-1 flex-col bg-zinc-950 text-zinc-100">{children}</main>
       </div>
     </div>
   );

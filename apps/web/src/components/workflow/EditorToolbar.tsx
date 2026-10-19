@@ -43,7 +43,7 @@ function ToolButton({
         "flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors",
         disabled
           ? "cursor-not-allowed opacity-40"
-          : "cursor-pointer hover:border-zinc-600 hover:text-white"
+          : "cursor-pointer hover:border-zinc-600 hover:text-zinc-100"
       )}
     >
       {children}

@@ -40,7 +40,7 @@ export function GraphAgentNode(props: NodeProps) {
           {data.icon}
         </div>
         <div>
-          <div className="text-xs font-bold text-white leading-tight">{data.label}</div>
+          <div className="text-xs font-bold text-zinc-100 leading-tight">{data.label}</div>
           <div className="text-[10px] text-zinc-400">{data.role}</div>
         </div>
       </div>

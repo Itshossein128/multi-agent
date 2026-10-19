@@ -247,7 +247,7 @@ export default function ProjectDashboardPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href={orgUrl("/projects")} className="text-xs text-indigo-300 hover:underline">← Projects</Link>
-          <h1 className="text-xl font-semibold text-white mt-1">{data.project.name}</h1>
+          <h1 className="text-xl font-semibold text-zinc-100 mt-1">{data.project.name}</h1>
           <p className="text-xs text-zinc-500 break-all">{data.project.id} · {data.project.status}</p>
         </div>
         {data.project.status === "active" && (

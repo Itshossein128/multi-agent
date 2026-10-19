@@ -300,7 +300,7 @@ export default function WebhookTriggersPage() {
               <Webhook className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-white">{t.title}</h1>
+              <h1 className="text-xl font-bold tracking-tight text-zinc-100">{t.title}</h1>
               <p className="text-xs text-zinc-400">{t.subtitle}</p>
             </div>
           </div>
@@ -575,7 +575,7 @@ export default function WebhookTriggersPage() {
               <button
                 type="button"
                 onClick={copySecret}
-                className="absolute right-2 top-2 text-zinc-400 hover:text-white p-1 cursor-pointer"
+                className="absolute right-2 top-2 text-zinc-400 hover:text-zinc-100 p-1 cursor-pointer"
                 title="Copy to clipboard"
               >
                 {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
@@ -587,7 +587,7 @@ export default function WebhookTriggersPage() {
                 type="button"
                 size="sm"
                 onClick={() => setRevealedSecret(null)}
-                className="text-xs bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer"
+                className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-100 cursor-pointer"
               >
                 {t.secretSaved}
               </Button>

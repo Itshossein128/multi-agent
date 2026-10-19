@@ -51,7 +51,7 @@ export function StatCards() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-white">
+            <span className="text-3xl font-bold tracking-tight text-zinc-100">
               {runningCount}
             </span>
             <span className="text-xs text-zinc-500">/ {agents.length} agents</span>
@@ -75,7 +75,7 @@ export function StatCards() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-white">
+            <span className="text-3xl font-bold tracking-tight text-zinc-100">
               {filteredQueue.length}
             </span>
             <span className="text-xs text-zinc-500">pending</span>
@@ -99,7 +99,7 @@ export function StatCards() {
           </div>
 
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-white">
+            <span className="text-3xl font-bold tracking-tight text-zinc-100">
               {filteredCompleted.length}
             </span>
             <span className="text-xs capitalize text-zinc-400">
@@ -139,7 +139,7 @@ export function StatCards() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-white">
+            <span className="text-3xl font-bold tracking-tight text-zinc-100">
               {filteredFailed.length}
             </span>
             <Badge variant={filteredFailed.length > 0 ? "destructive" : "outline"} className="text-[10px] px-1.5 py-0">
@@ -171,7 +171,7 @@ export function StatCards() {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-white">
+            <span className="text-3xl font-bold tracking-tight text-zinc-100">
               ${tokenMetrics.totalCostUsd.toFixed(4)}
             </span>
             <span className="text-xs text-zinc-500">

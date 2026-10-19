@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useOptionalOrg } from "@/components/organization/OrgProvider";
 import { orgPath } from "@/lib/orgRoute";
+import { AppearanceToggle } from "./AppearanceToggle";
 import { UserMenu } from "./UserMenu";
 
 type AppHeaderProps = {
@@ -56,7 +57,7 @@ export function AppHeader({
               aria-label={menuOpen ? "Close navigation" : "Open navigation"}
               aria-expanded={menuOpen}
               aria-controls="app-sidebar"
-              className="h-9 w-9 shrink-0 p-0 text-zinc-300 hover:bg-zinc-800 hover:text-white lg:hidden"
+              className="h-9 w-9 shrink-0 p-0 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 lg:hidden"
             >
               {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </Button>
@@ -69,7 +70,7 @@ export function AppHeader({
               aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
               aria-expanded={!collapsed}
               aria-controls="app-sidebar"
-              className="hidden h-9 w-9 shrink-0 p-0 text-zinc-300 hover:bg-zinc-800 hover:text-white lg:inline-flex"
+              className="hidden h-9 w-9 shrink-0 p-0 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 lg:inline-flex"
             >
               {collapsed ? (
                 <PanelLeftOpen className="h-4 w-4" />
@@ -87,7 +88,7 @@ export function AppHeader({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="truncate font-bold text-sm tracking-tight text-white">
+                  <span className="truncate font-bold text-sm tracking-tight text-zinc-100">
                     AGENT STUDIO
                   </span>
                   <Badge
@@ -119,6 +120,8 @@ export function AppHeader({
               <span className="hidden sm:inline">Launch Agent Task</span>
             </Button>
 
+            <AppearanceToggle />
+
             <div className="mx-1 hidden h-5 w-px bg-zinc-800 sm:block" />
 
             <UserMenu />
@@ -130,7 +133,7 @@ export function AppHeader({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
           <div className="w-full max-w-md space-y-4 rounded-xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
                 <Sparkles className="h-4 w-4 text-indigo-400" />
                 Dispatch Agent Workflow Task
               </h3>

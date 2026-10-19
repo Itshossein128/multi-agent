@@ -55,7 +55,7 @@ export function GraphFlowPreview() {
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div>
             <div className="flex items-center gap-2">
-              <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+              <CardTitle className="text-base font-semibold text-zinc-100 flex items-center gap-2">
                 <Network className="h-5 w-5 text-indigo-400" />
                 {workflow.name}
               </CardTitle>

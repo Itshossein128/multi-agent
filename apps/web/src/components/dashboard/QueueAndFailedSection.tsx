@@ -75,7 +75,7 @@ export function QueueAndFailedSection() {
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <div>
             <div className="flex items-center gap-2">
-              <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+              <CardTitle className="text-base font-semibold text-zinc-100 flex items-center gap-2">
                 <ListOrdered className="h-5 w-5 text-blue-400" />
                 Execution Queue
               </CardTitle>
@@ -126,7 +126,7 @@ export function QueueAndFailedSection() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowAddForm(false)}
-                    className="h-7 text-xs text-zinc-400 hover:text-white"
+                    className="h-7 text-xs text-zinc-400 hover:text-zinc-100"
                   >
                     Cancel
                   </Button>
@@ -211,7 +211,7 @@ export function QueueAndFailedSection() {
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <div>
             <div className="flex items-center gap-2">
-              <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+              <CardTitle className="text-base font-semibold text-zinc-100 flex items-center gap-2">
                 <AlertOctagon className="h-5 w-5 text-rose-400" />
                 Failures
               </CardTitle>

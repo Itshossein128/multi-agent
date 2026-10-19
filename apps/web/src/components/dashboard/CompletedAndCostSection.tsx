@@ -32,7 +32,7 @@ export function CompletedAndCostSection() {
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <div>
             <div className="flex items-center gap-2">
-              <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+              <CardTitle className="text-base font-semibold text-zinc-100 flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-purple-400" />
                 Completed Executions
               </CardTitle>
@@ -130,7 +130,7 @@ export function CompletedAndCostSection() {
       <Card className="border-zinc-800/80 bg-zinc-900/40">
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
+            <CardTitle className="text-base font-semibold text-zinc-100 flex items-center gap-2">
               <Coins className="h-5 w-5 text-amber-400" />
               Token & Cost Breakdown
             </CardTitle>
@@ -145,7 +145,7 @@ export function CompletedAndCostSection() {
           {tokenMetrics.budgetUsd !== null ? <div className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-zinc-400">Monthly Budget Burn</span>
-              <span className="font-semibold text-white">
+              <span className="font-semibold text-zinc-100">
                 ${tokenMetrics.totalCostUsd.toFixed(4)} / ${tokenMetrics.budgetUsd.toFixed(0)}
               </span>
             </div>

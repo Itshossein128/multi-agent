@@ -195,7 +195,7 @@ export function CreateTaskModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
             <Sparkles className="h-4 w-4 text-indigo-400" />
             Create Task
           </h3>

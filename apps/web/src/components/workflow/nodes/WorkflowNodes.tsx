@@ -84,7 +84,7 @@ function NodeShell({
           {icon}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-bold text-white leading-tight">{title}</div>
+          <div className="truncate text-xs font-bold text-zinc-100 leading-tight">{title}</div>
           <div className="truncate text-[10px] text-zinc-400">{subtitle}</div>
         </div>
         {issueCount > 0 && (
@@ -210,7 +210,7 @@ function ConditionNodeComponent(props: NodeProps) {
           <GitBranch className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-bold text-white leading-tight">Condition / Router</div>
+          <div className="text-xs font-bold text-zinc-100 leading-tight">Condition / Router</div>
           <div className="text-[10px] text-zinc-400">
             {branches.length} branch{branches.length === 1 ? "" : "es"}
           </div>

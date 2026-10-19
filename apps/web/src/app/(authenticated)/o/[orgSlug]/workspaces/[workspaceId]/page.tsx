@@ -227,7 +227,7 @@ export default function WorkspaceDashboardPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href={orgUrl("/workspaces")} className="text-xs text-indigo-300 hover:underline">← Workspaces</Link>
-          <h1 className="text-xl font-semibold text-white mt-1">{data.workspace.name}</h1>
+          <h1 className="text-xl font-semibold text-zinc-100 mt-1">{data.workspace.name}</h1>
           <p className="text-xs text-zinc-500 break-all">{data.workspace.id} · {data.workspace.status}</p>
           {projectId && (
             <p className="text-xs text-zinc-400 mt-1">

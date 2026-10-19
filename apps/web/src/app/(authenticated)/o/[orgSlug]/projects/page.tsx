@@ -116,7 +116,7 @@ export default function ProjectsPage() {
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-white">Projects</h1>
+        <h1 className="text-xl font-semibold text-zinc-100">Projects</h1>
         <p className="text-sm text-zinc-400">Browse projects and open a dashboard for related tasks and workspaces.</p>
       </div>
 

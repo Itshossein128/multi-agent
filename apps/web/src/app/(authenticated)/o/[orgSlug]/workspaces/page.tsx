@@ -143,7 +143,7 @@ export default function WorkspacesPage() {
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8 space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-white">Project workspaces</h1>
+        <h1 className="text-xl font-semibold text-zinc-100">Project workspaces</h1>
         <p className="text-sm text-zinc-400">
           Workspaces belong to a project. Browse by project or open a dashboard for tasks and repo branches.
         </p>

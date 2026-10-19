@@ -340,7 +340,7 @@ export default function RoutinesPage() {
               <CalendarClock className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-white">
+              <h1 className="text-xl font-bold tracking-tight text-zinc-100">
                 {t.title}
               </h1>
               <p className="text-xs text-zinc-400">

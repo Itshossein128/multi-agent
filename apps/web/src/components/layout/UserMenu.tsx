@@ -19,7 +19,7 @@ export function UserMenu() {
       variant="ghost"
       size="sm"
       onClick={handleSignOut}
-      className="h-8 gap-1.5 text-xs text-zinc-300 hover:text-white hover:bg-zinc-800"
+      className="h-8 gap-1.5 text-xs text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"
     >
       <LogOut className="h-3.5 w-3.5" />
       Sign Out

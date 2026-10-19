@@ -137,7 +137,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-background">
+    <div className="appearance-locked flex items-center justify-center min-h-screen bg-background">
       <Suspense>
         <LoginForm />
       </Suspense>
