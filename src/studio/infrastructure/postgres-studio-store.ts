@@ -1947,10 +1947,10 @@ export class PostgresStudioStore implements StudioStore {
       }
 
       // 2. Replay check under row lock (must precede rate-limiting so replay returns 409)
-      if (params.idempotencyKey) {
+      if (params.idempotencyKey || typeof params.payloadSummary?.replayFingerprint === "string") {
         const existingAcceptedRes = await tx.query(
-          "SELECT * FROM studio_webhook_deliveries WHERE trigger_id = $1 AND idempotency_key = $2 AND status = 'accepted' LIMIT 1",
-          [trigger.id, params.idempotencyKey]
+          "SELECT * FROM studio_webhook_deliveries WHERE trigger_id = $1 AND status = 'accepted' AND ((idempotency_key = $2 AND $2 IS NOT NULL) OR (payload_summary->>'replayFingerprint' = $3 AND $3 IS NOT NULL)) LIMIT 1",
+          [trigger.id, params.idempotencyKey ?? null, params.payloadSummary?.replayFingerprint ?? null]
         );
         if (existingAcceptedRes.rows.length > 0) {
           const existingDelivery = decodeWebhookDelivery(existingAcceptedRes.rows[0]);

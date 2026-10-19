@@ -329,8 +329,11 @@ export class RunExecutor {
     const id = uid("run"); const stamp = nowIso();
     const memoryOwnerId = ownerId ?? memoryAccess?.principalId;
     const memoryOwnerTenantId = tenantId ?? memoryAccess?.tenantId;
-    const initiatorKind = trustedDispatch?.kind ?? deriveRunInitiatorKind({ principalKind: principal?.principalKind });
-    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId, initiatorKind, serverInitiated: Boolean(trustedDispatch || principal?.principalKind === "service") };
+    // User-owned automation retains its owner's revocation boundary even though
+    // dispatch itself is performed by a trusted background worker.
+    const userOwnedDispatch = Boolean(trustedDispatch && principal?.principalKind === "user");
+    const initiatorKind = userOwnedDispatch ? "user" : trustedDispatch?.kind ?? deriveRunInitiatorKind({ principalKind: principal?.principalKind });
+    const run: Run = { id, workflowId: request.workflow.id, taskId: request.taskId, status: "queued", startedAt: stamp, input: request.input ?? {}, metadata: request.metadata ?? {}, ownerId, tenantId, initiatorKind, serverInitiated: !userOwnedDispatch && Boolean(trustedDispatch || principal?.principalKind === "service") };
     this.store.create(
       run,
       memoryOwnerId && memoryOwnerTenantId ? { principalId: memoryOwnerId, tenantId: memoryOwnerTenantId } : undefined,

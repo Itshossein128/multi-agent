@@ -635,6 +635,21 @@ describePg("Event Routines, Triggers & Outbox PostgreSQL Integration", () => {
       expect(events).toHaveLength(0);
     });
 
+    it("rejects the same authenticated webhook with changed unsigned idempotency keys across concurrent requests", async () => {
+      process.env.WEBHOOK_ENCRYPTION_KEY = "test-postgres-webhook-key-32-chars-long!!";
+      const rawSecret = "whsec_replay_security_key";
+      const stamp = nowIso();
+      const trigger: WebhookTriggerRecord = { id: uid("whtrig"), tenantId: tenantA, ownerId: userA.userId, name: "replay", description: "", secretHash: encryptWebhookSecret(rawSecret), targetType: "workflow", targetId: "wf", enabled: true, rateLimitPerMinute: 100, createdAt: stamp, updatedAt: stamp };
+      await store.saveWebhookTrigger(trigger, userA);
+      const body = JSON.stringify({ action: "charge" });
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const mac = crypto.createHmac("sha256", rawSecret).update(`${timestamp}.${body}`).digest("hex");
+      const router = createInboundWebhookRouter(store);
+      const responses = await Promise.all(Array.from({ length: 8 }, (_, i) => router.request(`/triggers/${trigger.id}`, { method: "POST", headers: { "x-webhook-signature": i % 2 ? `sha256=${mac.toUpperCase()}` : mac, "x-webhook-timestamp": timestamp, "idempotency-key": `alternate-${i}` }, body })));
+      expect(responses.filter((r) => r.status === 202)).toHaveLength(1);
+      expect(responses.filter((r) => r.status === 409)).toHaveLength(7);
+    });
+
     it("handles concurrent webhook delivery races with strict rate limit cap, replay rejection, and retryability of rejected requests (Defect 4)", async () => {
       const rawSecret = "whsec_integration_race_key_123456789";
       const encryptedSecret = encryptWebhookSecret(rawSecret);

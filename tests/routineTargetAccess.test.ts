@@ -246,7 +246,7 @@ describe("routine target authorization", () => {
     const runs = runStore.list();
     expect(runs).toHaveLength(1);
     expect(runs[0].ownerId).toBe("owner");
-    expect(runs[0].initiatorKind).toBe("schedule");
+    expect(runs[0].initiatorKind).toBe("user");
     expect(runs[0].input).toMatchObject({
       routineOwnerId: "owner",
       input: { hello: "world" },
@@ -365,19 +365,20 @@ describe("routine target authorization", () => {
     expect(event.lastError).toBe("ORGANIZATION_ACCESS_REVOKED");
   });
 
-  it("still dispatches webhook and heartbeat events for private targets", async () => {
+  it("still dispatches authorized webhook and heartbeat events for private targets", async () => {
     const start = jest.fn().mockReturnValue("run-service");
     const processor = new TriggerOutboxProcessor(store, {
       start,
       getStore: () => ({ waitForPersistence: async () => ({ success: true }) }),
     } as never, undefined, { pollIntervalMs: 60_000 });
+    await store.saveWebhookTrigger({ id: "trigger-owner", tenantId: "org-a", ownerId: "owner", name: "owner", description: "", secretHash: "encrypted", targetType: "workflow", targetId: "wf-owner", enabled: true, rateLimitPerMinute: 60, createdAt: nowIso(), updatedAt: nowIso() }, owner);
     await store.enqueueTriggerEvent({
       tenantId: "org-a",
       eventType: "webhook_inbound",
       targetType: "workflow",
       targetId: "wf-owner",
       idempotencyKey: "webhook-private",
-      payload: { deliveryId: "delivery-1" },
+      payload: { triggerId: "trigger-owner", deliveryId: "delivery-1" },
     });
     await store.enqueueTriggerEvent({
       tenantId: "org-a",

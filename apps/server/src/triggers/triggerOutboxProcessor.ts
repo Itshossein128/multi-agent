@@ -13,6 +13,7 @@ import {
 } from "../runtime/runOrganizationAccess";
 import type { TaskService } from "../api/studio/taskService";
 import { log } from "../logging";
+import { OrganizationContextDeniedError, OrganizationContextResolver } from "../auth/organizationContext";
 import {
   assertRoutineDispatchTarget,
   routineActor,
@@ -109,6 +110,15 @@ export class TriggerOutboxProcessor {
             if (routineOwnerId && this.organizationAccess) {
               try {
                 await this.organizationAccess.assertRoutineActive({ tenantId: event.tenantId, ownerId: routineOwnerId });
+              } catch (error) {
+                if (error instanceof OrganizationAccessRevokedError) return { revoked: true as const };
+                throw error;
+              }
+            }
+            const webhookOwnerId = await this.webhookOwnerForDispatch(event);
+            if (webhookOwnerId && this.organizationAccess) {
+              try {
+                await this.organizationAccess.assertRoutineActive({ tenantId: event.tenantId, ownerId: webhookOwnerId });
               } catch (error) {
                 if (error instanceof OrganizationAccessRevokedError) return { revoked: true as const };
                 throw error;
@@ -230,7 +240,8 @@ export class TriggerOutboxProcessor {
   /**
    * User routines carry a routine id. The stored routine owner is the only actor
    * allowed to execute that target. Heartbeats reuse routine_tick without a routine
-   * id and keep the service principal, as do webhooks and task wakeups.
+   * id and keep the service principal, as do task wakeups. Webhooks are
+   * authorized independently against their stored owner.
    */
   private async routineOwnerForDispatch(event: TriggerEvent): Promise<string | null> {
     if (event.eventType !== "routine_tick" || event.payload?.heartbeat === true) return null;
@@ -252,7 +263,7 @@ export class TriggerOutboxProcessor {
   }
 
   private async dispatchPrincipal(event: TriggerEvent): Promise<StudioPrincipal> {
-    const ownerId = await this.routineOwnerForDispatch(event);
+    const ownerId = await this.routineOwnerForDispatch(event) ?? await this.webhookOwnerForDispatch(event);
     if (!ownerId) {
       const payloadUserId = event.payload?.userId;
       return {
@@ -264,6 +275,31 @@ export class TriggerOutboxProcessor {
     const actor = routineActor({ tenantId: event.tenantId, userId: ownerId });
     await assertRoutineDispatchTarget(this.store, actor, event.targetType, event.targetId);
     return actor;
+  }
+
+  private async webhookOwnerForDispatch(event: TriggerEvent): Promise<string | null> {
+    if (event.eventType !== "webhook_inbound") return null;
+    const triggerId = event.payload?.triggerId;
+    if (typeof triggerId !== "string" || !triggerId.trim()) {
+      throw new RoutineTargetAccessError("Webhook trigger cannot be executed");
+    }
+    const trigger = await this.store.getWebhookTrigger(triggerId, {
+      tenantId: event.tenantId, userId: "system-trigger", principalKind: "service", allowOwnershipBypass: false,
+    });
+    if (!trigger || !trigger.enabled || !trigger.ownerId?.trim() ||
+        trigger.targetType !== event.targetType || trigger.targetId !== event.targetId) {
+      throw new RoutineTargetAccessError("Webhook trigger cannot execute this target");
+    }
+    try {
+      const context = await new OrganizationContextResolver(this.store).resolve(event.tenantId, trigger.ownerId);
+      if (!context.permissions.includes("credentials.manage") || !context.permissions.includes("runs.execute")) {
+        throw new RoutineTargetAccessError("Webhook owner lacks execution permission");
+      }
+    } catch (error) {
+      if (error instanceof OrganizationContextDeniedError) throw new RoutineTargetAccessError("Webhook owner no longer has access");
+      throw error;
+    }
+    return trigger.ownerId;
   }
 
   private async processEvent(event: TriggerEvent): Promise<string | undefined> {
@@ -470,10 +506,7 @@ export class TriggerOutboxProcessor {
           },
         },
         undefined,
-        {
-          userId: principal.userId,
-          tenantId: principal.tenantId,
-        },
+        principal,
       );
       return runId;
     }
@@ -504,10 +537,7 @@ export class TriggerOutboxProcessor {
           },
         },
         undefined,
-        {
-          userId: principal.userId,
-          tenantId: principal.tenantId,
-        },
+        principal,
       );
       return runId;
     }

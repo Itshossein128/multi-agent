@@ -1144,7 +1144,23 @@ export class InMemoryStudioStore implements StudioStore {
     return count;
   }
 
+  private readonly webhookDeliveryLocks = new Map<string, Promise<void>>();
+
   async acceptWebhookDelivery(params: AcceptWebhookDeliveryParams): Promise<AcceptWebhookDeliveryResult> {
+    const previous = this.webhookDeliveryLocks.get(params.triggerId) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.webhookDeliveryLocks.set(params.triggerId, current);
+    await previous;
+    try {
+      return await this.acceptWebhookDeliveryLocked(params);
+    } finally {
+      release();
+      if (this.webhookDeliveryLocks.get(params.triggerId) === current) this.webhookDeliveryLocks.delete(params.triggerId);
+    }
+  }
+
+  private async acceptWebhookDeliveryLocked(params: AcceptWebhookDeliveryParams): Promise<AcceptWebhookDeliveryResult> {
     const trigger = this.webhookTriggers.get(params.triggerId);
     const deliveryId = params.deliveryId ?? uid("deliv");
     const stamp = nowIso();
@@ -1182,9 +1198,12 @@ export class InMemoryStudioStore implements StudioStore {
     }
 
     // Replay check (must precede rate-limiting so replay returns 409)
-    if (params.idempotencyKey) {
+    if (params.idempotencyKey || typeof params.payloadSummary?.replayFingerprint === "string") {
       const existingAccepted = [...this.webhookDeliveries.values()].find(
-        (d) => d.triggerId === trigger.id && d.idempotencyKey === params.idempotencyKey && d.status === "accepted"
+        (d) => d.triggerId === trigger.id && d.status === "accepted" && (
+          (!!params.idempotencyKey && d.idempotencyKey === params.idempotencyKey) ||
+          (typeof params.payloadSummary?.replayFingerprint === "string" && d.payloadSummary?.replayFingerprint === params.payloadSummary.replayFingerprint)
+        )
       );
       if (existingAccepted) {
         return {

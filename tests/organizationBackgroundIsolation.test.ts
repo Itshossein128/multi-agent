@@ -86,6 +86,10 @@ describe('US3 background isolation — interleaved multi-organization handlers',
     await seedUs2(store, 'org-b');
     await store.saveWorkflow(workflow('wf-shared'), { tenantId: 'org-a', userId: 'owner' });
     await store.saveWorkflow({ ...workflow('wf-shared'), id: 'wf-b' }, { tenantId: 'org-b', userId: 'owner' });
+    const stamp = nowIso();
+    for (const [tenantId, id, targetId] of [['org-a', 'trigger-a', 'wf-shared'], ['org-b', 'trigger-b', 'wf-b']] as const) {
+      await store.saveWebhookTrigger({ id, tenantId, ownerId: 'owner', name: id, description: '', secretHash: 'encrypted', targetType: 'workflow', targetId, enabled: true, rateLimitPerMinute: 60, createdAt: stamp, updatedAt: stamp }, { tenantId, userId: 'owner' });
+    }
 
     const eventA = await store.enqueueTriggerEvent({
       tenantId: 'org-a',
@@ -93,7 +97,7 @@ describe('US3 background isolation — interleaved multi-organization handlers',
       targetType: 'workflow',
       targetId: 'wf-shared',
       idempotencyKey: 'outbox-a',
-      payload: { marker: 'a' },
+      payload: { marker: 'a', triggerId: 'trigger-a' },
     });
     const eventB = await store.enqueueTriggerEvent({
       tenantId: 'org-b',
@@ -101,7 +105,7 @@ describe('US3 background isolation — interleaved multi-organization handlers',
       targetType: 'workflow',
       targetId: 'wf-b',
       idempotencyKey: 'outbox-b',
-      payload: { marker: 'b' },
+      payload: { marker: 'b', triggerId: 'trigger-b' },
     });
     expect(eventB.id).not.toBe(eventA.id);
 
@@ -117,7 +121,7 @@ describe('US3 background isolation — interleaved multi-organization handlers',
     expect(tenants).toEqual(['org-a', 'org-b']);
     for (const run of runs) {
       expect(run.metadata.triggerEventId).toBeDefined();
-      expect(run.initiatorKind).toBe('trigger');
+      expect(run.initiatorKind).toBe('user');
     }
 
     const observations = store.observed.filter((entry) => entry.method === 'getWorkflow');
@@ -126,7 +130,7 @@ describe('US3 background isolation — interleaved multi-organization handlers',
       expect(observation.scope).toBeDefined();
       expect(observation.scope).toBe(observation.tenant);
     }
-    expect(observations.map((entry) => entry.scope).sort()).toEqual(['org-a', 'org-b']);
+    expect(new Set(observations.map((entry) => entry.scope))).toEqual(new Set(['org-a', 'org-b']));
   });
 
   test('T046 identical trigger idempotency and dispatch keys in two organizations never collide', async () => {

@@ -106,7 +106,7 @@ export function verifyWebhookSignature(
   secret: string,
   signatureHeader: string,
   timestampHeader?: string,
-): { valid: boolean; reason?: string } {
+): { valid: boolean; reason?: string; replayFingerprint?: string } {
   if (!signatureHeader || !secret) {
     return { valid: false, reason: "Missing signature or secret" };
   }
@@ -155,7 +155,8 @@ export function verifyWebhookSignature(
 
   const expectedBuf = Buffer.from(expectedHmac, "hex");
   if (expectedBuf.length === receivedBuf.length && crypto.timingSafeEqual(receivedBuf, expectedBuf)) {
-    return { valid: true };
+    // Do not expose the reusable authentication tag in delivery metadata.
+    return { valid: true, replayFingerprint: crypto.createHash("sha256").update(expectedBuf).digest("hex") };
   }
 
   return { valid: false, reason: "Signature mismatch" };

@@ -344,6 +344,7 @@ export function createInboundWebhookRouter(store: StudioStore): Hono {
       payloadSummary: {
         keys: Object.keys(parsedPayload).slice(0, 20),
         sizeBytes: rawBuffer.length,
+        replayFingerprint: verification.replayFingerprint,
       },
       durationMs: Date.now() - startTime,
     });
