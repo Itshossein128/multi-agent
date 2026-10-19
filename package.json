@@ -8,6 +8,7 @@
     "multi-agent": "dist/cli/index.js"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "build": "tsc",
     "start": "node dist/cli/index.js",
     "build:types": "pnpm --filter @multi-agent/types build",

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Git commit-msg hook enforcing Conventional Commits and descriptive messages
+
+COMMIT_MSG_FILE="$1"
+FIRST_LINE=$(head -n 1 "$COMMIT_MSG_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+# Skip merge commits or squash commits automatically created by git
+if [[ "$FIRST_LINE" =~ ^Merge ]] || [[ "$FIRST_LINE" =~ ^Revert[[:space:]]\" ]]; then
+  exit 0
+fi
+
+# Reject very short or placeholder commit messages
+if [[ ${#FIRST_LINE} -lt 10 ]]; then
+  echo "❌ Error: Commit message is too short (${#FIRST_LINE} characters). Minimum is 10 characters." >&2
+  echo "   Current message: \"$FIRST_LINE\"" >&2
+  echo "   Please provide a meaningful commit message following Conventional Commits." >&2
+  exit 1
+fi
+
+# Conventional commit pattern: type(scope)?: description
+CONVENTIONAL_REGEX="^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_\.\/-]+\))?!?: .+$"
+
+if ! [[ "$FIRST_LINE" =~ $CONVENTIONAL_REGEX ]]; then
+  echo "❌ Error: Commit message does not follow Conventional Commits specification." >&2
+  echo "   Current message: \"$FIRST_LINE\"" >&2
+  echo "" >&2
+  echo "   Expected format: <type>(<scope>): <subject>" >&2
+  echo "   Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert" >&2
+  echo "   Examples:" >&2
+  echo "     feat(runtime): safeguard scoped db client resolution" >&2
+  echo "     fix(organization): reorder purge operations for post-commit disk deletion" >&2
+  echo "     chore(git): add conventional commits hook" >&2
+  exit 1
+fi
+
+exit 0

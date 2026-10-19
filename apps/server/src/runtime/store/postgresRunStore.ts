@@ -613,8 +613,7 @@ export class PostgresRunStore implements RunStoreContract {
         // PostgreSQL database. Terminal state and its episodic work intent are
         // committed together; a failed insert rolls both back.
         if (this.options.durableMemoryJobs && isTerminal && namespace && entry?.memoryAccess) {
-          const client = scopedDbClient(this.pool)!;
-          {
+          const executeTerminalMemoryJob = async (client: { query(text: string, values?: unknown[]): Promise<{ rows: any[]; rowCount?: number | null }> }) => {
             if (this.hasLeaseColumns !== false) {
               try {
                 const updated = await client.query(
@@ -651,8 +650,27 @@ export class PostgresRunStore implements RunStoreContract {
               `INSERT INTO studio_memory_jobs (id,job_kind,handler_version,idempotency_key,tenant_id,namespace_scope,namespace_id,run_id)
                VALUES ($1,'episodic_extraction',1,$2,$3,$4,$5,$6)
                ON CONFLICT (tenant_id,job_kind,handler_version,idempotency_key) DO NOTHING`,
-              [randomUUID(), `episodic:${runId}:v1`, entry.memoryAccess.tenantId, namespace.scope, namespace.id, runId],
+              [randomUUID(), `episodic:${runId}:v1`, entry.memoryAccess!.tenantId, namespace.scope, namespace.id, runId],
             );
+          };
+
+          const client = scopedDbClient(this.pool);
+          if (client) {
+            await executeTerminalMemoryJob(client);
+          } else if (entry.memoryAccess.tenantId) {
+            await withOrganization(this.pool, entry.memoryAccess.tenantId, "service", executeTerminalMemoryJob);
+          } else {
+            const standaloneClient = await this.pool.connect();
+            try {
+              await standaloneClient.query("BEGIN");
+              await executeTerminalMemoryJob(standaloneClient);
+              await standaloneClient.query("COMMIT");
+            } catch (error) {
+              try { await standaloneClient.query("ROLLBACK"); } catch {}
+              throw error;
+            } finally {
+              standaloneClient.release();
+            }
           }
           return;
         }
