@@ -460,7 +460,11 @@ export class RunExecutor {
         result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while queued.", retryable: false } }),
       });
       this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      if (entry.memoryAccess) this.store.markEpisodicMemoryPending?.(runId);
       this.store.cancel(runId);
+      if (this.episodeService) {
+        void this.processTerminalEpisodicMemory(runId, { succeeded: false, error: "Run was cancelled while queued.", cancelled: true });
+      }
       return true;
     }
     if (entry.run.status === "waiting_for_human") {
@@ -480,6 +484,10 @@ export class RunExecutor {
         result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while waiting for a human.", retryable: false } }),
       });
       this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      if (entry.memoryAccess) this.store.markEpisodicMemoryPending?.(runId);
+      if (this.episodeService) {
+        void this.processTerminalEpisodicMemory(runId, { succeeded: false, error: "Run was cancelled while waiting for a human.", cancelled: true });
+      }
       return true;
     }
     // Abort any in-process listener first.
