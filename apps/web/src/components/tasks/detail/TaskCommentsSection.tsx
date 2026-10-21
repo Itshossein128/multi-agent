@@ -34,7 +34,7 @@ export function TaskCommentsSection({ taskId, agents }: TaskCommentsSectionProps
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/studio/tasks/${taskId}/comments`);
+      const res = await fetch(`/api/execution/studio/tasks/${taskId}/comments`);
       if (!res.ok) throw new Error("Failed to load comments");
       const data = await res.json();
       setComments(Array.isArray(data) ? data : []);
@@ -58,7 +58,7 @@ export function TaskCommentsSection({ taskId, agents }: TaskCommentsSectionProps
     try {
       setSubmitting(true);
       setError(null);
-      const res = await fetch(`/studio/tasks/${taskId}/comments`, {
+      const res = await fetch(`/api/execution/studio/tasks/${taskId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -83,7 +83,7 @@ export function TaskCommentsSection({ taskId, agents }: TaskCommentsSectionProps
 
   const handleDelete = async (commentId: string) => {
     try {
-      const res = await fetch(`/studio/tasks/${taskId}/comments/${commentId}`, {
+      const res = await fetch(`/api/execution/studio/tasks/${taskId}/comments/${commentId}`, {
         method: "DELETE",
       });
       if (res.ok) {
