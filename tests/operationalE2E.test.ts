@@ -115,7 +115,11 @@ describe("Operational End-to-End Acceptance Test Suite", () => {
 
     toolRuntime = new ToolRuntime(10_000, true, {
       create: (category) =>
-        category === "http" ? new HttpToolExecutor(fetchMock, { resolve: async () => [{ address: "93.184.216.34", family: 4 }] }) : { execute: jest.fn() },
+        category === "http"
+          ? new HttpToolExecutor(fetchMock, {
+            resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+          })
+          : { execute: jest.fn() },
     });
 
     const memoryResolver = createMemoryAccessResolver([

@@ -60,7 +60,6 @@
     "hono": "^4.6.20",
     "inquirer": "^9.3.8",
     "langfuse": "^3.35.0",
-    "langfuse-langchain": "^3.35.0",
     "pg": "^8.23.0",
     "undici": "^8.10.1"
   },
@@ -75,5 +74,13 @@
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "@grpc/grpc-js": "1.14.6",
+      "handlebars": "4.7.10",
+      "sharp": "0.35.5",
+      "source-map-js": "1.2.2"
+    }
   }
 }

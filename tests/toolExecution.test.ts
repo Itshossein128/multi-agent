@@ -44,7 +44,13 @@ describe("POST /tools/test", () => {
 
   test("executes a configured HTTP endpoint without accepting an input-controlled destination", async () => {
     const fetchImpl = jest.fn(async () => new Response(JSON.stringify({ result: "ok" }), { status: 200 }));
-    const runtime = new ToolRuntime(1_000, true, { create: (category) => category === "http" ? new HttpToolExecutor(fetchImpl, { resolve: async () => [{ address: "93.184.216.34", family: 4 }] }) : { execute: jest.fn() } });
+    const runtime = new ToolRuntime(1_000, true, {
+      create: (category) => category === "http"
+        ? new HttpToolExecutor(fetchImpl, {
+          resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+        })
+        : { execute: jest.fn() },
+    });
     const app = createToolsRouter(runtime, undefined, async () => testPrincipal);
     const tool: ToolRecord = { ...createToolRecord({ name: "Lookup", category: "http" }), configuration: { url: "https://service.test/lookup", method: "POST" }, impact: "external" };
     const response = await app.request("/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool, input: { query: "status", url: "https://attacker.test" } }) });
