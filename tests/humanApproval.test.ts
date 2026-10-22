@@ -1,4 +1,4 @@
-import { createEdge, createEmptyDefinition, createNode, type WorkflowDefinition } from "@multi-agent/types";
+import { createAgentRecord, createEdge, createEmptyDefinition, createNode, type WorkflowDefinition } from "@multi-agent/types";
 import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { RunStore } from "../apps/server/src/runtime/runStore";
 import { createRunsRouter } from "../apps/server/src/api/runs";
@@ -130,5 +130,93 @@ describe("Phase 7 human-in-the-loop approvals", () => {
     expect(executor.cancel(runId)).toBe(true);
     expect(store.get(runId)?.run.status).toBe("cancelled");
     expect(store.listApprovals(runId)[0].status).toBe("cancelled");
+  });
+
+  test("cancelling a run while waiting for human input marks episodic memory pending and processes terminal episode", async () => {
+    const store = new RunStore();
+    let processedInput: any = null;
+    const mockEpisodeService = {
+      processRun: async (input: any) => {
+        processedInput = input;
+        return { created: true, reason: "success", memoryId: "mem-1" };
+      },
+    };
+    const executor = new RunExecutor(store, undefined, undefined, undefined, undefined, undefined, mockEpisodeService as any);
+    const workflow = linearWorkflow();
+    const memoryAccess = {
+      principalId: "user-1",
+      tenantId: "tenant-1",
+      readableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+      writableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+    };
+    const runId = executor.start({ workflow, agents: [], input: {} }, memoryAccess);
+    await waitFor(() => store.get(runId)?.run.status === "waiting_for_human");
+    expect(executor.cancel(runId)).toBe(true);
+    expect(store.get(runId)?.run.status).toBe("cancelled");
+    expect(store.get(runId)?.run.error).toBe("Run was cancelled while waiting for a human.");
+    expect(store.listApprovals(runId)[0].status).toBe("cancelled");
+    await waitFor(() => processedInput !== null);
+    expect(processedInput.runId).toBe(runId);
+    expect(processedInput.error).toBe("Run was cancelled while waiting for a human.");
+    expect(store.get(runId)?.episodicMemoryStatus).toBe("processed");
+  });
+
+  test("cancelling a queued run marks episodic memory pending and processes terminal episode", async () => {
+    const prevMax = process.env.WORKFLOW_MAX_CONCURRENT_RUNS;
+    process.env.WORKFLOW_MAX_CONCURRENT_RUNS = "1";
+    try {
+      const store = new RunStore();
+      let processedInput: any = null;
+      const mockEpisodeService = {
+        processRun: async (input: any) => {
+          processedInput = input;
+          return { created: true, reason: "success", memoryId: "mem-2" };
+        },
+      };
+      // A runtime that hangs on the first run so it remains in activeRuns
+      const hangingRuntime = {
+        async *execute() {
+          await new Promise(() => {});
+        },
+      };
+      const executor = new RunExecutor(store, hangingRuntime, undefined, undefined, undefined, undefined, mockEpisodeService as any);
+      const agent = { ...createAgentRecord({ name: "a1" }), id: "a1" };
+      const inputNode = createNode("input", { x: 0, y: 0 });
+      const agentNode = createNode("agent", { x: 1, y: 0 }, { agentId: "a1" });
+      const outputNode = createNode("output", { x: 2, y: 0 });
+      const workflow = {
+        id: "w1", name: "w1", description: "d1", version: 1, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z",
+        nodes: [inputNode, agentNode, outputNode],
+        edges: [createEdge({ source: inputNode.id, target: agentNode.id }), createEdge({ source: agentNode.id, target: outputNode.id })],
+      };
+      const memoryAccess = {
+        principalId: "user-1",
+        tenantId: "tenant-1",
+        readableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+        writableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+      };
+
+      // First run occupies the 1 available execution slot and hangs inside execute()
+      const runId1 = executor.start({ workflow, agents: [agent], input: {} }, memoryAccess);
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Second run remains queued in pendingRequests because activeRuns.size === 1
+      const runId2 = executor.start({ workflow, agents: [agent], input: {} }, memoryAccess);
+      expect(store.get(runId2)?.run.status).toBe("queued");
+
+      expect(executor.cancel(runId2)).toBe(true);
+      expect(store.get(runId2)?.run.status).toBe("cancelled");
+      expect(store.get(runId2)?.run.error).toBe("Run was cancelled while queued.");
+      await waitFor(() => processedInput !== null);
+      expect(processedInput.runId).toBe(runId2);
+      expect(processedInput.error).toBe("Run was cancelled while queued.");
+      expect(store.get(runId2)?.episodicMemoryStatus).toBe("processed");
+
+      // Clean up first run
+      executor.cancel(runId1);
+    } finally {
+      if (prevMax !== undefined) process.env.WORKFLOW_MAX_CONCURRENT_RUNS = prevMax;
+      else delete process.env.WORKFLOW_MAX_CONCURRENT_RUNS;
+    }
   });
 });

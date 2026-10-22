@@ -454,13 +454,19 @@ export class RunExecutor {
     if (this.pendingRequests.has(runId)) {
       this.pendingRequests.delete(runId);
       this.branchControllers.delete(runId);
+      const error = "Run was cancelled while queued.";
       this.store.update(runId, {
         status: "cancelled",
         completedAt: nowIso(),
-        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while queued.", retryable: false } }),
+        error,
+        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: error, retryable: false } }),
       });
-      this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      if (entry.memoryAccess) this.store.markEpisodicMemoryPending?.(runId);
+      this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true, error } });
       this.store.cancel(runId);
+      if (this.episodeService) {
+        void this.processTerminalEpisodicMemory(runId, { succeeded: false, error, cancelled: true });
+      }
       return true;
     }
     if (entry.run.status === "waiting_for_human") {
@@ -474,12 +480,18 @@ export class RunExecutor {
       this.checkpointers.delete(runId);
       this.branchControllers.delete(runId);
       this.store.setPausedContext?.(runId, null);
+      const error = "Run was cancelled while waiting for a human.";
       this.store.update(runId, {
         status: "cancelled",
         completedAt: nowIso(),
-        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: "Run was cancelled while waiting for a human.", retryable: false } }),
+        error,
+        result: createResultEnvelope("blocked", { error: { code: "RUN_CANCELLED", message: error, retryable: false } }),
       });
-      this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true } });
+      if (entry.memoryAccess) this.store.markEpisodicMemoryPending?.(runId);
+      this.store.append(runId, { id: uid("event"), runId, type: "run.cancelled", timestamp: nowIso(), sequence: 0, payload: { cancelled: true, error } });
+      if (this.episodeService) {
+        void this.processTerminalEpisodicMemory(runId, { succeeded: false, error, cancelled: true });
+      }
       return true;
     }
     // Abort any in-process listener first.
