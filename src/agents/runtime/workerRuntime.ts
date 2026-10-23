@@ -169,17 +169,26 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
 
     if (!workspaceAllowed) throw new Error(`CLI workspace "${resolvedCwd}" is not allowed by the server runtime.`);
 
-    const executableIsPath = path.isAbsolute(spec.executable) || spec.executable.includes("/") || spec.executable.includes("\\");
-    const executableAllowed = executableIsPath
-      ? this.policy.allowedExecutables.some((allowed) => {
-        if (!path.isAbsolute(allowed)) return false;
+    const executableAllowed = this.policy.allowedExecutables.some((allowed) => {
+      if (allowed === spec.executable) return true;
+      const allowedIsPath = path.isAbsolute(allowed) || allowed.includes("/") || allowed.includes("\\");
+      const specIsPath = path.isAbsolute(spec.executable) || spec.executable.includes("/") || spec.executable.includes("\\");
+
+      if (allowedIsPath && specIsPath) {
         try {
           return fs.realpathSync(allowed) === fs.realpathSync(spec.executable);
         } catch {
           return false;
         }
-      })
-      : this.policy.allowedExecutables.includes(spec.executable) || this.policy.allowedExecutables.some((allowed) => path.isAbsolute(allowed) && this.matchesBareCommand(allowed, spec.executable));
+      }
+      if (allowedIsPath && !specIsPath) {
+        return this.matchesBareCommand(allowed, spec.executable);
+      }
+      if (!allowedIsPath && specIsPath) {
+        return this.matchesBareCommand(spec.executable, allowed);
+      }
+      return false;
+    });
 
     if (!executableAllowed) throw new Error(`CLI executable "${spec.executable}" is not allowed by the server runtime.`);
   }

@@ -653,6 +653,54 @@ describe("LocalProcessWorkerRuntime", () => {
     }
   });
 
+  test("allows absolute path execution when bare command name is in policy allowlist", async () => {
+    const spawnFn = mockSpawnFn("hello from resolved path", "", 0);
+    const runtime = new LocalProcessWorkerRuntime(
+      { ...policy, allowedExecutables: ["node"] },
+      spawnFn as any,
+    );
+
+    const absoluteNode = process.execPath; // e.g. /usr/bin/node
+    const spec = createSpec(absoluteNode, ["-e", "console.log('hello')"]);
+    const handle = await runtime.start(spec);
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("completed");
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("hello from resolved path");
+
+    await runtime.cleanup(handle.workerId);
+  });
+
+  test("allows bare command execution when absolute path is in policy allowlist", async () => {
+    const spawnFn = mockSpawnFn("hello from bare command", "", 0);
+    const runtime = new LocalProcessWorkerRuntime(
+      { ...policy, allowedExecutables: [process.execPath] },
+      spawnFn as any,
+    );
+
+    const spec = createSpec(path.basename(process.execPath), ["-e", "console.log('hello')"]);
+    const handle = await runtime.start(spec);
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("completed");
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("hello from bare command");
+
+    await runtime.cleanup(handle.workerId);
+  });
+
+  test("rejects unallowed absolute path execution even when basename differs from allowlist", async () => {
+    const runtime = new LocalProcessWorkerRuntime({
+      ...policy,
+      allowedExecutables: ["node"],
+    });
+
+    const pythonPath = process.platform === "win32" ? "C:\\Windows\\System32\\python.exe" : "/usr/bin/python3";
+    const spec = createSpec(pythonPath, ["-c", "print('hello')"]);
+    await expect(runtime.start(spec)).rejects.toThrow("not allowed by the server runtime");
+  });
+
   test("[Integration] node child process runs harmlessly", async () => {
     // Tests that the default node spawn actually works for real process lifecycle.
     const runtime = new LocalProcessWorkerRuntime(policy);
