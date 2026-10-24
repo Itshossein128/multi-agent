@@ -131,4 +131,66 @@ describe("Phase 7 human-in-the-loop approvals", () => {
     expect(store.get(runId)?.run.status).toBe("cancelled");
     expect(store.listApprovals(runId)[0].status).toBe("cancelled");
   });
+
+  test("cancelling a run with memoryAccess while waiting for human input triggers episodic memory processing", async () => {
+    const store = new RunStore();
+    const episodeService = { processRun: jest.fn(async () => ({ created: false, reason: "trivial" })) };
+    const executor = new RunExecutor(store, undefined, undefined, undefined, undefined, undefined, episodeService as never);
+    const workflow = linearWorkflow();
+    const memoryAccess = {
+      principalId: "user-1",
+      tenantId: "tenant-1",
+      readableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+      writableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+    };
+    const runId = executor.start({ workflow, agents: [], input: {} }, memoryAccess);
+    await waitFor(() => store.get(runId)?.run.status === "waiting_for_human");
+    expect(executor.cancel(runId)).toBe(true);
+    expect(store.get(runId)?.run.status).toBe("cancelled");
+    await waitFor(() => store.get(runId)?.episodicMemoryStatus === "processed");
+    expect(episodeService.processRun).toHaveBeenCalledTimes(1);
+    expect(episodeService.processRun).toHaveBeenCalledWith(
+      expect.objectContaining({ runId, succeeded: false, error: "Run was cancelled while waiting for a human." }),
+      memoryAccess,
+    );
+  });
+
+  test("cancelling a queued run with memoryAccess triggers episodic memory processing", async () => {
+    const origConcurrency = process.env.WORKFLOW_MAX_CONCURRENT_RUNS;
+    process.env.WORKFLOW_MAX_CONCURRENT_RUNS = "1";
+    const store = new RunStore();
+    const episodeService = { processRun: jest.fn(async () => ({ created: false, reason: "trivial" })) };
+    // Create an agent runtime that blocks so the first run holds the active execution lock
+    let unblockActiveRun: () => void = () => {};
+    const blockingRuntime = {
+      async *execute() {
+        await new Promise<void>((resolve) => { unblockActiveRun = resolve; });
+        yield* [];
+      },
+    };
+    const executor = new RunExecutor(store, blockingRuntime as never, undefined, undefined, undefined, undefined, episodeService as never);
+    const workflow = linearWorkflow();
+    const memoryAccess = {
+      principalId: "user-1",
+      tenantId: "tenant-1",
+      readableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+      writableNamespaces: [{ scope: "project" as const, id: "proj-1" }],
+    };
+    const runId1 = executor.start({ workflow, agents: [], input: {} }, memoryAccess);
+    const runId2 = executor.start({ workflow, agents: [], input: {} }, memoryAccess);
+    expect(store.get(runId2)?.run.status).toBe("queued");
+
+    expect(executor.cancel(runId2)).toBe(true);
+    expect(store.get(runId2)?.run.status).toBe("cancelled");
+    await waitFor(() => store.get(runId2)?.episodicMemoryStatus === "processed");
+    expect(episodeService.processRun).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: runId2, succeeded: false, error: "Run was cancelled while queued." }),
+      memoryAccess,
+    );
+
+    unblockActiveRun();
+    executor.cancel(runId1);
+    if (origConcurrency !== undefined) process.env.WORKFLOW_MAX_CONCURRENT_RUNS = origConcurrency;
+    else delete process.env.WORKFLOW_MAX_CONCURRENT_RUNS;
+  });
 });
