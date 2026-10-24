@@ -50,6 +50,24 @@ describePg("durable PostgreSQL memory jobs", () => {
     expect(await jobs.fail(reclaimed.id, "recovery-worker", "permanent_error", false)).toBe("dead");
     expect(await jobs.retryDead(job.id)).toBe(true);
   }, 30000);
+  test("worker completes job after lease expiration if no other worker claimed it", async () => {
+    const jobs = new PostgresMemoryJobStore(pool);
+    const { job } = await jobs.enqueue({ kind: "consolidation", idempotencyKey: "overdue-complete:v1", tenantId: "tenant-overdue", namespace });
+    const [claimed] = await jobs.claim("worker-slow", 1, 500);
+    expect(claimed.id).toBe(job.id);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    const completed = await jobs.complete(claimed.id, "worker-slow");
+    expect(completed).toBe(true);
+
+    const { job: stolenJob } = await jobs.enqueue({ kind: "consolidation", idempotencyKey: "stolen-complete:v1", tenantId: "tenant-overdue", namespace });
+    await jobs.claim("worker-original", 1, 500);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    const [stolenReclaimed] = await jobs.claim("worker-stealer", 1, 10_000);
+    expect(stolenReclaimed.id).toBe(stolenJob.id);
+    expect(stolenReclaimed.leasedBy).toBe("worker-stealer");
+    expect(await jobs.complete(stolenJob.id, "worker-original")).toBe(false);
+    expect(await jobs.complete(stolenJob.id, "worker-stealer")).toBe(true);
+  }, 30000);
   test("idempotency is tenant-isolated and terminal retention never touches active work", async () => {
     const jobs = new PostgresMemoryJobStore(pool);
     const a = await jobs.enqueue({ kind: "episodic_extraction", idempotencyKey: "same-external-run:v1", tenantId: "tenant-a", namespace, runId: "same" });
