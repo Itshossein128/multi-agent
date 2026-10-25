@@ -212,6 +212,9 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     const env = { ...buildWorkerEnv(process.env, spec.env, explicitlyAllowedEnv), ...launchEnvironment };
 
     const child = this.spawnFn(spec.executable, spec.args, { cwd: spec.cwd, shell: false, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] }) as ChildProcess;
+    if (typeof child.stdin?.on === "function") {
+      child.stdin.on("error", () => {});
+    }
 
     const state: {
       child: ChildProcess;
@@ -810,6 +813,9 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
   private dockerCommandWithStdin(args: string[], input: Buffer): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["pipe", "pipe", "pipe"] });
+      if (typeof child.stdin?.on === "function") {
+        child.stdin.on("error", () => {});
+      }
       let stderr = "";
       child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
       child.once("error", reject);
