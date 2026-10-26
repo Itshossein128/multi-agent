@@ -527,6 +527,66 @@ describe("LocalProcessWorkerRuntime", () => {
     }
   });
 
+  test("dockerCommandWithStdin attaches stdin error handler so early close does not throw unhandled stream error", async () => {
+    let stdinErrorListener: ((err: Error) => void) | undefined;
+    const spawnFn = ((command: string, args: string[], options: any) => {
+      const listeners: Record<string, Array<(...values: any[]) => void>> = { close: [], error: [] };
+      const streamListeners: Record<string, Array<(...values: any[]) => void>> = { data: [], close: [] };
+      setTimeout(() => {
+        // Emit error on stdin if registered
+        if (stdinErrorListener) {
+          stdinErrorListener(new Error("write EPIPE"));
+        }
+        streamListeners.close?.forEach((fn) => fn());
+        listeners.close?.forEach((fn) => fn(0));
+      }, 0);
+      return {
+        stdout: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
+        stderr: { on: (event: string, fn: (...values: any[]) => void) => streamListeners[event]?.push(fn) },
+        stdin: {
+          on: (event: string, fn: (...values: any[]) => void) => {
+            if (event === "error") stdinErrorListener = fn;
+          },
+          write: jest.fn(),
+          end: jest.fn(),
+        },
+        on: (event: string, fn: (...values: any[]) => void) => listeners[event]?.push(fn),
+        once: (event: string, fn: (...values: any[]) => void) => listeners[event]?.push(fn),
+        kill: jest.fn(),
+        pid: 123,
+      } as any;
+    }) as any;
+
+    const runtime = new ContainerWorkerRuntime(
+      { ...policy, workerMode: "container", allowedExecutables: ["codex"] },
+      {
+        image: `registry.example/agent@sha256:${"a".repeat(64)}`,
+        dockerExecutable: process.execPath,
+        allowNetwork: false,
+        memory: "512m",
+        cpus: "0.5",
+        pidsLimit: 64,
+        user: "65534:65534",
+      },
+      spawnFn,
+    );
+
+    const credentialFile = {
+      containerPath: "/home/worker/.codex/auth.json",
+      content: Buffer.from("secret-token"),
+      mode: 0o600,
+      contentSha256: sha256Hex(Buffer.from("secret-token")),
+    };
+
+    const handle = await runtime.start(createSpec("codex", ["--version"]), undefined, undefined, {
+      environment: {},
+      files: [credentialFile],
+    });
+
+    expect(stdinErrorListener).toBeDefined();
+    await runtime.cleanup(handle.workerId);
+  });
+
   test("finalizeSession is executed when delegate.cancel throws an error during cancel", async () => {
     const spawnedCommands: string[] = [];
     const spawnFn = ((command: string, args: string[], options: any) => {
