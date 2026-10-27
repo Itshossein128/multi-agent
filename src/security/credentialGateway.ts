@@ -29,6 +29,11 @@ export interface CredentialGatewayRequest {
 export interface CredentialLease {
   leaseId: string;
   expiresAt: number;
+  tenantId?: string;
+  principalId?: string;
+  runId?: string;
+  provider?: string;
+  alias?: string;
 }
 
 export interface CredentialGateway {
@@ -217,11 +222,27 @@ function errorFromResponse(payload: unknown): CredentialGatewayError {
 
 function normalizeLease(payload: unknown): CredentialLease {
   const source = (payload as { lease?: unknown }).lease ?? payload;
-  const record = source as { leaseId?: unknown; expiresAt?: unknown };
+  const record = source as {
+    leaseId?: unknown;
+    expiresAt?: unknown;
+    tenantId?: unknown;
+    principalId?: unknown;
+    runId?: unknown;
+    provider?: unknown;
+    alias?: unknown;
+  };
   if (typeof record.leaseId !== "string" || !record.leaseId || typeof record.expiresAt !== "number") {
     throw new CredentialGatewayError("Credential gateway lease response is invalid.", "gateway_unavailable");
   }
-  return { leaseId: record.leaseId, expiresAt: record.expiresAt };
+  return {
+    leaseId: record.leaseId,
+    expiresAt: record.expiresAt,
+    ...(typeof record.tenantId === "string" ? { tenantId: record.tenantId } : {}),
+    ...(typeof record.principalId === "string" ? { principalId: record.principalId } : {}),
+    ...(typeof record.runId === "string" ? { runId: record.runId } : {}),
+    ...(typeof record.provider === "string" ? { provider: record.provider } : {}),
+    ...(typeof record.alias === "string" ? { alias: record.alias } : {}),
+  };
 }
 
 /** Defense in depth: a broker response must echo the requested binding when present. */

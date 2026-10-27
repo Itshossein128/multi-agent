@@ -120,6 +120,25 @@ describe("security: lease isolation across tenants, principals, and runs", () =>
     expect((await harness.leases.get(lease.leaseId))?.status).toBe("issued");
     await expect(client.consume(lease, tenantA)).resolves.toBeTruthy();
   });
+
+  test("HttpCredentialGateway issue rejects lease response with mismatched tenant or binding fields", async () => {
+    const mockFetch: CredentialGatewayFetch = async () => new Response(JSON.stringify({
+      lease: {
+        leaseId: "lease-123",
+        expiresAt: Date.now() + 30000,
+        tenantId: "tenant-b", // Mismatched tenantId
+        principalId: "user-a",
+        runId: "run-a",
+        provider: "database",
+        alias: "main",
+      },
+    }), { status: 201, headers: { "Content-Type": "application/json" } });
+
+    const gateway = new HttpCredentialGateway("https://broker.internal", TOKEN, mockFetch);
+    const error = await gateway.issue(tenantA).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CredentialGatewayError);
+    expect((error as CredentialGatewayError).message).toContain("bound to another tenant");
+  });
 });
 
 describe("security: production fail-closed configuration", () => {
