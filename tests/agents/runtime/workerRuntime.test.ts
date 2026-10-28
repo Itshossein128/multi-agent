@@ -653,6 +653,46 @@ describe("LocalProcessWorkerRuntime", () => {
     }
   });
 
+  test("handles worker child process stdin stream errors safely", async () => {
+    let stdinErrorCallback: ((err: Error) => void) | undefined;
+    const spawnFn = (command: string, args: string[], options: any) => {
+      const listeners: Record<string, any[]> = { close: [], error: [] };
+      const streamListeners: Record<string, any[]> = { data: [], close: [] };
+
+      setTimeout(() => {
+        streamListeners.close.forEach((fn) => fn());
+        listeners.close?.forEach((fn) => fn(0));
+      }, 10);
+
+      return {
+        stdout: { on: (e: string, fn: any) => streamListeners[e]?.push(fn) },
+        stderr: { on: (e: string, fn: any) => streamListeners[e]?.push(fn) },
+        stdin: {
+          write: jest.fn(),
+          end: jest.fn(),
+          on: (e: string, fn: any) => {
+            if (e === "error") stdinErrorCallback = fn;
+          },
+        },
+        on: (e: string, fn: any) => listeners[e]?.push(fn),
+        kill: jest.fn(),
+        pid: 1234,
+      } as any;
+    };
+
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+    const spec = createSpec("node", []);
+    const handle = await runtime.start(spec, undefined, "input text");
+
+    expect(stdinErrorCallback).toBeDefined();
+    expect(() => stdinErrorCallback!(new Error("EPIPE"))).not.toThrow();
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("completed");
+
+    await runtime.cleanup(handle.workerId);
+  });
+
   test("[Integration] node child process runs harmlessly", async () => {
     // Tests that the default node spawn actually works for real process lifecycle.
     const runtime = new LocalProcessWorkerRuntime(policy);
