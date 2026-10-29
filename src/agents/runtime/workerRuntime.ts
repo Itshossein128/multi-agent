@@ -276,6 +276,9 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
 
     child.stdout?.on("data", (chunk) => handleChunk(chunk, false));
     child.stderr?.on("data", (chunk) => handleChunk(chunk, true));
+    if (child.stdin && typeof child.stdin.on === "function") {
+      child.stdin.on("error", () => {});
+    }
 
     if (spec.timeoutMs > 0) {
       state.timeoutTimer = setTimeout(() => {
@@ -349,7 +352,7 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     if (signal?.aborted) abort();
 
     if (input && !signal?.aborted) {
-      child.stdin?.write(input);
+      child.stdin?.write(input, () => {});
       child.stdin?.end();
     }
 
@@ -811,13 +814,16 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
     return new Promise((resolve, reject) => {
       const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["pipe", "pipe", "pipe"] });
       let stderr = "";
+      if (child.stdin && typeof child.stdin.on === "function") {
+        child.stdin.on("error", () => {});
+      }
       child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
       child.once("error", reject);
       child.once("close", (code) => {
         if (code === 0) resolve();
         else reject(new Error(`Docker inject failed with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
       });
-      child.stdin?.write(input);
+      child.stdin?.write(input, () => {});
       child.stdin?.end();
     });
   }

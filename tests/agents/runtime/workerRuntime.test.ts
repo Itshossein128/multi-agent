@@ -666,4 +666,17 @@ describe("LocalProcessWorkerRuntime", () => {
 
     await runtime.cleanup(handle.workerId);
   });
+
+  test("handles fast process exit when stdin input is written without unhandled EPIPE exception", async () => {
+    const runtime = new LocalProcessWorkerRuntime(policy);
+    const spec = createSpec("node", ["-e", "process.exit(1)"]);
+    const longInput = "x".repeat(100_000);
+    const handle = await runtime.start(spec, undefined, longInput);
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("failed");
+    expect(result.code).toBe(1);
+
+    await runtime.cleanup(handle.workerId);
+  });
 });
