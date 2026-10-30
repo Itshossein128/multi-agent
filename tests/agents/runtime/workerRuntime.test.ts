@@ -607,6 +607,47 @@ describe("LocalProcessWorkerRuntime", () => {
     await runtime.cleanup(handle.workerId);
   });
 
+  test("handles child.stdin stream error (EPIPE) gracefully without unhandled exception", async () => {
+    let stdinErrorCb: ((err: Error) => void) | undefined;
+    const spawnFn = (command: string, args: string[], options: any) => {
+      const listeners: Record<string, any[]> = { close: [], error: [] };
+      const stdoutListeners: Record<string, any[]> = { data: [], close: [], error: [] };
+      const stderrListeners: Record<string, any[]> = { data: [], close: [], error: [] };
+
+      setTimeout(() => {
+        if (stdinErrorCb) {
+          stdinErrorCb(new Error("write EPIPE"));
+        }
+        stdoutListeners.close?.forEach((fn) => fn());
+        stderrListeners.close?.forEach((fn) => fn());
+        listeners.close?.forEach((fn) => fn(0));
+      }, 10);
+
+      return {
+        stdout: { on: (e: string, fn: any) => stdoutListeners[e]?.push(fn) },
+        stderr: { on: (e: string, fn: any) => stderrListeners[e]?.push(fn) },
+        stdin: {
+          on: (e: string, fn: any) => { if (e === "error") stdinErrorCb = fn; },
+          write: jest.fn(),
+          end: jest.fn(),
+        },
+        on: (e: string, fn: any) => listeners[e]?.push(fn),
+        kill: jest.fn(),
+        pid: 1234,
+      } as any;
+    };
+
+    const runtime = new LocalProcessWorkerRuntime(policy, spawnFn as any);
+    const spec = createSpec("node", []);
+    const handle = await runtime.start(spec, undefined, "some input");
+
+    expect(stdinErrorCb).toBeDefined();
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("completed");
+
+    await runtime.cleanup(handle.workerId);
+  });
+
   test("completion event emission and logging are strictly idempotent", async () => {
     let stdoutCloseCb: (() => void) | undefined;
     let stderrCloseCb: (() => void) | undefined;

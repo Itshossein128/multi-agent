@@ -348,6 +348,12 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
     // above is installed. Recheck it after close handlers are ready.
     if (signal?.aborted) abort();
 
+    if (typeof child.stdin?.on === "function") {
+      child.stdin.on("error", () => {
+        // Suppress unhandled stream errors (e.g. EPIPE) if child process closes stdin early
+      });
+    }
+
     if (input && !signal?.aborted) {
       child.stdin?.write(input);
       child.stdin?.end();
@@ -810,6 +816,11 @@ export class ContainerWorkerRuntime implements WorkerRuntime {
   private dockerCommandWithStdin(args: string[], input: Buffer): Promise<void> {
     return new Promise((resolve, reject) => {
       const child = this.spawnFn(this.dockerExecutable, args, { shell: false, stdio: ["pipe", "pipe", "pipe"] });
+      if (typeof child.stdin?.on === "function") {
+        child.stdin.on("error", () => {
+          // Suppress unhandled stream errors (e.g. EPIPE) if container process closes stdin early
+        });
+      }
       let stderr = "";
       child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
       child.once("error", reject);
