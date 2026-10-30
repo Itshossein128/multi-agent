@@ -116,6 +116,19 @@ export class ApprovalManager {
       throw new Error("Approval has already been resolved.");
     }
 
+    if (decision.decision === "needs_clarification") {
+      const stamp = nowIso();
+      const responseSummary = decision.response ?? "Needs clarification before any code modification.";
+      this.deps.store.updateApproval(runId, approvalId, {
+        status: "requested",
+        response: responseSummary,
+        metadata: { ...(approval.metadata ?? {}), decision: "needs_clarification", clarificationRequestedAt: stamp },
+      });
+      this.deps.store.append(runId, { id: uid("event"), runId, type: "human_approval.needs_clarification", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: "needs_clarification", response: responseSummary } });
+      this.deps.store.update(runId, { status: "waiting_for_human" });
+      return { idempotentReplay: false as const };
+    }
+
     this.deps.store.clearApprovalTimer(runId, approvalId);
     const stamp = nowIso();
     const metadata: Record<string, unknown> = { ...(approval.metadata ?? {}) };
@@ -137,7 +150,8 @@ export class ApprovalManager {
       response: responseSummary,
       metadata,
     });
-    this.deps.store.append(runId, { id: uid("event"), runId, type: decision.decision === "approved" ? "human_approval.approved" : "human_approval.rejected", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: responseSummary, hasClarificationAnswers: Boolean(decision.clarificationAnswers?.length) } });
+    const decisionEvent = decision.decision === "approved" ? "human_approval.approved" : "human_approval.rejected";
+    this.deps.store.append(runId, { id: uid("event"), runId, type: decisionEvent, nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: responseSummary, hasClarificationAnswers: Boolean(decision.clarificationAnswers?.length) } });
     this.deps.store.append(runId, { id: uid("event"), runId, type: "human_approval.resolved", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId, decision: decision.decision, response: responseSummary } });
     this.deps.store.append(runId, { id: uid("event"), runId, type: "run.resumed", nodeId: approval.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId } });
     this.deps.store.update(runId, { status: "running", result: undefined });

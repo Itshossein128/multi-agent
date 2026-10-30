@@ -114,6 +114,7 @@ describe("Adaptive QA Feedback & Remediation Loop (User Story 5)", () => {
       name: "Adaptive QA Feedback Loop Test Workflow",
       archetype: "hierarchical-supervisor",
       archetypeConfig: createHierarchicalSupervisorConfig("agent-supervisor", {
+        humanApprovalGateRequired: false,
         recursionGuards: [
           createRecursionGuard("qa_verify->implement_spec", fallbackBranch, maxIterations),
         ],

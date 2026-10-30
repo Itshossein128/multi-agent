@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { ApprovalDecision, ApprovalRequest } from "@multi-agent/types";
+import type { ApprovalDecision, ApprovalRequest, ConsolidatedGapReport, HumanApprovalInterruptContext } from "@multi-agent/types";
+import { ApprovalGateModal } from "@/components/workflow/ApprovalGateModal";
 import { runService } from "@/services/runService";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/formatDateTime";
@@ -31,12 +32,42 @@ function ApprovalCard({ runId, approval, onResolved }: { runId: string; approval
   const [busy, setBusy] = useState<ApprovalDecision | null>(null);
   const [error, setError] = useState("");
 
-  const decide = async (decision: ApprovalDecision) => {
+  const decide = async (decision: ApprovalDecision, notes?: string) => {
     setBusy(decision); setError("");
-    try { await runService.resolveApproval(runId, approval.id, decision, response.trim() || undefined); onResolved?.(); }
+    try { await runService.resolveApproval(runId, approval.id, decision, (notes ?? response).trim() || undefined); onResolved?.(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(null); }
   };
+
+function approvalContext(approval: ApprovalRequest): HumanApprovalInterruptContext | null {
+  const context = approval.context as (Partial<HumanApprovalInterruptContext> & { consolidatedGapReport?: ConsolidatedGapReport }) | undefined;
+  if (!context?.consolidatedGapReport || !context.gateId || !context.runId || !context.nodeId || !context.requestedAt || !context.timeoutAt) return null;
+  return {
+    gateId: context.gateId,
+    runId: context.runId,
+    nodeId: context.nodeId,
+    consolidatedGapReport: context.consolidatedGapReport,
+    requestedAt: context.requestedAt,
+    timeoutAt: context.timeoutAt,
+    message: context.message ?? approval.message,
+  };
+}
+
+  const gateContext = approvalContext(approval);
+  if (gateContext) {
+    return (
+      <ApprovalGateModal
+        isOpen
+        context={gateContext}
+        isSubmitting={busy !== null}
+        errorMessage={error || null}
+        onApprove={(notes) => decide("approved", notes)}
+        onReject={(notes) => decide("rejected", notes)}
+        onNeedsClarification={(notes) => decide("needs_clarification", notes)}
+        onClose={() => undefined}
+      />
+    );
+  }
 
   return <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/70 p-3 text-sm">
     <p className="text-zinc-100">{approval.message || "Approval requested."}</p>

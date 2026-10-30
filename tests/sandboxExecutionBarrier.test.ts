@@ -10,6 +10,7 @@ import {
 } from "../src/security";
 import type { AgentRecord } from "@multi-agent/types";
 import type { WorkerSpec } from "../src/agents/runtime/workerRuntime";
+import { assertExecutionPolicy, ExecutionPolicyError } from "../src/agents/runtime/executionPolicy";
 
 describe("SandboxExecutionBarrier Security & Boundary Tests (T020 - T024)", () => {
   const hostRepoPath = "/home/hossein/Desktop/projects/building-management";
@@ -252,7 +253,41 @@ describe("SandboxExecutionBarrier Security & Boundary Tests (T020 - T024)", () =
         },
       };
 
-      expect(() => assertSandboxExecutionPolicy(validAgent)).not.toThrow();
+      const previousRoot = process.env.SANDBOX_CANONICAL_ROOT;
+      process.env.SANDBOX_CANONICAL_ROOT = sandboxRoot;
+      try {
+        expect(() => assertSandboxExecutionPolicy(validAgent)).not.toThrow();
+      } finally {
+        if (previousRoot === undefined) delete process.env.SANDBOX_CANONICAL_ROOT;
+        else process.env.SANDBOX_CANONICAL_ROOT = previousRoot;
+      }
+    });
+
+    test("live execution policy rejects a missing workspace and a path outside the sandbox", () => {
+      const previousRoot = process.env.SANDBOX_CANONICAL_ROOT;
+      delete process.env.SANDBOX_CANONICAL_ROOT;
+      const base = {
+        id: "agent-policy",
+        tenantId: "tenant-1",
+        name: "Policy Agent",
+        description: "policy",
+        systemPrompt: "work",
+        tools: [],
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        backend: { type: "process" as const, command: "node" },
+      };
+      try {
+        expect(() => assertExecutionPolicy(base as AgentRecord)).toThrow(ExecutionPolicyError);
+        expect(() => assertExecutionPolicy({
+          ...base,
+          executionPolicy: { workspaceRoot: "/tmp/outside-sandbox" },
+        } as AgentRecord)).toThrow(SandboxBoundaryViolationError);
+      } finally {
+        if (previousRoot === undefined) delete process.env.SANDBOX_CANONICAL_ROOT;
+        else process.env.SANDBOX_CANONICAL_ROOT = previousRoot;
+      }
     });
   });
 });

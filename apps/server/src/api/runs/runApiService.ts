@@ -106,7 +106,9 @@ export class RunApiService {
 
   resolveApproval(runId: string, approvalId: string, body: { decision?: string; response?: string }) {
     this.requireRun(runId);
-    if (body.decision !== "approved" && body.decision !== "rejected") throw new ApiError(400, "decision must be 'approved' or 'rejected'");
+    if (body.decision !== "approved" && body.decision !== "rejected" && body.decision !== "needs_clarification") {
+      throw new ApiError(400, "decision must be 'approved', 'rejected', or 'needs_clarification'");
+    }
     this.executor.resolveApproval(runId, approvalId, { decision: body.decision, response: body.response });
   }
 

@@ -217,6 +217,18 @@ function validateArchetype(
       add("error", "UNGUARDED_CYCLE", "Hierarchical supervisor workflow contains cycles but has no recursion guards configured.");
     }
 
+    if (definition.archetypeConfig?.humanApprovalGateRequired) {
+      const approvalIds = new Set(definition.nodes.filter((node) => node.type === "approval").map((node) => node.id));
+      if (approvalIds.size === 0) {
+        add("error", "MISSING_APPROVAL_GATE", "A human approval gate is required before any code modification.");
+      }
+      for (const edge of definition.edges) {
+        if (edge.kind === "conditional" && edge.branchKey === "implement_spec" && !approvalIds.has(edge.target)) {
+          add("error", "APPROVAL_GATE_BYPASS", `Route "implement_spec" must enter the human approval gate before code changes. It currently targets "${edge.target}".`, edge.target, edge.id);
+        }
+      }
+    }
+
     if (guards && Array.isArray(guards)) {
       for (const guard of guards) {
         if (!guard.routeKey || typeof guard.routeKey !== "string" || !guard.routeKey.trim()) {

@@ -632,7 +632,7 @@ export class PostgresStudioStore implements StudioStore {
     return result.rows.map((row) => decodeTask(row));
   }
 
-  async saveTask(task: StudioTask, principal?: StudioPrincipal): Promise<StudioTask> {
+  async saveTask(task: StudioTask, principal?: StudioPrincipal, options?: { expectedUpdatedAt?: string }): Promise<StudioTask> {
     const assignedAgents = Array.isArray(task.assignedAgents)
       ? task.assignedAgents
       : task.assignedAgent
@@ -697,6 +697,7 @@ export class PostgresStudioStore implements StudioStore {
            last_error = EXCLUDED.last_error, metadata = EXCLUDED.metadata,
            workspace_id = EXCLUDED.workspace_id, project_id = EXCLUDED.project_id
          WHERE studio_tasks.tenant_id = EXCLUDED.tenant_id
+           AND ($25::timestamptz IS NULL OR studio_tasks.updated_at = $25::timestamptz)
          RETURNING id`,
         [
           task.id, task.title, task.description, task.priority, task.status, assignedAgent,
@@ -705,9 +706,12 @@ export class PostgresStudioStore implements StudioStore {
           workflowId, JSON.stringify(assignedAgents), startedAt, completedAt,
           parentTaskId, runId, lastError, JSON.stringify(metadata),
           workspaceId, projectId,
+          options?.expectedUpdatedAt ?? null,
         ],
       );
-      if (!written.rowCount) throw new Error("Access denied to task");
+      if (!written.rowCount) {
+        throw new Error(options?.expectedUpdatedAt ? "BOARD_CONFLICT" : "Access denied to task");
+      }
     } else {
       const updatedAt = task.updatedAt ?? task.createdAt ?? nowIso();
       const tenantId = task.tenantId ?? "_orphan";

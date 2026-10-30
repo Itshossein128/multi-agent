@@ -1,7 +1,13 @@
 import path from "node:path";
 import type { AgentRecord } from "@multi-agent/types";
 import { defaultCliExecutable } from "./cliProviderDefaults";
-import { SandboxHostProtectionViolationError } from "../../security/types";
+import { SandboxExecutionBarrier } from "../../security/sandboxExecutionBarrier";
+import { SandboxBoundaryViolationError, SandboxHostProtectionViolationError } from "../../security/types";
+
+function deliverySandboxBarrier(): SandboxExecutionBarrier {
+  const root = process.env.SANDBOX_CANONICAL_ROOT?.trim();
+  return root ? new SandboxExecutionBarrier({ canonicalSandboxRoot: root }) : new SandboxExecutionBarrier();
+}
 
 /** Thrown before an executor is selected when persisted policy disallows a run. */
 export class ExecutionPolicyError extends Error {
@@ -75,17 +81,13 @@ export function assertExecutionPolicy(agent: AgentRecord): void {
   const { backend, executionPolicy: policy } = agent;
 
   const workspaceRoot = (backend.type === "process" ? backend.workspaceRoot : undefined) || policy?.workspaceRoot;
-  if (workspaceRoot) {
-    const forbiddenHostPaths = (process.env.SANDBOX_FORBIDDEN_HOST_PATHS ?? "/home/hossein/Desktop/projects/building-management")
-      .split(",")
-      .map((p) => p.trim())
-      .filter(Boolean);
-    const resolved = path.resolve(workspaceRoot);
-    for (const forbidden of forbiddenHostPaths) {
-      const canonicalForbidden = path.resolve(forbidden);
-      if (resolved === canonicalForbidden || resolved.startsWith(canonicalForbidden + path.sep)) {
-        throw new SandboxHostProtectionViolationError(workspaceRoot, "execute");
-      }
+  if ((backend.type === "cli" || backend.type === "process") && workspaceRoot) {
+    const barrier = deliverySandboxBarrier();
+    try {
+      barrier.assertPathAllowed(workspaceRoot, "read");
+    } catch (error) {
+      if (error instanceof SandboxHostProtectionViolationError || error instanceof SandboxBoundaryViolationError) throw error;
+      throw error;
     }
   }
 
@@ -97,10 +99,11 @@ export function assertExecutionPolicy(agent: AgentRecord): void {
     if (policy?.filesystem === "none") {
       throw new ExecutionPolicyError(`Agent "${agent.name}" forbids filesystem access, so its process backend cannot run.`);
     }
-    const workspaceRoot = backend.workspaceRoot || policy?.workspaceRoot;
-    if (workspaceRoot && !path.isAbsolute(workspaceRoot)) {
-      throw new ExecutionPolicyError(`Agent "${agent.name}" must provide an absolute workspaceRoot for process execution.`);
+    const processRoot = backend.workspaceRoot || policy?.workspaceRoot;
+    if (!processRoot || !path.isAbsolute(processRoot)) {
+      throw new ExecutionPolicyError(`Agent "${agent.name}" must provide an absolute workspaceRoot inside the sandbox.`);
     }
+    deliverySandboxBarrier().assertWorkspaceConfinement(processRoot);
     return;
   }
 
@@ -112,8 +115,9 @@ export function assertExecutionPolicy(agent: AgentRecord): void {
     throw new ExecutionPolicyError(`Agent "${agent.name}" forbids filesystem access, so its CLI backend cannot run.`);
   }
   if (!policy.workspaceRoot || !path.isAbsolute(policy.workspaceRoot)) {
-    throw new ExecutionPolicyError(`Agent "${agent.name}" must provide an absolute workspaceRoot for CLI execution.`);
+    throw new ExecutionPolicyError(`Agent "${agent.name}" must provide an absolute workspaceRoot inside the sandbox.`);
   }
+  deliverySandboxBarrier().assertWorkspaceConfinement(policy.workspaceRoot);
   if (policy.shell === "restricted") {
     const executable = backend.executable || defaultCliExecutable(backend.provider);
     const command = path.basename(executable);

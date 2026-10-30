@@ -1,8 +1,8 @@
 import type { ConsolidatedGapReport } from "./supervisorOutcome";
 
-export type ApprovalStatus = "requested" | "approved" | "rejected" | "expired" | "cancelled";
+export type ApprovalStatus = "requested" | "approved" | "rejected" | "needs_clarification" | "expired" | "cancelled";
 
-export type ApprovalDecision = "approved" | "rejected";
+export type ApprovalDecision = "approved" | "rejected" | "needs_clarification";
 
 export interface ApprovalRequest {
   id: string;

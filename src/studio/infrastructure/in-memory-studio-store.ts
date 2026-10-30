@@ -322,8 +322,12 @@ export class InMemoryStudioStore implements StudioStore {
     return (await this.listTasks(principal)).filter((task) => task.projectId === projectId);
   }
 
-  async saveTask(task: StudioTask, principal?: StudioPrincipal) {
-    this.assertWriteIdentity(this.tasks.get(task.id), task, principal, false);
+  async saveTask(task: StudioTask, principal?: StudioPrincipal, options?: { expectedUpdatedAt?: string }) {
+    const current = this.tasks.get(task.id);
+    if (options?.expectedUpdatedAt !== undefined && (!current || current.updatedAt !== options.expectedUpdatedAt)) {
+      throw new Error("BOARD_CONFLICT");
+    }
+    this.assertWriteIdentity(current, task, principal, false);
     const assignedAgents = Array.isArray(task.assignedAgents)
       ? task.assignedAgents
       : task.assignedAgent

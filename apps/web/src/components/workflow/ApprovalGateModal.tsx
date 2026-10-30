@@ -25,6 +25,7 @@ export interface ApprovalGateModalProps {
   errorMessage?: string | null;
   onApprove: (decisionNotes?: string) => Promise<void> | void;
   onReject: (decisionNotes?: string) => Promise<void> | void;
+  onNeedsClarification?: (decisionNotes?: string) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -35,6 +36,7 @@ export function ApprovalGateModal({
   errorMessage = null,
   onApprove,
   onReject,
+  onNeedsClarification,
   onClose,
 }: ApprovalGateModalProps) {
   const [decisionNotes, setDecisionNotes] = useState("");
@@ -60,6 +62,10 @@ export function ApprovalGateModal({
 
   const handleReject = async () => {
     await onReject(decisionNotes.trim() || undefined);
+  };
+
+  const handleNeedsClarification = async () => {
+    await onNeedsClarification?.(decisionNotes.trim() || undefined);
   };
 
   const severityBadgeClass = (severity: IdentifiedGap["severity"]) => {
@@ -260,6 +266,16 @@ export function ApprovalGateModal({
             <span>Timeout: {new Date(context.timeoutAt).toLocaleTimeString()}</span>
           </div>
           <div className="flex items-center gap-3">
+            {onNeedsClarification && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleNeedsClarification}
+                disabled={isSubmitting}
+              >
+                Needs clarification
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"

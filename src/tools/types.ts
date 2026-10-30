@@ -67,7 +67,8 @@ export type StudioTaskToolErrorCode =
   | "INVALID_STATUS_TRANSITION"
   | "TENANT_ISOLATION_VIOLATION"
   | "INVALID_INPUT"
-  | "DEPENDENCY_BLOCKED";
+  | "DEPENDENCY_BLOCKED"
+  | "BOARD_CONFLICT";
 
 export interface StudioTaskToolSuccessResponse<T = unknown> {
   [key: string]: unknown;

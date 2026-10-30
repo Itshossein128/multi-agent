@@ -349,4 +349,24 @@ describe("Human Approval Gate Lifecycle & Safety Tests (T025 - T028)", () => {
     expect(eventTypes).not.toContain("human_approval.approved");
     expect(executedNodeIds).not.toContain(remediationNode.id);
   });
+
+  test("needs_clarification stays paused and does not execute remediation", async () => {
+    const store = new RunStore();
+    const executor = new RunExecutor(store);
+    const { workflow, remediationNode } = createSupervisorApprovalWorkflow();
+    const runId = executor.start({
+      workflow,
+      agents: [],
+      input: { consolidatedGapReport: sampleGapReport() },
+    });
+    await waitFor(() => store.get(runId)?.run.status === "waiting_for_human");
+    const [approval] = store.listApprovals(runId);
+    executor.resolveApproval(runId, approval.id, { decision: "needs_clarification", response: "Which files change?" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(store.get(runId)?.run.status).toBe("waiting_for_human");
+    expect(store.listApprovals(runId)[0].status).toBe("requested");
+    expect(store.listApprovals(runId)[0].metadata).toMatchObject({ decision: "needs_clarification" });
+    expect(store.events(runId).map((event) => event.type)).toContain("human_approval.needs_clarification");
+    expect(store.events(runId).map((event) => event.nodeId)).not.toContain(remediationNode.id);
+  });
 });

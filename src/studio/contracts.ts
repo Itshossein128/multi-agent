@@ -263,7 +263,7 @@ export interface StudioStore {
 
   listTasks(principal?: StudioPrincipal): Promise<StudioTask[]>;
   getTask(id: string, principal?: StudioPrincipal): Promise<StudioTask | null>;
-  saveTask(task: StudioTask, principal?: StudioPrincipal): Promise<StudioTask>;
+  saveTask(task: StudioTask, principal?: StudioPrincipal, options?: { expectedUpdatedAt?: string }): Promise<StudioTask>;
   deleteTask(id: string, principal?: StudioPrincipal): Promise<void>;
   listTasksByWorkspace(workspaceId: string, principal?: StudioPrincipal): Promise<StudioTask[]>;
   listTasksByProject(projectId: string, principal?: StudioPrincipal): Promise<StudioTask[]>;

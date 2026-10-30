@@ -245,6 +245,13 @@ export class RunExecutor {
         reason: payload.reason as string | undefined,
       });
     }
+    if ((event.type as string) === "audit.outcome_malformed") {
+      const payload = (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, unknown>;
+      void this.handleMalformedAuditOutcome(runId, {
+        taskId: payload.taskId as string | undefined,
+        reason: payload.reason as string | undefined,
+      });
+    }
     for (const runEvent of mapAgentEvents(event, runId)) {
       if (runEvent.nodeId && (runEvent.type === "node.started" || runEvent.type === "agent.started" || runEvent.type === "tool.started")) {
         this.store.update(runId, { currentNodeId: runEvent.nodeId });
@@ -755,6 +762,39 @@ export class RunExecutor {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+  }
+
+  /**
+   * Flag a Studio task for human review when an auditor outcome cannot be trusted.
+   * Does not append a board comment, so a bad payload cannot overwrite human notes.
+   */
+  async handleMalformedAuditOutcome(runId: string, options: { taskId?: string; reason?: string } = {}): Promise<void> {
+    const runRecord = this.store.get(runId)?.run;
+    const effectiveTaskId = options.taskId
+      || ((runRecord as unknown as Record<string, unknown>)?.taskId
+      || ((runRecord?.input as unknown) as Record<string, unknown>)?.taskId
+      || (this.pendingRequests.get(runId)?.request.input as Record<string, unknown>)?.taskId) as string | undefined;
+    if (!this.studioStore || !effectiveTaskId) return;
+    try {
+      const task = await this.studioStore.getTask(effectiveTaskId);
+      if (!task) return;
+      await this.studioStore.saveTask({
+        ...task,
+        description: task.description,
+        status: "in_review",
+        paused: true,
+        metadata: {
+          ...(task.metadata ?? {}),
+          humanReviewReason: options.reason ?? "malformed_audit_outcome",
+        },
+      });
+    } catch (err) {
+      log.warn("Failed to flag task for human review after a malformed audit outcome", {
+        runId,
+        taskId: effectiveTaskId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

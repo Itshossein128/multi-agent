@@ -692,5 +692,26 @@ describe("StudioTaskToolExecutor Comprehensive Unit & Integration Tests (T015 - 
       expect(output.action).toBe("query_tasks");
       expect((output.data as any).total).toBe(1);
     });
+
+    test("refuses to overwrite a newer human status update", async () => {
+      const original = store.getTask.bind(store);
+      let reads = 0;
+      store.getTask = async (id) => {
+        const task = await original(id);
+        reads += 1;
+        if (!task || reads === 1) return task;
+        return { ...task, description: "Human note: keep this wording", status: "paused", updatedAt: "2099-01-01T00:00:00.000Z" };
+      };
+      const output = await executor.execute({
+        tool: toolRecord,
+        input: { action: "update_task_status", params: { taskId: "task-01", newStatus: "running" } },
+        credentialPrincipal: principalA,
+      });
+      expect(output.success).toBe(false);
+      expect((output as { error: { code: string } }).error.code).toBe("BOARD_CONFLICT");
+      const latest = await original("task-01");
+      expect(latest?.status).toBe("queued");
+      expect(latest?.description).toBe("Track weather conditions for daily logs");
+    });
   });
 });

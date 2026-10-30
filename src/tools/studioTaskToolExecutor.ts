@@ -329,21 +329,51 @@ export class StudioTaskToolExecutor implements ToolExecutor {
       }
     }
 
+    const latest = await store.getTask(params.taskId);
+    if (!latest || latest.updatedAt !== existing.updatedAt) {
+      return {
+        success: false,
+        action: "update_task_status",
+        error: {
+          code: "BOARD_CONFLICT",
+          message: `Task "${params.taskId}" changed on the board. The supervisor will not overwrite the latest status or notes.`,
+        },
+        timestamp,
+      };
+    }
+
     const updatedAt = new Date().toISOString();
     const updated: StudioTask = {
-      ...existing,
+      ...latest,
+      description: latest.description,
       status: params.newStatus,
-      paused: params.newStatus === "paused" ? true : existing.paused && params.newStatus === "in_progress" ? false : existing.paused,
-      startedAt: toCanonicalStatus(params.newStatus) === "running" && !existing.startedAt ? updatedAt : existing.startedAt,
-      completedAt: toCanonicalStatus(params.newStatus) === "completed" && !existing.completedAt ? updatedAt : existing.completedAt,
+      paused: params.newStatus === "paused" ? true : latest.paused && params.newStatus === "in_progress" ? false : latest.paused,
+      startedAt: toCanonicalStatus(params.newStatus) === "running" && !latest.startedAt ? updatedAt : latest.startedAt,
+      completedAt: toCanonicalStatus(params.newStatus) === "completed" && !latest.completedAt ? updatedAt : latest.completedAt,
       updatedAt,
       metadata: {
-        ...(existing.metadata ?? {}),
+        ...(latest.metadata ?? {}),
         ...(params.reason ? { statusChangeReason: params.reason } : {}),
       },
     };
 
-    const saved = await store.saveTask(updated, principal);
+    let saved: StudioTask;
+    try {
+      saved = await store.saveTask(updated, principal, { expectedUpdatedAt: latest.updatedAt });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === "BOARD_CONFLICT") {
+        return {
+          success: false,
+          action: "update_task_status",
+          error: {
+            code: "BOARD_CONFLICT",
+            message: `Task "${params.taskId}" changed on the board. The supervisor will not overwrite the latest status or notes.`,
+          },
+          timestamp,
+        };
+      }
+      throw err;
+    }
 
     return {
       success: true,

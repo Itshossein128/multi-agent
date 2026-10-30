@@ -63,6 +63,8 @@ export interface RuntimeState {
   nodeOutcomes?: Record<string, NodeResultEnvelope>;
   nodeResults?: Record<string, unknown>;
   loopIterations?: Record<string, number>;
+  /** Sticky once a human approval gate records `approved` for this run. */
+  humanApproval?: "approved" | "needs_clarification";
 }
 
 const State = Annotation.Root({
@@ -97,6 +99,10 @@ const State = Annotation.Root({
   loopIterations: Annotation<Record<string, number>>({
     reducer: (current, next) => ({ ...current, ...next }),
     default: () => ({}),
+  }),
+  humanApproval: Annotation<"approved" | "needs_clarification" | undefined>({
+    reducer: (current, next) => next ?? current,
+    default: () => undefined,
   }),
 });
 
@@ -147,6 +153,23 @@ export interface CompileOptions {
   workingMemoryScopePolicy?: WorkingMemoryScopePolicy;
   /** Durable proposal retained while a structured agent result awaits approval. */
   pendingHuman?: { nodeId: string; envelope: NodeResultEnvelope };
+}
+
+function isGapAuditorNode(node: { config: unknown }): boolean {
+  const config = node.config as { role?: string } | undefined;
+  return config?.role === "gap_auditor";
+}
+
+function auditorOutcomeLacksEvidence(value: unknown): boolean {
+  if (!value || typeof value !== "object") return true;
+  const record = value as Record<string, unknown>;
+  const nested = record.value && typeof record.value === "object" && !Array.isArray(record.value)
+    ? record.value as Record<string, unknown>
+    : record;
+  const audit = nested.audit && typeof nested.audit === "object" ? nested.audit as Record<string, unknown> : undefined;
+  const score = nested.completenessScore ?? audit?.completenessScore;
+  const gaps = nested.gaps ?? nested.identifiedGaps ?? nested.gapEvidence;
+  return typeof score !== "number" && !Array.isArray(gaps);
 }
 
 export function compileWorkflow(
@@ -210,6 +233,10 @@ export function compileWorkflow(
         try {
           // Boundary 1: validate the node's input before it executes.
           enforceNodeInput(node, contract, node.type === "input" ? state.input : nodeInput);
+          const mutatesCode = Boolean((node.config as { mutatesCode?: boolean }).mutatesCode);
+          if (mutatesCode && normalizedDefinition.archetypeConfig?.humanApprovalGateRequired && state.humanApproval !== "approved") {
+            throw new Error(`Code modification at node "${node.id}" is blocked until a human approval of approved is recorded.`);
+          }
           let result: Partial<RuntimeState>;
           let outcome: NodeResultEnvelope | undefined;
           if (node.type === "tool") {
@@ -235,8 +262,10 @@ export function compileWorkflow(
               throw error;
             }
           } else if (node.type === "approval") {
-            if (state.branch === "approved" || state.branch === "rejected" || state.branch === "needs_clarification") {
-              result = { branch: state.branch, lastValue: state.lastValue };
+            if (state.humanApproval === "approved") {
+              result = { branch: "approved", lastValue: state.lastValue, humanApproval: "approved" };
+            } else if (state.branch === "approved" || state.branch === "rejected" || state.branch === "needs_clarification") {
+              result = { branch: state.branch, lastValue: state.lastValue, ...(state.humanApproval ? { humanApproval: state.humanApproval } : {}) };
             } else {
               const config = node.config as ApprovalNodeConfig;
               const effectiveRunId = options.runId ?? (state.input as Record<string, unknown>)?.runId as string ?? runId ?? "run-unknown";
@@ -304,6 +333,7 @@ export function compileWorkflow(
 
               result = {
                 branch: decision,
+                humanApproval: decision === "approved" ? "approved" : decision === "needs_clarification" ? "needs_clarification" : state.humanApproval,
                 lastValue: {
                   ...resumePayload,
                   decision,
@@ -534,11 +564,25 @@ export function compileWorkflow(
             // Deterministic result model: parse a structured result envelope
             // instead of inferring decisions from free-form model text.
             const parsedResult = parseResultEnvelope(value);
-            if (parsedResult.kind === "malformed") {
-              throw new ContractViolationError("AGENT_RESULT_MALFORMED", "Agent produced a malformed structured result", {
-                nodeId: node.id,
-                diagnostics: parsedResult.diagnostics,
-              });
+            const gapAuditor = isGapAuditorNode(node);
+            if (parsedResult.kind === "malformed" || (gapAuditor && auditorOutcomeLacksEvidence(value))) {
+              if (gapAuditor) {
+                const taskCarrier = (nodeInput ?? state.input) as Record<string, unknown> | undefined;
+                emit("audit.outcome_malformed", {
+                  taskId: typeof taskCarrier?.taskId === "string" ? taskCarrier.taskId : undefined,
+                  reason: parsedResult.kind === "malformed" ? "unparseable" : "missing_gap_evidence",
+                });
+              }
+              throw new ContractViolationError(
+                "AGENT_RESULT_MALFORMED",
+                gapAuditor
+                  ? "Auditor outcome was malformed or missing gap evidence. The task was flagged for human review without a board comment."
+                  : "Agent produced a malformed structured result",
+                {
+                  nodeId: node.id,
+                  diagnostics: parsedResult.kind === "malformed" ? parsedResult.diagnostics : [],
+                },
+              );
             }
             let agentValue = value;
             if (parsedResult.kind === "valid") {

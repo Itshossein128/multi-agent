@@ -238,6 +238,9 @@ describe("dualModeOrchestration end-to-end integration test suite", () => {
       expect(supervisorWf.archetype).toBe("hierarchical-supervisor");
       expect(supervisorWf.archetypeConfig?.supervisorHubNodeId).toBe("node-lead-orchestrator");
       expect(supervisorWf.archetypeConfig?.recursionGuards).toHaveLength(1);
+      const implementEdge = supervisorWf.edges.find((edge) => edge.branchKey === "implement_spec");
+      expect(implementEdge?.target).toBe("human-approval-gate");
+      expect(supervisorWf.edges.some((edge) => edge.branchKey === "implement_spec" && edge.target === "node-gap-engineer")).toBe(false);
 
       const compiled = compileWorkflow(supervisorWf, seedSpecialistAgents, {
         tools: [studioTaskToolRecord as any],

@@ -708,7 +708,7 @@ export function createSeededSupervisorWorkflow(): WorkflowDefinition {
     unknownRoute: "loop_limit_exceeded",
   };
 
-  const auditor = createNode("agent", { x: 800, y: 50 }, { agentId: "agent-gap-auditor" });
+  const auditor = createNode("agent", { x: 800, y: 50 }, { agentId: "agent-gap-auditor", role: "gap_auditor" });
   auditor.id = "node-gap-auditor";
 
   const consolidator = createNode("agent", { x: 800, y: 150 }, { agentId: "agent-gap-consolidator" });
@@ -722,7 +722,7 @@ export function createSeededSupervisorWorkflow(): WorkflowDefinition {
     timeoutSeconds: 86400,
   };
 
-  const engineer = createNode("agent", { x: 800, y: 350 }, { agentId: "agent-gap-engineer" });
+  const engineer = createNode("agent", { x: 800, y: 350 }, { agentId: "agent-gap-engineer", mutatesCode: true });
   engineer.id = "node-gap-engineer";
 
   const qa = createNode("agent", { x: 800, y: 450 }, { agentId: "agent-qa-verifier" });
@@ -773,15 +773,19 @@ export function createSeededSupervisorWorkflow(): WorkflowDefinition {
       createEdge({ source: conditionRouter.id, target: auditor.id, kind: "conditional", branchKey: "audit_spec" }),
       createEdge({ source: conditionRouter.id, target: consolidator.id, kind: "conditional", branchKey: "consolidate" }),
       createEdge({ source: conditionRouter.id, target: approval.id, kind: "conditional", branchKey: "await_approval" }),
-      createEdge({ source: conditionRouter.id, target: engineer.id, kind: "conditional", branchKey: "implement_spec" }),
+      createEdge({ source: conditionRouter.id, target: approval.id, kind: "conditional", branchKey: "implement_spec" }),
       createEdge({ source: conditionRouter.id, target: qa.id, kind: "conditional", branchKey: "qa_verify" }),
       createEdge({ source: conditionRouter.id, target: output.id, kind: "conditional", branchKey: "complete" }),
       createEdge({ source: conditionRouter.id, target: loopFallback.id, kind: "conditional", branchKey: "loop_limit_exceeded" }),
 
+      // The approval gate is the only entrance to code mutation.
+      createEdge({ source: approval.id, target: engineer.id, kind: "conditional", branchKey: "approved" }),
+      createEdge({ source: approval.id, target: output.id, kind: "conditional", branchKey: "rejected" }),
+      createEdge({ source: approval.id, target: supervisor.id, kind: "conditional", branchKey: "needs_clarification" }),
+
       // Feedback routes cycling back to supervisor
       createEdge({ source: auditor.id, target: supervisor.id }),
       createEdge({ source: consolidator.id, target: supervisor.id }),
-      createEdge({ source: approval.id, target: supervisor.id }),
       createEdge({ source: engineer.id, target: supervisor.id }),
       createEdge({ source: qa.id, target: supervisor.id }),
       createEdge({ source: loopFallback.id, target: output.id }),

@@ -20,6 +20,15 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 
+const previousSandboxRoot = process.env.SANDBOX_CANONICAL_ROOT;
+beforeAll(() => {
+  process.env.SANDBOX_CANONICAL_ROOT = "/workspace";
+});
+afterAll(() => {
+  if (previousSandboxRoot === undefined) delete process.env.SANDBOX_CANONICAL_ROOT;
+  else process.env.SANDBOX_CANONICAL_ROOT = previousSandboxRoot;
+});
+
 describe("Agent backend abstraction", () => {
   test("migrates legacy model/provider records into api backend", () => {
     const migrated = migrateAgentRecord({

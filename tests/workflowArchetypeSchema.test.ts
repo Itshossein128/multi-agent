@@ -71,6 +71,7 @@ describe("Workflow Archetype Schema and Contract Validation", () => {
       schemaVersion: 2,
       archetype: "hierarchical-supervisor",
       archetypeConfig: createHierarchicalSupervisorConfig("agent-supervisor", {
+        humanApprovalGateRequired: false,
         recursionGuards: [
           createRecursionGuard("qa_verify->implement_spec", "loop_limit_exceeded", 3),
         ],

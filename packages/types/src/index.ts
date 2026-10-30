@@ -239,6 +239,10 @@ export function migrateAgentRecord(raw: unknown): AgentRecord {
 
 export interface AgentNodeConfig {
   agentId: string | null;
+  /** When true, the node writes code and must wait for a recorded human approval. */
+  mutatesCode?: boolean;
+  /** Specialist role used by supervisor safeguards, for example `gap_auditor`. */
+  role?: string;
 }
 
 export interface ToolNodeConfig {
@@ -490,12 +494,16 @@ export function createAgentRecord(input?: {
 export function createNode(
   type: WorkflowNodeType,
   position: WorkflowPosition,
-  options?: { agentId?: string; toolId?: string }
+  options?: { agentId?: string; toolId?: string; role?: string; mutatesCode?: boolean }
 ): WorkflowNode {
   let config: WorkflowNodeConfig;
   switch (type) {
     case "agent":
-      config = { agentId: options?.agentId ?? null };
+      config = {
+        agentId: options?.agentId ?? null,
+        ...(options?.role ? { role: options.role } : {}),
+        ...(options?.mutatesCode ? { mutatesCode: true } : {}),
+      };
       break;
     case "tool":
       config = { toolId: options?.toolId ?? null };
@@ -755,6 +763,7 @@ export type RunEventType =
   | "human_approval.requested"
   | "human_approval.approved"
   | "human_approval.rejected"
+  | "human_approval.needs_clarification"
   | "human_approval.resolved"
   | "human_approval.rejection_halt"
   | "node.loop_limit_reached"
