@@ -23,7 +23,7 @@ const SHARED_EVENT_TYPES = new Set<RunEventType>([
   "node.started", "node.completed", "node.failed", "node.retrying", "edge.traversed",
   "agent.started", "agent.completed", "agent.failed", "llm.started", "llm.completed", "llm.failed",
   "tool.started", "tool.completed", "tool.failed", "human_approval.requested", "human_approval.approved",
-  "human_approval.rejected", "human_approval.resolved", "state.updated", "memory.read", "memory.write", "log",
+  "human_approval.rejected", "human_approval.resolved", "node.loop_limit_reached", "state.updated", "memory.read", "memory.write", "log",
 ]);
 
 type MappableExecutionEvent = Omit<AgentExecutionEvent, "type"> & { type: string };

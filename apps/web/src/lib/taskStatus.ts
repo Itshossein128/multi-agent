@@ -207,6 +207,8 @@ export const STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   in_progress: ["planning", "waiting_tool", "review", "done", "failed"],
   waiting_tool: ["planning", "in_progress", "failed"],
   review: ["done", "in_progress", "failed"],
+  in_review: ["done", "in_progress", "failed"],
+  paused: ["in_progress", "failed", "cancelled"],
   done: ["todo", "review"],
 };
 

@@ -1,0 +1,218 @@
+openapi: 3.1.0
+info:
+  title: Studio Task Management Tool API
+  version: 1.0.0
+  description: >
+    Programmatic tool interface exposing Studio Task Kanban board operations
+    to Lead Orchestrator and supervisor agents under strict tenant isolation.
+paths:
+  /tools/studio-task/execute:
+    post:
+      summary: Execute a Studio Task operation
+      operationId: executeStudioTaskTool
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/QueryTasksAction'
+                - $ref: '#/components/schemas/UpdateTaskStatusAction'
+                - $ref: '#/components/schemas/AssignTaskAction'
+                - $ref: '#/components/schemas/AddTaskCommentAction'
+      responses:
+        '200':
+          description: Operation executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolSuccessResponse'
+        '400':
+          description: Validation error or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolErrorResponse'
+        '403':
+          description: Tenant isolation violation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TaskStatus:
+      type: string
+      enum:
+        - queued
+        - in_progress
+        - in_review
+        - done
+        - failed
+        - paused
+
+    TaskPriority:
+      type: string
+      enum: [high, medium, low]
+
+    QueryTasksAction:
+      type: object
+      required: [action, params]
+      properties:
+        action:
+          type: string
+          const: query_tasks
+        params:
+          type: object
+          properties:
+            status:
+              $ref: '#/components/schemas/TaskStatus'
+            projectId:
+              type: string
+            workspaceId:
+              type: string
+            assignedAgent:
+              type: string
+            limit:
+              type: integer
+              minimum: 1
+              maximum: 100
+              default: 20
+            offset:
+              type: integer
+              minimum: 0
+              default: 0
+
+    UpdateTaskStatusAction:
+      type: object
+      required: [action, params]
+      properties:
+        action:
+          type: string
+          const: update_task_status
+        params:
+          type: object
+          required: [taskId, newStatus]
+          properties:
+            taskId:
+              type: string
+            newStatus:
+              $ref: '#/components/schemas/TaskStatus'
+            reason:
+              type: string
+              maxLength: 500
+
+    AssignTaskAction:
+      type: object
+      required: [action, params]
+      properties:
+        action:
+          type: string
+          const: assign_task
+        params:
+          type: object
+          required: [taskId, assignedAgent]
+          properties:
+            taskId:
+              type: string
+            assignedAgent:
+              type: string
+            assignedAgents:
+              type: array
+              items:
+                type: string
+
+    AddTaskCommentAction:
+      type: object
+      required: [action, params]
+      properties:
+        action:
+          type: string
+          const: add_task_comment
+        params:
+          type: object
+          required: [taskId, content]
+          properties:
+            taskId:
+              type: string
+            content:
+              type: string
+              maxLength: 4000
+            authorRole:
+              type: string
+              enum: [agent, system, user]
+              default: agent
+            authorAgentId:
+              type: string
+            metadata:
+              type: object
+              properties:
+                completenessScore:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                gapsCount:
+                  type: integer
+                iteration:
+                  type: integer
+                reportRef:
+                  type: string
+
+    ToolSuccessResponse:
+      type: object
+      required: [success, action, data, timestamp]
+      properties:
+        success:
+          type: boolean
+          const: true
+        action:
+          type: string
+        data:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+
+    ToolErrorResponse:
+      type: object
+      required: [success, action, error, timestamp]
+      properties:
+        success:
+          type: boolean
+          const: false
+        action:
+          type: string
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - TASK_NOT_FOUND
+                - INVALID_STATUS_TRANSITION
+                - TENANT_ISOLATION_VIOLATION
+                - INVALID_INPUT
+                - DEPENDENCY_BLOCKED
+            message:
+              type: string
+            details:
+              type: object
+        timestamp:
+          type: string
+          format: date-time

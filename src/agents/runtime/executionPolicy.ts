@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { AgentRecord } from "@multi-agent/types";
 import { defaultCliExecutable } from "./cliProviderDefaults";
+import { SandboxHostProtectionViolationError } from "../../security/types";
 
 /** Thrown before an executor is selected when persisted policy disallows a run. */
 export class ExecutionPolicyError extends Error {
@@ -72,6 +73,21 @@ export function withResolvedWorkspaceRoot(
  */
 export function assertExecutionPolicy(agent: AgentRecord): void {
   const { backend, executionPolicy: policy } = agent;
+
+  const workspaceRoot = (backend.type === "process" ? backend.workspaceRoot : undefined) || policy?.workspaceRoot;
+  if (workspaceRoot) {
+    const forbiddenHostPaths = (process.env.SANDBOX_FORBIDDEN_HOST_PATHS ?? "/home/hossein/Desktop/projects/building-management")
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const resolved = path.resolve(workspaceRoot);
+    for (const forbidden of forbiddenHostPaths) {
+      const canonicalForbidden = path.resolve(forbidden);
+      if (resolved === canonicalForbidden || resolved.startsWith(canonicalForbidden + path.sep)) {
+        throw new SandboxHostProtectionViolationError(workspaceRoot, "execute");
+      }
+    }
+  }
 
   if ((backend.type === "api" || backend.type === "local" || backend.type === "webhook") && policy?.network === false) {
     throw new ExecutionPolicyError(`Agent "${agent.name}" forbids network access, but its ${backend.type} backend requires it.`);

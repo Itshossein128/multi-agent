@@ -102,6 +102,37 @@ Legacy workflowهایی که contract ندارند همچنان معتبرند. 
 
 مرز credential در `src/security/credentialGateway.ts` است: در production فقط `HttpCredentialGateway` فعال می‌شود و lease تک‌مصرف، کوتاه‌عمر و محدود به tenant/principal/run را از سرویس مستقل broker (`src/broker/`) می‌گیرد. سرویس broker policy پیش‌فرض deny (عضویت run، agent→provider، alias ابزار، quota/budget)، rate limit، consume اتمیک از PostgreSQL، revoke idempotent و audit به‌صورت hash chain با trigger append-only دارد و secret را فقط از Vault KV v2 (یا in-memory در development) می‌خواند. ابزارهای database/search/MCP، کلیدهای agentهای API و credential مربوط به worker از همین مسیر عبور می‌کنند و secret وارد AgentRecord، ToolRecord، event، log یا image نمی‌شود. سرویس standalone بدون directory پیش‌فرض deny-all است و deployment فهرست هویت خود را وصل می‌کند. جزئیات و شرط‌های deployment در [deferred-credential-gateway.md](deferred-credential-gateway.md) است.
 
+## ابزارها و همگام‌سازی برد وظایف (Studio Task Tool)
+
+ابزار سیستمی `studio_task_tool` امکان تعامل برنامه‌پذیر عامل‌ها (به‌ویژه سرپرست ارشد یا Lead Orchestrator) با برد کانبان وظایف Studio را فراهم می‌سازد. عملیات این ابزار شامل:
+- `query_tasks`: جستجوی وظایف بر اساس وضعیت (`queued`, `in_progress`, `in_review`, `done`, `paused`, `failed`).
+- `update_task_status`: گذار وضعیت طبق ماتریس مجاز چرخه حیات و ثبت دلایل.
+- `assign_task`: انتساب عامل‌های متخصص به وظایف.
+- `add_task_comment`: درج یافته‌های ساختاریافته‌ی ممیزی و درصد پوشش با تفکیک نقش نویسنده (`agent`, `system`, `user`).
+تمامی عملیات `studio_task_tool` تحت جداسازی سخت‌گیرانه چندمستاجری (`tenant_id`) اجرا شده و تلاش برای دسترسی به وظایف مستأجر دیگر به صورت fail-closed با کد `TENANT_ISOLATION_VIOLATION` رد می‌شود.
+
+## معماری ارکستراسیون دوحالته (Dual-Mode Orchestration)
+
+پلتفرم از دو الگوی اصلی ارکستراسیون برای جریان‌های کاری پشتیبانی می‌کند:
+
+1. **خط لوله‌ی متوالی مشخصات به کد (`linear-pipeline`)**:
+   - گراف جهت‌دار بدون دور (Acyclic DAG) برای جریان‌های متوالی و استاندارد.
+   - شامل گام‌های متوالی: دریافت ورودی (`input`)، ممیزی شکاف‌ها (`auditor`)، تجمیع گزارش (`consolidator`)، گیت بازبینی انسانی (`approval`)، مهندس پیاده‌سازی (`engineer`)، ارزیاب کیفیت (`qa_verifier`) و خروجی نهایی (`output`).
+   - وجود هرگونه دور در این الگو توسط کامپایلر با خطای `LINEAR_PIPELINE_CYCLE_FORBIDDEN` رد می‌شود.
+
+2. **سرپرست سلسله‌مراتبی و ارکستراتور هدایت‌شده با برد (`hierarchical-supervisor`)**:
+   - توپولوژی ستاره‌ای (Hub-and-Spoke) همراه با مسیرهای بازخورد چرخه‌ای (Cyclic Feedback Routes).
+   - گره مرکزی سرپرست (`supervisorHubNodeId`) به یک گره مسیریابی شرطی (`condition`) متصل شده و وظایف را به عامل‌های تخصصی هدایت می‌کند.
+   - گاردریل‌های بازگشتی (`WorkflowRecursionGuardConfig`): حداکثر سقف تکرار (پیش‌فرض ۳ چرخه) برای مسیرهای بازخورد اصلاحی. در صورت عدم موفقیت پس از ۳ بار، اجرا به شاخه‌ی رزرو (`fallbackBranch: "loop_limit_exceeded"`) هدایت شده، وضعیت وظیفه در برد استودیو به `paused` تغییر می‌یابد و رویداد تله‌متری `node.loop_limit_reached` ثبت می‌شود.
+   - گیت تایید اجباری انسانی (`approval`): بر پایه‌ی مکانیزم `interrupt()` لنگ‌گراف، جریان کاری پیش از اعمال هرگونه تغییر کد توسط مهندس پیاده‌سازی در مخزن سندباکس، متوقف شده و در وضعیت `waiting_for_human` منتظر تصمیم بازبین (`approved` / `rejected`) می‌ماند.
+
+## ایزولاسیون فضای کاری سندباکس و حفاظت از مخزن میزبان (Sandbox Execution Barrier)
+
+کلیه عملیات خواندن، نوشتن، اجرای ابزارها و اجرای تست‌ها به صورت کاملاً ایزوله در فضای کاری `workspaces/building-management-sandbox` محصور می‌شوند. محافظ `SandboxExecutionBarrier`:
+- با استفاده از مسیرهای کانونی (`fs.realpathSync.native`) هرگونه فرار از مرز و حملات پیمایش مسیر (`../../`) را با خطای `SandboxBoundaryViolationError` مسدود می‌کند.
+- دسترسی به مخزن اصلی پروژه در میزبان (`/home/hossein/Desktop/projects/building-management`) را به صورت مطلق ممنوع کرده و با خطای `SandboxHostProtectionViolationError` متوقف می‌سازد.
+- وضعیت Git مخزن میزبان در کل فرآیند اجرای عامل‌ها کاملاً دست‌نخورده (۰ تغییر) باقی می‌ماند.
+
 ## Observability
 
 Operational truth در `RunStore`/`StudioStore` و execution timeline است. OpenTelemetry و Langfuse فقط لایه‌ی deep observability اختیاری هستند و خرابی exporter نباید workflow را fail کند. usage و cost فقط وقتی نمایش داده می‌شوند که provider مقدار معتبر گزارش کرده باشد؛ cost تخمینی ساخته نمی‌شود.

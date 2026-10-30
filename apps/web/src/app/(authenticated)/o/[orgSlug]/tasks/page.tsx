@@ -6,20 +6,21 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertOctagon,
   RefreshCw,
-  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   TASK_COLUMNS,
-  TASK_PRIORITIES,
   Task,
-  TaskPriority,
   TaskStatus,
 } from "@/lib/taskStatus";
 import {
+  DEFAULT_TASK_BOARD_FILTERS,
+  TaskBoardFilters,
   filterTasks,
   groupTasksByColumn,
+  parseFilterSearchParams,
+  serializeFilterSearchParams,
   validateMove,
   validateStart,
 } from "@/lib/taskBoardView";
@@ -27,6 +28,8 @@ import { useTasksQuery, CreateTaskInput, TaskRequestError } from "@/hooks/useTas
 import { TaskBoardColumn } from "@/components/tasks/TaskBoardColumn";
 import { CreateTaskModal } from "@/components/tasks/CreateTaskModal";
 import { TaskDetailPanel } from "@/components/tasks/TaskDetailPanel";
+import { TaskFilterBar } from "@/components/tasks/TaskFilterBar";
+import { TaskFilterEmptyState } from "@/components/tasks/TaskFilterEmptyState";
 
 export default function TaskBoardPage() {
   const {
@@ -48,14 +51,47 @@ export default function TaskBoardPage() {
     mutations,
   } = useTasksQuery();
 
-  const [search, setSearch] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "all">("all");
-  const [agentFilter, setAgentFilter] = useState<string>("all");
-  const [workflowFilter, setWorkflowFilter] = useState<string>("all");
+  const [filters, setFilters] = useState<TaskBoardFilters>(DEFAULT_TASK_BOARD_FILTERS);
+  const [workspaces, setWorkspaces] = useState<Array<{ id: string; name: string }>>([]);
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<TaskStatus>("backlog");
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+
+  // Initialize filters from URL on mount & sync back/forward history navigation
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const initial = parseFilterSearchParams(new URLSearchParams(window.location.search));
+    setFilters(initial);
+
+    const onPopState = () => {
+      setFilters(parseFilterSearchParams(new URLSearchParams(window.location.search)));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // Synchronize active filters to URL search parameters with 200ms debounce
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const timeout = setTimeout(() => {
+      const serialized = serializeFilterSearchParams(filters);
+      const currentParams = new URLSearchParams(window.location.search);
+      const linkedTaskId = currentParams.get("taskId");
+      if (linkedTaskId) {
+        serialized.set("taskId", linkedTaskId);
+      }
+      const qs = serialized.toString();
+      const currentQs = window.location.search.replace(/^\?/, "");
+      if (qs !== currentQs) {
+        const nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+        window.history.replaceState(null, "", nextUrl);
+      }
+    }, 200);
+    return () => clearTimeout(timeout);
+  }, [filters]);
+
   useEffect(() => {
     const linkedTaskId = new URLSearchParams(window.location.search).get("taskId");
     if (linkedTaskId && tasks.some(task => task.id === linkedTaskId)) setDetailTaskId(linkedTaskId);
@@ -75,6 +111,8 @@ export default function TaskBoardPage() {
           projRes.json() as Promise<Array<{ id: string; name: string }>>,
         ]);
         if (cancelled) return;
+        setWorkspaces(wsBody);
+        setProjects(projBody);
         setWorkspaceNamesById(new Map(wsBody.map((item) => [item.id, item.name])));
         setProjectNamesById(new Map(projBody.map((item) => [item.id, item.name])));
       } catch {
@@ -88,15 +126,20 @@ export default function TaskBoardPage() {
   const workflowsById = useMemo(() => new Map(workflows.map((w) => [w.id, w.name])), [workflows]);
 
   const filteredTasks = useMemo(
-    () =>
-      filterTasks(tasks, {
-        search,
-        priority: priorityFilter,
-        agent: agentFilter,
-        workflow: workflowFilter,
-      }),
-    [tasks, search, priorityFilter, agentFilter, workflowFilter]
+    () => filterTasks(tasks, filters, { tasksById }),
+    [tasks, filters, tasksById]
   );
+
+  const handleFilterChange = <K extends keyof TaskBoardFilters>(
+    key: K,
+    value: TaskBoardFilters[K],
+  ) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleResetFilters = () => {
+    setFilters(DEFAULT_TASK_BOARD_FILTERS);
+  };
 
   // Separate UI columns from domain status
   const tasksByColumn = useMemo(() => groupTasksByColumn(filteredTasks), [filteredTasks]);
@@ -232,62 +275,20 @@ export default function TaskBoardPage() {
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
       {/* Filter bar */}
       <div className="mx-auto w-full max-w-[1800px] px-4 pt-4 lg:px-8">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tasks..."
-              className="h-8 w-56 rounded-lg border border-zinc-800 bg-zinc-900 pl-8 pr-3 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
-
-          <select
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | "all")}
-            className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none"
-          >
-            <option value="all">All priorities</option>
-            {TASK_PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p.charAt(0).toUpperCase() + p.slice(1)} priority
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={agentFilter}
-            onChange={(e) => setAgentFilter(e.target.value)}
-            className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none"
-          >
-            <option value="all">All agents</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.name}>
-                {agent.name}
-              </option>
-            ))}
-            <option value="">Unassigned</option>
-          </select>
-
-          <select
-            value={workflowFilter}
-            onChange={(e) => setWorkflowFilter(e.target.value)}
-            className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none"
-          >
-            <option value="all">All workflows</option>
-            {workflows.map((wf) => (
-              <option key={wf.id} value={wf.id}>
-                {wf.name}
-              </option>
-            ))}
-          </select>
-
-          <span className="text-[11px] text-zinc-500 ml-auto">
-            Drag cards between columns · click a card for details
-          </span>
-        </div>
+        <TaskFilterBar
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onResetFilters={handleResetFilters}
+          totalTaskCount={tasks.length}
+          filteredTaskCount={filteredTasks.length}
+          workspaces={workspaces}
+          projects={projects}
+          agents={agents}
+          workflows={workflows}
+          workspaceNamesById={workspaceNamesById}
+          projectNamesById={projectNamesById}
+          workflowsById={workflowsById}
+        />
 
         {/* Error banner */}
         {bannerError && (
@@ -309,36 +310,40 @@ export default function TaskBoardPage() {
 
       {/* Board */}
       <main className="mx-auto w-full max-w-[1800px] flex-1 px-4 py-4 lg:px-8">
-        <div className="flex gap-4 overflow-x-auto pb-4">
-          {TASK_COLUMNS.map((config) => (
-            <TaskBoardColumn
-              key={config.id}
-              config={config}
-              tasks={tasksByColumn.get(config.id) ?? []}
-              tasksById={tasksById}
-              workflowsById={workflowsById}
-              workspaceNamesById={workspaceNamesById}
-              projectNamesById={projectNamesById}
-              isMutating={isMutating}
-              draggingTaskId={draggingTaskId}
-              onOpenTask={(task) => setDetailTaskId(task.id)}
-              onMoveTask={handleMove}
-              onStartTask={handleStart}
-              onPauseToggle={(task) => {
-                setActionError(null);
-                setTaskPaused({ taskId: task.id, paused: !task.paused });
-              }}
-              onCancelTask={handleCancelTask}
-              onRetryTask={(task) => {
-                setActionError(null);
-                retryTask(task.id);
-              }}
-              onAddTask={openModal}
-              onDragStartTask={setDraggingTaskId}
-              onDragEndTask={() => setDraggingTaskId(null)}
-            />
-          ))}
-        </div>
+        {tasks.length > 0 && filteredTasks.length === 0 ? (
+          <TaskFilterEmptyState onResetFilters={handleResetFilters} />
+        ) : (
+          <div className="flex gap-4 overflow-x-auto pb-4">
+            {TASK_COLUMNS.map((config) => (
+              <TaskBoardColumn
+                key={config.id}
+                config={config}
+                tasks={tasksByColumn.get(config.id) ?? []}
+                tasksById={tasksById}
+                workflowsById={workflowsById}
+                workspaceNamesById={workspaceNamesById}
+                projectNamesById={projectNamesById}
+                isMutating={isMutating}
+                draggingTaskId={draggingTaskId}
+                onOpenTask={(task) => setDetailTaskId(task.id)}
+                onMoveTask={handleMove}
+                onStartTask={handleStart}
+                onPauseToggle={(task) => {
+                  setActionError(null);
+                  setTaskPaused({ taskId: task.id, paused: !task.paused });
+                }}
+                onCancelTask={handleCancelTask}
+                onRetryTask={(task) => {
+                  setActionError(null);
+                  retryTask(task.id);
+                }}
+                onAddTask={openModal}
+                onDragStartTask={setDraggingTaskId}
+                onDragEndTask={() => setDraggingTaskId(null)}
+              />
+            ))}
+          </div>
+        )}
       </main>
 
       {/* Create Task Modal */}

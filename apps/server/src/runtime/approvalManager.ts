@@ -50,7 +50,7 @@ export class ApprovalManager {
 
   /** Record an interrupt item as a pending approval request. */
   handleApprovalRequested(runId: string, item: { id: string; value: unknown }) {
-    const value = item.value as { nodeId: string; message: string; approvalType: "manual" | "timeout"; timeoutSeconds: number; context?: unknown };
+    const value = item.value as { nodeId: string; message: string; approvalType: "manual" | "timeout" | "required"; timeoutSeconds: number; onTimeout?: string; context?: unknown };
     const stamp = nowIso();
     const request: ApprovalRequest = {
       id: item.id,
@@ -78,9 +78,15 @@ export class ApprovalManager {
     });
     this.deps.store.append(runId, { id: uid("event"), runId, type: "run.paused", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id } });
     this.deps.store.append(runId, { id: uid("event"), runId, type: "human_approval.requested", nodeId: value.nodeId, timestamp: stamp, sequence: 0, payload: { approvalId: item.id, message: value.message, approvalType: value.approvalType, timeoutSeconds: value.timeoutSeconds } });
-    if (value.approvalType === "timeout" && value.timeoutSeconds > 0) {
+    if ((value.approvalType === "timeout" || value.approvalType === "required") && value.timeoutSeconds > 0) {
       const timer = setTimeout(() => {
-        try { this.resolveApproval(runId, item.id, { decision: "approved" }); } catch { /* already resolved by a human in the meantime */ }
+        try {
+          if (value.approvalType === "timeout") {
+            this.resolveApproval(runId, item.id, { decision: "approved" });
+          } else if (value.approvalType === "required" || (value as { onTimeout?: string }).onTimeout === "fail_closed") {
+            this.resolveApproval(runId, item.id, { decision: "rejected", response: "Approval request timed out (fail-closed)" });
+          }
+        } catch { /* already resolved by a human in the meantime */ }
       }, value.timeoutSeconds * 1000);
       this.deps.store.setApprovalTimer(runId, item.id, timer);
     }

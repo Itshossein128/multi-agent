@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://multi-agent.local/schemas/workflow-archetype.schema.json",
+  "title": "WorkflowArchetypeDefinition",
+  "description": "Schema for workflow definitions supporting dual-mode archetypes: linear-pipeline and hierarchical-supervisor.",
+  "type": "object",
+  "required": ["id", "name", "nodes", "edges", "updatedAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "archetype": {
+      "type": "string",
+      "enum": ["linear-pipeline", "hierarchical-supervisor"],
+      "default": "linear-pipeline",
+      "description": "Category distinguishing acyclic batch pipelines from cyclic hub-and-spoke supervisor workflows."
+    },
+    "archetypeConfig": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["linear-pipeline", "hierarchical-supervisor"]
+        },
+        "supervisorHubNodeId": {
+          "type": "string",
+          "description": "Identifier of the supervisor hub agent node (required for hierarchical-supervisor)."
+        },
+        "maxExecutionSteps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000,
+          "default": 1000
+        },
+        "recursionGuards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["routeKey", "maxIterations", "fallbackBranch"],
+            "properties": {
+              "routeKey": {
+                "type": "string",
+                "description": "Identifier of the cyclical route, e.g. 'qa_verifier->remediation_engineer'."
+              },
+              "maxIterations": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "default": 3,
+                "description": "Maximum allowed loop cycles before failing or escalating."
+              },
+              "fallbackBranch": {
+                "type": "string",
+                "description": "Branch to follow when recursion limit is reached."
+              }
+            }
+          }
+        },
+        "humanApprovalGateRequired": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether an approval node is mandatory before executing code mutations."
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "position", "config"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["agent", "tool", "approval", "memory", "condition", "input", "output"]
+          },
+          "position": {
+            "type": "object",
+            "required": ["x", "y"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          },
+          "config": { "type": "object" },
+          "retryPolicy": {
+            "type": "object",
+            "properties": {
+              "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 5 },
+              "backoffMs": { "type": "integer", "minimum": 0, "maximum": 30000 },
+              "backoffMultiplier": { "type": "number", "minimum": 1, "maximum": 4 }
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "target", "kind"],
+        "properties": {
+          "id": { "type": "string" },
+          "source": { "type": "string" },
+          "target": { "type": "string" },
+          "kind": { "type": "string", "enum": ["normal", "conditional"] },
+          "branchKey": { "type": "string" }
+        }
+      }
+    },
+    "tenantId": { "type": "string" },
+    "ownerId": { "type": "string" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

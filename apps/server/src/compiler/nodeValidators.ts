@@ -59,11 +59,11 @@ function validateMemoryNode(node: WorkflowNode, ctx: ValidationContext) {
 function validateApprovalNode(node: WorkflowNode, ctx: ValidationContext) {
   const config = node.config as { message?: string; approvalType?: string; timeoutSeconds?: number };
   if (typeof config.message !== "string" || !config.message.trim()) ctx.add("error", "MISSING_APPROVAL_MESSAGE", "Approval node requires a message.", node.id);
-  if (!['manual', 'timeout'].includes(config.approvalType ?? "")) ctx.add("error", "INVALID_APPROVAL_TYPE", "Approval node has an invalid type.", node.id);
+  if (!['manual', 'timeout', 'required'].includes(config.approvalType ?? "")) ctx.add("error", "INVALID_APPROVAL_TYPE", "Approval node has an invalid type.", node.id);
   if (!Number.isFinite(config.timeoutSeconds) || config.timeoutSeconds! < 0 || config.timeoutSeconds! > 86_400) ctx.add("error", "INVALID_APPROVAL_TIMEOUT", "Approval timeout must be between 0 and 86400 seconds.", node.id);
   const outgoing = ctx.definition.edges.filter((edge) => edge.source === node.id);
   for (const edge of outgoing) {
-    if (edge.kind === "conditional" && edge.branchKey !== "approved" && edge.branchKey !== "rejected") ctx.add("error", "INVALID_APPROVAL_BRANCH", "Approval branches must be named approved or rejected.", node.id, edge.id);
+    if (edge.kind === "conditional" && edge.branchKey !== "approved" && edge.branchKey !== "rejected" && edge.branchKey !== "needs_clarification") ctx.add("error", "INVALID_APPROVAL_BRANCH", "Approval branches must be named approved, rejected, or needs_clarification.", node.id, edge.id);
   }
 }
 

@@ -12,8 +12,12 @@ export * from "./schemaValidation";
 export * from "./nodeContract";
 export * from "./clarification";
 export * from "./branching";
+export * from "./archetype";
+export * from "./supervisorOutcome";
 import type { ToolRecord } from "./toolConfiguration";
 import type { NodeContract, NodeResultEnvelope } from "./nodeContract";
+import type { WorkflowArchetypeCategory, WorkflowArchetypeConfig } from "./archetype";
+import type { HumanApprovalRole, HumanApprovalDecision } from "./approval";
 
 export type WorkflowNodeType =
   | "agent"
@@ -252,8 +256,12 @@ export interface LegacyToolNodeConfig {
 
 export interface ApprovalNodeConfig {
   message: string;
-  approvalType: "manual" | "timeout";
+  approvalType: "manual" | "timeout" | "required";
   timeoutSeconds: number;
+  gateId?: string;
+  requiredRoles?: HumanApprovalRole[];
+  onTimeout?: "fail_closed";
+  allowedDecisions?: HumanApprovalDecision[];
 }
 
 export interface MemoryNodeConfig {
@@ -353,6 +361,8 @@ export interface WorkflowDefinition {
   updatedAt: string;
   ownerId?: string;
   tenantId?: string;
+  archetype?: WorkflowArchetypeCategory;
+  archetypeConfig?: WorkflowArchetypeConfig;
 }
 
 export interface WorkflowNodeMeta {
@@ -575,6 +585,8 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
     updatedAt: definition.updatedAt,
     ...(definition.ownerId ? { ownerId: definition.ownerId } : {}),
     ...(definition.tenantId ? { tenantId: definition.tenantId } : {}),
+    ...(definition.archetype ? { archetype: definition.archetype } : {}),
+    ...(definition.archetypeConfig ? { archetypeConfig: definition.archetypeConfig } : {}),
   });
 }
 
@@ -744,6 +756,8 @@ export type RunEventType =
   | "human_approval.approved"
   | "human_approval.rejected"
   | "human_approval.resolved"
+  | "human_approval.rejection_halt"
+  | "node.loop_limit_reached"
   | "state.updated"
   | "memory.read"
   | "memory.write"
@@ -827,7 +841,9 @@ export type LegacyTaskStatus =
   | "in_progress"
   | "waiting_tool"
   | "review"
-  | "done";
+  | "done"
+  | "in_review"
+  | "paused";
 
 export type TaskStatus = Phase2TaskStatus | LegacyTaskStatus;
 
@@ -864,7 +880,9 @@ export const LEGACY_TO_CANONICAL_STATUS: Record<LegacyTaskStatus, Phase2TaskStat
   in_progress: "running",
   waiting_tool: "blocked",
   review: "waiting_for_human",
+  in_review: "waiting_for_human",
   done: "completed",
+  paused: "blocked",
 };
 
 export function toCanonicalStatus(status: TaskStatus): Phase2TaskStatus {
@@ -877,9 +895,9 @@ export function toCanonicalStatus(status: TaskStatus): Phase2TaskStatus {
 export const CANONICAL_STATUS_TRANSITIONS: Record<Phase2TaskStatus, Phase2TaskStatus[]> = {
   backlog: ["ready", "queued", "running", "cancelled"],
   ready: ["backlog", "queued", "running", "cancelled"],
-  queued: ["running", "ready", "cancelled"],
+  queued: ["running", "ready", "cancelled", "blocked"],
   running: ["blocked", "waiting_for_human", "completed", "failed", "cancelled", "ready"],
-  blocked: ["running", "ready", "failed", "cancelled"],
+  blocked: ["running", "ready", "failed", "cancelled", "queued"],
   waiting_for_human: ["running", "completed", "failed", "cancelled"],
   completed: ["ready", "backlog"],
   failed: ["ready", "queued", "running", "backlog"],

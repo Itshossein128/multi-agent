@@ -15,6 +15,8 @@ import {
   type AgentRecord,
   type ApprovalNodeConfig,
   type BranchRouteReason,
+  type ConsolidatedGapReport,
+  type HumanApprovalInterruptContext,
   type NodeContract,
   type NodeResultEnvelope,
   type NodeRetryPolicy,
@@ -60,6 +62,7 @@ export interface RuntimeState {
   /** Structured result envelope per executed node, keyed by node id. */
   nodeOutcomes?: Record<string, NodeResultEnvelope>;
   nodeResults?: Record<string, unknown>;
+  loopIterations?: Record<string, number>;
 }
 
 const State = Annotation.Root({
@@ -89,6 +92,10 @@ const State = Annotation.Root({
   // overwriting each other.
   workingMemory: Annotation<WorkingMemoryEntries>({
     reducer: mergeWorkingMemory,
+    default: () => ({}),
+  }),
+  loopIterations: Annotation<Record<string, number>>({
+    reducer: (current, next) => ({ ...current, ...next }),
     default: () => ({}),
   }),
 });
@@ -151,18 +158,26 @@ export function compileWorkflow(
   if (issues.some((issue) => issue.severity === "error")) {
     throw new Error(issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join("; "));
   }
+
+  // Ensure backward compatibility: workflows without an archetype block cleanly default to linear-pipeline
+  const archetype = definition.archetype ?? definition.archetypeConfig?.category ?? "linear-pipeline";
+  const normalizedDefinition: WorkflowDefinition = {
+    ...definition,
+    archetype,
+  };
+
   const graph = new StateGraph(State);
-  const nodesById = new Map(definition.nodes.map((node) => [node.id, node]));
+  const nodesById = new Map(normalizedDefinition.nodes.map((node) => [node.id, node]));
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
   const runId = options.runId ?? "run-local";
   const runtime = options.runtime ?? new AgentRuntime();
   const toolsById = new Map((options.tools ?? []).map(tool => [tool.id, tool]));
   const toolRuntime = options.toolRuntime ?? new ToolRuntime();
-  const guardrails = options.guardrails ?? {
-    maxWorkflowSteps: 1_000,
-    maxConcurrentBranches: 8,
-    maxNodeRetryAttempts: 3,
-    maxNodeRetryBackoffMs: 30_000,
+  const guardrails = {
+    maxWorkflowSteps: options.guardrails?.maxWorkflowSteps ?? normalizedDefinition.archetypeConfig?.maxExecutionSteps ?? 1_000,
+    maxConcurrentBranches: options.guardrails?.maxConcurrentBranches ?? 8,
+    maxNodeRetryAttempts: options.guardrails?.maxNodeRetryAttempts ?? 3,
+    maxNodeRetryBackoffMs: options.guardrails?.maxNodeRetryBackoffMs ?? 30_000,
   };
   const executionSlots = new AbortableSemaphore(guardrails.maxConcurrentBranches);
   const stepBudget = options.stepBudget ?? { count: 0 };
@@ -220,20 +235,84 @@ export function compileWorkflow(
               throw error;
             }
           } else if (node.type === "approval") {
-            if (state.branch === "approved" || state.branch === "rejected") {
+            if (state.branch === "approved" || state.branch === "rejected" || state.branch === "needs_clarification") {
               result = { branch: state.branch, lastValue: state.lastValue };
             } else {
               const config = node.config as ApprovalNodeConfig;
+              const effectiveRunId = options.runId ?? (state.input as Record<string, unknown>)?.runId as string ?? runId ?? "run-unknown";
+              const gateId = (config as { gateId?: string })?.gateId ?? `gate-${node.id}`;
+              const timeoutSeconds = config.timeoutSeconds ?? 86400;
+              const requestedAt = nowIso();
+              const timeoutAt = timeoutSeconds > 0
+                ? new Date(Date.now() + timeoutSeconds * 1000).toISOString()
+                : new Date(Date.now() + 86400 * 1000).toISOString();
+
+              const inputRecord = (nodeInput ?? state.input) as Record<string, unknown> | undefined;
+              const lastOutcomeVal = state.lastOutcome?.value as Record<string, unknown> | undefined;
+              const lastVal = state.lastValue as Record<string, unknown> | undefined;
+              const memoryRecord = state.memory as Record<string, unknown> | undefined;
+
+              const rawGapReport =
+                (inputRecord?.consolidatedGapReport ??
+                 inputRecord?.consolidatedReport ??
+                 lastOutcomeVal?.consolidatedGapReport ??
+                 lastOutcomeVal?.consolidatedReport ??
+                 lastVal?.consolidatedGapReport ??
+                 lastVal?.consolidatedReport ??
+                 memoryRecord?.consolidatedGapReport ??
+                 memoryRecord?.consolidatedReport) as ConsolidatedGapReport | undefined;
+
+              const consolidatedGapReport: ConsolidatedGapReport = rawGapReport ?? {
+                totalUserStories: 0,
+                auditedCount: 0,
+                averageCompletenessScore: 0,
+                criticalGapsCount: 0,
+                allGaps: [],
+                remediationPlanSummary: "Pending audit consolidation",
+                estimatedEffortHours: 0,
+                preparedAt: requestedAt,
+              };
+
+              const interruptContext: HumanApprovalInterruptContext = {
+                gateId,
+                runId: effectiveRunId,
+                nodeId: node.id,
+                consolidatedGapReport,
+                requestedAt,
+                timeoutAt,
+                message: config.message ?? "Human approval required before code remediation",
+              };
+
               // interrupt() throws a graph-control exception on the first pass. It is
               // intentionally allowed through without becoming a node failure.
               const resume = interrupt({
+                gateId,
                 nodeId: node.id,
                 message: config.message,
                 approvalType: config.approvalType,
                 timeoutSeconds: config.timeoutSeconds,
-                context: nodeInput ?? state.input,
-              }) as { decision?: string; response?: string } | undefined;
-              result = { branch: resume?.decision, lastValue: { decision: resume?.decision, response: resume?.response } };
+                requiredRoles: config.requiredRoles,
+                onTimeout: config.onTimeout ?? "fail_closed",
+                allowedDecisions: config.allowedDecisions ?? ["approved", "rejected", "needs_clarification"],
+                context: interruptContext,
+                consolidatedGapReport,
+              }) as { decision?: string; response?: string; decisionNotes?: string; reviewerId?: string; reviewerRole?: string } | string | undefined;
+
+              const decision = typeof resume === "string" ? resume : resume?.decision;
+              const response = typeof resume === "object" ? (resume?.response ?? resume?.decisionNotes) : undefined;
+              const resumePayload = typeof resume === "object" ? resume : { decision };
+
+              result = {
+                branch: decision,
+                lastValue: {
+                  ...resumePayload,
+                  decision,
+                  response,
+                  gateId,
+                  nodeId: node.id,
+                  consolidatedGapReport,
+                },
+              };
             }
           } else if (node.type === "input") {
             result = { input: state.input, lastValue: state.input };
@@ -265,6 +344,17 @@ export function compileWorkflow(
             const carrier = routedValue && typeof routedValue === "object" && !Array.isArray(routedValue)
               ? routedValue as Record<string, unknown>
               : undefined;
+
+            const inputRecord = state.input && typeof state.input === "object" && !Array.isArray(state.input)
+              ? state.input as Record<string, unknown>
+              : undefined;
+
+            const lastOutcomeVal = state.lastOutcome?.value && typeof state.lastOutcome.value === "object" && !Array.isArray(state.lastOutcome.value)
+              ? state.lastOutcome.value as Record<string, unknown>
+              : undefined;
+
+            const effectiveCarrier = carrier ?? lastOutcomeVal ?? inputRecord;
+
             // The producing node's declared envelope branch is the most
             // structured carrier signal; raw carrier fields remain supported
             // for legacy input-based routing.
@@ -272,25 +362,104 @@ export function compileWorkflow(
               ? state.lastOutcome.branch
               : undefined;
             const fieldOrOutcome = (field?: string): unknown => {
-              if (field) return carrier ? carrier[field] : undefined;
+              if (field) return effectiveCarrier ? effectiveCarrier[field] : undefined;
               if (outcomeBranch !== undefined) return outcomeBranch;
-              return carrier ? branchCarrierField(carrier) : undefined;
+              return effectiveCarrier ? branchCarrierField(effectiveCarrier) : undefined;
             };
             const requested = config.valueSource === "last_value"
               ? fieldOrOutcome(config.valueField)
-              : state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? fieldOrOutcome(config.valueField);
-            // Boundary 3: resolve the branch carrier fail-closed. An
-            // unresolved route never falls through to the first branch.
-            const resolution = resolveBranchRoute(config, requested);
-            if (resolution.status === "unknown") {
-              throw new BranchRoutingError(node.id, resolution);
-            }
-            result = { branch: resolution.branch, lastValue: routedValue ?? state.lastValue };
-            emit("state.updated", {
-              branch: resolution.branch,
-              routeReason: resolution.reason,
-              ...(resolution.viaUnknownRoute ? { viaUnknownRoute: true } : {}),
+              : state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? inputRecord?.nextAction ?? fieldOrOutcome(config.valueField);
+
+            // Recursion guardrails evaluation
+            const recursionGuards = definition.archetypeConfig?.recursionGuards ?? (
+              (definition.archetype === "hierarchical-supervisor" || definition.archetypeConfig?.category === "hierarchical-supervisor")
+                ? [{ routeKey: "qa_verify->implement_spec", maxIterations: 3, fallbackBranch: "loop_limit_exceeded" }]
+                : []
+            );
+
+            const targetCandidate = String(requested ?? "").trim();
+            const matchedGuard = recursionGuards.find((g) => {
+              if (g.routeKey === targetCandidate) return true;
+              if (g.routeKey.endsWith(`->${targetCandidate}`)) return true;
+              if (g.routeKey.split("->").map(s => s.trim()).includes(targetCandidate)) return true;
+              return false;
             });
+
+            let iteration = 0;
+            let limitExceeded = false;
+            if (matchedGuard) {
+              const explicitIteration =
+                typeof effectiveCarrier?.iterationCount === "number"
+                  ? effectiveCarrier.iterationCount
+                  : (effectiveCarrier?.qaResult && typeof (effectiveCarrier.qaResult as Record<string, unknown>).iterationCount === "number")
+                    ? ((effectiveCarrier.qaResult as Record<string, unknown>).iterationCount as number)
+                    : undefined;
+
+              const currentTracked = (state.loopIterations?.[matchedGuard.routeKey] ?? state.loopIterations?.[targetCandidate] ?? 0);
+              iteration = explicitIteration !== undefined ? explicitIteration : currentTracked + 1;
+              const maxIterations = matchedGuard.maxIterations ?? 3;
+              limitExceeded = iteration >= maxIterations;
+            }
+
+            if (limitExceeded && matchedGuard) {
+              const fallbackBranch = matchedGuard.fallbackBranch || "loop_limit_exceeded";
+              const updatedIterations = {
+                ...(state.loopIterations ?? {}),
+                [matchedGuard.routeKey]: iteration,
+                [targetCandidate]: iteration,
+              };
+              const effectiveTaskId = (effectiveCarrier?.taskId as string | undefined) ??
+                (inputRecord?.taskId as string | undefined);
+
+              emit("node.loop_limit_reached", {
+                nodeId: node.id,
+                routeKey: matchedGuard.routeKey,
+                targetBranch: targetCandidate,
+                fallbackBranch,
+                iteration,
+                maxIterations: matchedGuard.maxIterations ?? 3,
+                taskId: effectiveTaskId,
+              });
+
+              result = {
+                branch: fallbackBranch,
+                lastValue: routedValue ?? state.lastValue,
+                loopIterations: updatedIterations,
+              };
+              emit("state.updated", {
+                branch: fallbackBranch,
+                routeReason: "recursion_limit_exceeded",
+                iteration,
+                maxIterations: matchedGuard.maxIterations ?? 3,
+                routeKey: matchedGuard.routeKey,
+              });
+            } else {
+              // Boundary 3: resolve the branch carrier fail-closed. An
+              // unresolved route never falls through to the first branch.
+              const resolution = resolveBranchRoute(config, requested);
+              if (resolution.status === "unknown") {
+                throw new BranchRoutingError(node.id, resolution);
+              }
+              const updatedIterations = matchedGuard
+                ? {
+                    ...(state.loopIterations ?? {}),
+                    [matchedGuard.routeKey]: iteration,
+                    [targetCandidate]: iteration,
+                  }
+                : state.loopIterations;
+
+              result = {
+                branch: resolution.branch,
+                lastValue: routedValue ?? state.lastValue,
+                ...(updatedIterations ? { loopIterations: updatedIterations } : {}),
+              };
+              emit("state.updated", {
+                branch: resolution.branch,
+                routeReason: resolution.reason,
+                ...(matchedGuard ? { iteration, maxIterations: matchedGuard.maxIterations ?? 3, routeKey: matchedGuard.routeKey } : {}),
+                ...(resolution.viaUnknownRoute ? { viaUnknownRoute: true } : {}),
+              });
+            }
           } else {
             const config = node.config as { agentId?: string | null };
             const agent = config.agentId ? agentById.get(config.agentId) : undefined;
@@ -634,7 +803,7 @@ function enforceNodeInput(node: WorkflowNode, contract: NodeContract | undefined
 
 /** Raw branch-carrier field lookup (no prose inference; strings only upstream). */
 function branchCarrierField(value: Record<string, unknown>): unknown {
-  return value.branch ?? value.branchKey ?? value.verdict ?? value.status;
+  return value.branch ?? value.branchKey ?? value.verdict ?? value.status ?? value.nextAction;
 }
 
 export { coerceBranchCarrier } from "../runtime/execUtils";

@@ -40,7 +40,7 @@ export class ToolRuntime {
     // Stable codes make rejections machine-readable; diagnostics never echo values.
     enforceSchema(tool.inputSchema as JsonSchema, input, { code: "TOOL_INPUT_INVALID", phase: "tool input" });
     const signal = parentSignal ? AbortSignal.any([parentSignal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs);
-    const output = await this.executors.create(tool.category).execute({ tool, input, signal, ...context, idempotencyKey });
+    const output = await this.executors.create(tool.category, tool.name).execute({ tool, input, signal, ...context, idempotencyKey });
     // Boundary: bound first, then validate the *bounded* output against the
     // declared output contract before it can reach events or persistence.
     const bounded = boundJsonValue(output, this.maxOutputBytes) as Record<string, unknown>;

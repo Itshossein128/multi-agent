@@ -110,6 +110,16 @@ export class RunApiService {
     this.executor.resolveApproval(runId, approvalId, { decision: body.decision, response: body.response });
   }
 
+  approve(runId: string, body: { reviewerId?: string; reviewerRole?: string; notes?: string } = {}) {
+    this.requireRun(runId);
+    return this.executor.approveRun(runId, body);
+  }
+
+  reject(runId: string, body: { reviewerId?: string; reviewerRole?: string; notes?: string } = {}) {
+    this.requireRun(runId);
+    return this.executor.rejectRun(runId, body);
+  }
+
   history(runId: string, agentId?: string) {
     this.requireRun(runId);
     const events = this.store.events(runId);

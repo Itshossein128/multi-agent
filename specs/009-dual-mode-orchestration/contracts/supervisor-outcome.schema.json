@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://multi-agent.local/schemas/supervisor-outcome.schema.json",
+  "title": "SupervisorOutcomeEnvelope",
+  "description": "Standard envelope returned by supervisor and specialist nodes driving dynamic branch decisions in LangGraph StateGraph.",
+  "type": "object",
+  "required": ["nextAction", "statusMessage"],
+  "properties": {
+    "nextAction": {
+      "type": "string",
+      "enum": [
+        "audit_spec",
+        "consolidate",
+        "await_approval",
+        "implement_spec",
+        "qa_verify",
+        "complete",
+        "loop_limit_exceeded",
+        "fail"
+      ],
+      "description": "Next conditional branch route evaluated by LangGraph condition nodes."
+    },
+    "taskId": {
+      "type": "string",
+      "description": "Active task identifier under processing."
+    },
+    "iterationCount": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Current remediation feedback loop cycle count (max 3 allowed)."
+    },
+    "auditResult": {
+      "type": "object",
+      "required": ["taskId", "userStoryCode", "completenessScore", "passedChecks", "totalChecks", "identifiedGaps"],
+      "properties": {
+        "taskId": { "type": "string" },
+        "userStoryCode": { "type": "string" },
+        "completenessScore": { "type": "number", "minimum": 0, "maximum": 100 },
+        "passedChecks": { "type": "integer", "minimum": 0 },
+        "totalChecks": { "type": "integer", "minimum": 0 },
+        "identifiedGaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["specCode", "title", "severity", "description"],
+            "properties": {
+              "specCode": { "type": "string" },
+              "title": { "type": "string" },
+              "severity": { "type": "string", "enum": ["critical", "major", "minor"] },
+              "description": { "type": "string" },
+              "missingFiles": { "type": "array", "items": { "type": "string" } },
+              "suggestedFix": { "type": "string" }
+            }
+          }
+        },
+        "inspectedFiles": { "type": "array", "items": { "type": "string" } },
+        "auditTimestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "consolidatedReport": {
+      "type": "object",
+      "required": ["totalUserStories", "auditedCount", "averageCompletenessScore", "criticalGapsCount", "allGaps"],
+      "properties": {
+        "totalUserStories": { "type": "integer" },
+        "auditedCount": { "type": "integer" },
+        "averageCompletenessScore": { "type": "number" },
+        "criticalGapsCount": { "type": "integer" },
+        "allGaps": { "type": "array" },
+        "remediationPlanSummary": { "type": "string" },
+        "estimatedEffortHours": { "type": "number" },
+        "preparedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "qaResult": {
+      "type": "object",
+      "required": ["taskId", "testsPassed", "totalTests", "failedTestsCount", "iterationCount"],
+      "properties": {
+        "taskId": { "type": "string" },
+        "testsPassed": { "type": "boolean" },
+        "totalTests": { "type": "integer" },
+        "failedTestsCount": { "type": "integer" },
+        "failureOutput": { "type": "string" },
+        "iterationCount": { "type": "integer" },
+        "verifiedFiles": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "statusMessage": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

@@ -247,6 +247,17 @@ export function brokerServerConfigFromEnvironment(env: BrokerEnvironment = proce
     throw new Error("Production credential broker requires CREDENTIAL_BROKER_SERVICE_TOKENS.");
   }
 
+  // Lease consumption and the audit chain must survive restarts and be shared
+  // by every broker instance. Falling back to the process-local stores in
+  // production would break the single-use guarantee and erase audit history.
+  if (production && !env.CREDENTIAL_BROKER_DATABASE_URL?.trim()) {
+    throw new Error("Production credential broker requires CREDENTIAL_BROKER_DATABASE_URL for durable lease and audit state.");
+  }
+
+  if (production && env.CREDENTIAL_BROKER_REQUIRE_MTLS === "false") {
+    throw new Error("Production requires CREDENTIAL_BROKER_REQUIRE_MTLS=true.");
+  }
+
   let tls: BrokerTlsConfig | undefined;
   if (requireMtls) {
     const caFile = env.CREDENTIAL_BROKER_CA_FILE?.trim();

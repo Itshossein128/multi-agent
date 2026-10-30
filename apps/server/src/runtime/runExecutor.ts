@@ -40,6 +40,7 @@ import type { RequestPrincipal } from "../auth/principal";
 import { ApprovalManager, type PausedContext } from "./approvalManager";
 import { GraphRunner } from "./graphRunner";
 import type { DurableMemoryJob, EnqueueMemoryJob } from "../../../../src/memory/infrastructure";
+import type { StudioStore } from "../../../../src/studio/contracts";
 import {
   OrganizationAccessRevokedError,
   ORGANIZATION_ACCESS_REVOKED,
@@ -99,6 +100,7 @@ export class RunExecutor {
     private readonly memoryJobs?: MemoryBackgroundJobs,
     private readonly durableMemoryJobs?: DurableMemoryJobEnqueuer,
     private readonly organizationAccess?: RunOrganizationAccess,
+    private readonly studioStore?: StudioStore,
   ) {
     this.instanceId = (this.store as any).instanceId ?? randomUUID();
     // Wire up the extracted managers with shared state.
@@ -233,6 +235,16 @@ export class RunExecutor {
   }
 
   private appendAgentEvent(runId: string, event: AgentExecutionEvent) {
+    if (event.type === "node.loop_limit_reached") {
+      const payload = (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, unknown>;
+      void this.handleLoopLimitExceeded(runId, {
+        taskId: payload.taskId as string | undefined,
+        routeKey: payload.routeKey as string | undefined,
+        iterations: payload.iterations as number | undefined,
+        diagnostics: payload.diagnostics,
+        reason: payload.reason as string | undefined,
+      });
+    }
     for (const runEvent of mapAgentEvents(event, runId)) {
       if (runEvent.nodeId && (runEvent.type === "node.started" || runEvent.type === "agent.started" || runEvent.type === "tool.started")) {
         this.store.update(runId, { currentNodeId: runEvent.nodeId });
@@ -584,6 +596,154 @@ export class RunExecutor {
     // ApprovalManager starts an asynchronous continuation; detach it too.
     return organizationStorage.run(tenantId ? Object.freeze({ organizationId: tenantId, principalKind: "service" as const, source: "run.approval" }) : undefined,
       () => this.approvalManager.resolveApproval(runId, approvalId, decision));
+  }
+
+  /**
+   * Approve a pending approval gate on a run and resume workflow execution.
+   */
+  approveRun(runId: string, options: { reviewerId?: string; reviewerRole?: string; notes?: string } = {}) {
+    const approvals = this.store.listApprovals(runId);
+    const pending = approvals.find((a) => a.status === "requested");
+    if (!pending) throw new Error(`No pending approval request found for run "${runId}".`);
+    return this.resolveApproval(runId, pending.id, {
+      decision: "approved",
+      response: options.notes ?? "Approved by human reviewer",
+      ...(options.reviewerId ? { reviewerId: options.reviewerId } : {}),
+      ...(options.reviewerRole ? { reviewerRole: options.reviewerRole } : {}),
+      ...(options.notes ? { decisionNotes: options.notes } : {}),
+    } as ApprovalDecisionRequest);
+  }
+
+  /**
+   * Reject a pending approval gate on a run, halting downstream remediation,
+   * transitioning any associated Studio task to paused, and recording audit notes.
+   */
+  rejectRun(runId: string, options: { reviewerId?: string; reviewerRole?: string; notes?: string } = {}) {
+    const approvals = this.store.listApprovals(runId);
+    const pending = approvals.find((a) => a.status === "requested");
+    if (!pending) throw new Error(`No pending approval request found for run "${runId}".`);
+
+    const runRecord = this.store.get(runId)?.run;
+    const taskId = ((runRecord as unknown as Record<string, unknown>)?.taskId
+      || ((runRecord?.input as unknown) as Record<string, unknown>)?.taskId
+      || (this.pendingRequests.get(runId)?.request.input as Record<string, unknown>)?.taskId) as string | undefined;
+
+    if (this.studioStore && taskId) {
+      void (async () => {
+        try {
+          const task = await this.studioStore!.getTask(taskId);
+          if (task && task.status !== "paused") {
+            await this.studioStore!.saveTask({ ...task, status: "paused" });
+          }
+          await this.studioStore!.saveComment({
+            id: uid("comment"),
+            taskId,
+            tenantId: task?.tenantId ?? "tenant-building-gap",
+            authorId: options.reviewerId ?? "system",
+            authorType: "system",
+            content: `Human Approval Gate: Run was rejected${options.reviewerId ? ` by ${options.reviewerId}` : ""}${options.reviewerRole ? ` (${options.reviewerRole})` : ""}.${options.notes ? ` Reason: ${options.notes}` : ""}`,
+            mentions: [],
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+            metadata: {
+              runId,
+              event: "human_approval.rejected",
+              decision: "rejected",
+              reviewerId: options.reviewerId,
+              reviewerRole: options.reviewerRole,
+              notes: options.notes,
+            },
+          });
+        } catch (err) {
+          log.warn("Failed to update task on approval rejection clean-halt", {
+            runId,
+            taskId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })();
+    }
+
+    this.store.append(runId, {
+      id: uid("event"),
+      runId,
+      type: "human_approval.rejection_halt",
+      nodeId: pending.nodeId,
+      timestamp: nowIso(),
+      sequence: 0,
+      payload: {
+        approvalId: pending.id,
+        decision: "rejected",
+        reviewerId: options.reviewerId,
+        reviewerRole: options.reviewerRole,
+        notes: options.notes,
+        taskId,
+      },
+    });
+
+    return this.resolveApproval(runId, pending.id, {
+      decision: "rejected",
+      response: options.notes ?? "Rejected by human reviewer",
+      ...(options.reviewerId ? { reviewerId: options.reviewerId } : {}),
+      ...(options.reviewerRole ? { reviewerRole: options.reviewerRole } : {}),
+      ...(options.notes ? { decisionNotes: options.notes } : {}),
+    } as ApprovalDecisionRequest);
+  }
+
+  /**
+   * Handle recursion loop limit exhaustion by pausing the associated Studio task
+   * and logging diagnostic comments.
+   */
+  async handleLoopLimitExceeded(runId: string, options: {
+    taskId?: string;
+    routeKey?: string;
+    iterations?: number;
+    diagnostics?: unknown;
+    reason?: string;
+  } = {}): Promise<void> {
+    const runRecord = this.store.get(runId)?.run;
+    const effectiveTaskId = options.taskId
+      || ((runRecord as unknown as Record<string, unknown>)?.taskId
+      || ((runRecord?.input as unknown) as Record<string, unknown>)?.taskId
+      || (this.pendingRequests.get(runId)?.request.input as Record<string, unknown>)?.taskId) as string | undefined;
+
+    const iterations = options.iterations ?? 3;
+    const routeKey = options.routeKey ?? "qa_verify->implement_spec";
+    const commentContent = options.reason ??
+      `Remediation recursion limit (${iterations}) exceeded for route "${routeKey}". Manual intervention required.`;
+
+    if (this.studioStore && effectiveTaskId) {
+      try {
+        const task = await this.studioStore.getTask(effectiveTaskId);
+        if (task && (task.status !== "paused" || !task.paused)) {
+          await this.studioStore.saveTask({ ...task, status: "paused", paused: true });
+        }
+        await this.studioStore.saveComment({
+          id: uid("comment"),
+          taskId: effectiveTaskId,
+          tenantId: task?.tenantId ?? runRecord?.tenantId ?? "org-building-gap",
+          authorId: "system",
+          authorType: "system",
+          content: commentContent,
+          mentions: [],
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          metadata: {
+            runId,
+            event: "loop_limit_exceeded",
+            routeKey,
+            iterations,
+            diagnostics: options.diagnostics,
+          },
+        });
+      } catch (err) {
+        log.warn("Failed to update task on loop limit exceeded", {
+          runId,
+          taskId: effectiveTaskId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   /** Delegate approval timer rearming to ApprovalManager. */

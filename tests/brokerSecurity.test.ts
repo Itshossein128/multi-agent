@@ -228,7 +228,28 @@ describe("security: production fail-closed configuration", () => {
 
   test("production broker server requires service tokens and vault", () => {
     expect(() => brokerServerConfigFromEnvironment({ NODE_ENV: "production" }))
-      .toThrow(/SERVICE_TOKENS|VAULT/);
+      .toThrow(/SERVICE_TOKENS|DATABASE_URL|VAULT/);
+  });
+
+  test("production broker server cannot disable mTLS", () => {
+    expect(() => brokerServerConfigFromEnvironment({
+      NODE_ENV: "production",
+      CREDENTIAL_BROKER_REQUIRE_MTLS: "false",
+      CREDENTIAL_BROKER_SERVICE_TOKENS: "execution:fake-token:leases:issue+leases:consume",
+      CREDENTIAL_BROKER_DATABASE_URL: "postgresql://broker:fake-password@db.internal/broker",
+      CREDENTIAL_BROKER_VAULT_URL: "https://vault.internal",
+      CREDENTIAL_BROKER_VAULT_TOKEN: "fake-vault-token",
+    })).toThrow(/REQUIRE_MTLS/);
+  });
+
+  test("production broker server requires durable PostgreSQL state", () => {
+    expect(() => brokerServerConfigFromEnvironment({
+      NODE_ENV: "production",
+      CREDENTIAL_BROKER_REQUIRE_MTLS: "false",
+      CREDENTIAL_BROKER_SERVICE_TOKENS: "execution:fake-token:leases:issue+leases:consume",
+      CREDENTIAL_BROKER_VAULT_URL: "https://vault.internal",
+      CREDENTIAL_BROKER_VAULT_TOKEN: "fake-vault-token",
+    })).toThrow(/DATABASE_URL/);
   });
 
   test("broker-enabled-without-URL is a hard error, not a silent fallback", () => {
