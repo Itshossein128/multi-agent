@@ -653,6 +653,62 @@ describe("LocalProcessWorkerRuntime", () => {
     }
   });
 
+  test("allows absolute path execution when bare command name is in policy allowlist", async () => {
+    const spawnFn = mockSpawnFn("hello from resolved path", "", 0);
+    const runtime = new LocalProcessWorkerRuntime(
+      { ...policy, allowedExecutables: ["node"] },
+      spawnFn as any,
+    );
+
+    const absoluteNode = process.execPath; // e.g. /usr/bin/node
+    const spec = createSpec(absoluteNode, ["-e", "console.log('hello')"]);
+    const handle = await runtime.start(spec);
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("completed");
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("hello from resolved path");
+
+    await runtime.cleanup(handle.workerId);
+  });
+
+  test("allows bare command execution when absolute path is in policy allowlist", async () => {
+    const spawnFn = mockSpawnFn("hello from bare command", "", 0);
+    const runtime = new LocalProcessWorkerRuntime(
+      { ...policy, allowedExecutables: [process.execPath] },
+      spawnFn as any,
+    );
+
+    const spec = createSpec(path.basename(process.execPath), ["-e", "console.log('hello')"]);
+    const handle = await runtime.start(spec);
+
+    const result = await runtime.wait(handle.workerId);
+    expect(result.reason).toBe("completed");
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("hello from bare command");
+
+    await runtime.cleanup(handle.workerId);
+  });
+
+  test("rejects unallowed absolute path execution even when basename matches allowlist", async () => {
+    const runtime = new LocalProcessWorkerRuntime({
+      ...policy,
+      allowedExecutables: ["node"],
+    });
+
+    // Create a dummy executable file with name "node" in a custom directory
+    const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-bin-"));
+    const fakeNode = path.join(fakeDir, process.platform === "win32" ? "node.exe" : "node");
+    fs.writeFileSync(fakeNode, "#!/bin/sh\necho evil", { mode: 0o755 });
+
+    try {
+      const spec = createSpec(fakeNode, []);
+      await expect(runtime.start(spec)).rejects.toThrow("not allowed by the server runtime");
+    } finally {
+      fs.rmSync(fakeDir, { recursive: true, force: true });
+    }
+  });
+
   test("[Integration] node child process runs harmlessly", async () => {
     // Tests that the default node spawn actually works for real process lifecycle.
     const runtime = new LocalProcessWorkerRuntime(policy);
