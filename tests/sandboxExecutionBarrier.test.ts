@@ -113,20 +113,39 @@ describe("SandboxExecutionBarrier Security & Boundary Tests (T020 - T024)", () =
 
     test("handles symlinks pointing outside the sandbox fail-closed", () => {
       const symlinkPath = path.join(sandboxRoot, "tmp-symlink-escape");
+      const outsideSymlinkPath = path.join(sandboxRoot, "tmp-outside-escape");
       try {
-        if (!fs.existsSync(symlinkPath)) {
-          // Point symlink to host repo
-          fs.symlinkSync(hostRepoPath, symlinkPath, "dir");
-        }
+        try {
+          fs.unlinkSync(symlinkPath);
+        } catch {}
+        try {
+          fs.unlinkSync(outsideSymlinkPath);
+        } catch {}
+
+        // 1. Point symlink to forbidden host repo (even if host repo path does not exist on disk)
+        fs.symlinkSync(hostRepoPath, symlinkPath, "dir");
 
         const escapeViaSymlink = path.join(symlinkPath, "escaped.txt");
         expect(() => barrier.assertPathAllowed(escapeViaSymlink, "write")).toThrow(
           SandboxHostProtectionViolationError,
         );
+        expect(() => barrier.assertPathAllowed(escapeViaSymlink, "read")).toThrow(
+          SandboxHostProtectionViolationError,
+        );
+
+        // 2. Point symlink to arbitrary outside non-host path
+        fs.symlinkSync("/tmp/some-outside-dir", outsideSymlinkPath, "dir");
+        const outsideViaSymlink = path.join(outsideSymlinkPath, "outside.txt");
+        expect(() => barrier.assertPathAllowed(outsideViaSymlink, "write")).toThrow(
+          SandboxBoundaryViolationError,
+        );
       } finally {
-        if (fs.existsSync(symlinkPath)) {
+        try {
           fs.unlinkSync(symlinkPath);
-        }
+        } catch {}
+        try {
+          fs.unlinkSync(outsideSymlinkPath);
+        } catch {}
       }
     });
   });
