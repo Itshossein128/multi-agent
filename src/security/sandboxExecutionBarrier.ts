@@ -83,14 +83,52 @@ export class SandboxExecutionBarrier {
       // Fall through to walk up directory hierarchy
     }
 
-    // If target itself does not exist yet (e.g. creating a new file in the sandbox),
-    // canonicalize the highest existing ancestor directory to resolve any symlinks or traversals.
+    const resolveSymlinksIteratively = (startPath: string): string => {
+      let curr = startPath;
+      const seen = new Set<string>();
+      while (true) {
+        try {
+          const st = fs.lstatSync(curr);
+          if (st.isSymbolicLink()) {
+            const link = fs.readlinkSync(curr);
+            const next = path.resolve(path.dirname(curr), link);
+            if (seen.has(next)) break;
+            seen.add(next);
+            curr = next;
+          } else {
+            break;
+          }
+        } catch {
+          break;
+        }
+      }
+      return curr;
+    };
+
+    // If target itself does not exist yet (e.g. creating a new file in the sandbox,
+    // or traversing through a symlink to an uncreated target),
+    // canonicalize the highest existing ancestor directory or symlink.
     let current = resolved;
     const parts: string[] = [];
     while (current && current !== path.dirname(current)) {
-      if (fs.existsSync(current)) {
+      let entryExists = false;
+      try {
+        fs.lstatSync(current);
+        entryExists = true;
+      } catch {
+        entryExists = false;
+      }
+
+      if (entryExists) {
         try {
-          const canonicalBase = path.resolve(fs.realpathSync.native(current));
+          let canonicalBase = resolveSymlinksIteratively(current);
+          try {
+            if (fs.existsSync(canonicalBase)) {
+              canonicalBase = fs.realpathSync.native(canonicalBase);
+            }
+          } catch {
+            // Keep resolved base if destination does not exist
+          }
           return path.resolve(canonicalBase, ...parts);
         } catch {
           break;
