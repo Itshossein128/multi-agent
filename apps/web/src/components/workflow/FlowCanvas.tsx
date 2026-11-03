@@ -66,9 +66,13 @@ export function FlowCanvas() {
                 )
               : undefined,
           issueCount: issueCountByNode.get(node.id) ?? 0,
+          issueTitle: issues
+            .filter((issue) => issue.nodeId === node.id)
+            .map((issue) => (issue.code ? `${issue.code}: ${issue.message}` : issue.message))
+            .join("\n"),
         },
       })),
-    [definition.nodes, agents, tools, selectedNodeIds, issueCountByNode]
+    [definition.nodes, agents, tools, selectedNodeIds, issueCountByNode, issues]
   );
 
   const rfEdges = useMemo<Edge[]>(

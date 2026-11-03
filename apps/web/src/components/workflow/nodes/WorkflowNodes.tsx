@@ -31,6 +31,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   agent?: AgentRecord;
   tool?: ToolRecord;
   issueCount: number;
+  issueTitle?: string;
 }
 
 function useNodeData(props: NodeProps): WorkflowNodeData {
@@ -47,6 +48,7 @@ interface NodeShellProps {
   icon: React.ReactNode;
   title: string;
   subtitle: string;
+  issueTitle?: string;
   showTarget?: boolean;
   showSource?: boolean;
   children?: React.ReactNode;
@@ -56,6 +58,7 @@ function NodeShell({
   selected,
   node,
   issueCount,
+  issueTitle,
   icon,
   title,
   subtitle,
@@ -66,6 +69,8 @@ function NodeShell({
   const meta = NODE_TYPE_META[node.type];
   return (
     <div
+      title={issueTitle || undefined}
+      data-issue-code={issueTitle?.includes("LINEAR_PIPELINE_CYCLE_FORBIDDEN") ? "LINEAR_PIPELINE_CYCLE_FORBIDDEN" : undefined}
       className={cn(
         "w-56 rounded-xl border bg-zinc-950/95 px-3 py-2.5 shadow-xl backdrop-blur-md transition-all",
         selected ? cn(meta.borderSelected, "shadow-indigo-500/10") : meta.border,
@@ -100,7 +105,7 @@ function NodeShell({
 }
 
 function AgentNodeComponent(props: NodeProps) {
-  const { node, agent, issueCount } = useNodeData(props);
+  const { node, agent, issueCount, issueTitle } = useNodeData(props);
   const config = node.config as AgentNodeConfig;
   const linked = Boolean(config.agentId && agent);
   return (
@@ -108,6 +113,7 @@ function AgentNodeComponent(props: NodeProps) {
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
+      issueTitle={issueTitle}
       icon={<Bot className="h-4 w-4" />}
       title={agent?.name ?? "Unlinked agent"}
       subtitle={agent ? `${agentBackendLabel(agent.backend)} · ${agent.tools.length} tools` : "Not linked to an agent"}
@@ -125,13 +131,14 @@ function AgentNodeComponent(props: NodeProps) {
 }
 
 function ToolNodeComponent(props: NodeProps) {
-  const { node, tool, issueCount } = useNodeData(props);
+  const { node, tool, issueCount, issueTitle } = useNodeData(props);
   const config = node.config as ToolNodeConfig;
   return (
     <NodeShell
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
+      issueTitle={issueTitle}
       icon={<Wrench className="h-4 w-4" />}
       title={tool?.name ?? "Unlinked tool"}
       subtitle={tool ? `${tool.category}${tool.enabled ? "" : " · disabled"}` : "Not linked to a tool"}
@@ -149,13 +156,14 @@ function ToolNodeComponent(props: NodeProps) {
 }
 
 function ApprovalNodeComponent(props: NodeProps) {
-  const { node, issueCount } = useNodeData(props);
+  const { node, issueCount, issueTitle } = useNodeData(props);
   const config = node.config as ApprovalNodeConfig;
   return (
     <NodeShell
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
+      issueTitle={issueTitle}
       icon={<ShieldCheck className="h-4 w-4" />}
       title="Human Approval"
       subtitle={config.message || "No message configured"}
@@ -170,13 +178,14 @@ function ApprovalNodeComponent(props: NodeProps) {
 }
 
 function MemoryNodeComponent(props: NodeProps) {
-  const { node, issueCount } = useNodeData(props);
+  const { node, issueCount, issueTitle } = useNodeData(props);
   const config = node.config as MemoryNodeConfig;
   return (
     <NodeShell
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
+      issueTitle={issueTitle}
       icon={<Database className="h-4 w-4" />}
       title={config.key || "Memory"}
       subtitle={`${config.memoryType.replace("_", " ")} · ${config.mode.replace("_", " ")}`}
@@ -185,11 +194,13 @@ function MemoryNodeComponent(props: NodeProps) {
 }
 
 function ConditionNodeComponent(props: NodeProps) {
-  const { node, issueCount } = useNodeData(props);
+  const { node, issueCount, issueTitle } = useNodeData(props);
   const config = node.config as ConditionNodeConfig;
   const branches = config.branches;
   return (
     <div
+      title={issueTitle || undefined}
+      data-issue-code={issueTitle?.includes("LINEAR_PIPELINE_CYCLE_FORBIDDEN") ? "LINEAR_PIPELINE_CYCLE_FORBIDDEN" : undefined}
       className={cn(
         "w-56 rounded-xl border bg-zinc-950/95 px-3 py-2.5 shadow-xl backdrop-blur-md transition-all",
         props.selected
@@ -249,12 +260,13 @@ function ConditionNodeComponent(props: NodeProps) {
 }
 
 function InputNodeComponent(props: NodeProps) {
-  const { node, issueCount } = useNodeData(props);
+  const { node, issueCount, issueTitle } = useNodeData(props);
   return (
     <NodeShell
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
+      issueTitle={issueTitle}
       icon={<LogIn className="h-4 w-4" />}
       title="Input"
       subtitle="Workflow entry point"
@@ -264,12 +276,13 @@ function InputNodeComponent(props: NodeProps) {
 }
 
 function OutputNodeComponent(props: NodeProps) {
-  const { node, issueCount } = useNodeData(props);
+  const { node, issueCount, issueTitle } = useNodeData(props);
   return (
     <NodeShell
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
+      issueTitle={issueTitle}
       icon={<LogOut className="h-4 w-4" />}
       title="Output"
       subtitle="Workflow exit point"

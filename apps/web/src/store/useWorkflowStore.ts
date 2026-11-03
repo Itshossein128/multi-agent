@@ -17,7 +17,14 @@ import {
 } from "@/lib/workflow/types";
 import { validateWorkflow, WorkflowIssue } from "@/lib/workflow/validation";
 import { workflowService } from "@/services/workflowService";
-import { assertNoCredentials, removeAgentNodes, removeToolNodes } from "@multi-agent/types";
+import {
+  assertNoCredentials,
+  removeAgentNodes,
+  removeToolNodes,
+  type WorkflowArchetypeCategory,
+  type WorkflowArchetypeConfig,
+  type WorkflowRecursionGuardConfig,
+} from "@multi-agent/types";
 import { WorkflowHistory } from "./workflowHistory";
 import { cloneDefinition, resolveNodePosition } from "./workflowDefinition";
 
@@ -44,6 +51,8 @@ interface WorkflowStoreState {
   selectedNodeIds: string[];
   selectedEdgeIds: string[];
   issues: WorkflowIssue[];
+  /** Issue code the properties panel should move focus to after Validate. */
+  focusedIssueCode: string | null;
   canUndo: boolean;
   canRedo: boolean;
   flowHelpers: FlowHelpers | null;
@@ -52,6 +61,11 @@ interface WorkflowStoreState {
   loadWorkflow: (workflowId?: string) => Promise<void>;
   saveWorkflow: () => Promise<void>;
   setWorkflowName: (name: string) => void;
+  setWorkflowArchetype: (archetype: WorkflowArchetypeCategory) => void;
+  updateSupervisorConfig: (patch: Partial<Omit<WorkflowArchetypeConfig, "category">>) => void;
+  addRecursionGuard: (guard: WorkflowRecursionGuardConfig) => void;
+  updateRecursionGuard: (index: number, patch: Partial<WorkflowRecursionGuardConfig>) => void;
+  removeRecursionGuard: (index: number) => void;
   setFlowHelpers: (helpers: FlowHelpers) => void;
 
   // structure
@@ -155,6 +169,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
     selectedNodeIds: [],
     selectedEdgeIds: [],
     issues: [],
+    focusedIssueCode: null,
     canUndo: false,
     canRedo: false,
     flowHelpers: null,
@@ -183,6 +198,7 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
           saveState: "idle",
           saveError: null,
           issues: validateWorkflow(definition, agents, tools),
+          focusedIssueCode: null,
           selectedNodeIds: [],
           selectedEdgeIds: [],
         });
@@ -205,8 +221,74 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         set({
           saveState: "error",
           saveError: err instanceof Error ? err.message : "Failed to save workflow",
+          isDirty: true,
         });
       }
+    },
+
+    setWorkflowArchetype: (archetype) => {
+      const current = get().definition;
+      if (current.archetype === archetype && current.archetypeConfig?.category === archetype) return;
+      pushHistory();
+      withDefinition((draft) => {
+        draft.archetype = archetype;
+        const previous = draft.archetypeConfig;
+        draft.archetypeConfig = {
+          ...previous,
+          category: archetype,
+          ...(archetype === "hierarchical-supervisor" && previous?.maxExecutionSteps === undefined
+            ? { maxExecutionSteps: 1000 }
+            : {}),
+          ...(archetype === "hierarchical-supervisor" && previous?.humanApprovalGateRequired === undefined
+            ? { humanApprovalGateRequired: true }
+            : {}),
+          ...(archetype === "hierarchical-supervisor" && previous?.recursionGuards === undefined
+            ? { recursionGuards: [] }
+            : {}),
+        };
+      });
+    },
+
+    updateSupervisorConfig: (patch) => {
+      pushHistory();
+      withDefinition((draft) => {
+        const category = draft.archetypeConfig?.category ?? draft.archetype ?? "hierarchical-supervisor";
+        draft.archetypeConfig = { category, ...draft.archetypeConfig, ...patch };
+      });
+    },
+
+    addRecursionGuard: (guard) => {
+      pushHistory();
+      withDefinition((draft) => {
+        const category = draft.archetypeConfig?.category ?? draft.archetype ?? "hierarchical-supervisor";
+        const recursionGuards = [...(draft.archetypeConfig?.recursionGuards ?? []), guard];
+        draft.archetypeConfig = { category, ...draft.archetypeConfig, recursionGuards };
+      });
+    },
+
+    updateRecursionGuard: (index, patch) => {
+      const guards = get().definition.archetypeConfig?.recursionGuards ?? [];
+      if (!guards[index]) return;
+      pushHistory();
+      withDefinition((draft) => {
+        const category = draft.archetypeConfig?.category ?? draft.archetype ?? "hierarchical-supervisor";
+        const recursionGuards = [...(draft.archetypeConfig?.recursionGuards ?? [])];
+        const current = recursionGuards[index];
+        if (!current) return;
+        recursionGuards[index] = { ...current, ...patch };
+        draft.archetypeConfig = { category, ...draft.archetypeConfig, recursionGuards };
+      });
+    },
+
+    removeRecursionGuard: (index) => {
+      const guards = get().definition.archetypeConfig?.recursionGuards ?? [];
+      if (!guards[index]) return;
+      pushHistory();
+      withDefinition((draft) => {
+        const category = draft.archetypeConfig?.category ?? draft.archetype ?? "hierarchical-supervisor";
+        const recursionGuards = (draft.archetypeConfig?.recursionGuards ?? []).filter((_, guardIndex) => guardIndex !== index);
+        draft.archetypeConfig = { category, ...draft.archetypeConfig, recursionGuards };
+      });
     },
 
     setWorkflowName: (name) => {
@@ -557,6 +639,11 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
 
     focusIssue: (issue) => {
       const { definition, flowHelpers } = get();
+      set({ focusedIssueCode: issue.code ?? null });
+      if (!issue.nodeId && !issue.edgeId) {
+        set({ selectedNodeIds: [], selectedEdgeIds: [] });
+        return;
+      }
       if (issue.edgeId) {
         const edge = definition.edges.find((e) => e.id === issue.edgeId);
         if (edge) {

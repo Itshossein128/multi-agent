@@ -6,6 +6,8 @@
  */
 
 import React, { useMemo } from "react";
+import { resolveWorkflowArchetype } from "@multi-agent/types";
+import { useOptionalOrg } from "@/components/organization/OrgProvider";
 import { Bot, CircleAlert, GitBranch, Trash2, Wrench } from "lucide-react";
 import {
   ConditionNodeConfig,
@@ -27,6 +29,12 @@ import {
   MemoryForm,
   ToolForm,
 } from "./NodeForms";
+import {
+  ArchetypeSection,
+  RecursionGuardsManager,
+  SupervisorExecutionLimitsForm,
+  SupervisorHubPicker,
+} from "./ArchetypeForms";
 
 export function NodeProperties({ node }: { node: WorkflowNode }) {
   const removeNodes = useWorkflowStore((s) => s.removeNodes);
@@ -231,9 +239,19 @@ export function MultiSelectProperties({ nodeIds }: { nodeIds: string[] }) {
 
 export function Overview() {
   const definition = useWorkflowStore((s) => s.definition);
+  const agents = useWorkflowStore((s) => s.agents);
   const issues = useWorkflowStore((s) => s.issues);
+  const orgId = useOptionalOrg()?.org.id;
   const errors = issues.filter((i) => i.severity === "error").length;
   const warnings = issues.filter((i) => i.severity === "warning").length;
+  const archetype = resolveWorkflowArchetype(definition);
+  const tenantAgentNodes = definition.nodes.filter((node) => {
+    if (node.type !== "agent") return false;
+    if (!orgId) return true;
+    const agentId = (node.config as { agentId?: string | null }).agentId;
+    const agent = agentId ? agents.find((candidate) => candidate.id === agentId) : undefined;
+    return agent?.tenantId === orgId;
+  });
 
   const counts = new Map<string, number>();
   for (const node of definition.nodes) {
@@ -246,6 +264,15 @@ export function Overview() {
         <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Workflow</h3>
         <p className="mt-1 font-mono text-[10px] text-zinc-600">{definition.id}</p>
       </div>
+
+      <ArchetypeSection />
+      {archetype === "hierarchical-supervisor" && (
+        <>
+          <SupervisorHubPicker agentNodes={tenantAgentNodes} />
+          <RecursionGuardsManager />
+          <SupervisorExecutionLimitsForm />
+        </>
+      )}
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
         <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-2">

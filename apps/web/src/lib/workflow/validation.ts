@@ -19,7 +19,7 @@ import {
   agentHasConfiguredModel,
   validateRawNodeContract,
 } from "./types";
-import { validateAgent } from "@multi-agent/types";
+import { resolveWorkflowArchetype, validateAgent, type WorkflowNode } from "@multi-agent/types";
 
 export interface WorkflowIssue {
   id: string;
@@ -354,6 +354,9 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
     }
   }
 
+  // -- Archetype parity with the server compiler ---------------------------
+  issues.push(...validateArchetype(def, nodesById, archetypeCycleNodes(def, nodesById)));
+
   // -- Cycles -----------------------------------------------------------------
   const exitCapableTypes = new Set(["condition", "approval"]);
   for (const cycle of findCycles(def)) {
@@ -377,6 +380,186 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
   }
 
   return issues;
+}
+
+/**
+ * Client port of `apps/server/src/compiler/validation.ts` archetype rules.
+ * Issue codes and messages match the server so the editor and Run gate agree
+ * with save/compile without a network round-trip.
+ */
+function validateArchetype(
+  definition: WorkflowDefinition,
+  nodes: Map<string, WorkflowNode>,
+  cycleNodes: Set<string>,
+): WorkflowIssue[] {
+  const issues: WorkflowIssue[] = [];
+  let sequence = 0;
+  const add = (code: string, message: string, nodeId?: string, edgeId?: string, severity: WorkflowIssue["severity"] = "error") => {
+    issues.push({ id: `issue-${severity}-${code}-${sequence++}`, code, severity, message, nodeId, edgeId });
+  };
+
+  if (definition.archetype !== undefined && definition.archetype !== "linear-pipeline" && definition.archetype !== "hierarchical-supervisor") {
+    add("INVALID_ARCHETYPE", `Unknown workflow archetype "${String(definition.archetype)}". Allowed archetypes are "linear-pipeline" and "hierarchical-supervisor".`);
+  }
+
+  if (definition.archetypeConfig?.category !== undefined && definition.archetypeConfig.category !== "linear-pipeline" && definition.archetypeConfig.category !== "hierarchical-supervisor") {
+    add("INVALID_ARCHETYPE", `Unknown archetypeConfig category "${String(definition.archetypeConfig.category)}". Allowed categories are "linear-pipeline" and "hierarchical-supervisor".`);
+  }
+
+  const configuredCategory = definition.archetypeConfig?.category;
+  if (definition.archetype !== undefined && configuredCategory !== undefined && definition.archetype !== configuredCategory) {
+    add("INVALID_ARCHETYPE", "Workflow archetype must match archetypeConfig.category.");
+    return issues;
+  }
+
+  const archetype = resolveWorkflowArchetype(definition);
+  // Untyped legacy graphs retain their existing server-wide cycle limit.
+  if (archetype === "linear-pipeline" && (definition.archetype !== undefined || configuredCategory !== undefined)) {
+    for (const nodeId of cycleNodes) {
+      add("LINEAR_PIPELINE_CYCLE_FORBIDDEN", `Linear pipeline workflows cannot contain cycles. Node "${nodeId}" is part of a cycle.`, nodeId);
+    }
+  }
+
+  if (archetype === "hierarchical-supervisor") {
+    const hubId = definition.archetypeConfig?.supervisorHubNodeId;
+    if (!hubId) {
+      add("MISSING_SUPERVISOR_HUB", "Hierarchical supervisor workflow requires 'supervisorHubNodeId' in archetypeConfig.");
+    } else {
+      const hubNode = nodes.get(hubId);
+      if (!hubNode || hubNode.type !== "agent") {
+        add("INVALID_SUPERVISOR_HUB", `Supervisor hub node "${hubId}" must exist and be an agent node.`, hubId);
+      }
+    }
+
+    if (!definition.nodes.some((node) => node.type === "condition")) {
+      add("MISSING_ROUTING_NODES", "Hierarchical supervisor workflow requires at least one condition routing node.");
+    }
+
+    const guards = definition.archetypeConfig?.recursionGuards;
+    const cyclicBranchKeys = collectCyclicBranchKeys(definition, cycleNodes);
+    if (cycleNodes.size > 0 && (!guards || guards.length === 0)) {
+      add("UNGUARDED_CYCLE", "Hierarchical supervisor workflow contains cycles but has no recursion guards configured.");
+    } else if (cycleNodes.size > 0 && guards && guards.length > 0) {
+      const hasApplicableGuard = guards.some((guard) => {
+        const destination = typeof guard.routeKey === "string" ? guard.routeKey.split("->").pop()?.trim() : undefined;
+        return Boolean(destination && cyclicBranchKeys.has(destination));
+      });
+      if (!hasApplicableGuard) {
+        add("UNGUARDED_CYCLE", `Hierarchical supervisor workflow contains cycles but no recursion guard matches a cyclic route (${[...cyclicBranchKeys].join(", ") || "unknown"}).`);
+      }
+    }
+
+    if (definition.archetypeConfig?.humanApprovalGateRequired) {
+      const approvalIds = new Set(definition.nodes.filter((node) => node.type === "approval").map((node) => node.id));
+      if (approvalIds.size === 0) {
+        add("MISSING_APPROVAL_GATE", "A human approval gate is required before any code modification.");
+      }
+      for (const edge of definition.edges) {
+        if (edge.kind === "conditional" && edge.branchKey === "implement_spec" && !approvalIds.has(edge.target)) {
+          add("APPROVAL_GATE_BYPASS", `Route "implement_spec" must enter the human approval gate before code changes. It currently targets "${edge.target}".`, edge.target, edge.id);
+        }
+      }
+    }
+
+    if (guards && Array.isArray(guards)) {
+      const conditionNodes = definition.nodes.filter((node) => node.type === "condition");
+      for (const guard of guards) {
+        if (!guard.routeKey || typeof guard.routeKey !== "string" || !guard.routeKey.trim()) {
+          add("INVALID_RECURSION_GUARD", "Recursion guard must specify a valid routeKey.");
+        }
+        if (typeof guard.maxIterations !== "number" || !Number.isInteger(guard.maxIterations) || guard.maxIterations < 1 || guard.maxIterations > 10) {
+          add("INVALID_RECURSION_GUARD", `Recursion guard for route "${guard.routeKey ?? "unknown"}" has invalid maxIterations ${String(guard.maxIterations)}. Must be an integer between 1 and 10.`);
+        }
+        if (!guard.fallbackBranch || typeof guard.fallbackBranch !== "string" || !guard.fallbackBranch.trim()) {
+          add("INVALID_RECURSION_GUARD", `Recursion guard for route "${guard.routeKey ?? "unknown"}" must specify a fallbackBranch.`);
+          continue;
+        }
+        const fallbackBranch = guard.fallbackBranch.trim();
+        const fallbackDeclared = conditionNodes.some((node) => {
+          const branches = (node.config as { branches?: Array<{ key?: string }> }).branches ?? [];
+          return branches.some((branch) => branch.key === fallbackBranch);
+        });
+        if (!fallbackDeclared) {
+          add("FALLBACK_NOT_WIRED", `Recursion guard for route "${guard.routeKey}" declares fallbackBranch "${fallbackBranch}" that is not present on any condition node.`);
+          continue;
+        }
+        const fallbackEdge = definition.edges.find((edge) => edge.kind === "conditional" && edge.branchKey === fallbackBranch);
+        if (!fallbackEdge) {
+          add("FALLBACK_NOT_WIRED", `Recursion guard for route "${guard.routeKey}" fallbackBranch "${fallbackBranch}" has no conditional edge.`);
+          continue;
+        }
+        if (!canReachTerminalExit(definition, nodes, fallbackEdge.target)) {
+          add("FALLBACK_NOT_WIRED", `Recursion guard for route "${guard.routeKey}" fallbackBranch "${fallbackBranch}" must reach an output/exit node.`, fallbackEdge.target, fallbackEdge.id);
+        }
+      }
+    }
+  }
+
+  return issues;
+}
+
+function archetypeCycleNodes(definition: WorkflowDefinition, nodes: Map<string, WorkflowNode>): Set<string> {
+  const stack: string[] = [];
+  const visited = new Set<string>();
+  const cycleNodes = new Set<string>();
+  const walk = (id: string) => {
+    const cycleStart = stack.indexOf(id);
+    if (cycleStart >= 0) {
+      for (const nodeId of stack.slice(cycleStart)) cycleNodes.add(nodeId);
+      return;
+    }
+    if (visited.has(id)) return;
+    stack.push(id);
+    for (const edge of definition.edges.filter((candidate) => candidate.source === id && nodes.has(candidate.target))) walk(edge.target);
+    stack.pop();
+    visited.add(id);
+  };
+  for (const node of definition.nodes) walk(node.id);
+  return cycleNodes;
+}
+
+function collectCyclicBranchKeys(definition: WorkflowDefinition, cycleNodes: Set<string>): Set<string> {
+  const keys = new Set<string>();
+  if (cycleNodes.size === 0) return keys;
+  for (const edge of definition.edges) {
+    if (edge.kind !== "conditional" || !edge.branchKey) continue;
+    if (canReachAny(definition, edge.target, cycleNodes)) keys.add(edge.branchKey);
+  }
+  return keys;
+}
+
+function canReachAny(definition: WorkflowDefinition, startId: string, targets: Set<string>): boolean {
+  const visiting = new Set<string>();
+  const walk = (id: string): boolean => {
+    if (targets.has(id)) return true;
+    if (visiting.has(id)) return false;
+    visiting.add(id);
+    for (const edge of definition.edges.filter((candidate) => candidate.source === id)) {
+      if (walk(edge.target)) return true;
+    }
+    return false;
+  };
+  return walk(startId);
+}
+
+function canReachTerminalExit(definition: WorkflowDefinition, nodes: Map<string, WorkflowNode>, startId: string): boolean {
+  const visiting = new Set<string>();
+  const walk = (id: string): boolean => {
+    if (visiting.has(id)) return false;
+    const node = nodes.get(id);
+    if (!node) return false;
+    if (node.type === "output") return true;
+    visiting.add(id);
+    for (const edge of definition.edges.filter((candidate) => candidate.source === id)) {
+      if (walk(edge.target)) {
+        visiting.delete(id);
+        return true;
+      }
+    }
+    visiting.delete(id);
+    return false;
+  };
+  return walk(startId);
 }
 
 function nodeLabel(node: WorkflowDefinition["nodes"][number], agents: AgentRecord[], tools: ToolRecord[]): string {

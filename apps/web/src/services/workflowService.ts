@@ -1,5 +1,5 @@
 /** Studio persistence client. Entities live on the execution server; activeWorkflowId stays local. */
-import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, deserializeWorkflowDefinition, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, serializeWorkflowDefinition, uid, type AgentDiagnostics, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
+import { assertNoCredentials, createAgentRecord, createEmptyDefinition, createToolRecord, deserializeWorkflowDefinition, isWorkflowArchetypeValid, migrateAgentRecord, migrateToolRecord, migrateWorkflowToolNodes, nowIso, removeAgentNodes, removeToolNodes, serializeWorkflowDefinition, uid, type AgentDiagnostics, type AgentRecord, type ToolRecord, type WorkflowArchetypeCategory, type WorkflowDefinition } from "@multi-agent/types";
 import { publicAgent } from "../lib/publicAgent";
 import { executionApiBase } from "@/lib/orgRoute";
 import { ApiRequestError, requestJson } from "./requestJson";
@@ -148,14 +148,25 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
     async saveWorkflow(definition: WorkflowDefinition): Promise<WorkflowDefinition> {
       await ensureImported();
       assertNoCredentials(definition);
+      assertArchetypeConsistent(definition);
       const stamped = { ...definition, updatedAt: nowIso() };
       const saved = deserializeWorkflowDefinition(await request<unknown>(`/workflows/${encodeURIComponent(stamped.id)}`, { method: "PUT", body: JSON.stringify(serializeWorkflowDefinition(stamped)) }));
       setActiveWorkflowId(saved.id);
       return saved;
     },
-    async createWorkflow(name = "Untitled Workflow"): Promise<WorkflowDefinition> {
+    async createWorkflow(name = "Untitled Workflow", archetype?: WorkflowArchetypeCategory): Promise<WorkflowDefinition> {
       await ensureImported();
-      const created = await request<WorkflowDefinition>("/workflows", { method: "POST", body: JSON.stringify({ name }) });
+      const trimmed = name.trim();
+      if (trimmed.length < 1 || trimmed.length > 200) {
+        throw new Error("Workflow name must be 1-200 characters.");
+      }
+      if (archetype !== undefined && !isWorkflowArchetypeValid(archetype)) {
+        throw new Error("Workflow archetype must match archetypeConfig.category");
+      }
+      const created = await request<WorkflowDefinition>("/workflows", {
+        method: "POST",
+        body: JSON.stringify(archetype ? { name: trimmed, archetype } : { name: trimmed }),
+      });
       setActiveWorkflowId(created.id);
       return created;
     },
@@ -233,6 +244,22 @@ export function createWorkflowService(dependencies: WorkflowServiceDependencies 
 }
 
 export const workflowService = createWorkflowService();
+
+export function assertArchetypeConsistent(definition: {
+  archetype?: WorkflowDefinition["archetype"];
+  archetypeConfig?: WorkflowDefinition["archetypeConfig"];
+}): void {
+  const category = definition.archetypeConfig?.category;
+  if (definition.archetype !== undefined && category !== undefined && definition.archetype !== category) {
+    throw new Error("Workflow archetype must match archetypeConfig.category");
+  }
+  if (definition.archetype !== undefined && !isWorkflowArchetypeValid(definition.archetype)) {
+    throw new Error("Workflow archetype must match archetypeConfig.category");
+  }
+  if (category !== undefined && !isWorkflowArchetypeValid(category)) {
+    throw new Error("Workflow archetype must match archetypeConfig.category");
+  }
+}
 
 export function findUnreferencedAgentIds(definition: WorkflowDefinition, agents: AgentRecord[]): string[] {
   const referenced = new Set(definition.nodes.filter((node) => node.type === "agent").map((node) => (node.config as { agentId?: string }).agentId));

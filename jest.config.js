@@ -7,7 +7,8 @@ module.exports = {
   // Generated .js siblings can be stale; tests must exercise the TypeScript source.
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   roots: ["<rootDir>/src", "<rootDir>/tests"],
-  testMatch: ["**/*.test.ts", "**/*.spec.ts"],
+  testMatch: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts"],
+  moduleDirectories: ["node_modules", "<rootDir>/apps/web/node_modules"],
   transform: {
     "^.+\\.tsx?$": ["ts-jest", { tsconfig: "<rootDir>/tsconfig.test.json" }],
   },

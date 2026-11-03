@@ -10,14 +10,19 @@
     "jsx": "react-jsx",
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": ["jest", "node"],
+    "typeRoots": ["./node_modules/@types", "./apps/web/node_modules/@types"],
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
       "@/*": ["apps/web/src/*"],
       "@multi-agent/types": ["packages/types/src/index.ts"],
       "next-auth": ["apps/web/node_modules/next-auth"],
-      "next-auth/*": ["apps/web/node_modules/next-auth/*"]
+      "next-auth/*": ["apps/web/node_modules/next-auth/*"],
+      "@tanstack/react-query": ["apps/web/node_modules/@tanstack/react-query/build/legacy/index.d.ts"],
+      "@xyflow/react": ["apps/web/node_modules/@xyflow/react/dist/esm/index.d.ts"],
+      "next/navigation": ["apps/web/node_modules/next/navigation.d.ts"],
+      "lucide-react": ["apps/web/node_modules/lucide-react/dist/lucide-react.d.ts"]
     }
   },
-  "include": ["tests/**/*.ts", "src/**/*.test.ts"]
+  "include": ["tests/**/*.ts", "tests/**/*.tsx", "src/**/*.test.ts"]
 }

@@ -1,9 +1,9 @@
-import { assertNoCredentials, createEmptyDefinition, deserializeWorkflowDefinition, nowIso, type WorkflowDefinition } from "@multi-agent/types";
+import { assertNoCredentials, createEmptyDefinition, createHierarchicalSupervisorConfig, createLinearPipelineConfig, deserializeWorkflowDefinition, isWorkflowArchetypeValid, nowIso, type WorkflowArchetypeCategory, type WorkflowDefinition } from "@multi-agent/types";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 import { ApiError, isOwnershipError } from "../shared/http";
 import { requireResource } from "./resource";
-import { SAVE_BLOCKING_ISSUE_CODES, validateWorkflow } from "../../compiler/validation";
+import { SAVE_BLOCKING_ISSUE_CODES, archetypeConflictMessage, validateWorkflow } from "../../compiler/validation";
 import { runtimeGuardrailsFromEnvironment } from "../../runtime/guardrails";
 
 /**
@@ -30,10 +30,16 @@ export class WorkflowService {
       throw error;
     }
   }
-  async create(body: { name?: string; workflow?: WorkflowDefinition }, principal: RequestPrincipal) {
+  async create(body: { name?: string; archetype?: WorkflowArchetypeCategory; workflow?: WorkflowDefinition }, principal: RequestPrincipal) {
     let definition: WorkflowDefinition;
-    try { definition = body.workflow ? deserializeWorkflowDefinition(body.workflow) : createEmptyDefinition(body.name ?? "Untitled Workflow"); }
+    try { definition = body.workflow ? deserializeWorkflowDefinition(body.workflow) : createEmptyDefinition(normalizeWorkflowName(body.name)); }
     catch (error) { throw new ApiError(400, error instanceof Error ? error.message : "Invalid workflow definition"); }
+    if (!body.workflow && body.archetype !== undefined) {
+      if (!isWorkflowArchetypeValid(body.archetype)) {
+        throw new ApiError(400, "Workflow archetype must match archetypeConfig.category");
+      }
+      definition = stampWorkflowArchetype(definition, body.archetype);
+    }
     assertNoCredentials(definition);
     await this.assertSaveable(definition, principal);
     return this.store.saveWorkflow({ ...definition, ownerId: principal.userId, tenantId: principal.tenantId }, principal);
@@ -50,6 +56,8 @@ export class WorkflowService {
       this.store.listAgents(principal),
       this.store.listTools(principal),
     ]);
+    const conflict = archetypeConflictMessage(definition);
+    if (conflict) throw new ApiError(400, conflict);
     const issues = validateWorkflow(definition, agents, runtimeGuardrailsFromEnvironment(), tools);
     const blocking = issues.filter((issue) => issue.level === "error" && SAVE_BLOCKING_ISSUE_CODES.has(issue.code));
     if (blocking.length) {
@@ -60,4 +68,32 @@ export class WorkflowService {
       );
     }
   }
+}
+
+function normalizeWorkflowName(name: string | undefined): string {
+  if (name === undefined) return "Untitled Workflow";
+  const trimmed = name.trim();
+  if (trimmed.length < 1 || trimmed.length > 200) {
+    throw new ApiError(400, "Workflow name must be 1-200 characters.");
+  }
+  return trimmed;
+}
+
+function stampWorkflowArchetype(definition: WorkflowDefinition, archetype: WorkflowArchetypeCategory): WorkflowDefinition {
+  if (archetype === "hierarchical-supervisor") {
+    return {
+      ...definition,
+      archetype,
+      archetypeConfig: createHierarchicalSupervisorConfig(undefined, {
+        recursionGuards: [],
+        maxExecutionSteps: 1000,
+        humanApprovalGateRequired: true,
+      }),
+    };
+  }
+  return {
+    ...definition,
+    archetype: "linear-pipeline",
+    archetypeConfig: createLinearPipelineConfig(),
+  };
 }

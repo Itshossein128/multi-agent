@@ -124,3 +124,57 @@ export function isLinearPipeline(
   if (typeof archetype === "string") return archetype === "linear-pipeline";
   return archetype.category === "linear-pipeline";
 }
+
+/**
+ * Display metadata for archetype selectors, badges, and creation dialogs.
+ */
+export interface ArchetypeOptionDescriptor {
+  id: WorkflowArchetypeCategory;
+  label: string;
+  badgeClass: string;
+  badgeBorderClass: string;
+  description: string;
+  executionModel: string;
+  topologyConstraint: string;
+}
+
+export const ARCHETYPE_DESCRIPTORS: Record<WorkflowArchetypeCategory, ArchetypeOptionDescriptor> = {
+  "linear-pipeline": {
+    id: "linear-pipeline",
+    label: "Linear Pipeline",
+    badgeClass: "border-blue-500/40 bg-blue-950/60 text-blue-300",
+    badgeBorderClass: "border-blue-500/40",
+    description: "Sequential, deterministic multi-agent pipeline executing an acyclic directed graph with discrete stage handoffs.",
+    executionModel: "Acyclic sequential batch execution",
+    topologyConstraint: "Directed acyclic graph (DAG) — feedback cycles are strictly prohibited.",
+  },
+  "hierarchical-supervisor": {
+    id: "hierarchical-supervisor",
+    label: "Hierarchical Supervisor",
+    badgeClass: "border-purple-500/40 bg-purple-950/60 text-purple-300",
+    badgeBorderClass: "border-purple-500/40",
+    description: "Hub-and-spoke multi-agent coordination architecture with dynamic condition routing, feedback remediation loops, and recursion guardrails.",
+    executionModel: "Cyclic hub-and-spoke coordination with stateful routing",
+    topologyConstraint: "Cyclic routes permitted when protected by monitored recursion guards.",
+  },
+};
+
+export function getArchetypeDescriptor(archetype: WorkflowArchetypeCategory): ArchetypeOptionDescriptor {
+  return ARCHETYPE_DESCRIPTORS[archetype];
+}
+
+/** True when the value is one of the persisted archetype categories. */
+export function isWorkflowArchetypeValid(value: unknown): value is WorkflowArchetypeCategory {
+  return value === "linear-pipeline" || value === "hierarchical-supervisor";
+}
+
+/**
+ * Untyped legacy workflows declare neither `archetype` nor `archetypeConfig.category`.
+ * They display as Linear Pipeline and bypass strict cycle enforcement until promoted.
+ */
+export function isLegacyUntypedWorkflow(definition: {
+  archetype?: WorkflowArchetypeCategory;
+  archetypeConfig?: Pick<WorkflowArchetypeConfig, "category"> | null;
+}): boolean {
+  return definition.archetype === undefined && definition.archetypeConfig?.category === undefined;
+}

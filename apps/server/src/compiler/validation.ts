@@ -23,9 +23,17 @@ export const SAVE_BLOCKING_ISSUE_CODES: ReadonlySet<string> = new Set([
   "INVALID_APPROVAL_TYPE", "INVALID_APPROVAL_TIMEOUT",
   "INVALID_CONTRACT_SCHEMA", "INVALID_CONTRACT_VERSION", "UNSUPPORTED_CONTRACT_VERSION",
   "UNSUPPORTED_SCHEMA_KEYWORD", "INVALID_PAYLOAD_BOUNDS", "INVALID_CONTRACT_EVIDENCE",
-  "INVALID_ARCHETYPE", "LINEAR_PIPELINE_CYCLE_FORBIDDEN", "MISSING_SUPERVISOR_HUB",
-  "INVALID_SUPERVISOR_HUB", "MISSING_ROUTING_NODES", "UNGUARDED_CYCLE", "INVALID_RECURSION_GUARD",
-  "FALLBACK_NOT_WIRED", "MISSING_APPROVAL_GATE", "APPROVAL_GATE_BYPASS",
+  "INVALID_ARCHETYPE", "LINEAR_PIPELINE_CYCLE_FORBIDDEN",
+]);
+
+/**
+ * Archetype completeness issues block execution (Run / compile) but remain
+ * saveable drafts so operators can persist an in-progress supervisor graph.
+ * Conflicting declarations and explicit linear cycles stay in SAVE_BLOCKING_ISSUE_CODES.
+ */
+export const ARCHETYPE_DRAFT_ISSUE_CODES: ReadonlySet<string> = new Set([
+  "MISSING_SUPERVISOR_HUB", "INVALID_SUPERVISOR_HUB", "MISSING_ROUTING_NODES", "UNGUARDED_CYCLE",
+  "INVALID_RECURSION_GUARD", "FALLBACK_NOT_WIRED", "MISSING_APPROVAL_GATE", "APPROVAL_GATE_BYPASS",
 ]);
 
 export interface WorkflowIssue {
@@ -156,21 +164,33 @@ function detectCycles(
   nodes: Map<string, WorkflowNode>,
   add: (level: WorkflowIssue["level"], code: string, message: string, nodeId?: string, edgeId?: string) => void
 ): Set<string> {
-  const visiting = new Set<string>(), visited = new Set<string>();
+  const stack: string[] = [];
+  const visited = new Set<string>();
   const cycleNodes = new Set<string>();
   const walk = (id: string) => {
-    if (visiting.has(id)) {
-      cycleNodes.add(id);
+    const cycleStart = stack.indexOf(id);
+    if (cycleStart >= 0) {
+      for (const nodeId of stack.slice(cycleStart)) cycleNodes.add(nodeId);
       add("warning", "CYCLE_REQUIRES_GUARDRAIL", "Cycle will be bounded by the server recursion limit.", id);
       return;
     }
     if (visited.has(id)) return;
-    visiting.add(id);
+    stack.push(id);
     for (const edge of definition.edges.filter(candidate => candidate.source === id && nodes.has(candidate.target))) walk(edge.target);
-    visiting.delete(id); visited.add(id);
+    stack.pop();
+    visited.add(id);
   };
   for (const node of definition.nodes) walk(node.id);
   return cycleNodes;
+}
+
+/** Exact client/server message when the two archetype declarations disagree. */
+export function archetypeConflictMessage(definition: { archetype?: string; archetypeConfig?: { category?: string } }): string | null {
+  const category = definition.archetypeConfig?.category;
+  if (definition.archetype !== undefined && category !== undefined && definition.archetype !== category) {
+    return "Workflow archetype must match archetypeConfig.category";
+  }
+  return null;
 }
 
 function validateArchetype(

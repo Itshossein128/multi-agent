@@ -176,6 +176,7 @@ export function EditorToolbar() {
         </div>
         <Button
           size="sm"
+          title={hasErrors ? "Resolve validation errors before running" : "Run workflow"}
           disabled={hasErrors || isStarting}
           onClick={async () => {
             let input: Record<string, unknown>;

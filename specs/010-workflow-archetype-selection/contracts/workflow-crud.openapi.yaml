@@ -1,0 +1,211 @@
+openapi: 3.1.0
+info:
+  title: Agent Studio Workflow Management API (Archetype Extensions)
+  version: 1.1.0
+  description: Authoritative CRUD and persistence endpoints for workflow definitions supporting explicit archetype declarations.
+paths:
+  /workflows:
+    post:
+      summary: Create a new workflow
+      description: Creates a new workflow definition with an explicit archetype and initial configuration.
+      operationId: createWorkflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  example: "Security Remediation Pipeline"
+                archetype:
+                  type: string
+                  enum: ["linear-pipeline", "hierarchical-supervisor"]
+                  default: "linear-pipeline"
+                  description: "Explicit workflow archetype classification."
+                workflow:
+                  $ref: "#/components/schemas/WorkflowDefinition"
+      responses:
+        "201":
+          description: Workflow created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "400":
+          description: Validation failure or invalid archetype declaration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /workflows/{id}:
+    get:
+      summary: Get workflow definition
+      operationId: getWorkflow
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workflow definition retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "404":
+          description: Workflow not found.
+
+    put:
+      summary: Save workflow definition
+      description: Validates and persists updates to a workflow definition, enforcing archetype integrity constraints.
+      operationId: saveWorkflow
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowDefinition"
+      responses:
+        "200":
+          description: Workflow saved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowDefinition"
+        "400":
+          description: Server validation rejected definition (blocking archetype or structural issues).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Workflow not found or ownership mismatch.
+
+components:
+  schemas:
+    WorkflowArchetypeCategory:
+      type: string
+      enum:
+        - linear-pipeline
+        - hierarchical-supervisor
+      default: linear-pipeline
+
+    WorkflowRecursionGuardConfig:
+      type: object
+      required:
+        - routeKey
+        - maxIterations
+        - fallbackBranch
+      properties:
+        routeKey:
+          type: string
+          description: Monitored cyclical feedback route identifier.
+          example: "qa_verify->implement_spec"
+        maxIterations:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+          description: Maximum allowed feedback loop iterations.
+        fallbackBranch:
+          type: string
+          description: Condition branch followed when recursion ceiling is reached.
+          example: "loop_limit_exceeded"
+
+    WorkflowArchetypeConfig:
+      type: object
+      required:
+        - category
+      properties:
+        category:
+          $ref: "#/components/schemas/WorkflowArchetypeCategory"
+        supervisorHubNodeId:
+          type: string
+          description: Identifier of the designated supervisor hub agent node.
+          example: "agent-supervisor-hub"
+        maxExecutionSteps:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          default: 1000
+        recursionGuards:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowRecursionGuardConfig"
+        humanApprovalGateRequired:
+          type: boolean
+          default: true
+
+    WorkflowDefinition:
+      type: object
+      required:
+        - id
+        - name
+        - nodes
+        - edges
+        - updatedAt
+      properties:
+        id:
+          type: string
+          pattern: "^[a-zA-Z0-9_-]+$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        archetype:
+          $ref: "#/components/schemas/WorkflowArchetypeCategory"
+        archetypeConfig:
+          $ref: "#/components/schemas/WorkflowArchetypeConfig"
+        nodes:
+          type: array
+          items:
+            type: object
+        edges:
+          type: array
+          items:
+            type: object
+        tenantId:
+          type: string
+        ownerId:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    ApiError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              level:
+                type: string
+              message:
+                type: string
+              nodeId:
+                type: string
+              edgeId:
+                type: string
