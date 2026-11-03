@@ -6,6 +6,10 @@ export interface ToolExecutionInput {
   signal?: AbortSignal;
   runId?: string;
   credentialPrincipal?: { tenantId: string; principalId: string };
+  /** Calling agent id used for studio_task_tool action authorization. */
+  agentId?: string;
+  /** Tool ids the calling agent is allowed to invoke. */
+  authorizedToolIds?: readonly string[];
   idempotencyKey?: string;
   approvalGranted?: boolean;
 }
@@ -68,7 +72,8 @@ export type StudioTaskToolErrorCode =
   | "TENANT_ISOLATION_VIOLATION"
   | "INVALID_INPUT"
   | "DEPENDENCY_BLOCKED"
-  | "BOARD_CONFLICT";
+  | "BOARD_CONFLICT"
+  | "UNAUTHORIZED_ACTION";
 
 export interface StudioTaskToolSuccessResponse<T = unknown> {
   [key: string]: unknown;

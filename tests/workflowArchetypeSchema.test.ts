@@ -60,6 +60,7 @@ describe("Workflow Archetype Schema and Contract Validation", () => {
       branches: [
         { key: "implement_spec", label: "Implement Spec" },
         { key: "complete", label: "Complete" },
+        { key: "loop_limit_exceeded", label: "Loop Limit Exceeded" },
       ],
     };
     const worker = createNode("agent", { x: 600, y: 0 }, { agentId: workerAgent.id });
@@ -83,6 +84,7 @@ describe("Workflow Archetype Schema and Contract Validation", () => {
         createEdge({ source: condition.id, target: worker.id, kind: "conditional", branchKey: "implement_spec" }),
         createEdge({ source: worker.id, target: supervisor.id }), // cycle back to supervisor
         createEdge({ source: condition.id, target: output.id, kind: "conditional", branchKey: "complete" }),
+        createEdge({ source: condition.id, target: output.id, kind: "conditional", branchKey: "loop_limit_exceeded" }),
       ],
       updatedAt: new Date().toISOString(),
     };
@@ -216,6 +218,47 @@ describe("Workflow Archetype Schema and Contract Validation", () => {
       };
       const issues = validateWorkflow(workflow, [testAgent, workerAgent]);
       expect(issues.some((i) => i.code === "UNGUARDED_CYCLE")).toBe(true);
+    });
+
+    test("hierarchical-supervisor with cycles and only irrelevant guards produces UNGUARDED_CYCLE", () => {
+      const workflow = createValidSupervisorWorkflow();
+      workflow.archetypeConfig = {
+        category: "hierarchical-supervisor",
+        supervisorHubNodeId: "agent-supervisor",
+        recursionGuards: [
+          createRecursionGuard("unrelated_route->other_branch", "loop_limit_exceeded", 3),
+        ],
+      };
+      const issues = validateWorkflow(workflow, [testAgent, workerAgent]);
+      expect(issues.some((i) => i.code === "UNGUARDED_CYCLE")).toBe(true);
+    });
+
+    test("hierarchical-supervisor rejects fallbackBranch that is not wired to an exit", () => {
+      const workflow = createValidSupervisorWorkflow();
+      workflow.archetypeConfig = {
+        category: "hierarchical-supervisor",
+        supervisorHubNodeId: "agent-supervisor",
+        recursionGuards: [
+          createRecursionGuard("qa_verify->implement_spec", "missing_fallback", 3),
+        ],
+      };
+      const issues = validateWorkflow(workflow, [testAgent, workerAgent]);
+      expect(issues.some((i) => i.code === "FALLBACK_NOT_WIRED")).toBe(true);
+    });
+
+    test("rejects conflicting archetype declarations", () => {
+      const workflow = createValidSupervisorWorkflow();
+      workflow.archetype = "linear-pipeline";
+
+      expect(() => compileWorkflow(workflow, [testAgent, workerAgent]))
+        .toThrow(/Workflow archetype must match archetypeConfig.category/);
+    });
+
+    test("compiles supervisor workflows declared only by config category", () => {
+      const workflow = createValidSupervisorWorkflow();
+      delete workflow.archetype;
+
+      expect(() => compileWorkflow(workflow, [testAgent, workerAgent])).not.toThrow();
     });
 
     test("hierarchical-supervisor with valid config compiles successfully", () => {

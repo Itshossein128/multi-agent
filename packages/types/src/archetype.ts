@@ -10,6 +10,13 @@
 
 export type WorkflowArchetypeCategory = "linear-pipeline" | "hierarchical-supervisor";
 
+export function resolveWorkflowArchetype(definition: {
+  archetype?: WorkflowArchetypeCategory;
+  archetypeConfig?: WorkflowArchetypeConfig;
+}): WorkflowArchetypeCategory {
+  return definition.archetype ?? definition.archetypeConfig?.category ?? "linear-pipeline";
+}
+
 export const DEFAULT_MAX_RECURSION_ITERATIONS = 3;
 export const MIN_RECURSION_ITERATIONS = 1;
 export const MAX_RECURSION_ITERATIONS = 10;

@@ -105,6 +105,8 @@ export interface OrganizationMembership {
   createdAt: string;
   updatedAt: string;
   removedAt?: string | null;
+  /** Optional studio metadata, including approvalRoles for Human Approval Gate mapping. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface OrganizationAuditEntry {

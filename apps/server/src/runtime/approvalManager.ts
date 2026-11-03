@@ -50,7 +50,16 @@ export class ApprovalManager {
 
   /** Record an interrupt item as a pending approval request. */
   handleApprovalRequested(runId: string, item: { id: string; value: unknown }) {
-    const value = item.value as { nodeId: string; message: string; approvalType: "manual" | "timeout" | "required"; timeoutSeconds: number; onTimeout?: string; context?: unknown };
+    const value = item.value as {
+      nodeId: string;
+      message: string;
+      approvalType: "manual" | "timeout" | "required";
+      timeoutSeconds: number;
+      onTimeout?: string;
+      context?: unknown;
+      requiredRoles?: unknown;
+      allowedDecisions?: unknown;
+    };
     const stamp = nowIso();
     const request: ApprovalRequest = {
       id: item.id,
@@ -60,7 +69,13 @@ export class ApprovalManager {
       message: value.message,
       requestedAt: stamp,
       context: value.context && typeof value.context === "object" ? value.context as Record<string, unknown> : undefined,
-      metadata: {},
+      metadata: {
+        ...(Array.isArray(value.requiredRoles) ? { requiredRoles: value.requiredRoles } : {}),
+        ...(Array.isArray(value.allowedDecisions) ? { allowedDecisions: value.allowedDecisions } : {}),
+        ...(value.onTimeout ? { onTimeout: value.onTimeout } : {}),
+        timeoutSeconds: value.timeoutSeconds,
+        approvalType: value.approvalType,
+      },
     };
     this.deps.store.addApproval(runId, request, value.timeoutSeconds);
     // Structured needs-human result survives the pause in persisted run state.

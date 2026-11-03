@@ -7,6 +7,7 @@ import {
   type TaskCommentAuthorType,
   type TaskStatus,
 } from "@multi-agent/types";
+import { asyncLocalOrganizationScopeRunner, type OrganizationScopeRunner } from "../studio/infrastructure/organizationJobScope";
 import type { StudioPrincipal, StudioStore, StudioTask } from "../studio/contracts";
 import { InMemoryStudioStore } from "../studio/infrastructure/in-memory-studio-store";
 import type {
@@ -60,10 +61,27 @@ export class InvalidStatusTransitionError extends StudioTaskToolError {
  * Programmatic tool executor exposing Studio Task Kanban board operations
  * to the Lead Orchestrator and supervisor agents under strict tenant isolation.
  */
+export const STUDIO_TASK_TOOL_NAME = "studio_task_tool";
+export const DEFAULT_STUDIO_TASK_TOOL_AUTHORIZED_AGENT_IDS: readonly string[] = [
+  "agent-lead-orchestrator",
+  "spec-delivery-lead-orchestrator",
+];
+
+export interface StudioTaskToolAuthorizationOptions {
+  /** Explicit allow-list of agent/principal ids permitted to call the tool. */
+  allowedAgentIds?: readonly string[];
+  /** When true (default), callers must be authorized via allow-list or agent tool grants. */
+  enforceAuthorization?: boolean;
+}
+
 export class StudioTaskToolExecutor implements ToolExecutor {
   private static defaultStore: StudioStore | null = null;
 
-  constructor(private readonly store?: StudioStore | (() => StudioStore)) {}
+  constructor(
+    private readonly store?: StudioStore | (() => StudioStore),
+    private readonly scope: OrganizationScopeRunner = asyncLocalOrganizationScopeRunner,
+    private readonly authorization: StudioTaskToolAuthorizationOptions = {},
+  ) {}
 
   public static setDefaultStore(store: StudioStore | null): void {
     StudioTaskToolExecutor.defaultStore = store;
@@ -80,6 +98,34 @@ export class StudioTaskToolExecutor implements ToolExecutor {
       StudioTaskToolExecutor.defaultStore = new InMemoryStudioStore();
     }
     return StudioTaskToolExecutor.defaultStore;
+  }
+
+  private authorizeCaller(
+    action: StudioTaskToolAction,
+    callerId: string,
+    authorizedToolIds?: readonly string[],
+  ): { code: StudioTaskToolErrorCode; message: string; details?: unknown } | null {
+    const enforce = this.authorization.enforceAuthorization === true
+      || Array.isArray(authorizedToolIds)
+      || Array.isArray(this.authorization.allowedAgentIds);
+    if (!enforce) {
+      return null;
+    }
+
+    const allowedAgentIds = this.authorization.allowedAgentIds ?? DEFAULT_STUDIO_TASK_TOOL_AUTHORIZED_AGENT_IDS;
+    const grantedByTools = Array.isArray(authorizedToolIds)
+      && authorizedToolIds.some((id) => id === STUDIO_TASK_TOOL_NAME);
+    const grantedByAllowList = Boolean(callerId) && allowedAgentIds.includes(callerId);
+
+    if (grantedByTools || grantedByAllowList) {
+      return null;
+    }
+
+    return {
+      code: "UNAUTHORIZED_ACTION",
+      message: `Agent "${callerId || "unknown"}" is not authorized to invoke studio_task_tool action "${action}".`,
+      details: { action, callerId: callerId || null, allowedAgentIds },
+    };
   }
 
   async execute(executionInput: ToolExecutionInput): Promise<StudioTaskToolOutput> {
@@ -119,9 +165,20 @@ export class StudioTaskToolExecutor implements ToolExecutor {
       };
     }
 
+    const callerId = (executionInput.agentId ?? executionInput.credentialPrincipal?.principalId ?? "").trim();
+    const authError = this.authorizeCaller(action, callerId, executionInput.authorizedToolIds);
+    if (authError) {
+      return {
+        success: false,
+        action,
+        error: authError,
+        timestamp: now,
+      };
+    }
+
     const principal: StudioPrincipal = {
       tenantId,
-      userId: executionInput.credentialPrincipal?.principalId || "system",
+      userId: callerId || "system",
       principalKind: "service",
     };
 
@@ -133,26 +190,28 @@ export class StudioTaskToolExecutor implements ToolExecutor {
     ) as Record<string, unknown>;
 
     try {
-      switch (action) {
-        case "query_tasks":
-          return await this.handleQueryTasks(params as StudioTaskQueryInput, principal, store, now);
-        case "update_task_status":
-          return await this.handleUpdateTaskStatus(params as unknown as StudioTaskUpdateStatusInput, principal, store, now);
-        case "assign_task":
-          return await this.handleAssignTask(params as unknown as StudioTaskAssignInput, principal, store, now);
-        case "add_task_comment":
-          return await this.handleAddTaskComment(params as unknown as StudioTaskAddCommentInput, principal, store, now);
-        default:
-          return {
-            success: false,
-            action,
-            error: {
-              code: "INVALID_INPUT",
-              message: `Unsupported action: "${action}"`,
-            },
-            timestamp: now,
-          };
-      }
+      return await this.scope({ organizationId: tenantId, source: "studio_task_tool" }, async (): Promise<StudioTaskToolOutput> => {
+        switch (action) {
+          case "query_tasks":
+            return await this.handleQueryTasks(params as StudioTaskQueryInput, principal, store, now);
+          case "update_task_status":
+            return await this.handleUpdateTaskStatus(params as unknown as StudioTaskUpdateStatusInput, principal, store, now);
+          case "assign_task":
+            return await this.handleAssignTask(params as unknown as StudioTaskAssignInput, principal, store, now);
+          case "add_task_comment":
+            return await this.handleAddTaskComment(params as unknown as StudioTaskAddCommentInput, principal, store, now);
+          default:
+            return {
+              success: false,
+              action,
+              error: {
+                code: "INVALID_INPUT",
+                message: `Unsupported action: "${action}"`,
+              },
+              timestamp: now,
+            };
+        }
+      });
     } catch (err: unknown) {
       if (err instanceof StudioTaskToolError) {
         return {

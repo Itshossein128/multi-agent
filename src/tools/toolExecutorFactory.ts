@@ -7,6 +7,7 @@ import { DatabaseToolExecutor } from "./databaseToolExecutor";
 import { SearchToolExecutor } from "./searchToolExecutor";
 import { McpToolExecutor } from "./mcpToolExecutor";
 import { StudioTaskToolExecutor } from "./studioTaskToolExecutor";
+import type { OrganizationScopeRunner } from "../studio/infrastructure/organizationJobScope";
 import type { StudioStore } from "../studio/contracts";
 import type { CredentialGateway } from "../security/credentialGateway";
 import { credentialGatewayFromEnvironment } from "../security/credentialGateway";
@@ -15,6 +16,7 @@ export class ToolExecutorFactory {
   constructor(
     private readonly gateway?: CredentialGateway,
     private readonly studioStore?: StudioStore,
+    private readonly studioScope?: OrganizationScopeRunner,
   ) {}
 
   create(
@@ -23,7 +25,7 @@ export class ToolExecutorFactory {
   ): ToolExecutor {
     const toolName = typeof toolNameOrRecord === "string" ? toolNameOrRecord : toolNameOrRecord?.name;
     if (category === "studio_task_tool" || toolName === "studio_task_tool") {
-      return new StudioTaskToolExecutor(this.studioStore);
+      return this.createStudioTaskToolExecutor();
     }
     if (category === "function") return new FunctionToolExecutor();
     if (category === "http") return new HttpToolExecutor();
@@ -34,7 +36,9 @@ export class ToolExecutorFactory {
   }
 
   createStudioTaskToolExecutor(): StudioTaskToolExecutor {
-    return new StudioTaskToolExecutor(this.studioStore);
+    return new StudioTaskToolExecutor(this.studioStore, this.studioScope, {
+      enforceAuthorization: true,
+    });
   }
 }
 

@@ -25,6 +25,13 @@ export {
   TenantIsolationViolationError,
   TaskNotFoundError,
   InvalidStatusTransitionError,
+  STUDIO_TASK_TOOL_NAME,
+  DEFAULT_STUDIO_TASK_TOOL_AUTHORIZED_AGENT_IDS,
+  type StudioTaskToolAuthorizationOptions,
 } from "./studioTaskToolExecutor";
+export {
+  invokeLeadOrchestratorBoardAction,
+  createAuthorizedStudioTaskToolExecutor,
+} from "./leadOrchestratorBoardBridge";
 export { NotImplementedToolExecutor, UnsupportedToolCategoryError } from "./notImplementedToolExecutor";
 export { EnvironmentCredentialGateway, HttpCredentialGateway, credentialGatewayFromEnvironment, type CredentialGateway } from "../security/credentialGateway";

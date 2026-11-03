@@ -4,6 +4,11 @@ import type { WorkerLaunchSecrets } from "../agents/runtime/workerCredentials";
 import { SandboxExecutionBarrier } from "./sandboxExecutionBarrier";
 import { SandboxBoundaryViolationError, SandboxHostProtectionViolationError } from "./types";
 
+export interface OsProcessIsolationOptions {
+  /** When true (default), Node CLI processes receive --permission FS write jail. */
+  enableNodePermissionJail?: boolean;
+}
+
 /**
  * Validates and confines a WorkerSpec so subprocess execution cannot escape
  * the designated sandbox root or access forbidden host paths.
@@ -11,6 +16,7 @@ import { SandboxBoundaryViolationError, SandboxHostProtectionViolationError } fr
 export function applySandboxWorkerBarrier(
   spec: WorkerSpec,
   barrier: SandboxExecutionBarrier = new SandboxExecutionBarrier(),
+  isolation: OsProcessIsolationOptions = {},
 ): WorkerSpec {
   const cwd = spec.cwd ? path.resolve(spec.cwd) : barrier.canonicalSandboxRoot;
 
@@ -34,9 +40,48 @@ export function applySandboxWorkerBarrier(
     }
   }
 
-  return {
+  const confined: WorkerSpec = {
     ...spec,
     cwd,
+  };
+
+  return applyOsProcessIsolation(confined, barrier, isolation);
+}
+
+/**
+ * Operating-system isolation boundary for 009 CLI processes.
+ * Node executables are launched under the permission model with write access
+ * limited to the sandbox root so a real subprocess cannot create files outside.
+ */
+export function applyOsProcessIsolation(
+  spec: WorkerSpec,
+  barrier: SandboxExecutionBarrier = new SandboxExecutionBarrier(),
+  isolation: OsProcessIsolationOptions = {},
+): WorkerSpec {
+  if (isolation.enableNodePermissionJail === false) {
+    return spec;
+  }
+
+  const executableName = path.basename(spec.executable).toLowerCase();
+  const isNode = executableName === "node" || executableName === "node.exe";
+  if (!isNode) {
+    return spec;
+  }
+
+  const sandboxRoot = barrier.canonicalSandboxRoot;
+  const existingArgs = Array.isArray(spec.args) ? [...spec.args] : [];
+  if (existingArgs.includes("--permission")) {
+    return spec;
+  }
+
+  return {
+    ...spec,
+    args: [
+      "--permission",
+      `--allow-fs-write=${sandboxRoot}`,
+      "--allow-fs-read=*",
+      ...existingArgs,
+    ],
   };
 }
 

@@ -307,7 +307,7 @@ describe("dualModeOrchestration end-to-end integration test suite", () => {
         workflow,
         agents: allAgents,
         input: exhaustedEnvelope as unknown as Record<string, unknown>,
-      });
+      }, undefined, { tenantId: "org-building-gap", userId: "operator" });
 
       await waitFor(() => store.get(runId)?.run.status === "completed" || store.get(runId)?.run.status === "failed");
 

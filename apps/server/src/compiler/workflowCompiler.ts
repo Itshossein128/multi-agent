@@ -11,6 +11,7 @@ import {
   migrateNodeContract,
   parseResultEnvelope,
   resolveBranchRoute,
+  resolveWorkflowArchetype,
   validateAgainstSchema,
   type AgentRecord,
   type ApprovalNodeConfig,
@@ -65,6 +66,7 @@ export interface RuntimeState {
   loopIterations?: Record<string, number>;
   /** Sticky once a human approval gate records `approved` for this run. */
   humanApproval?: "approved" | "needs_clarification";
+  approvedGateNodeId?: string;
 }
 
 const State = Annotation.Root({
@@ -100,6 +102,7 @@ const State = Annotation.Root({
     reducer: (current, next) => ({ ...current, ...next }),
     default: () => ({}),
   }),
+  approvedGateNodeId: Annotation<string>(),
   humanApproval: Annotation<"approved" | "needs_clarification" | undefined>({
     reducer: (current, next) => next ?? current,
     default: () => undefined,
@@ -183,7 +186,7 @@ export function compileWorkflow(
   }
 
   // Ensure backward compatibility: workflows without an archetype block cleanly default to linear-pipeline
-  const archetype = definition.archetype ?? definition.archetypeConfig?.category ?? "linear-pipeline";
+  const archetype = resolveWorkflowArchetype(definition);
   const normalizedDefinition: WorkflowDefinition = {
     ...definition,
     archetype,
@@ -244,7 +247,31 @@ export function compileWorkflow(
             if (!tool) throw new UnsupportedPhase4NodeError(node.id, node);
             emit("tool.started", { toolId: tool.id, name: tool.name, impact: tool.impact });
             try {
-              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), signal, { runId, credentialPrincipal: options.credentialPrincipal, idempotencyKey: `${runId}:${node.id}` });
+              const toolConfig = node.config as { toolId?: string | null; agentId?: string | null };
+              const agentsWithTool = agents.filter((candidate) =>
+                Array.isArray(candidate.tools)
+                && candidate.tools.some((toolId) => toolId === tool.id || toolId === tool.name),
+              );
+              const preferredAgentId = toolConfig.agentId
+                ?? (options.credentialPrincipal?.principalId
+                  && agentsWithTool.some((candidate) => candidate.id === options.credentialPrincipal?.principalId)
+                  ? options.credentialPrincipal.principalId
+                  : agentsWithTool[0]?.id);
+              const callingAgent = preferredAgentId
+                ? agentsWithTool.find((candidate) => candidate.id === preferredAgentId) ?? agentById.get(preferredAgentId)
+                : undefined;
+              const value = await toolRuntime.execute(tool, asToolInput(nodeInput ?? state.input), signal, {
+                runId,
+                credentialPrincipal: options.credentialPrincipal?.principalId
+                  ? options.credentialPrincipal
+                  : (callingAgent && options.credentialPrincipal?.tenantId
+                    ? { tenantId: options.credentialPrincipal.tenantId, principalId: callingAgent.id }
+                    : options.credentialPrincipal),
+                agentId: callingAgent?.id ?? preferredAgentId,
+                authorizedToolIds: callingAgent?.tools,
+                idempotencyKey: `${runId}:${node.id}`,
+                approvalGranted: true,
+              });
               // Boundary 2: validate and bound the tool's output before it
               // enters workflow state or any event stream.
               if (contract?.outputSchema) {
@@ -262,10 +289,8 @@ export function compileWorkflow(
               throw error;
             }
           } else if (node.type === "approval") {
-            if (state.humanApproval === "approved") {
-              result = { branch: "approved", lastValue: state.lastValue, humanApproval: "approved" };
-            } else if (state.branch === "approved" || state.branch === "rejected" || state.branch === "needs_clarification") {
-              result = { branch: state.branch, lastValue: state.lastValue, ...(state.humanApproval ? { humanApproval: state.humanApproval } : {}) };
+            if (state.approvedGateNodeId === node.id && state.humanApproval === "approved") {
+              result = { branch: "approved", lastValue: state.lastValue };
             } else {
               const config = node.config as ApprovalNodeConfig;
               const effectiveRunId = options.runId ?? (state.input as Record<string, unknown>)?.runId as string ?? runId ?? "run-unknown";
@@ -314,14 +339,15 @@ export function compileWorkflow(
 
               // interrupt() throws a graph-control exception on the first pass. It is
               // intentionally allowed through without becoming a node failure.
+              const requiresHumanDecision = normalizedDefinition.archetypeConfig?.humanApprovalGateRequired;
               const resume = interrupt({
                 gateId,
                 nodeId: node.id,
                 message: config.message,
-                approvalType: config.approvalType,
+                approvalType: requiresHumanDecision ? "required" : config.approvalType,
                 timeoutSeconds: config.timeoutSeconds,
                 requiredRoles: config.requiredRoles,
-                onTimeout: config.onTimeout ?? "fail_closed",
+                onTimeout: requiresHumanDecision ? "fail_closed" : config.onTimeout ?? "fail_closed",
                 allowedDecisions: config.allowedDecisions ?? ["approved", "rejected", "needs_clarification"],
                 context: interruptContext,
                 consolidatedGapReport,
@@ -333,6 +359,7 @@ export function compileWorkflow(
 
               result = {
                 branch: decision,
+                ...(decision === "approved" ? { approvedGateNodeId: node.id } : {}),
                 humanApproval: decision === "approved" ? "approved" : decision === "needs_clarification" ? "needs_clarification" : state.humanApproval,
                 lastValue: {
                   ...resumePayload,
@@ -402,18 +429,20 @@ export function compileWorkflow(
 
             // Recursion guardrails evaluation
             const recursionGuards = definition.archetypeConfig?.recursionGuards ?? (
-              (definition.archetype === "hierarchical-supervisor" || definition.archetypeConfig?.category === "hierarchical-supervisor")
+              archetype === "hierarchical-supervisor"
                 ? [{ routeKey: "qa_verify->implement_spec", maxIterations: 3, fallbackBranch: "loop_limit_exceeded" }]
                 : []
             );
 
-            const targetCandidate = String(requested ?? "").trim();
-            const matchedGuard = recursionGuards.find((g) => {
-              if (g.routeKey === targetCandidate) return true;
-              if (g.routeKey.endsWith(`->${targetCandidate}`)) return true;
-              if (g.routeKey.split("->").map(s => s.trim()).includes(targetCandidate)) return true;
-              return false;
-            });
+            const resolution = resolveBranchRoute(config, requested);
+            if (resolution.status === "unknown" || resolution.branch === undefined) {
+              throw new BranchRoutingError(node.id, resolution);
+            }
+
+            const targetBranch = resolution.branch;
+            const matchedGuard = archetype === "hierarchical-supervisor"
+              ? recursionGuards.find((guard) => guard.routeKey.split("->").pop()?.trim() === targetBranch)
+              : undefined;
 
             let iteration = 0;
             let limitExceeded = false;
@@ -425,8 +454,9 @@ export function compileWorkflow(
                     ? ((effectiveCarrier.qaResult as Record<string, unknown>).iterationCount as number)
                     : undefined;
 
-              const currentTracked = (state.loopIterations?.[matchedGuard.routeKey] ?? state.loopIterations?.[targetCandidate] ?? 0);
-              iteration = explicitIteration !== undefined ? explicitIteration : currentTracked + 1;
+              const currentTracked = state.loopIterations?.[matchedGuard.routeKey] ?? state.loopIterations?.[targetBranch] ?? 0;
+              const reportedIteration = Number.isSafeInteger(explicitIteration) ? explicitIteration ?? 0 : 0;
+              iteration = Math.max(currentTracked + 1, reportedIteration);
               const maxIterations = matchedGuard.maxIterations ?? 3;
               limitExceeded = iteration >= maxIterations;
             }
@@ -436,7 +466,7 @@ export function compileWorkflow(
               const updatedIterations = {
                 ...(state.loopIterations ?? {}),
                 [matchedGuard.routeKey]: iteration,
-                [targetCandidate]: iteration,
+                [targetBranch]: iteration,
               };
               const effectiveTaskId = (effectiveCarrier?.taskId as string | undefined) ??
                 (inputRecord?.taskId as string | undefined);
@@ -444,7 +474,7 @@ export function compileWorkflow(
               emit("node.loop_limit_reached", {
                 nodeId: node.id,
                 routeKey: matchedGuard.routeKey,
-                targetBranch: targetCandidate,
+                targetBranch,
                 fallbackBranch,
                 iteration,
                 maxIterations: matchedGuard.maxIterations ?? 3,
@@ -464,17 +494,11 @@ export function compileWorkflow(
                 routeKey: matchedGuard.routeKey,
               });
             } else {
-              // Boundary 3: resolve the branch carrier fail-closed. An
-              // unresolved route never falls through to the first branch.
-              const resolution = resolveBranchRoute(config, requested);
-              if (resolution.status === "unknown") {
-                throw new BranchRoutingError(node.id, resolution);
-              }
               const updatedIterations = matchedGuard
                 ? {
                     ...(state.loopIterations ?? {}),
                     [matchedGuard.routeKey]: iteration,
-                    [targetCandidate]: iteration,
+                    [targetBranch]: iteration,
                   }
                 : state.loopIterations;
 

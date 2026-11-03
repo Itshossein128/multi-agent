@@ -40,7 +40,7 @@ describe("Adaptive QA Feedback & Remediation Loop (User Story 5)", () => {
     execute: async function* (input: any) {
       const val = input.input ?? input;
       yield {
-        type: "agent.started",
+        type: "agent.started" as const,
         timestamp: new Date().toISOString(),
         agentId: input.agent.id,
         nodeId: input.nodeId,
@@ -48,7 +48,7 @@ describe("Adaptive QA Feedback & Remediation Loop (User Story 5)", () => {
         payload: {},
       };
       yield {
-        type: "agent.completed",
+        type: "agent.completed" as const,
         timestamp: new Date().toISOString(),
         agentId: input.agent.id,
         nodeId: input.nodeId,
@@ -170,7 +170,6 @@ describe("Adaptive QA Feedback & Remediation Loop (User Story 5)", () => {
 
   test("routes execution back to remediation engineer on QA test failure for iterations below recursion limit", async () => {
     const store = new RunStore();
-    const executor = new RunExecutor(store, passThroughRuntime as any);
     const { workflow, engineerNode } = createQARemediationWorkflow({ maxIterations: 3 });
 
     // Simulate input with iteration 1 (< 3) and nextAction = "implement_spec"
@@ -190,6 +189,9 @@ describe("Adaptive QA Feedback & Remediation Loop (User Story 5)", () => {
       },
     });
 
+    const executor = new RunExecutor(store, {
+      execute: (input) => passThroughRuntime.execute({ ...input, input: failureEnvelope }),
+    });
     const runId = executor.start({
       workflow,
       agents: allAgents,
@@ -201,8 +203,12 @@ describe("Adaptive QA Feedback & Remediation Loop (User Story 5)", () => {
     const events = store.events(runId);
     const executedNodeIds = events.map((e) => e.nodeId).filter(Boolean);
 
-    // Iteration 1 routes to remediation engineer
+    // The simulated agent repeats iteration 1 on each pass. Runtime state
+    // still advances to the limit and routes to the configured fallback.
     expect(executedNodeIds).toContain(engineerNode.id);
+    expect(events.find((event) => event.type === "node.loop_limit_reached")?.payload)
+      .toMatchObject({ iteration: 3, targetBranch: "implement_spec" });
+    expect(store.get(runId)?.run.status).toBe("completed");
   });
 
   test("routes to completion when QA verification tests pass", async () => {
@@ -341,7 +347,7 @@ describe("Adaptive QA Feedback & Remediation Loop (User Story 5)", () => {
         ...exhaustedEnvelope,
         taskId: task.id,
       } as unknown as Record<string, unknown>,
-    });
+    }, undefined, { tenantId: "org-building-gap", userId: "operator" });
 
     await waitFor(() => store.get(runId)?.run.status === "completed" || store.get(runId)?.run.status === "failed");
 

@@ -10,6 +10,7 @@ import { createDashboardRouter } from "./api/dashboard";
 import { createMemoryComposition } from "./memory/composition";
 import { memoryAccessResolverFromEnvironment } from "./memory/access";
 import { createStudioComposition } from "./studio/composition";
+import { ToolExecutorFactory, ToolRuntime } from "../../../src/tools";
 import { AgentRuntime } from "../../../src/agents/runtime";
 import { createCredentialComposition } from "./composition";
 import { RunExecutor } from "./runtime/runExecutor";
@@ -111,6 +112,7 @@ async function main() {
     ? await createDurableCheckpointer(connectionString)
     : undefined;
 
+  const studioScope = studio.pool ? createPgOrganizationScopeRunner(studio.pool) : undefined;
   const executor = new RunExecutor(
     runStore,
     new BudgetedAgentRuntime(new AgentRuntime(
@@ -128,12 +130,14 @@ async function main() {
     checkpointer,
     observability.telemetry,
     undefined,
-    undefined,
+    new ToolRuntime(undefined, undefined, new ToolExecutorFactory(credentials.gateway, studio.store, studioScope)),
     memory.episodeService,
     memory.proceduralService,
     memory.jobs,
     memory.durableJobs,
     runOrganizationAccess,
+    studio.store,
+    studioScope,
   );
   runAccessCheckpoint.install(({ runId, tenantId }) => executor.assertRunAccess(runId, tenantId));
   memory.startDurableWorkers({
@@ -180,7 +184,7 @@ async function main() {
     const organizationAccess = runOrganizationAccess;
     // US3/T050: each background item claims across organizations but executes
     // inside its own organization scope (RLS GUCs on PostgreSQL).
-    const scopeRunner = studio.pool ? createPgOrganizationScopeRunner(studio.pool) : undefined;
+    const scopeRunner = studioScope;
     organizationPurgeWorker = createOrganizationPurgeWorker({
       studioStore: studio.store, runStore, organizationStore, budgetStore, memory,
       credentialCleanup: credentials.tenantCleanup, discoveryPool: recoveryPool,

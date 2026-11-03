@@ -204,6 +204,35 @@ describe("Human Approval Gate Lifecycle & Safety Tests (T025 - T028)", () => {
     expect(executedNodeIds).not.toContain(cleanHaltNode.id);
   });
 
+  test("an approved branch from one gate cannot resolve a second gate", async () => {
+    const store = new RunStore();
+    const executor = new RunExecutor(store);
+    const { workflow, approvalNode, remediationNode, cleanHaltNode } = createSupervisorApprovalWorkflow();
+    const secondGate = createNode("approval", { x: 2, y: 0 }, {
+      ...approvalNode.config,
+      gateId: "gate-second-review",
+    });
+    workflow.nodes.push(secondGate);
+    const firstApprovedEdge = workflow.edges.find((edge) => edge.source === approvalNode.id && edge.branchKey === "approved")!;
+    firstApprovedEdge.target = secondGate.id;
+    workflow.edges.push(
+      createEdge({ source: secondGate.id, target: remediationNode.id, kind: "conditional", branchKey: "approved" }),
+      createEdge({ source: secondGate.id, target: cleanHaltNode.id, kind: "conditional", branchKey: "rejected" }),
+    );
+
+    const runId = executor.start({ workflow, agents: [], input: {} });
+    await waitFor(() => store.listApprovals(runId).some((item) => item.nodeId === approvalNode.id));
+    const first = store.listApprovals(runId).find((item) => item.nodeId === approvalNode.id)!;
+    executor.resolveApproval(runId, first.id, { decision: "approved" });
+
+    await waitFor(() => store.listApprovals(runId).some((item) => item.nodeId === secondGate.id));
+    expect(store.listApprovals(runId).find((item) => item.nodeId === secondGate.id)?.status).toBe("requested");
+    expect(store.events(runId).some((event) => event.nodeId === remediationNode.id)).toBe(false);
+    const second = store.listApprovals(runId).find((item) => item.nodeId === secondGate.id)!;
+    executor.resolveApproval(runId, second.id, { decision: "approved" });
+    await waitFor(() => store.get(runId)?.run.status === "completed");
+  });
+
   test("rejecting decision halts cleanly, pauses Studio task, and does not execute remediation", async () => {
     const store = new RunStore();
     const studioStore = new InMemoryStudioStore();
@@ -248,15 +277,15 @@ describe("Human Approval Gate Lifecycle & Safety Tests (T025 - T028)", () => {
       workflow,
       agents: [],
       input: { taskId: task.id, consolidatedGapReport: sampleGapReport() },
-    });
+    }, undefined, { tenantId: "tenant-building-gap", userId: "operator" });
 
     await waitFor(() => store.get(runId)?.run.status === "waiting_for_human");
 
-    // Reject the pending approval
-    executor.rejectRun(runId, {
+    const [pending] = store.listApprovals(runId);
+    executor.resolveApproval(runId, pending.id, {
+      decision: "rejected",
       reviewerId: "pm-reviewer-2",
-      reviewerRole: "project_manager",
-      notes: "Requirements must be re-scoped before any sandbox code modification.",
+      response: "Requirements must be re-scoped before any sandbox code modification.",
     });
 
     await waitFor(() => store.get(runId)?.run.status === "completed");

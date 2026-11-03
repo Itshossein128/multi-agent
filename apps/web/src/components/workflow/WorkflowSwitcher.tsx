@@ -5,7 +5,7 @@ import { useOrgPath } from "@/components/organization/OrgProvider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { AgentRecord, ToolRecord, WorkflowDefinition } from "@multi-agent/types";
+import { resolveWorkflowArchetype, type AgentRecord, type ToolRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { workflowService } from "@/services/workflowService";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ export function WorkflowSwitcher() {
 
   const canLeave = () => !dirty || window.confirm("Discard unsaved workflow changes?");
 
-  const currentArchetype = definition.archetype ?? "linear-pipeline";
+  const currentArchetype = resolveWorkflowArchetype(definition);
   const isSupervisor = currentArchetype === "hierarchical-supervisor";
 
   async function importPackage(workspace: WorkspacePackage) {
@@ -98,12 +98,12 @@ export function WorkflowSwitcher() {
         >
           {!workflows.data?.some((item) => item.id === definition.id) && (
             <option value={definition.id}>
-              {definition.name} [{formatArchetypeLabel(definition.archetype)}]
+              {definition.name} [{formatArchetypeLabel(currentArchetype)}]
             </option>
           )}
           {workflows.data?.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.name} [{formatArchetypeLabel(item.archetype)}]
+              {item.name} [{formatArchetypeLabel(resolveWorkflowArchetype(item))}]
             </option>
           ))}
         </select>

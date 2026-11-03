@@ -8,6 +8,7 @@ import { replayRunEvents } from "../../runtime/replay";
 import { redact } from "../../adapters/langGraphEventAdapter";
 import { ApiError } from "../shared/http";
 import { buildClarificationPackage, fingerprintAnswers, validateClarificationAnswers } from "../clarification";
+import { assertApprovalDecisionAuthorized } from "./approvalAuthorization";
 
 export interface RunListQuery {
   agentId?: string;
@@ -104,22 +105,55 @@ export class RunApiService {
 
   approvals(runId: string) { this.requireRun(runId); return this.store.listApprovals(runId); }
 
-  resolveApproval(runId: string, approvalId: string, body: { decision?: string; response?: string }) {
+  async resolveApproval(
+    runId: string,
+    approvalId: string,
+    body: { decision?: string; response?: string; reviewerId?: string; reviewerRole?: string },
+    principal?: RequestPrincipal | null,
+  ) {
     this.requireRun(runId);
     if (body.decision !== "approved" && body.decision !== "rejected" && body.decision !== "needs_clarification") {
       throw new ApiError(400, "decision must be 'approved', 'rejected', or 'needs_clarification'");
     }
-    this.executor.resolveApproval(runId, approvalId, { decision: body.decision, response: body.response });
+    const authorized = await this.authorizeApprovalDecision(runId, approvalId, body.decision, principal, body.reviewerRole);
+    this.executor.resolveApproval(runId, approvalId, {
+      decision: body.decision,
+      response: body.response,
+      reviewerId: authorized.reviewerId,
+      reviewerRole: authorized.reviewerRole,
+    } as Parameters<RunExecutor["resolveApproval"]>[2]);
   }
 
-  approve(runId: string, body: { reviewerId?: string; reviewerRole?: string; notes?: string } = {}) {
+  async approve(
+    runId: string,
+    body: { reviewerId?: string; reviewerRole?: string; notes?: string } = {},
+    principal?: RequestPrincipal | null,
+  ) {
     this.requireRun(runId);
-    return this.executor.approveRun(runId, body);
+    const pending = this.store.listApprovals(runId).find((approval) => approval.status === "requested");
+    if (!pending) throw new ApiError(409, `No pending approval request found for run "${runId}".`);
+    const authorized = await this.authorizeApprovalDecision(runId, pending.id, "approved", principal, body.reviewerRole);
+    return this.executor.approveRun(runId, {
+      ...body,
+      reviewerId: authorized.reviewerId,
+      reviewerRole: String(authorized.reviewerRole),
+    });
   }
 
-  reject(runId: string, body: { reviewerId?: string; reviewerRole?: string; notes?: string } = {}) {
+  async reject(
+    runId: string,
+    body: { reviewerId?: string; reviewerRole?: string; notes?: string } = {},
+    principal?: RequestPrincipal | null,
+  ) {
     this.requireRun(runId);
-    return this.executor.rejectRun(runId, body);
+    const pending = this.store.listApprovals(runId).find((approval) => approval.status === "requested");
+    if (!pending) throw new ApiError(409, `No pending approval request found for run "${runId}".`);
+    const authorized = await this.authorizeApprovalDecision(runId, pending.id, "rejected", principal, body.reviewerRole);
+    return this.executor.rejectRun(runId, {
+      ...body,
+      reviewerId: authorized.reviewerId,
+      reviewerRole: String(authorized.reviewerRole),
+    });
   }
 
   history(runId: string, agentId?: string) {
@@ -325,6 +359,25 @@ export class RunApiService {
       idempotentReplay,
       followUpRunId: null,
     };
+  }
+
+  private async authorizeApprovalDecision(
+    runId: string,
+    approvalId: string,
+    decision: string,
+    principal?: RequestPrincipal | null,
+    claimedReviewerRole?: string,
+  ) {
+    const entry = this.requireRun(runId);
+    const approval = this.store.getApproval(runId, approvalId);
+    return assertApprovalDecisionAuthorized({
+      studioStore: this.studioStore,
+      principal,
+      tenantId: entry.run.tenantId,
+      approval,
+      decision,
+      claimedReviewerRole,
+    });
   }
 
   private requireRun(runId: string) {

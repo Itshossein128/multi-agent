@@ -296,3 +296,15 @@ With multiple developers:
 - [x] T043 Mount `ApprovalGateModal` when a run is waiting on the Human Approval Gate so the operator reviews total stories, audited count, average completeness, critical gaps, and the remediation summary before approving or rejecting, per US4/AC1 and T029 (partial). `apps/web/src/components/workflow/ApprovalGateModal.tsx` is not rendered; `ApprovalPanel` only shows the raw approval context.
 - [x] T044 Make Studio task status updates compare-and-swap on the latest board version so a supervisor write does not overwrite a newer human status or notes, per the concurrent board-update edge case (partial). `StudioTaskToolExecutor.handleUpdateTaskStatus` reads a task and `saveTask`s the full record with no version predicate.
 - [x] T045 On a malformed or incomplete auditor outcome, flag the Studio task for human review and do not append a board comment, per the malformed audit-outcome edge case (partial). `workflowCompiler.ts` throws `ContractViolationError` for `AGENT_RESULT_MALFORMED` and does not mark the task for review.
+
+## Phase 9: Convergence
+
+- [X] T046 Resolve workflow archetype consistently in the Studio switcher, validator, and compiler, and reject conflicting declarations per FR-001, FR-011, T011, and T013 (partial).
+- [X] T047 Match supervisor recursion guards to their destination branch and prevent reported iteration counts from resetting the runtime counter per FR-003 and SC-005 (partial).
+- [X] T048 Wire the live Studio store into workflow tool execution and scope approval and escalation board updates to the run tenant per FR-005, FR-010, FR-023, T033, and SC-004 (partial).
+- [X] T049 Verify forbidden-directory link resolution with a portable sandbox escape fixture per US3 and T020 (partial).
+- [X] T050 Require a human decision at each approval node and audit UI rejection through the shared resolution path per FR-021 through FR-023 and SC-003 (contradicts).
+- [x] T051 Connect the seeded Lead Orchestrator to a callable studio_task_tool path with action authorization and an end-to-end board test per FR-005 through FR-010 and SC-004 (partial).
+- [x] T052 Enforce configured approval roles and allowed decisions using trusted organization membership on the decision endpoints per FR-004 and FR-022 (partial).
+- [x] T053 Enforce an operating-system isolation boundary for 009 CLI processes and verify a real subprocess cannot write outside the sandbox per FR-019, FR-020, and SC-002 (partial).
+- [x] T054 Reject supervisor cycles without an applicable guarded route and validate that each fallback branch is wired to an exit per FR-003 and SC-005 (partial).

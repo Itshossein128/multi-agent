@@ -40,7 +40,8 @@ import type { RequestPrincipal } from "../auth/principal";
 import { ApprovalManager, type PausedContext } from "./approvalManager";
 import { GraphRunner } from "./graphRunner";
 import type { DurableMemoryJob, EnqueueMemoryJob } from "../../../../src/memory/infrastructure";
-import type { StudioStore } from "../../../../src/studio/contracts";
+import { asyncLocalOrganizationScopeRunner, type OrganizationScopeRunner } from "../../../../src/studio/infrastructure/organizationJobScope";
+import type { StudioPrincipal, StudioStore } from "../../../../src/studio/contracts";
 import {
   OrganizationAccessRevokedError,
   ORGANIZATION_ACCESS_REVOKED,
@@ -101,6 +102,7 @@ export class RunExecutor {
     private readonly durableMemoryJobs?: DurableMemoryJobEnqueuer,
     private readonly organizationAccess?: RunOrganizationAccess,
     private readonly studioStore?: StudioStore,
+    private readonly boardScope: OrganizationScopeRunner = asyncLocalOrganizationScopeRunner,
   ) {
     this.instanceId = (this.store as any).instanceId ?? randomUUID();
     // Wire up the extracted managers with shared state.
@@ -234,13 +236,18 @@ export class RunExecutor {
     return run?.tenantId && run.ownerId ? { tenantId: run.tenantId, principalId: run.ownerId } : undefined;
   }
 
+  private boardPrincipalForRun(runId: string): StudioPrincipal | undefined {
+    const principal = this.credentialPrincipalForRun(runId);
+    return principal && { tenantId: principal.tenantId, userId: principal.principalId, principalKind: "service" };
+  }
+
   private appendAgentEvent(runId: string, event: AgentExecutionEvent) {
     if (event.type === "node.loop_limit_reached") {
       const payload = (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, unknown>;
       void this.handleLoopLimitExceeded(runId, {
         taskId: payload.taskId as string | undefined,
         routeKey: payload.routeKey as string | undefined,
-        iterations: payload.iterations as number | undefined,
+        iterations: payload.iteration as number | undefined,
         diagnostics: payload.diagnostics,
         reason: payload.reason as string | undefined,
       });
@@ -610,11 +617,26 @@ export class RunExecutor {
   }
 
   /** Delegate approval resolution to ApprovalManager. */
-  resolveApproval(runId: string, approvalId: string, decision: ApprovalDecisionRequest) {
+  resolveApproval(
+    runId: string,
+    approvalId: string,
+    decision: ApprovalDecisionRequest & { reviewerId?: string; reviewerRole?: string; decisionNotes?: string },
+  ) {
     const tenantId = this.store.get(runId)?.run.tenantId;
+    const approval = this.store.getApproval(runId, approvalId);
     // ApprovalManager starts an asynchronous continuation; detach it too.
     return organizationStorage.run(tenantId ? Object.freeze({ organizationId: tenantId, principalKind: "service" as const, source: "run.approval" }) : undefined,
-      () => this.approvalManager.resolveApproval(runId, approvalId, decision));
+      () => {
+        const result = this.approvalManager.resolveApproval(runId, approvalId, decision);
+        if (approval && typeof approval.context?.gateId === "string" && decision.decision === "rejected" && !result.idempotentReplay) {
+          this.recordRejectedGate(runId, approval, {
+            reviewerId: decision.reviewerId,
+            reviewerRole: decision.reviewerRole,
+            notes: decision.decisionNotes ?? decision.response,
+          });
+        }
+        return result;
+      });
   }
 
   /**
@@ -642,36 +664,54 @@ export class RunExecutor {
     const pending = approvals.find((a) => a.status === "requested");
     if (!pending) throw new Error(`No pending approval request found for run "${runId}".`);
 
+    return this.resolveApproval(runId, pending.id, {
+      decision: "rejected",
+      response: options.notes ?? "Rejected by human reviewer",
+      ...(options.reviewerId ? { reviewerId: options.reviewerId } : {}),
+      ...(options.reviewerRole ? { reviewerRole: options.reviewerRole } : {}),
+      ...(options.notes ? { decisionNotes: options.notes } : {}),
+    } as ApprovalDecisionRequest);
+  }
+
+  private recordRejectedGate(
+    runId: string,
+    approval: { id: string; nodeId: string },
+    options: { reviewerId?: string; reviewerRole?: string; notes?: string },
+  ) {
     const runRecord = this.store.get(runId)?.run;
     const taskId = ((runRecord as unknown as Record<string, unknown>)?.taskId
       || ((runRecord?.input as unknown) as Record<string, unknown>)?.taskId
       || (this.pendingRequests.get(runId)?.request.input as Record<string, unknown>)?.taskId) as string | undefined;
 
-    if (this.studioStore && taskId) {
+    const boardPrincipal = this.boardPrincipalForRun(runId);
+    if (this.studioStore && taskId && boardPrincipal) {
       void (async () => {
         try {
-          const task = await this.studioStore!.getTask(taskId);
-          if (task && task.status !== "paused") {
-            await this.studioStore!.saveTask({ ...task, status: "paused" });
-          }
-          await this.studioStore!.saveComment({
-            id: uid("comment"),
-            taskId,
-            tenantId: task?.tenantId ?? "tenant-building-gap",
-            authorId: options.reviewerId ?? "system",
-            authorType: "system",
-            content: `Human Approval Gate: Run was rejected${options.reviewerId ? ` by ${options.reviewerId}` : ""}${options.reviewerRole ? ` (${options.reviewerRole})` : ""}.${options.notes ? ` Reason: ${options.notes}` : ""}`,
-            mentions: [],
-            createdAt: nowIso(),
-            updatedAt: nowIso(),
-            metadata: {
-              runId,
-              event: "human_approval.rejected",
-              decision: "rejected",
-              reviewerId: options.reviewerId,
-              reviewerRole: options.reviewerRole,
-              notes: options.notes,
-            },
+          await this.boardScope({ organizationId: boardPrincipal.tenantId, source: "run.approval_rejected" }, async () => {
+            const task = await this.studioStore!.getTask(taskId, boardPrincipal);
+            if (!task) return;
+            if (task.status !== "paused" || !task.paused) {
+              await this.studioStore!.saveTask({ ...task, status: "paused", paused: true, updatedAt: nowIso() }, boardPrincipal, { expectedUpdatedAt: task.updatedAt });
+            }
+            await this.studioStore!.saveComment({
+              id: uid("comment"),
+              taskId,
+              tenantId: boardPrincipal.tenantId,
+              authorId: options.reviewerId ?? "system",
+              authorType: "system",
+              content: `Human Approval Gate: Run was rejected${options.reviewerId ? ` by ${options.reviewerId}` : ""}${options.reviewerRole ? ` (${options.reviewerRole})` : ""}.${options.notes ? ` Reason: ${options.notes}` : ""}`,
+              mentions: [],
+              createdAt: nowIso(),
+              updatedAt: nowIso(),
+              metadata: {
+                runId,
+                event: "human_approval.rejected",
+                decision: "rejected",
+                reviewerId: options.reviewerId,
+                reviewerRole: options.reviewerRole,
+                notes: options.notes,
+              },
+            }, boardPrincipal);
           });
         } catch (err) {
           log.warn("Failed to update task on approval rejection clean-halt", {
@@ -687,11 +727,11 @@ export class RunExecutor {
       id: uid("event"),
       runId,
       type: "human_approval.rejection_halt",
-      nodeId: pending.nodeId,
+      nodeId: approval.nodeId,
       timestamp: nowIso(),
       sequence: 0,
       payload: {
-        approvalId: pending.id,
+        approvalId: approval.id,
         decision: "rejected",
         reviewerId: options.reviewerId,
         reviewerRole: options.reviewerRole,
@@ -699,14 +739,6 @@ export class RunExecutor {
         taskId,
       },
     });
-
-    return this.resolveApproval(runId, pending.id, {
-      decision: "rejected",
-      response: options.notes ?? "Rejected by human reviewer",
-      ...(options.reviewerId ? { reviewerId: options.reviewerId } : {}),
-      ...(options.reviewerRole ? { reviewerRole: options.reviewerRole } : {}),
-      ...(options.notes ? { decisionNotes: options.notes } : {}),
-    } as ApprovalDecisionRequest);
   }
 
   /**
@@ -731,29 +763,33 @@ export class RunExecutor {
     const commentContent = options.reason ??
       `Remediation recursion limit (${iterations}) exceeded for route "${routeKey}". Manual intervention required.`;
 
-    if (this.studioStore && effectiveTaskId) {
+    const boardPrincipal = this.boardPrincipalForRun(runId);
+    if (this.studioStore && effectiveTaskId && boardPrincipal) {
       try {
-        const task = await this.studioStore.getTask(effectiveTaskId);
-        if (task && (task.status !== "paused" || !task.paused)) {
-          await this.studioStore.saveTask({ ...task, status: "paused", paused: true });
-        }
-        await this.studioStore.saveComment({
-          id: uid("comment"),
-          taskId: effectiveTaskId,
-          tenantId: task?.tenantId ?? runRecord?.tenantId ?? "org-building-gap",
-          authorId: "system",
-          authorType: "system",
-          content: commentContent,
-          mentions: [],
-          createdAt: nowIso(),
-          updatedAt: nowIso(),
-          metadata: {
-            runId,
-            event: "loop_limit_exceeded",
-            routeKey,
-            iterations,
-            diagnostics: options.diagnostics,
-          },
+        await this.boardScope({ organizationId: boardPrincipal.tenantId, source: "run.loop_limit_exceeded" }, async () => {
+          const task = await this.studioStore!.getTask(effectiveTaskId, boardPrincipal);
+          if (!task) return;
+          if (task.status !== "paused" || !task.paused) {
+            await this.studioStore!.saveTask({ ...task, status: "paused", paused: true, updatedAt: nowIso() }, boardPrincipal, { expectedUpdatedAt: task.updatedAt });
+          }
+          await this.studioStore!.saveComment({
+            id: uid("comment"),
+            taskId: effectiveTaskId,
+            tenantId: boardPrincipal.tenantId,
+            authorId: "system",
+            authorType: "system",
+            content: commentContent,
+            mentions: [],
+            createdAt: nowIso(),
+            updatedAt: nowIso(),
+            metadata: {
+              runId,
+              event: "loop_limit_exceeded",
+              routeKey,
+              iterations,
+              diagnostics: options.diagnostics,
+            },
+          }, boardPrincipal);
         });
       } catch (err) {
         log.warn("Failed to update task on loop limit exceeded", {
@@ -775,19 +811,23 @@ export class RunExecutor {
       || ((runRecord as unknown as Record<string, unknown>)?.taskId
       || ((runRecord?.input as unknown) as Record<string, unknown>)?.taskId
       || (this.pendingRequests.get(runId)?.request.input as Record<string, unknown>)?.taskId) as string | undefined;
-    if (!this.studioStore || !effectiveTaskId) return;
+    const boardPrincipal = this.boardPrincipalForRun(runId);
+    if (!this.studioStore || !effectiveTaskId || !boardPrincipal) return;
     try {
-      const task = await this.studioStore.getTask(effectiveTaskId);
-      if (!task) return;
-      await this.studioStore.saveTask({
-        ...task,
-        description: task.description,
-        status: "in_review",
-        paused: true,
-        metadata: {
-          ...(task.metadata ?? {}),
-          humanReviewReason: options.reason ?? "malformed_audit_outcome",
-        },
+      await this.boardScope({ organizationId: boardPrincipal.tenantId, source: "run.audit_outcome_malformed" }, async () => {
+        const task = await this.studioStore!.getTask(effectiveTaskId, boardPrincipal);
+        if (!task) return;
+        await this.studioStore!.saveTask({
+          ...task,
+          description: task.description,
+          status: "in_review",
+          paused: true,
+          updatedAt: nowIso(),
+          metadata: {
+            ...(task.metadata ?? {}),
+            humanReviewReason: options.reason ?? "malformed_audit_outcome",
+          },
+        }, boardPrincipal, { expectedUpdatedAt: task.updatedAt });
       });
     } catch (err) {
       log.warn("Failed to flag task for human review after a malformed audit outcome", {

@@ -1,4 +1,6 @@
 import path from "node:path";
+import os from "node:os";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 import {
@@ -112,21 +114,18 @@ describe("SandboxExecutionBarrier Security & Boundary Tests (T020 - T024)", () =
     });
 
     test("handles symlinks pointing outside the sandbox fail-closed", () => {
-      const symlinkPath = path.join(sandboxRoot, "tmp-symlink-escape");
+      const forbiddenDir = fs.mkdtempSync(path.join(os.tmpdir(), "studio-forbidden-"));
+      const symlinkPath = path.join(sandboxRoot, `tmp-symlink-escape-${randomUUID()}`);
+      let linkCreated = false;
       try {
-        if (!fs.existsSync(symlinkPath)) {
-          // Point symlink to host repo
-          fs.symlinkSync(hostRepoPath, symlinkPath, "dir");
-        }
-
-        const escapeViaSymlink = path.join(symlinkPath, "escaped.txt");
-        expect(() => barrier.assertPathAllowed(escapeViaSymlink, "write")).toThrow(
-          SandboxHostProtectionViolationError,
-        );
+        fs.symlinkSync(forbiddenDir, symlinkPath, process.platform === "win32" ? "junction" : "dir");
+        linkCreated = true;
+        const isolatedBarrier = new SandboxExecutionBarrier(sandboxRoot, [forbiddenDir]);
+        expect(() => isolatedBarrier.assertPathAllowed(path.join(symlinkPath, "escaped.txt"), "write"))
+          .toThrow(SandboxHostProtectionViolationError);
       } finally {
-        if (fs.existsSync(symlinkPath)) {
-          fs.unlinkSync(symlinkPath);
-        }
+        if (linkCreated) fs.unlinkSync(symlinkPath);
+        fs.rmdirSync(forbiddenDir);
       }
     });
   });

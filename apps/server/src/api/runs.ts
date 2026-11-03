@@ -41,15 +41,23 @@ export function createRunsRouter(
   app.post("/", async (c) => c.json({ runId: await service.startRun(await c.req.json<Partial<RunCreateRequest>>(), c.req.raw, c.get("principal")) }, 202));
   app.get("/:runId/definition", (c) => c.json(service.definition(c.req.param("runId"))));
   app.get("/:runId/approvals", (c) => c.json(service.approvals(c.req.param("runId"))));
-  app.post("/:runId/approvals/:approvalId/resolve", async (c) => { service.resolveApproval(c.req.param("runId"), c.req.param("approvalId"), await c.req.json().catch(() => ({}))); return c.json({ ok: true }, 202); });
+  app.post("/:runId/approvals/:approvalId/resolve", async (c) => {
+    await service.resolveApproval(
+      c.req.param("runId"),
+      c.req.param("approvalId"),
+      await c.req.json().catch(() => ({})),
+      c.get("principal"),
+    );
+    return c.json({ ok: true }, 202);
+  });
   app.post("/:runId/approve", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    service.approve(c.req.param("runId"), body);
+    await service.approve(c.req.param("runId"), body, c.get("principal"));
     return c.json({ ok: true }, 202);
   });
   app.post("/:runId/reject", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    service.reject(c.req.param("runId"), body);
+    await service.reject(c.req.param("runId"), body, c.get("principal"));
     return c.json({ ok: true }, 202);
   });
   app.get("/:runId/clarification", (c) => c.json(service.getClarification(c.req.param("runId"))));

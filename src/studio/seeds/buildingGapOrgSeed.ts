@@ -718,8 +718,11 @@ export function createSeededSupervisorWorkflow(): WorkflowDefinition {
   approval.id = "human-approval-gate";
   approval.config = {
     message: "Review Consolidated Gap Report and approve code implementation in sandbox.",
-    approvalType: "manual",
+    approvalType: "required",
     timeoutSeconds: 86400,
+    requiredRoles: ["admin", "project_manager", "lead_architect"],
+    onTimeout: "fail_closed",
+    allowedDecisions: ["approved", "rejected", "needs_clarification"],
   };
 
   const engineer = createNode("agent", { x: 800, y: 350 }, { agentId: "agent-gap-engineer", mutatesCode: true });

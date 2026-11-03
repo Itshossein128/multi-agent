@@ -25,7 +25,14 @@ class InMemoryToolIdempotencyStore implements ToolIdempotencyStore {
 /** Server-side tool boundary: impact policy and timeout apply before category dispatch. */
 export class ToolRuntime {
   constructor(private readonly timeoutMs = configuredTimeout(), private readonly allowSideEffects = process.env.TOOL_ALLOW_SIDE_EFFECTS === "true", private readonly executors: Pick<ToolExecutorFactory, "create"> = toolExecutorFactory, private readonly maxOutputBytes = boundedBytesFromEnvironment(process.env.TOOL_MAX_OUTPUT_BYTES, 256 * 1024), private readonly credentialGateway?: CredentialGateway, private readonly idempotency: ToolIdempotencyStore = new InMemoryToolIdempotencyStore()) {}
-  async execute(tool: ToolRecord, input: Record<string, unknown>, parentSignal?: AbortSignal, context?: { runId?: string; credentialPrincipal?: { tenantId: string; principalId: string }; idempotencyKey?: string; approvalGranted?: boolean }) {
+  async execute(tool: ToolRecord, input: Record<string, unknown>, parentSignal?: AbortSignal, context?: {
+    runId?: string;
+    credentialPrincipal?: { tenantId: string; principalId: string };
+    agentId?: string;
+    authorizedToolIds?: readonly string[];
+    idempotencyKey?: string;
+    approvalGranted?: boolean;
+  }) {
     if (!tool.enabled) throw new ToolPolicyError(`Tool "${tool.name}" is disabled.`);
     const policy = tool.executionPolicy ?? { requiresApproval: tool.impact !== "read-only", idempotency: tool.impact === "read-only" ? "optional" : "required", retryable: tool.impact === "read-only" } as const;
     if (tool.impact !== "read-only" && (!this.allowSideEffects && !context?.approvalGranted)) throw new ToolPolicyError(`Tool "${tool.name}" requires server approval because it is ${tool.impact}.`);
