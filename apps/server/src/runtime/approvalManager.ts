@@ -5,6 +5,7 @@ import type { RunStoreContract, RunEntry } from "./store/contracts";
 import type { RuntimeGuardrails } from "./guardrails";
 import { compileWorkflow, type CompileOptions, type AgentExecutionEvent } from "../compiler/workflowCompiler";
 import type { RuntimeState } from "../compiler/workflowCompiler";
+import type { StudioPrincipal, StudioStore } from "../../../../src/studio/contracts";
 
 export interface ApprovalManagerDependencies {
   store: RunStoreContract;
@@ -30,6 +31,10 @@ export interface ApprovalManagerDependencies {
   fail: (runId: string, error: unknown) => void;
   /** D-5 checkpoint: revalidate the run initiator before resuming after approval. */
   assertRunAccess?: (runId: string) => Promise<void>;
+  /** Optional Studio store for nested subgraph resume after approval. */
+  studioStore?: StudioStore;
+  /** Resolve Studio principal for nested subgraph access on resume. */
+  studioPrincipalForRun?: (runId: string) => StudioPrincipal | undefined;
 }
 
 export interface PausedContext {
@@ -207,7 +212,7 @@ export class ApprovalManager {
     }
     this.deps.pausedContext.delete(runId);
     try {
-      const compiled = compileWorkflow(context.workflow, context.agents, {
+      const compileOptionsBase = {
         runId,
         runtime: this.deps.agentRuntime,
         toolRuntime: this.deps.toolRuntime,
@@ -221,7 +226,22 @@ export class ApprovalManager {
         pendingHuman: context.pendingHuman,
         guardrails: this.deps.guardrails,
         branchSignals: this.deps.branchControllers.get(runId),
-        onAgentEvent: (event) => { this.deps.appendAgentEvent(runId, event); },
+        onAgentEvent: (event: AgentExecutionEvent) => { this.deps.appendAgentEvent(runId, event); },
+      } satisfies CompileOptions;
+      const studioPrincipal = this.deps.studioPrincipalForRun?.(runId);
+      const compiled = compileWorkflow(context.workflow, context.agents, {
+        ...compileOptionsBase,
+        ...(this.deps.studioStore && studioPrincipal
+          ? {
+              subgraphRunner: (await import("../compiler/subgraphRunner")).createStudioSubgraphRunner({
+                studioStore: this.deps.studioStore,
+                principal: studioPrincipal,
+                agents: context.agents,
+                tools: context.tools,
+                baseOptions: compileOptionsBase,
+              }),
+            }
+          : {}),
       });
       await this.deps.runGraph(runId, compiled, new Command({ resume: decision }), context.workflow, context.agents, context.memoryAccess, context.tools, context.stepBudget);
     } catch (error) { this.deps.fail(runId, error); }

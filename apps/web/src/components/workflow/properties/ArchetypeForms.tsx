@@ -17,7 +17,12 @@ import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { cn } from "@/lib/utils";
 import { inputClass, labelClass } from "./fields";
 
-const ARCHETYPE_ORDER: WorkflowArchetypeCategory[] = ["linear-pipeline", "hierarchical-supervisor"];
+const ARCHETYPE_ORDER: WorkflowArchetypeCategory[] = [
+  "linear-pipeline",
+  "hierarchical-supervisor",
+  "evaluator-optimizer",
+  "autonomous-swarm",
+];
 
 const FOCUS_TARGETS: Record<string, string> = {
   INVALID_ARCHETYPE: "archetype-selector",
@@ -30,6 +35,22 @@ const FOCUS_TARGETS: Record<string, string> = {
   MISSING_APPROVAL_GATE: "human-approval-gate",
   APPROVAL_GATE_BYPASS: "human-approval-gate",
   LINEAR_PIPELINE_CYCLE_FORBIDDEN: "archetype-selector",
+  EVALUATOR_OPTIMIZER_CONFIG_REQUIRED: "archetype-selector",
+  EVALUATOR_OPTIMIZER_ROLE_INVALID: "archetype-selector",
+  EVALUATOR_OPTIMIZER_CEILING_REQUIRED: "archetype-selector",
+  EVALUATOR_OPTIMIZER_CYCLE_INVALID: "archetype-selector",
+  EVALUATOR_OPTIMIZER_ROUTING_INVALID: "archetype-selector",
+  EVALUATOR_OPTIMIZER_EXHAUSTION_UNWIRED: "archetype-selector",
+  PARALLEL_SPLIT_JOIN_MISMATCH: "archetype-selector",
+  PARALLEL_BRANCH_LIMIT_EXCEEDED: "archetype-selector",
+  PARALLEL_JOIN_POLICY_INVALID: "archetype-selector",
+  SUBGRAPH_REF_MISSING: "archetype-selector",
+  SUBGRAPH_MAPPING_INVALID: "archetype-selector",
+  SUBGRAPH_NESTING_UNSAFE: "archetype-selector",
+  SUBGRAPH_DEPTH_EXCEEDED: "archetype-selector",
+  SWARM_BOUNDS_REQUIRED: "archetype-selector",
+  SWARM_BOUNDS_INVALID: "archetype-selector",
+  SWARM_UNBOUNDED_PEER_LOOP: "archetype-selector",
 };
 
 function clampInteger(value: number, min: number, max: number, fallback: number): number {
@@ -61,7 +82,10 @@ export function ArchetypeSection() {
   const descriptor = ARCHETYPE_DESCRIPTORS[effective];
   const legacy = isLegacyUntypedWorkflow(definition);
   const dormant = effective === "linear-pipeline" && Boolean(
-    definition.archetypeConfig?.supervisorHubNodeId || (definition.archetypeConfig?.recursionGuards?.length ?? 0) > 0,
+    definition.archetypeConfig?.supervisorHubNodeId ||
+      (definition.archetypeConfig?.recursionGuards?.length ?? 0) > 0 ||
+      definition.archetypeConfig?.evaluatorOptimizer ||
+      definition.archetypeConfig?.swarm,
   );
   useFocusOnIssue("archetype-selector", ["INVALID_ARCHETYPE", "LINEAR_PIPELINE_CYCLE_FORBIDDEN"]);
 
@@ -99,7 +123,7 @@ export function ArchetypeSection() {
       )}
       {dormant && (
         <p role="status" className="rounded-md border border-blue-500/30 bg-blue-950/40 px-2 py-1.5 text-[11px] text-blue-200">
-          Supervisor settings are preserved in a dormant state while configured as Linear Pipeline.
+          Supervisor / evaluator-optimizer / swarm settings are preserved in a dormant state while configured as Linear Pipeline.
         </p>
       )}
     </section>
@@ -296,6 +320,165 @@ export function SupervisorExecutionLimitsForm() {
           {issues.find((issue) => issue.code === "MISSING_APPROVAL_GATE" || issue.code === "APPROVAL_GATE_BYPASS")?.message}
         </p>
       )}
+    </section>
+  );
+}
+
+export function EvaluatorOptimizerForm({ agentNodes }: { agentNodes: WorkflowNode[] }) {
+  const definition = useWorkflowStore((state) => state.definition);
+  const updateSupervisorConfig = useWorkflowStore((state) => state.updateSupervisorConfig);
+  const canEdit = useCanEditArchetype();
+  const eo = definition.archetypeConfig?.evaluatorOptimizer;
+  const maxIterations = eo?.maxIterations ?? 3;
+  const exhaustionOutcome = eo?.exhaustionOutcome ?? "exit_path";
+  const generatorId = eo?.generatorNodeIds?.[0] ?? "";
+  const evaluatorId = eo?.evaluatorNodeIds?.[0] ?? "";
+
+  return (
+    <section className="space-y-2" aria-label="Evaluator-optimizer settings">
+      <h3 className={labelClass}>Evaluator-optimizer</h3>
+      <label className="block space-y-1 text-[11px] text-zinc-400">
+        Generator agent
+        <select
+          disabled={!canEdit}
+          className={inputClass}
+          value={generatorId}
+          onChange={(event) =>
+            updateSupervisorConfig({
+              evaluatorOptimizer: {
+                generatorNodeIds: event.target.value ? [event.target.value] : [],
+                evaluatorNodeIds: eo?.evaluatorNodeIds ?? [],
+                maxIterations,
+                passBranch: eo?.passBranch ?? "pass",
+                failBranch: eo?.failBranch ?? "fail",
+                exhaustionOutcome,
+                exhaustionBranch: eo?.exhaustionBranch ?? "exhausted",
+              },
+            })
+          }
+        >
+          <option value="">Select generator</option>
+          {agentNodes.map((node) => (
+            <option key={node.id} value={node.id}>{node.id}</option>
+          ))}
+        </select>
+      </label>
+      <label className="block space-y-1 text-[11px] text-zinc-400">
+        Evaluator agent
+        <select
+          disabled={!canEdit}
+          className={inputClass}
+          value={evaluatorId}
+          onChange={(event) =>
+            updateSupervisorConfig({
+              evaluatorOptimizer: {
+                generatorNodeIds: eo?.generatorNodeIds ?? [],
+                evaluatorNodeIds: event.target.value ? [event.target.value] : [],
+                maxIterations,
+                passBranch: eo?.passBranch ?? "pass",
+                failBranch: eo?.failBranch ?? "fail",
+                exhaustionOutcome,
+                exhaustionBranch: eo?.exhaustionBranch ?? "exhausted",
+              },
+            })
+          }
+        >
+          <option value="">Select evaluator</option>
+          {agentNodes.map((node) => (
+            <option key={node.id} value={node.id}>{node.id}</option>
+          ))}
+        </select>
+      </label>
+      <label className="block space-y-1 text-[11px] text-zinc-400">
+        Max iterations (1–10)
+        <input
+          type="number"
+          min={1}
+          max={10}
+          disabled={!canEdit}
+          className={inputClass}
+          value={maxIterations}
+          onChange={(event) =>
+            updateSupervisorConfig({
+              evaluatorOptimizer: {
+                generatorNodeIds: eo?.generatorNodeIds ?? [],
+                evaluatorNodeIds: eo?.evaluatorNodeIds ?? [],
+                maxIterations: Number(event.target.value),
+                passBranch: eo?.passBranch ?? "pass",
+                failBranch: eo?.failBranch ?? "fail",
+                exhaustionOutcome,
+                exhaustionBranch: eo?.exhaustionBranch ?? "exhausted",
+              },
+            })
+          }
+        />
+      </label>
+      <label className="block space-y-1 text-[11px] text-zinc-400">
+        Exhaustion outcome
+        <select
+          disabled={!canEdit}
+          className={inputClass}
+          value={exhaustionOutcome}
+          onChange={(event) =>
+            updateSupervisorConfig({
+              evaluatorOptimizer: {
+                generatorNodeIds: eo?.generatorNodeIds ?? [],
+                evaluatorNodeIds: eo?.evaluatorNodeIds ?? [],
+                maxIterations,
+                passBranch: eo?.passBranch ?? "pass",
+                failBranch: eo?.failBranch ?? "fail",
+                exhaustionOutcome: event.target.value as "fail" | "exit_path",
+                exhaustionBranch: eo?.exhaustionBranch ?? "exhausted",
+              },
+            })
+          }
+        >
+          <option value="exit_path">Exit path</option>
+          <option value="fail">Fail run</option>
+        </select>
+      </label>
+    </section>
+  );
+}
+
+export function AutonomousSwarmForm() {
+  const definition = useWorkflowStore((state) => state.definition);
+  const updateSupervisorConfig = useWorkflowStore((state) => state.updateSupervisorConfig);
+  const canEdit = useCanEditArchetype();
+  const swarm = definition.archetypeConfig?.swarm;
+
+  const patch = (partial: Partial<NonNullable<typeof swarm>>) =>
+    updateSupervisorConfig({
+      swarm: {
+        maxHops: swarm?.maxHops ?? 10,
+        maxDepth: swarm?.maxDepth ?? 5,
+        maxActivePeerTasks: swarm?.maxActivePeerTasks ?? 4,
+        ...(swarm?.terminationBranch ? { terminationBranch: swarm.terminationBranch } : {}),
+        ...partial,
+      },
+    });
+
+  return (
+    <section className="space-y-2" aria-label="Autonomous swarm bounds">
+      <h3 className={labelClass}>Swarm safety bounds</h3>
+      {([
+        ["maxHops", swarm?.maxHops ?? 10, 1, 20],
+        ["maxDepth", swarm?.maxDepth ?? 5, 1, 20],
+        ["maxActivePeerTasks", swarm?.maxActivePeerTasks ?? 4, 1, 8],
+      ] as const).map(([key, value, min, max]) => (
+        <label key={key} className="block space-y-1 text-[11px] text-zinc-400">
+          {key} ({min}–{max})
+          <input
+            type="number"
+            min={min}
+            max={max}
+            disabled={!canEdit}
+            className={inputClass}
+            value={value}
+            onChange={(event) => patch({ [key]: Number(event.target.value) })}
+          />
+        </label>
+      ))}
     </section>
   );
 }

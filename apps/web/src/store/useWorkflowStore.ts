@@ -27,6 +27,8 @@ import {
 } from "@multi-agent/types";
 import { WorkflowHistory } from "./workflowHistory";
 import { cloneDefinition, resolveNodePosition } from "./workflowDefinition";
+import { edgeSemanticsFromSourceHandle } from "@/lib/workflow/canvasRoutingHandles";
+import { computeAutoArrangePositions } from "@/components/workflow/layout/autoArrange";
 
 /** Imperative helpers registered by the canvas (React Flow instance). */
 export interface FlowHelpers {
@@ -83,6 +85,8 @@ interface WorkflowStoreState {
   removeEdges: (edgeIds: string[]) => void;
   removeSelection: (nodeIds: string[], edgeIds: string[]) => void;
   addEdge: (connection: { source: string; target: string; sourceHandle?: string | null }) => void;
+  /** Hierarchical layout of current nodes; Undo restores prior positions. Layout only. */
+  autoArrangeNodes: () => void;
   updateNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void;
   /** Set (or clear with undefined) a node's versioned input/output contract. */
   updateNodeContract: (nodeId: string, patch: NodeContract | undefined) => void;
@@ -244,6 +248,28 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
             : {}),
           ...(archetype === "hierarchical-supervisor" && previous?.recursionGuards === undefined
             ? { recursionGuards: [] }
+            : {}),
+          ...(archetype === "evaluator-optimizer" && previous?.evaluatorOptimizer === undefined
+            ? {
+                evaluatorOptimizer: {
+                  generatorNodeIds: [],
+                  evaluatorNodeIds: [],
+                  maxIterations: 3,
+                  passBranch: "pass",
+                  failBranch: "fail",
+                  exhaustionOutcome: "exit_path" as const,
+                  exhaustionBranch: "exhausted",
+                },
+              }
+            : {}),
+          ...(archetype === "autonomous-swarm" && previous?.swarm === undefined
+            ? {
+                swarm: {
+                  maxHops: 10,
+                  maxDepth: 5,
+                  maxActivePeerTasks: 4,
+                },
+              }
             : {}),
         };
       });
@@ -427,9 +453,10 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
       const sourceNode = definition.nodes.find((n) => n.id === connection.source);
       const targetNode = definition.nodes.find((n) => n.id === connection.target);
       if (!sourceNode || !targetNode) return;
-      const isCondition = sourceNode?.type === "condition";
-      const branchKey = isCondition ? connection.sourceHandle ?? "" : "";
-      const kind = isCondition ? "conditional" : "normal";
+      const { kind, branchKey } = edgeSemanticsFromSourceHandle({
+        sourceNodeType: sourceNode.type,
+        sourceHandle: connection.sourceHandle,
+      });
       const duplicate = definition.edges.some(
         (edge) =>
           edge.source === connection.source &&
@@ -448,6 +475,28 @@ export const useWorkflowStore = create<WorkflowStoreState>()((set, get) => {
         };
         draft.edges.push(createEdge(input));
       });
+    },
+
+    autoArrangeNodes: () => {
+      const { definition, flowHelpers } = get();
+      if (definition.nodes.length === 0) return;
+      const next = computeAutoArrangePositions(
+        definition.nodes.map((n) => ({ id: n.id, position: n.position })),
+        definition.edges.map((e) => ({ source: e.source, target: e.target })),
+      );
+      let changed = false;
+      for (const node of definition.nodes) {
+        const pos = next.get(node.id);
+        if (!pos) continue;
+        if (pos.x !== node.position.x || pos.y !== node.position.y) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) return;
+      pushHistory();
+      get().moveNodes(next);
+      flowHelpers?.fitView();
     },
 
     updateNodeConfig: (nodeId, patch) => {

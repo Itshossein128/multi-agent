@@ -312,6 +312,10 @@ pnpm verification:load
 
 ## Studio Design and Live modes
 
+### Canvas routing and layout (Design)
+
+In **Design** mode, Approval nodes expose distinct outcome handles (`approved`, `rejected`, `needs_clarification`) with text labels. Drawing from a handle creates a conditional edge bound to that branch key without opening the edge properties panel. Condition nodes place each branch handle with its labeled chip (non-overlapping). Use the toolbar **Auto-Arrange** control to apply a hierarchical layout; **Undo** restores prior positions. Auto-Arrange is unavailable in Live. Creating a Hierarchical Supervisor workflow starts from a minimal valid scaffold (hub + router + worker + approval) instead of an empty invalid graph.
+
 The workflow editor opens in **Design** mode. **Run** starts execution through the existing authenticated run API, then stays on the same visual canvas in **Live** mode. The studio URL includes the run, so it can be copied or reopened:
 
 ```text

@@ -17,7 +17,12 @@ export interface CreateWorkflowDialogProps {
   isSubmitting?: boolean;
 }
 
-const ARCHETYPE_ORDER: WorkflowArchetypeCategory[] = ["linear-pipeline", "hierarchical-supervisor"];
+const ARCHETYPE_ORDER: WorkflowArchetypeCategory[] = [
+  "linear-pipeline",
+  "hierarchical-supervisor",
+  "evaluator-optimizer",
+  "autonomous-swarm",
+];
 
 function focusableElements(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>(

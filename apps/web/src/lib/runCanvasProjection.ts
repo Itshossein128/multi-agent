@@ -5,6 +5,9 @@ const statuses: Record<string, CanvasNodeLiveStatus> = {
   "node.started": "running", "node.retrying": "running", "agent.started": "running", "llm.started": "running", "tool.started": "running",
   "node.completed": "completed", "agent.completed": "completed", "tool.completed": "completed",
   "node.failed": "failed", "agent.failed": "failed", "llm.failed": "failed", "tool.failed": "failed", "node.loop_limit_reached": "failed",
+  "parallel.branch_failed": "failed", "subgraph.failed": "failed", "node.loop_iteration": "running",
+  "parallel.branch_started": "running", "parallel.branch_completed": "completed",
+  "subgraph.entered": "running", "subgraph.exited": "completed",
   "human_approval.requested": "waiting_human", "human_approval.rejection_halt": "failed", "branch.skipped": "skipped", "run.paused": "waiting_human",
 };
 export const projectRunCanvas: RunCanvasProjectionApi["projectRunCanvas"] = ({ events, run, approvals = [] }) => {
@@ -12,6 +15,10 @@ export const projectRunCanvas: RunCanvasProjectionApi["projectRunCanvas"] = ({ e
   const nodeLifecycle = new Set<string>();
   const traversedEdgeIds = new Set<string>();
   const waitingApprovalNodeIds = new Set<string>();
+  const iterationByNodeId: Record<string, { current: number; max: number; phase?: string }> = {};
+  const parallelBranchesBySplitId: Record<string, Array<{ branchKey: string; nodeId?: string; status: "pending" | "running" | "completed" | "failed" | "timed_out" }>> = {};
+  const subgraphFrames: Array<{ parentNodeId: string; workflowId: string; depth: number; status: "running" | "exited" | "failed" }> = [];
+  let swarmTerminationReason: string | undefined;
   for (const event of [...events].sort((a, b) => a.sequence - b.sequence)) {
     const nodeId = event.nodeId || (typeof event.payload.nodeId === "string" ? event.payload.nodeId : undefined);
     if (event.type === "edge.traversed" && typeof event.payload.edgeId === "string")
@@ -22,6 +29,38 @@ export const projectRunCanvas: RunCanvasProjectionApi["projectRunCanvas"] = ({ e
     const nestedCompletion = nodeId && nodeLifecycle.has(nodeId) && (event.type === "agent.completed" || event.type === "tool.completed");
     if (nodeId && statuses[event.type] && !nestedCompletion)
       nodeStatus.set(nodeId, statuses[event.type]);
+
+    if (event.type === "node.loop_iteration" && nodeId) {
+      iterationByNodeId[nodeId] = {
+        current: Number(event.payload.current) || 0,
+        max: Number(event.payload.max) || 0,
+        ...(typeof event.payload.phase === "string" ? { phase: event.payload.phase } : {}),
+      };
+    }
+    if (event.type === "node.loop_limit_reached" && typeof event.payload.terminationReason === "string") {
+      swarmTerminationReason = event.payload.terminationReason;
+    }
+    if (event.type.startsWith("parallel.branch_")) {
+      const splitId = typeof event.payload.splitNodeId === "string" ? event.payload.splitNodeId : "unknown";
+      const branchKey = typeof event.payload.branchKey === "string" ? event.payload.branchKey : nodeId ?? "branch";
+      const status =
+        event.type === "parallel.branch_started" ? "running" :
+        event.type === "parallel.branch_completed" ? "completed" :
+        event.type === "parallel.branch_failed" ? "failed" : "pending";
+      const list = parallelBranchesBySplitId[splitId] ?? (parallelBranchesBySplitId[splitId] = []);
+      const existing = list.find((entry) => entry.branchKey === branchKey);
+      if (existing) existing.status = status;
+      else list.push({ branchKey, nodeId: nodeId ?? undefined, status });
+    }
+    if (event.type.startsWith("subgraph.")) {
+      const parentNodeId = typeof event.payload.parentNodeId === "string" ? event.payload.parentNodeId : nodeId ?? "subgraph";
+      const workflowId = typeof event.payload.workflowId === "string" ? event.payload.workflowId : "";
+      const depth = Number(event.payload.depth) || 0;
+      const status = event.type === "subgraph.entered" ? "running" : event.type === "subgraph.exited" ? "exited" : "failed";
+      const existing = subgraphFrames.find((frame) => frame.parentNodeId === parentNodeId && frame.workflowId === workflowId);
+      if (existing) existing.status = status;
+      else subgraphFrames.push({ parentNodeId, workflowId, depth, status });
+    }
   }
   if (run?.status === "waiting_for_human" && run.currentNodeId)
     nodeStatus.set(run.currentNodeId, "waiting_human");
@@ -33,7 +72,17 @@ export const projectRunCanvas: RunCanvasProjectionApi["projectRunCanvas"] = ({ e
   for (const [id, status] of nodeStatus)
     if (status === "waiting_human")
       waitingApprovalNodeIds.add(id);
-  return { nodeStatus, traversedEdgeIds, waitingApprovalNodeIds };
+  return {
+    nodeStatus,
+    traversedEdgeIds,
+    waitingApprovalNodeIds,
+    topologyHints: {
+      iterationByNodeId,
+      parallelBranchesBySplitId,
+      subgraphFrames,
+      ...(swarmTerminationReason ? { swarmTerminationReason } : {}),
+    },
+  };
 };
 // Stream content arrives through log/state/memory events. llm.completed is not
 // decisive for the enclosing node; these events never invalidate graph status.

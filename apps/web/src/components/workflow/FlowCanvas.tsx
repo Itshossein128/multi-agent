@@ -24,6 +24,7 @@ import { workflowEdgeTypes } from "@/components/workflow/edges/WorkflowEdge";
 
 import { useCanvasStatusSnapshot } from "./live/useCanvasStatusSnapshot";
 import { projectRunCanvas, edgeLiveStyle } from "@/lib/runCanvasProjection";
+import { projectApprovalSourceHandle } from "@/lib/workflow/canvasRoutingHandles";
 import type { WorkflowDefinition } from "@multi-agent/types";
 
 const PALETTE_NODE_MIME = "application/x-workflow-node";
@@ -112,7 +113,11 @@ export function FlowCanvas({ live = false, liveDefinition, onInspectNode }: { li
           source: edge.source,
           target: edge.target,
           sourceHandle:
-            sourceNode?.type === "condition" ? edge.branchKey || undefined : undefined,
+            sourceNode?.type === "condition"
+              ? edge.branchKey || undefined
+              : sourceNode?.type === "approval"
+                ? projectApprovalSourceHandle(edge.branchKey)
+                : undefined,
           type: "workflow",
           markerEnd: {
             type: MarkerType.ArrowClosed,

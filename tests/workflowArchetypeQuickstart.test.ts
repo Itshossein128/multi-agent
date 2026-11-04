@@ -24,11 +24,15 @@ describe("quickstart archetype scenarios", () => {
     expect(reloaded?.archetypeConfig?.category).toBe("linear-pipeline");
   });
 
-  test("scenario 2 configures a supervisor and stays blocked until the approval gate is satisfied", async () => {
+  test("scenario 2 creates a scaffolded supervisor and remains editable for hub/guard configuration", async () => {
     const { service } = createTestStudioService();
     const created = await service.createWorkflow("Bug Triaging & Remediation", "hierarchical-supervisor");
     expect(formatArchetypeLabel(resolveWorkflowArchetype(created))).toBe("Hierarchical Supervisor");
-    expect(blocking(created).some((issue) => issue.code === "MISSING_SUPERVISOR_HUB")).toBe(true);
+    // Feature 015: create path pre-scaffolds hub/router/approval — no empty-canvas hub error
+    expect(blocking(created).some((issue) => issue.code === "MISSING_SUPERVISOR_HUB")).toBe(false);
+    expect(created.nodes.some((n) => n.type === "condition")).toBe(true);
+    expect(created.nodes.some((n) => n.type === "approval")).toBe(true);
+    expect(created.archetypeConfig?.supervisorHubNodeId).toBeTruthy();
 
     const hub = createNode("agent", { x: 0, y: 0 }, { agentId: lead.id });
     const condition = createNode("condition", { x: 160, y: 0 });

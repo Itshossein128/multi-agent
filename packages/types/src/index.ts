@@ -13,6 +13,7 @@ export * from "./nodeContract";
 export * from "./clarification";
 export * from "./branching";
 export * from "./archetype";
+export * from "./topologyIssueCodes";
 export * from "./supervisorOutcome";
 import type { ToolRecord } from "./toolConfiguration";
 import type { NodeContract, NodeResultEnvelope } from "./nodeContract";
@@ -26,7 +27,10 @@ export type WorkflowNodeType =
   | "memory"
   | "condition"
   | "input"
-  | "output";
+  | "output"
+  | "parallel_split"
+  | "parallel_join"
+  | "subgraph";
 
 export type WorkflowPosition = { x: number; y: number };
 
@@ -361,6 +365,44 @@ export interface OutputNodeConfig {
   inputMode?: "last_value" | "join";
 }
 
+export type ParallelJoinPolicy = "all_success" | "partial_allowed";
+
+export interface ParallelSplitNodeConfig {
+  /** Display label for the fan-out boundary. */
+  label?: string;
+  /** Optional explicit lane ids; else derived from outgoing edge ids/targets. */
+  branchKeys?: string[];
+}
+
+export interface ParallelJoinNodeConfig {
+  /** Join completion policy; default `all_success` (fail closed). */
+  joinPolicy: ParallelJoinPolicy;
+  /** Defaults to all incoming lanes when omitted. */
+  requiredBranchKeys?: string[];
+  /** Optional per-join timeout budget in milliseconds. */
+  branchTimeoutMs?: number;
+}
+
+export interface SubgraphFieldMapping {
+  /** Path or key in parent state / child output. */
+  source: string;
+  /** Child input key / parent destination key. */
+  target: string;
+  /** Default true for listed mappings. */
+  required?: boolean;
+}
+
+export interface SubgraphNodeConfig {
+  /** Referenced saved workflow id. */
+  workflowId: string;
+  /** Canvas label. */
+  label?: string;
+  /** Parent → child input mappings. */
+  inputMappings: SubgraphFieldMapping[];
+  /** Child output → parent mappings. */
+  outputMappings: SubgraphFieldMapping[];
+}
+
 export type WorkflowNodeConfig =
   | AgentNodeConfig
   | ToolNodeConfig
@@ -368,7 +410,10 @@ export type WorkflowNodeConfig =
   | MemoryNodeConfig
   | ConditionNodeConfig
   | InputNodeConfig
-  | OutputNodeConfig;
+  | OutputNodeConfig
+  | ParallelSplitNodeConfig
+  | ParallelJoinNodeConfig
+  | SubgraphNodeConfig;
 
 /** Optional node-scoped retry request. The server clamps every value to its own limits. */
 export interface NodeRetryPolicy {
@@ -494,6 +539,33 @@ export const NODE_TYPE_META: Record<WorkflowNodeType, WorkflowNodeMeta> = {
     borderSelected: "border-blue-400",
     chipBg: "bg-blue-950/50",
   },
+  parallel_split: {
+    label: "Parallel Split",
+    description: "Fan-out boundary to specialist lanes",
+    iconBg: "bg-sky-500/15",
+    iconText: "text-sky-300",
+    border: "border-sky-500/30",
+    borderSelected: "border-sky-400",
+    chipBg: "bg-sky-950/50",
+  },
+  parallel_join: {
+    label: "Parallel Join",
+    description: "Fan-in barrier with join policy",
+    iconBg: "bg-sky-500/15",
+    iconText: "text-sky-300",
+    border: "border-sky-500/30",
+    borderSelected: "border-sky-400",
+    chipBg: "bg-sky-950/50",
+  },
+  subgraph: {
+    label: "Subgraph",
+    description: "Nested reusable workflow reference",
+    iconBg: "bg-fuchsia-500/15",
+    iconText: "text-fuchsia-300",
+    border: "border-fuchsia-500/30",
+    borderSelected: "border-fuchsia-400",
+    chipBg: "bg-fuchsia-950/50",
+  },
 };
 
 export const WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [
@@ -504,6 +576,9 @@ export const WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [
   "memory",
   "input",
   "output",
+  "parallel_split",
+  "parallel_join",
+  "subgraph",
 ];
 
 export function isWorkflowNodeType(value: string): value is WorkflowNodeType {
@@ -589,6 +664,15 @@ export function createNode(
       break;
     case "output":
       config = { outputKey: "output", description: "" };
+      break;
+    case "parallel_split":
+      config = {};
+      break;
+    case "parallel_join":
+      config = { joinPolicy: "all_success" };
+      break;
+    case "subgraph":
+      config = { workflowId: "", inputMappings: [], outputMappings: [] };
       break;
   }
 
@@ -829,6 +913,13 @@ export type RunEventType =
   | "human_approval.resolved"
   | "human_approval.rejection_halt"
   | "node.loop_limit_reached"
+  | "node.loop_iteration"
+  | "parallel.branch_started"
+  | "parallel.branch_completed"
+  | "parallel.branch_failed"
+  | "subgraph.entered"
+  | "subgraph.exited"
+  | "subgraph.failed"
   | "state.updated"
   | "memory.read"
   | "memory.write"

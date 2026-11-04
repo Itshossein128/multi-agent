@@ -1,6 +1,7 @@
 import type { AgentRecord, ToolCategory, ToolRecord, WorkflowDefinition, WorkflowNode, WorkflowNodeType } from "@multi-agent/types";
-import { agentHasConfiguredModel, resolveWorkflowArchetype, validateAgent, validateTool, validateRawNodeContract } from "@multi-agent/types";
+import { agentHasConfiguredModel, isWorkflowArchetypeValid, resolveWorkflowArchetype, validateAgent, validateTool, validateRawNodeContract } from "@multi-agent/types";
 import { NODE_VALIDATORS, type ValidationContext } from "./nodeValidators";
+import { validateExpandedTopology } from "./topologyValidation";
 
 /**
  * Issue codes that make a definition structurally unsafe or policy-violating
@@ -34,6 +35,11 @@ export const SAVE_BLOCKING_ISSUE_CODES: ReadonlySet<string> = new Set([
 export const ARCHETYPE_DRAFT_ISSUE_CODES: ReadonlySet<string> = new Set([
   "MISSING_SUPERVISOR_HUB", "INVALID_SUPERVISOR_HUB", "MISSING_ROUTING_NODES", "UNGUARDED_CYCLE",
   "INVALID_RECURSION_GUARD", "FALLBACK_NOT_WIRED", "MISSING_APPROVAL_GATE", "APPROVAL_GATE_BYPASS",
+  "EVALUATOR_OPTIMIZER_CONFIG_REQUIRED", "EVALUATOR_OPTIMIZER_ROLE_INVALID", "EVALUATOR_OPTIMIZER_CEILING_REQUIRED",
+  "EVALUATOR_OPTIMIZER_CYCLE_INVALID", "EVALUATOR_OPTIMIZER_ROUTING_INVALID", "EVALUATOR_OPTIMIZER_EXHAUSTION_UNWIRED",
+  "PARALLEL_SPLIT_JOIN_MISMATCH", "PARALLEL_BRANCH_LIMIT_EXCEEDED", "PARALLEL_JOIN_POLICY_INVALID",
+  "SUBGRAPH_REF_MISSING", "SUBGRAPH_MAPPING_INVALID", "SUBGRAPH_NESTING_UNSAFE", "SUBGRAPH_DEPTH_EXCEEDED",
+  "SWARM_BOUNDS_REQUIRED", "SWARM_BOUNDS_INVALID", "SWARM_UNBOUNDED_PEER_LOOP",
 ]);
 
 export interface WorkflowIssue {
@@ -52,15 +58,26 @@ export interface WorkflowValidationLimits {
   maxNodes?: number;
   maxEdges?: number;
   maxBranches?: number;
+  /** Active parallel fan-out budget (defaults to DEFAULT_MAX_CONCURRENT_BRANCHES). */
+  maxConcurrentBranches?: number;
   maxNodeRetryAttempts?: number;
   maxNodeRetryBackoffMs?: number;
   supportedToolCategories?: ToolCategory[];
   allowToolSideEffects?: boolean;
+  /** Optional catalog of accessible workflow ids for subgraph ref checks. */
+  knownWorkflowIds?: ReadonlySet<string> | string[];
+  /** Optional resolver for transitive subgraph depth / cycle analysis. */
+  resolveWorkflowDefinition?: (workflowId: string) => WorkflowDefinition | null | undefined;
 }
 
-const NODE_TYPES = new Set<WorkflowNodeType>(["agent", "tool", "approval", "memory", "condition", "input", "output"]);
+const NODE_TYPES = new Set<WorkflowNodeType>([
+  "agent", "tool", "approval", "memory", "condition", "input", "output",
+  "parallel_split", "parallel_join", "subgraph",
+]);
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
-const ALL_TARGETS = new Set<WorkflowNodeType>(["agent", "tool", "approval", "memory", "condition", "output"]);
+const ALL_TARGETS = new Set<WorkflowNodeType>([
+  "agent", "tool", "approval", "memory", "condition", "output", "parallel_split", "parallel_join", "subgraph",
+]);
 const CONNECTION_TARGETS: Record<WorkflowNodeType, ReadonlySet<WorkflowNodeType>> = {
   input: ALL_TARGETS,
   agent: ALL_TARGETS,
@@ -68,6 +85,9 @@ const CONNECTION_TARGETS: Record<WorkflowNodeType, ReadonlySet<WorkflowNodeType>
   approval: ALL_TARGETS,
   memory: ALL_TARGETS,
   condition: ALL_TARGETS,
+  parallel_split: ALL_TARGETS,
+  parallel_join: ALL_TARGETS,
+  subgraph: ALL_TARGETS,
   output: new Set(),
 };
 
@@ -156,6 +176,7 @@ export function validateWorkflow(definition: WorkflowDefinition, agents: AgentRe
   }
   const cycleNodes = detectCycles(definition, nodes, add);
   validateArchetype(definition, nodes, cycleNodes, add);
+  validateExpandedTopology(definition, nodes, cycleNodes, add, limits);
   return issues;
 }
 
@@ -199,12 +220,12 @@ function validateArchetype(
   cycleNodes: Set<string>,
   add: (level: WorkflowIssue["level"], code: string, message: string, nodeId?: string, edgeId?: string) => void
 ) {
-  if (definition.archetype !== undefined && definition.archetype !== "linear-pipeline" && definition.archetype !== "hierarchical-supervisor") {
-    add("error", "INVALID_ARCHETYPE", `Unknown workflow archetype "${String(definition.archetype)}". Allowed archetypes are "linear-pipeline" and "hierarchical-supervisor".`);
+  if (definition.archetype !== undefined && !isWorkflowArchetypeValid(definition.archetype)) {
+    add("error", "INVALID_ARCHETYPE", `Unknown workflow archetype "${String(definition.archetype)}". Allowed archetypes are linear-pipeline, hierarchical-supervisor, evaluator-optimizer, and autonomous-swarm.`);
   }
 
-  if (definition.archetypeConfig?.category !== undefined && definition.archetypeConfig.category !== "linear-pipeline" && definition.archetypeConfig.category !== "hierarchical-supervisor") {
-    add("error", "INVALID_ARCHETYPE", `Unknown archetypeConfig category "${String(definition.archetypeConfig.category)}". Allowed categories are "linear-pipeline" and "hierarchical-supervisor".`);
+  if (definition.archetypeConfig?.category !== undefined && !isWorkflowArchetypeValid(definition.archetypeConfig.category)) {
+    add("error", "INVALID_ARCHETYPE", `Unknown archetypeConfig category "${String(definition.archetypeConfig.category)}". Allowed categories are linear-pipeline, hierarchical-supervisor, evaluator-optimizer, and autonomous-swarm.`);
   }
 
   const configuredCategory = definition.archetypeConfig?.category;
@@ -215,6 +236,7 @@ function validateArchetype(
 
   const archetype = resolveWorkflowArchetype(definition);
   // Untyped legacy graphs retain their existing server-wide cycle limit.
+  // Evaluator-optimizer / swarm cycle rules are handled in validateExpandedTopology.
   if (archetype === "linear-pipeline" && (definition.archetype !== undefined || configuredCategory !== undefined)) {
     if (cycleNodes.size > 0) {
       for (const nodeId of cycleNodes) {

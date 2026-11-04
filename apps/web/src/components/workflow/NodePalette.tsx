@@ -6,8 +6,11 @@ import React from "react";
 import Link from "next/link";
 import {
   Bot,
+  Boxes,
   Database,
   GitBranch,
+  GitFork,
+  GitMerge,
   LogIn,
   LogOut,
   Plus,
@@ -32,6 +35,9 @@ const PALETTE_ICON: Record<WorkflowNodeType, React.ReactNode> = {
   memory: <Database className="h-3.5 w-3.5" />,
   input: <LogIn className="h-3.5 w-3.5" />,
   output: <LogOut className="h-3.5 w-3.5" />,
+  parallel_split: <GitFork className="h-3.5 w-3.5" />,
+  parallel_join: <GitMerge className="h-3.5 w-3.5" />,
+  subgraph: <Boxes className="h-3.5 w-3.5" />,
 };
 
 const PALETTE_ORDER: WorkflowNodeType[] = [
@@ -42,6 +48,9 @@ const PALETTE_ORDER: WorkflowNodeType[] = [
   "memory",
   "input",
   "output",
+  "parallel_split",
+  "parallel_join",
+  "subgraph",
 ];
 
 function PaletteItem({

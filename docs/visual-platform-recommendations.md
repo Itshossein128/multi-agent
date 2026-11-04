@@ -129,44 +129,27 @@ flowchart TD
 
 ---
 
-### Finding 5: Topology Constraints & Missing Multi-Agent Archetypes
-* **Location:** [`packages/types/src/archetype.ts`](file:///E:/hossein/ai_agent/multi-agent/packages/types/src/archetype.ts#L11), [`apps/server/src/compiler/validation.ts`](file:///E:/hossein/ai_agent/multi-agent/apps/server/src/compiler/validation.ts#L216-L255)
-* **Problem:**
-  The system strictly enforces only two archetypes: `"linear-pipeline"` and `"hierarchical-supervisor"`. Any cycle in a linear pipeline is rejected outright (`LINEAR_PIPELINE_CYCLE_FORBIDDEN`), while hierarchical supervisors mandate rigid hub-and-spoke routing with manual recursion guards.
-* **Why it matters:**
-  Standard multi-agent design patterns (Anthropic's "Building Effective Agents" taxonomy) cannot be expressed cleanly:
-  1. **Evaluator-Optimizer**: A generator agent produces work, an evaluator critiques it against a rubric, and a feedback loop routes back to the generator until quality passes or iterations reach limit.
-  2. **Parallel Fan-Out / Aggregator (Scatter-Gather)**: Spreading an input across 3 independent specialists (e.g. Security, Performance, UI Reviewers) and aggregating their structured feedback.
-  3. **Sub-Workflows (Nested Graphs)**: Packaging a complex 5-node sub-routine as a single reusable block.
-* **Recommendations:**
-  1. **Expand Supported Archetypes**:
-     - Add `"evaluator-optimizer"` with a first-class feedback loop and iteration ceiling.
-     - Add `"autonomous-swarm"` for peer-to-peer delegation.
-  2. **Add a Subgraph Node**:
-     - A node that references another `WorkflowDefinition` by ID, mapping parent inputs to subgraph inputs and subgraph outputs back to the parent state.
-  3. **Add Parallel Fan-Out / Fan-In Primitives**:
-     - `parallel_split` and `parallel_join` nodes to trigger concurrent LangGraph branches safely with existing semaphore limits (`maxConcurrentBranches: 8`).
+### Finding 5: Topology Constraints & Missing Multi-Agent Archetypes — **IN PROGRESS** (feature `014-workflow-topology-expansion`)
+* **Location:** [`packages/types/src/archetype.ts`](file:///E:/hossein/ai_agent/multi-agent/packages/types/src/archetype.ts), [`apps/server/src/compiler/validation.ts`](file:///E:/hossein/ai_agent/multi-agent/apps/server/src/compiler/validation.ts), [`apps/server/src/compiler/topologyValidation.ts`](file:///E:/hossein/ai_agent/multi-agent/apps/server/src/compiler/topologyValidation.ts)
+* **Spec / plan:** `specs/014-workflow-topology-expansion/`
+* **Current behavior (landing):**
+  - Archetypes extended with `evaluator-optimizer` and `autonomous-swarm` (scaffolds + create-dialog options).
+  - Node primitives `parallel_split`, `parallel_join`, `subgraph` with validation codes and Live event types.
+  - Linear remains acyclic; EO/swarm use bounded loops; fan-out width capped by `maxConcurrentBranches` (default 8).
+  - Subgraph nested runner is fail-closed until run-executor injects `subgraphRunner` (v1 latest-saved resolve).
+* **Remaining:** richer EO/swarm Live chrome polish, production nested-run wiring end-to-end, property-panel mapping UX depth.
 
 ---
 
-### Finding 6: Canvas Usability & Edge Routing Friction
-* **Location:** [`apps/web/src/components/workflow/nodes/WorkflowNodes.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/nodes/WorkflowNodes.tsx#L158-L177), [`apps/web/src/components/workflow/properties/panels.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/properties/panels.tsx#L165-L200)
-* **Problem:**
-  - `ApprovalNodeComponent` has only a single bottom handle (`id="out"`).
-  - To branch based on human decision, the user must draw an edge, click the edge to select it, open the right-side properties panel, change `edge.kind` from `normal` to `conditional`, and select `"approved"` or `"rejected"`.
-  - Condition node handles use calculated left-percentages that often overlap or cause edge collision.
-  - There is no automatic graph layout feature.
-* **Recommendations:**
-  1. **Explicit Color-Coded Handles on Approval Nodes**:
-     - Green handle on bottom-left: `id="approved"` (auto-sets edge kind to `conditional` with branchKey `approved`).
-     - Red handle on bottom-right: `id="rejected"` (auto-sets edge kind to `conditional` with branchKey `rejected`).
-     - Amber handle in center: `id="needs_clarification"`.
-  2. **Auto-Layout with Dagre**:
-     - Integrate `@dagrejs/dagre` into [`EditorToolbar.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/EditorToolbar.tsx) with an "Auto-Arrange" button to organize nodes hierarchically with one click.
-  3. **Interactive Archetype Scaffolding**:
-     - In [`CreateWorkflowDialog.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/CreateWorkflowDialog.tsx), when selecting "Hierarchical Supervisor", pre-scaffold the canvas with:
-       `[Input] -> [Supervisor Hub] -> [Condition Router] -> [Worker Agents] -> [Approval Gate] -> [Output]`,
-       avoiding the immediate `MISSING_SUPERVISOR_HUB` validation error on empty graphs.
+### Finding 6: Canvas Usability & Edge Routing Friction — **SHIPPED** (feature `015-canvas-routing-usability`)
+* **Location:** [`WorkflowNodes.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/nodes/WorkflowNodes.tsx), [`FlowCanvas.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/FlowCanvas.tsx), [`EditorToolbar.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/EditorToolbar.tsx), [`topologyScaffolds.ts`](file:///E:/hossein/ai_agent/multi-agent/apps/server/src/api/studio/topologyScaffolds.ts), `useWorkflowStore.ts`
+* **Current behavior (implemented):**
+  - Approval nodes expose labeled, color-coded outcome handles (`approved` / `rejected` / `needs_clarification`); connecting from a handle creates a conditional edge with the matching `branchKey` (no properties-panel step required).
+  - Condition branches use chip-aligned, non-overlapping handles with on-canvas labels; edge chips still show branch keys.
+  - Design toolbar **Auto-Arrange** applies a hierarchical layout (positions only); Undo restores prior layout. Disabled in Live.
+  - Creating **Hierarchical Supervisor** pre-scaffolds Input → Hub → Condition → Worker → Approval → Output so the first canvas is not empty-invalid (`MISSING_SUPERVISOR_HUB` / routing / approval).
+  - Legacy conditional edges load by `branchKey` without forced migration or silent binding loss.
+* **Remaining polish / follow-ups (non-blocking):** optional dagre dependency if denser graphs need richer packing; further Live-only branch chrome polish.
 
 ---
 

@@ -9,11 +9,14 @@ import React from "react";
 import { Edge, Node } from "@xyflow/react";
 import {
   Bot,
+  Boxes,
   CheckCheck,
   Code,
   Database,
   FileText,
   GitBranch,
+  GitFork,
+  GitMerge,
   LogIn,
   LogOut,
   ShieldCheck,
@@ -31,6 +34,9 @@ export const NODE_ICONS: Record<WorkflowNodeType, React.ReactNode> = {
   approval: <ShieldCheck className="h-3.5 w-3.5" />,
   memory: <Database className="h-3.5 w-3.5" />,
   condition: <GitBranch className="h-3.5 w-3.5" />,
+  parallel_split: <GitFork className="h-3.5 w-3.5" />,
+  parallel_join: <GitMerge className="h-3.5 w-3.5" />,
+  subgraph: <Boxes className="h-3.5 w-3.5" />,
 };
 
 const EDGE_COLORS = ["#10b981", "#3b82f6", "#8b5cf6", "#f59e0b", "#06b6d4"];

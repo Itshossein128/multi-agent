@@ -140,6 +140,24 @@ function validateOutputNode(node: WorkflowNode, ctx: ValidationContext) {
  * Registry of per-node-type validators. To add validation for a new node type,
  * simply register a new entry here — no need to modify validateWorkflow.
  */
+function validateParallelSplitNode(_node: WorkflowNode, _ctx: ValidationContext) {
+  // Fan-out width and pairing enforced in topologyValidation.
+}
+
+function validateParallelJoinNode(node: WorkflowNode, ctx: ValidationContext) {
+  const policy = (node.config as { joinPolicy?: string }).joinPolicy;
+  if (policy !== undefined && policy !== "all_success" && policy !== "partial_allowed") {
+    ctx.add("error", "PARALLEL_JOIN_POLICY_INVALID", 'Parallel join joinPolicy must be "all_success" or "partial_allowed".', node.id);
+  }
+}
+
+function validateSubgraphNode(node: WorkflowNode, ctx: ValidationContext) {
+  const workflowId = (node.config as { workflowId?: string }).workflowId;
+  if (typeof workflowId !== "string" || !workflowId.trim()) {
+    ctx.add("error", "SUBGRAPH_REF_MISSING", "Subgraph node requires a workflowId.", node.id);
+  }
+}
+
 export const NODE_VALIDATORS: Record<WorkflowNodeType, NodeValidator> = {
   agent: validateAgentNode,
   tool: validateToolNode,
@@ -148,4 +166,7 @@ export const NODE_VALIDATORS: Record<WorkflowNodeType, NodeValidator> = {
   condition: validateConditionNode,
   input: validateInputNode,
   output: validateOutputNode,
+  parallel_split: validateParallelSplitNode,
+  parallel_join: validateParallelJoinNode,
+  subgraph: validateSubgraphNode,
 };

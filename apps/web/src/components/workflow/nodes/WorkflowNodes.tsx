@@ -4,6 +4,7 @@ import React from "react";
 import { Handle, NodeProps, NodeTypes, Position } from "@xyflow/react";
 import {
   Bot,
+  Boxes,
   Circle,
   CheckCircle2,
   Clock3,
@@ -12,6 +13,8 @@ import {
   CircleAlert,
   Database,
   GitBranch,
+  GitFork,
+  GitMerge,
   LogIn,
   LogOut,
   ShieldCheck,
@@ -30,6 +33,7 @@ import {
   agentBackendLabel,
 } from "@/lib/workflow/types";
 import { cn } from "@/lib/utils";
+import { APPROVAL_HANDLE_AFFORDANCES } from "@/lib/workflow/canvasRoutingHandles";
 
 import type { CanvasNodeLiveStatus, LiveWorkflowNodeDataFields } from "../live/liveCanvas.types";
 
@@ -203,11 +207,38 @@ function ApprovalNodeComponent(props: NodeProps) {
       icon={<ShieldCheck className="h-4 w-4" />}
       title="Human Approval"
       subtitle={config.message || "No message configured"}
+      showSource={false}
     >
       <div className="mt-1.5 flex items-center gap-1.5 border-t border-zinc-800/80 pt-1.5">
         <span className="rounded bg-cyan-950/50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
           {config.approvalType === "timeout" ? `Timeout ${config.timeoutSeconds}s` : "Manual"}
         </span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-end justify-center gap-2 border-t border-zinc-800/80 pt-3">
+        {APPROVAL_HANDLE_AFFORDANCES.map((outcome) => (
+          <div key={outcome.handleId} className="relative flex min-w-[4.25rem] flex-col items-center pb-2.5">
+            <span
+              className={cn(
+                "mb-1 truncate rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                outcome.handleId === "approved" && "bg-emerald-950/60 text-emerald-300",
+                outcome.handleId === "rejected" && "bg-red-950/60 text-red-300",
+                outcome.handleId === "needs_clarification" && "bg-amber-950/60 text-amber-300",
+              )}
+              title={outcome.accessibleName}
+            >
+              {outcome.accessibleName}
+            </span>
+            <Handle
+              type="source"
+              position={Position.Bottom}
+              id={outcome.handleId}
+              aria-label={outcome.accessibleName}
+              title={outcome.accessibleName}
+              className={cn(HANDLE_CLASS, outcome.colorClass)}
+              style={{ position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%)" }}
+            />
+          </div>
+        ))}
       </div>
     </NodeShell>
   );
@@ -241,7 +272,7 @@ function ConditionNodeComponent(props: NodeProps) {
       title={issueTitle || undefined}
       data-issue-code={issueTitle?.includes("LINEAR_PIPELINE_CYCLE_FORBIDDEN") ? "LINEAR_PIPELINE_CYCLE_FORBIDDEN" : undefined}
       className={cn(
-        "w-56 rounded-xl border bg-zinc-950/95 px-3 py-2.5 shadow-xl backdrop-blur-md transition-all",
+        "min-w-56 max-w-sm rounded-xl border bg-zinc-950/95 px-3 py-2.5 shadow-xl backdrop-blur-md transition-all",
         props.selected
           ? cn(NODE_TYPE_META.condition.borderSelected, "shadow-indigo-500/10")
           : NODE_TYPE_META.condition.border,
@@ -270,32 +301,35 @@ function ConditionNodeComponent(props: NodeProps) {
       </div>
 
       <LiveStatusBadge {...liveData} />
-      {/* Branch chips — one source handle per branch, spread across the bottom */}
-      <div className="mt-2 flex items-center justify-between gap-1 border-t border-zinc-800/80 pt-1.5">
-        {branches.map((branch, index) => (
-          <span
-            key={branch.key || index}
-            className="truncate rounded bg-orange-950/50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-300"
-            title={`branch: ${branch.key}`}
-          >
-            {branch.label || branch.key || "?"}
-          </span>
-        ))}
+      {/* One labeled chip per branch with its own non-overlapping handle */}
+      <div className="mt-2 flex flex-wrap items-end justify-center gap-2 border-t border-zinc-800/80 pt-3">
+        {branches.map((branch, index) => {
+          const label = branch.label || branch.key || "?";
+          const handleId = branch.key || `branch-${index}`;
+          return (
+            <div key={handleId} className="relative flex min-w-[3.75rem] max-w-[6.5rem] flex-col items-center pb-2.5">
+              <span
+                className="mb-1 truncate rounded bg-orange-950/50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-300"
+                title={`branch: ${branch.key || label}`}
+              >
+                {label}
+              </span>
+              <Handle
+                type="source"
+                position={Position.Bottom}
+                id={handleId}
+                aria-label={`Branch ${label}`}
+                title={`Branch ${label}`}
+                className={HANDLE_CLASS}
+                style={{ position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%)" }}
+              />
+            </div>
+          );
+        })}
         {branches.length === 0 && (
           <span className="text-[10px] text-zinc-500">No branches defined</span>
         )}
       </div>
-
-      {branches.map((branch, index) => (
-        <Handle
-          key={branch.key || `branch-${index}`}
-          type="source"
-          position={Position.Bottom}
-          id={branch.key}
-          className={HANDLE_CLASS}
-          style={{ left: `${((index + 1) / (branches.length + 1)) * 100}%` }}
-        />
-      ))}
     </div>
   );
 }
@@ -334,6 +368,56 @@ function OutputNodeComponent(props: NodeProps) {
   );
 }
 
+function ParallelSplitNodeComponent(props: NodeProps) {
+  const data = useNodeData(props);
+  return (
+    <NodeShell
+      {...data}
+      selected={Boolean(props.selected)}
+      node={data.node}
+      issueCount={data.issueCount}
+      issueTitle={data.issueTitle}
+      icon={<GitFork className="h-4 w-4" />}
+      title={NODE_TYPE_META.parallel_split.label}
+      subtitle={NODE_TYPE_META.parallel_split.description}
+    />
+  );
+}
+
+function ParallelJoinNodeComponent(props: NodeProps) {
+  const data = useNodeData(props);
+  const policy = (data.node.config as { joinPolicy?: string }).joinPolicy ?? "all_success";
+  return (
+    <NodeShell
+      {...data}
+      selected={Boolean(props.selected)}
+      node={data.node}
+      issueCount={data.issueCount}
+      issueTitle={data.issueTitle}
+      icon={<GitMerge className="h-4 w-4" />}
+      title={NODE_TYPE_META.parallel_join.label}
+      subtitle={`Join: ${policy}`}
+    />
+  );
+}
+
+function SubgraphNodeComponent(props: NodeProps) {
+  const data = useNodeData(props);
+  const workflowId = (data.node.config as { workflowId?: string }).workflowId?.trim() || "unset";
+  return (
+    <NodeShell
+      {...data}
+      selected={Boolean(props.selected)}
+      node={data.node}
+      issueCount={data.issueCount}
+      issueTitle={data.issueTitle}
+      icon={<Boxes className="h-4 w-4" />}
+      title={NODE_TYPE_META.subgraph.label}
+      subtitle={workflowId}
+    />
+  );
+}
+
 /** React Flow node-type registry — add new node types here. */
 export const workflowNodeTypes: NodeTypes = {
   agent: AgentNodeComponent,
@@ -343,4 +427,7 @@ export const workflowNodeTypes: NodeTypes = {
   condition: ConditionNodeComponent,
   input: InputNodeComponent,
   output: OutputNodeComponent,
+  parallel_split: ParallelSplitNodeComponent,
+  parallel_join: ParallelJoinNodeComponent,
+  subgraph: SubgraphNodeComponent,
 };

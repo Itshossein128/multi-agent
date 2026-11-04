@@ -5,6 +5,7 @@ import type { LiveCanvasController } from "./live/liveCanvas.types";
 import React from "react";
 import {
   CircleCheck,
+  LayoutGrid,
   Maximize,
   Play,
   Redo2,
@@ -76,6 +77,8 @@ export function EditorToolbar({ session }: { session: Pick<LiveCanvasController,
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
   const removeSelection = useWorkflowStore((s) => s.removeSelection);
+  const autoArrangeNodes = useWorkflowStore((s) => s.autoArrangeNodes);
+  const nodeCount = useWorkflowStore((s) => s.definition.nodes.length);
 
   const { zoomIn, zoomOut, fitView } = useReactFlow();
 
@@ -128,6 +131,13 @@ export function EditorToolbar({ session }: { session: Pick<LiveCanvasController,
       </ToolButton>
       <ToolButton title="Fit view" onClick={() => fitView({ duration: 300 })}>
         <Maximize className="h-4 w-4" />
+      </ToolButton>
+      <ToolButton
+        title="Auto-Arrange"
+        disabled={live || nodeCount === 0}
+        onClick={() => autoArrangeNodes()}
+      >
+        <LayoutGrid className="h-4 w-4" />
       </ToolButton>
 
       <span role="status" className="text-xs font-semibold text-indigo-300">{live ? "Live · Read only" : "Design"}</span>

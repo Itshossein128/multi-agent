@@ -51,10 +51,27 @@ export interface RunCanvasProjectionInput {
   approvals?: readonly ApprovalRequest[];
 }
 
+/** Topology Live chrome hints (feature 014 FR-016). */
+export interface TopologyLiveProjectionHints {
+  iterationByNodeId?: Record<string, { current: number; max: number; phase?: string }>;
+  parallelBranchesBySplitId?: Record<
+    string,
+    Array<{ branchKey: string; nodeId?: string; status: "pending" | "running" | "completed" | "failed" | "timed_out" }>
+  >;
+  subgraphFrames?: Array<{
+    parentNodeId: string;
+    workflowId: string;
+    depth: number;
+    status: "running" | "exited" | "failed";
+  }>;
+  swarmTerminationReason?: string;
+}
+
 export interface RunCanvasProjection {
   nodeStatus: ReadonlyMap<string, CanvasNodeLiveStatus>;
   traversedEdgeIds: ReadonlySet<string>;
   waitingApprovalNodeIds: ReadonlySet<string>;
+  topologyHints?: TopologyLiveProjectionHints;
 }
 
 /** Nested tool activity for the inspector (FR-009). */

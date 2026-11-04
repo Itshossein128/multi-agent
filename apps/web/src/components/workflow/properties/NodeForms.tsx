@@ -702,3 +702,171 @@ export function IOPortalForm({
     </div>
   );
 }
+
+export function ParallelJoinForm({ node }: { node: WorkflowNode }) {
+  const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
+  const config = node.config as { joinPolicy?: string; branchTimeoutMs?: number; requiredBranchKeys?: string[] };
+  return (
+    <div className="space-y-3">
+      <Field label="Join policy">
+        <select
+          value={config.joinPolicy ?? "all_success"}
+          onChange={(event) => updateNodeConfig(node.id, { joinPolicy: event.target.value })}
+          className={inputClass}
+        >
+          <option value="all_success">All success (fail-closed)</option>
+          <option value="partial_allowed">Partial allowed</option>
+        </select>
+      </Field>
+      <Field label="Branch timeout (ms, optional)">
+        <input
+          type="number"
+          min={1}
+          value={config.branchTimeoutMs ?? ""}
+          placeholder="inherit"
+          onChange={(event) =>
+            updateNodeConfig(node.id, {
+              branchTimeoutMs: event.target.value ? Number(event.target.value) : undefined,
+            })
+          }
+          className={inputClass}
+        />
+      </Field>
+      <Field label="Required branch keys (comma-separated node ids)">
+        <input
+          type="text"
+          value={(config.requiredBranchKeys ?? []).join(", ")}
+          onChange={(event) =>
+            updateNodeConfig(node.id, {
+              requiredBranchKeys: event.target.value
+                .split(",")
+                .map((part) => part.trim())
+                .filter(Boolean),
+            })
+          }
+          className={cn(inputClass, "font-mono text-[11px]")}
+        />
+      </Field>
+    </div>
+  );
+}
+
+type SubgraphMappingRow = { source: string; target: string; required?: boolean };
+
+function MappingRowsEditor({
+  label,
+  rows,
+  onChange,
+}: {
+  label: string;
+  rows: SubgraphMappingRow[];
+  onChange: (next: SubgraphMappingRow[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className={labelClass}>{label}</span>
+        <button
+          type="button"
+          className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200"
+          onClick={() => onChange([...rows, { source: "", target: "", required: true }])}
+        >
+          Add row
+        </button>
+      </div>
+      {rows.length === 0 && <p className="text-[11px] text-zinc-500">No mappings yet.</p>}
+      {rows.map((row, index) => (
+        <div key={`${label}-${index}`} className="grid grid-cols-[1fr_1fr_auto_auto] gap-1.5">
+          <input
+            type="text"
+            placeholder="source"
+            value={row.source}
+            onChange={(event) => {
+              const next = [...rows];
+              next[index] = { ...row, source: event.target.value };
+              onChange(next);
+            }}
+            className={cn(inputClass, "font-mono text-[11px]")}
+          />
+          <input
+            type="text"
+            placeholder="target"
+            value={row.target}
+            onChange={(event) => {
+              const next = [...rows];
+              next[index] = { ...row, target: event.target.value };
+              onChange(next);
+            }}
+            className={cn(inputClass, "font-mono text-[11px]")}
+          />
+          <label className="flex items-center gap-1 text-[10px] text-zinc-400">
+            <input
+              type="checkbox"
+              checked={row.required !== false}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, required: event.target.checked };
+                onChange(next);
+              }}
+            />
+            req
+          </label>
+          <button
+            type="button"
+            className="text-[10px] text-red-300 hover:text-red-200"
+            onClick={() => onChange(rows.filter((_, i) => i !== index))}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SubgraphForm({ node }: { node: WorkflowNode }) {
+  const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
+  const definition = useWorkflowStore((s) => s.definition);
+  const config = node.config as {
+    workflowId?: string;
+    label?: string;
+    inputMappings?: SubgraphMappingRow[];
+    outputMappings?: SubgraphMappingRow[];
+  };
+  return (
+    <div className="space-y-3">
+      <Field label="Referenced workflow id">
+        <input
+          type="text"
+          list={`subgraph-workflow-options-${node.id}`}
+          value={config.workflowId ?? ""}
+          onChange={(event) => updateNodeConfig(node.id, { workflowId: event.target.value })}
+          className={cn(inputClass, "font-mono text-[11px]")}
+          placeholder="wf-…"
+        />
+        <datalist id={`subgraph-workflow-options-${node.id}`}>
+          {/* Current definition id is excluded; operators paste another saved workflow id. */}
+          {definition.id ? <option value="" label="(paste another saved workflow id)" /> : null}
+        </datalist>
+      </Field>
+      <Field label="Label">
+        <input
+          type="text"
+          value={config.label ?? ""}
+          onChange={(event) => updateNodeConfig(node.id, { label: event.target.value })}
+          className={inputClass}
+        />
+      </Field>
+      <MappingRowsEditor
+        label="Input mappings (parent → child)"
+        rows={config.inputMappings ?? []}
+        onChange={(inputMappings) => updateNodeConfig(node.id, { inputMappings })}
+      />
+      <MappingRowsEditor
+        label="Output mappings (child → parent)"
+        rows={config.outputMappings ?? []}
+        onChange={(outputMappings) => updateNodeConfig(node.id, { outputMappings })}
+      />
+    </div>
+  );
+}

@@ -156,6 +156,21 @@ export interface CompileOptions {
   workingMemoryScopePolicy?: WorkingMemoryScopePolicy;
   /** Durable proposal retained while a structured agent result awaits approval. */
   pendingHuman?: { nodeId: string; envelope: NodeResultEnvelope };
+  /** Current subgraph nesting depth (0 = top-level workflow). */
+  nestingDepth?: number;
+  /**
+   * Optional nested workflow runner for `subgraph` nodes. When absent, subgraph
+   * execution fails closed (does not silently skip).
+   */
+  subgraphRunner?: (args: {
+    workflowId: string;
+    parentNodeId: string;
+    input: unknown;
+    inputMappings: Array<{ source: string; target: string; required?: boolean }>;
+    outputMappings: Array<{ source: string; target: string; required?: boolean }>;
+    nestingDepth: number;
+    signal?: AbortSignal;
+  }) => Promise<unknown>;
 }
 
 function isGapAuditorNode(node: { config: unknown }): boolean {
@@ -427,11 +442,33 @@ export function compileWorkflow(
               ? fieldOrOutcome(config.valueField)
               : state.input.branch ?? state.input.condition ?? state.input["branchKey"] ?? inputRecord?.nextAction ?? fieldOrOutcome(config.valueField);
 
-            // Recursion guardrails evaluation
+            // Recursion / EO iteration guardrails
+            const eo = definition.archetypeConfig?.evaluatorOptimizer;
             const recursionGuards = definition.archetypeConfig?.recursionGuards ?? (
               archetype === "hierarchical-supervisor"
                 ? [{ routeKey: "qa_verify->implement_spec", maxIterations: 3, fallbackBranch: "loop_limit_exceeded" }]
-                : []
+                : archetype === "evaluator-optimizer" && eo
+                  ? [{
+                      routeKey: `eo-fail->${eo.failBranch}`,
+                      maxIterations: eo.maxIterations,
+                      fallbackBranch: eo.exhaustionOutcome === "exit_path"
+                        ? (eo.exhaustionBranch ?? "exhausted")
+                        : (eo.exhaustionBranch ?? eo.passBranch),
+                    }]
+                  : archetype === "autonomous-swarm" && definition.archetypeConfig?.swarm
+                    ? [
+                        {
+                          routeKey: "swarm-hop",
+                          maxIterations: definition.archetypeConfig.swarm.maxHops,
+                          fallbackBranch: definition.archetypeConfig.swarm.terminationBranch ?? "__end__",
+                        },
+                        {
+                          routeKey: "swarm-depth",
+                          maxIterations: definition.archetypeConfig.swarm.maxDepth,
+                          fallbackBranch: definition.archetypeConfig.swarm.terminationBranch ?? "__end__",
+                        },
+                      ]
+                    : []
             );
 
             const resolution = resolveBranchRoute(config, requested);
@@ -440,12 +477,38 @@ export function compileWorkflow(
             }
 
             const targetBranch = resolution.branch;
-            const matchedGuard = archetype === "hierarchical-supervisor"
-              ? recursionGuards.find((guard) => guard.routeKey.split("->").pop()?.trim() === targetBranch)
-              : undefined;
+            const swarmCfg = definition.archetypeConfig?.swarm;
+            const swarmContinuing =
+              archetype === "autonomous-swarm" &&
+              targetBranch !== (swarmCfg?.terminationBranch ?? "done");
+            const matchedGuard =
+              archetype === "hierarchical-supervisor" || archetype === "evaluator-optimizer" || archetype === "autonomous-swarm"
+                ? recursionGuards.find((guard) => {
+                    if (archetype === "evaluator-optimizer" && eo) {
+                      return targetBranch === eo.failBranch || guard.routeKey.split("->").pop()?.trim() === targetBranch;
+                    }
+                    if (archetype === "autonomous-swarm") {
+                      return swarmContinuing && guard.routeKey === "swarm-hop";
+                    }
+                    return guard.routeKey.split("->").pop()?.trim() === targetBranch;
+                  })
+                : undefined;
+
+            if (archetype === "evaluator-optimizer" && eo) {
+              const eoRouteKey = `eo-fail->${eo.failBranch}`;
+              const current = (state.loopIterations?.[eoRouteKey] ?? state.loopIterations?.[eo.failBranch] ?? 0) + (targetBranch === eo.failBranch ? 1 : 0);
+              emit("node.loop_iteration", {
+                nodeId: node.id,
+                current: Math.max(1, current || 1),
+                max: eo.maxIterations,
+                phase: targetBranch === eo.failBranch ? "generate" : targetBranch === eo.passBranch ? "pass" : "evaluate",
+              });
+            }
 
             let iteration = 0;
             let limitExceeded = false;
+            let swarmCeiling: "hop" | "depth" | undefined;
+            let swarmDepthIteration = 0;
             if (matchedGuard) {
               const explicitIteration =
                 typeof effectiveCarrier?.iterationCount === "number"
@@ -459,13 +522,26 @@ export function compileWorkflow(
               iteration = Math.max(currentTracked + 1, reportedIteration);
               const maxIterations = matchedGuard.maxIterations ?? 3;
               limitExceeded = iteration >= maxIterations;
+              if (swarmContinuing && swarmCfg) {
+                swarmDepthIteration = (state.loopIterations?.["swarm-depth"] ?? 0) + 1;
+                if (swarmDepthIteration >= swarmCfg.maxDepth) {
+                  limitExceeded = true;
+                  swarmCeiling = "depth";
+                } else if (limitExceeded) {
+                  swarmCeiling = "hop";
+                }
+              }
             }
 
             if (limitExceeded && matchedGuard) {
-              const fallbackBranch = matchedGuard.fallbackBranch || "loop_limit_exceeded";
+              const depthGuard = recursionGuards.find((candidate) => candidate.routeKey === "swarm-depth");
+              const activeGuard = swarmCeiling === "depth" && depthGuard ? depthGuard : matchedGuard;
+              const activeIteration = swarmCeiling === "depth" ? swarmDepthIteration : iteration;
+              const fallbackBranch = activeGuard.fallbackBranch || "loop_limit_exceeded";
               const updatedIterations = {
                 ...(state.loopIterations ?? {}),
                 [matchedGuard.routeKey]: iteration,
+                ...(swarmContinuing ? { "swarm-depth": swarmDepthIteration } : {}),
                 [targetBranch]: iteration,
               };
               const effectiveTaskId = (effectiveCarrier?.taskId as string | undefined) ??
@@ -473,13 +549,43 @@ export function compileWorkflow(
 
               emit("node.loop_limit_reached", {
                 nodeId: node.id,
-                routeKey: matchedGuard.routeKey,
+                routeKey: activeGuard.routeKey,
                 targetBranch,
                 fallbackBranch,
-                iteration,
-                maxIterations: matchedGuard.maxIterations ?? 3,
+                iteration: activeIteration,
+                maxIterations: activeGuard.maxIterations ?? 3,
                 taskId: effectiveTaskId,
+                ...(archetype === "evaluator-optimizer" ? { exhaustionOutcome: eo?.exhaustionOutcome ?? "exit_path" } : {}),
+                ...(archetype === "autonomous-swarm"
+                  ? {
+                      terminationReason: swarmCeiling === "depth" ? "swarm_depth_ceiling" : "swarm_hop_ceiling",
+                    }
+                  : {}),
               });
+
+              // EO exhaustionOutcome "fail" terminates the run instead of taking an exit branch.
+              if (archetype === "evaluator-optimizer" && eo?.exhaustionOutcome === "fail") {
+                throw new NodeOutcomeError(createResultEnvelope("failed", {
+                  error: {
+                    code: "EVALUATOR_OPTIMIZER_CEILING_EXCEEDED",
+                    message: `Evaluator-optimizer reached maxIterations (${matchedGuard.maxIterations}) and exhaustionOutcome is fail.`,
+                    retryable: false,
+                  },
+                }), node.id);
+              }
+
+              if (archetype === "autonomous-swarm" && fallbackBranch === "__end__") {
+                const depthCeiling = swarmCeiling === "depth";
+                throw new NodeOutcomeError(createResultEnvelope("failed", {
+                  error: {
+                    code: depthCeiling ? "SWARM_DEPTH_CEILING" : "SWARM_HOP_CEILING",
+                    message: depthCeiling
+                      ? `Autonomous swarm reached maxDepth (${activeGuard.maxIterations}).`
+                      : `Autonomous swarm reached maxHops (${activeGuard.maxIterations}).`,
+                    retryable: false,
+                  },
+                }), node.id);
+              }
 
               result = {
                 branch: fallbackBranch,
@@ -489,15 +595,16 @@ export function compileWorkflow(
               emit("state.updated", {
                 branch: fallbackBranch,
                 routeReason: "recursion_limit_exceeded",
-                iteration,
-                maxIterations: matchedGuard.maxIterations ?? 3,
-                routeKey: matchedGuard.routeKey,
+                iteration: activeIteration,
+                maxIterations: activeGuard.maxIterations ?? 3,
+                routeKey: activeGuard.routeKey,
               });
             } else {
               const updatedIterations = matchedGuard
                 ? {
                     ...(state.loopIterations ?? {}),
                     [matchedGuard.routeKey]: iteration,
+                    ...(swarmContinuing ? { "swarm-depth": swarmDepthIteration || (state.loopIterations?.["swarm-depth"] ?? 0) + 1 } : {}),
                     [targetBranch]: iteration,
                   }
                 : state.loopIterations;
@@ -513,6 +620,76 @@ export function compileWorkflow(
                 ...(matchedGuard ? { iteration, maxIterations: matchedGuard.maxIterations ?? 3, routeKey: matchedGuard.routeKey } : {}),
                 ...(resolution.viaUnknownRoute ? { viaUnknownRoute: true } : {}),
               });
+            }
+          } else if (node.type === "parallel_split") {
+            const outgoing = definition.edges.filter((edge) => edge.source === node.id);
+            const swarmActiveCap = archetype === "autonomous-swarm"
+              ? definition.archetypeConfig?.swarm?.maxActivePeerTasks
+              : undefined;
+            if (typeof swarmActiveCap === "number" && outgoing.length > swarmActiveCap) {
+              throw new NodeOutcomeError(createResultEnvelope("failed", {
+                error: {
+                  code: "SWARM_ACTIVE_PEER_CEILING",
+                  message: `Autonomous swarm parallel fan-out ${outgoing.length} exceeds maxActivePeerTasks (${swarmActiveCap}).`,
+                  retryable: false,
+                },
+              }), node.id);
+            }
+            for (const edge of outgoing) {
+              emit("parallel.branch_started", { splitNodeId: node.id, branchKey: edge.target, nodeId: edge.target });
+            }
+            result = { lastValue: state.lastValue };
+          } else if (node.type === "parallel_join") {
+            const joined = valueForNode(node, state, definition);
+            for (const edge of definition.edges.filter((candidate) => candidate.target === node.id)) {
+              const ok = state.nodeResults && Object.prototype.hasOwnProperty.call(state.nodeResults, edge.source);
+              const splitEdge = definition.edges.find(
+                (candidate) =>
+                  candidate.target === edge.source &&
+                  definition.nodes.some((candidateNode) => candidateNode.id === candidate.source && candidateNode.type === "parallel_split"),
+              );
+              emit(ok ? "parallel.branch_completed" : "parallel.branch_failed", {
+                splitNodeId: splitEdge?.source ?? "unknown",
+                joinId: node.id,
+                branchKey: edge.source,
+                nodeId: edge.source,
+              });
+            }
+            result = { lastValue: joined };
+          } else if (node.type === "subgraph") {
+            const subConfig = node.config as { workflowId?: string; inputMappings?: Array<{ source: string; target: string }>; outputMappings?: Array<{ source: string; target: string }> };
+            const workflowId = subConfig.workflowId?.trim() ?? "";
+            if (!workflowId) throw new Error(`Subgraph node "${node.id}" requires a workflowId`);
+            const depth = (options as { nestingDepth?: number }).nestingDepth ?? 0;
+            emit("subgraph.entered", { parentNodeId: node.id, workflowId, depth: depth + 1 });
+            try {
+              // v1: nested definition resolution is injected by the run executor when available.
+              const nestedRunner = options.subgraphRunner;
+              if (nestedRunner) {
+                const nestedOutput = await nestedRunner({
+                  workflowId,
+                  parentNodeId: node.id,
+                  input: state.lastValue,
+                  inputMappings: subConfig.inputMappings ?? [],
+                  outputMappings: subConfig.outputMappings ?? [],
+                  nestingDepth: depth + 1,
+                  signal,
+                });
+                emit("subgraph.exited", { parentNodeId: node.id, workflowId, depth: depth + 1 });
+                result = { lastValue: nestedOutput };
+              } else {
+                // Fail closed without a resolver: do not silently skip nested work.
+                emit("subgraph.failed", { parentNodeId: node.id, workflowId, depth: depth + 1, reason: "SUBGRAPH_RUNNER_UNAVAILABLE" });
+                throw new Error(`Subgraph node "${node.id}" cannot run: nested workflow resolver is not configured`);
+              }
+            } catch (error) {
+              emit("subgraph.failed", {
+                parentNodeId: node.id,
+                workflowId,
+                depth: depth + 1,
+                reason: error instanceof Error ? error.message : String(error),
+              });
+              throw error;
             }
           } else {
             const config = node.config as { agentId?: string | null };
@@ -891,19 +1068,64 @@ export { coerceBranchCarrier } from "../runtime/execUtils";
 function valueForNode(node: WorkflowNode, state: RuntimeState, definition: WorkflowDefinition): unknown {
   // Routers in a loop must observe the immediately preceding value. Join nodes,
   // however, receive every completed predecessor keyed by stable node id.
-  if (node.type === "condition" || node.type === "input") return state.lastValue;
+  if (node.type === "condition" || node.type === "input" || node.type === "parallel_split") return state.lastValue;
   const incomingEdges = definition.edges.filter((edge) => edge.target === node.id);
   // Output nodes can explicitly select the active route. This is needed for
   // workflows where gate nodes also point to the output, while ordinary output
   // nodes retain join semantics for parallel fan-in.
   if (node.type === "output" && (node.config as { inputMode?: string }).inputMode === "last_value") return state.lastValue;
   const incoming = incomingEdges.map((edge) => edge.source);
-  if (incoming.length < 2) return state.lastValue;
+  if (incoming.length < 2 && node.type !== "parallel_join") return state.lastValue;
   const results = state.nodeResults ?? {};
   const branches = Object.fromEntries(
     incoming.filter((source) => Object.prototype.hasOwnProperty.call(results, source)).map((source) => [source, results[source]]),
   );
+  if (node.type === "parallel_join") {
+    return evaluateParallelJoinResult(node, incoming, results);
+  }
   return Object.keys(branches).length > 1 ? { branches } : state.lastValue;
+}
+
+/** Parallel join carrier evaluation (exported for topology unit tests). */
+export function evaluateParallelJoinResult(
+  node: WorkflowNode,
+  incoming: string[],
+  results: Record<string, unknown>,
+): { branches: Record<string, unknown>; failed?: Record<string, { code: string; message: string }>; timedOut?: string[]; partial: boolean } {
+  const branches = Object.fromEntries(
+    incoming.filter((source) => Object.prototype.hasOwnProperty.call(results, source)).map((source) => [source, results[source]]),
+  );
+  const joinConfig = node.config as { joinPolicy?: string; requiredBranchKeys?: string[]; branchTimeoutMs?: number };
+  const joinPolicy = joinConfig.joinPolicy ?? "all_success";
+  const required = joinConfig.requiredBranchKeys ?? incoming;
+  const failed: Record<string, { code: string; message: string }> = {};
+  const timedOut: string[] = [];
+  const timeoutMs = typeof joinConfig.branchTimeoutMs === "number" && joinConfig.branchTimeoutMs > 0
+    ? joinConfig.branchTimeoutMs
+    : undefined;
+  for (const key of required) {
+    if (!Object.prototype.hasOwnProperty.call(results, key)) {
+      // Without per-branch wall clocks at join barrier, missing required lanes
+      // are attributed as timed out when branchTimeoutMs is configured; otherwise missing/failed.
+      if (timeoutMs !== undefined) {
+        timedOut.push(key);
+        failed[key] = { code: "PARALLEL_BRANCH_TIMEOUT", message: `Required parallel branch "${key}" exceeded branchTimeoutMs (${timeoutMs}).` };
+      } else {
+        failed[key] = { code: "PARALLEL_BRANCH_MISSING", message: `Required parallel branch "${key}" did not complete.` };
+      }
+    }
+  }
+  const partial = Object.keys(failed).length > 0;
+  if (joinPolicy === "all_success" && partial) {
+    throw new NodeOutcomeError(createResultEnvelope("failed", {
+      value: { branches, failed, timedOut, partial: true },
+      error: { code: "PARALLEL_JOIN_FAILED", message: "Parallel join requires all_success but one or more branches failed.", retryable: false },
+    }), node.id);
+  }
+  return {
+    branches,
+    ...(partial ? { failed, timedOut, partial: true as const } : { partial: false as const }),
+  };
 }
 
 function resolveRetryPolicy(

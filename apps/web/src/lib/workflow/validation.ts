@@ -19,7 +19,16 @@ import {
   agentHasConfiguredModel,
   validateRawNodeContract,
 } from "./types";
-import { resolveWorkflowArchetype, validateAgent, validateAgentNodeStepConfig, type WorkflowNode } from "@multi-agent/types";
+import {
+  DEFAULT_MAX_CONCURRENT_BRANCHES,
+  isWorkflowArchetypeValid,
+  resolveWorkflowArchetype,
+  validateAgent,
+  validateAgentNodeStepConfig,
+  type ParallelJoinNodeConfig,
+  type SubgraphNodeConfig,
+  type WorkflowNode,
+} from "@multi-agent/types";
 
 export interface WorkflowIssue {
   id: string;
@@ -364,7 +373,9 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
   }
 
   // -- Archetype parity with the server compiler ---------------------------
-  issues.push(...validateArchetype(def, nodesById, archetypeCycleNodes(def, nodesById)));
+  const cycleNodes = archetypeCycleNodes(def, nodesById);
+  issues.push(...validateArchetype(def, nodesById, cycleNodes));
+  issues.push(...validateExpandedTopologyClient(def, nodesById, cycleNodes));
 
   // -- Cycles -----------------------------------------------------------------
   const exitCapableTypes = new Set(["condition", "approval"]);
@@ -392,6 +403,140 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
 }
 
 /**
+ * Client port of topology expansion checks (feature 014).
+ * Mirrors apps/server/src/compiler/topologyValidation.ts codes/messages.
+ */
+function validateExpandedTopologyClient(
+  definition: WorkflowDefinition,
+  nodes: Map<string, WorkflowNode>,
+  cycleNodes: Set<string>,
+): WorkflowIssue[] {
+  const issues: WorkflowIssue[] = [];
+  let sequence = 0;
+  const add = (code: string, message: string, nodeId?: string) => {
+    issues.push({ id: `issue-error-${code}-${sequence++}`, code, severity: "error", message, nodeId });
+  };
+  const archetype = resolveWorkflowArchetype(definition);
+
+  if (archetype === "evaluator-optimizer") {
+    const eo = definition.archetypeConfig?.evaluatorOptimizer;
+    if (!eo) {
+      add("EVALUATOR_OPTIMIZER_CONFIG_REQUIRED", "Evaluator-optimizer workflow requires archetypeConfig.evaluatorOptimizer.");
+    } else {
+      if (!eo.generatorNodeIds?.length || !eo.evaluatorNodeIds?.length) {
+        add("EVALUATOR_OPTIMIZER_CONFIG_REQUIRED", "Evaluator-optimizer requires generatorNodeIds and evaluatorNodeIds (min 1 each).");
+      }
+      for (const id of eo.generatorNodeIds ?? []) {
+        const node = nodes.get(id);
+        if (!node || node.type !== "agent") add("EVALUATOR_OPTIMIZER_ROLE_INVALID", `Generator node "${id}" must exist and be an agent node.`, id);
+      }
+      for (const id of eo.evaluatorNodeIds ?? []) {
+        const node = nodes.get(id);
+        if (!node || (node.type !== "agent" && node.type !== "condition")) {
+          add("EVALUATOR_OPTIMIZER_ROLE_INVALID", `Evaluator node "${id}" must exist and be an agent or condition node.`, id);
+        }
+      }
+      if (typeof eo.maxIterations !== "number" || !Number.isInteger(eo.maxIterations) || eo.maxIterations < 1 || eo.maxIterations > 10) {
+        add("EVALUATOR_OPTIMIZER_CEILING_REQUIRED", "Evaluator-optimizer maxIterations must be an integer between 1 and 10.");
+      }
+      const declares = (key?: string) =>
+        Boolean(key) &&
+        definition.nodes.some((node) => {
+          if (node.type !== "condition") return false;
+          const branches = (node.config as { branches?: Array<{ key?: string }> }).branches ?? [];
+          return branches.some((branch) => branch.key === key);
+        }) &&
+        definition.edges.some((edge) => edge.kind === "conditional" && edge.branchKey === key);
+      if (!declares(eo.passBranch) || !declares(eo.failBranch)) {
+        add("EVALUATOR_OPTIMIZER_ROUTING_INVALID", "Evaluator-optimizer pass/fail branches must be declared on a condition node and wired with conditional edges.");
+      }
+      if (eo.exhaustionOutcome === "exit_path" && !declares(eo.exhaustionBranch)) {
+        add("EVALUATOR_OPTIMIZER_EXHAUSTION_UNWIRED", "Evaluator-optimizer exhaustionOutcome is exit_path but exhaustionBranch is missing or not wired.");
+      }
+      if (cycleNodes.size > 0) {
+        const roleIds = new Set([...(eo.generatorNodeIds ?? []), ...(eo.evaluatorNodeIds ?? [])]);
+        const isAdjacent = (nodeId: string) =>
+          definition.edges.some(
+            (edge) =>
+              (edge.source === nodeId && roleIds.has(edge.target)) ||
+              (edge.target === nodeId && roleIds.has(edge.source)),
+          );
+        for (const nodeId of cycleNodes) {
+          // Permit the condition router on the designated fail→generator feedback path.
+          if (!roleIds.has(nodeId) && !isAdjacent(nodeId)) {
+            add("EVALUATOR_OPTIMIZER_CYCLE_INVALID", `Evaluator-optimizer feedback cycle must route fail back to a generator; unrelated cycle involving "${nodeId}" is not allowed.`, nodeId);
+          }
+        }
+      }
+    }
+  }
+
+  if (archetype === "autonomous-swarm") {
+    const swarm = definition.archetypeConfig?.swarm;
+    if (!swarm || typeof swarm.maxHops !== "number" || typeof swarm.maxDepth !== "number" || typeof swarm.maxActivePeerTasks !== "number") {
+      add("SWARM_BOUNDS_REQUIRED", "Autonomous-swarm workflow requires archetypeConfig.swarm with maxHops, maxDepth, and maxActivePeerTasks.");
+      if (cycleNodes.size > 0) add("SWARM_UNBOUNDED_PEER_LOOP", "Autonomous-swarm contains peer cycles but has no enforceable hop/depth bounds.");
+    } else if (
+      swarm.maxHops < 1 || swarm.maxHops > 20 ||
+      swarm.maxDepth < 1 || swarm.maxDepth > 20 ||
+      swarm.maxActivePeerTasks < 1 || swarm.maxActivePeerTasks > DEFAULT_MAX_CONCURRENT_BRANCHES
+    ) {
+      add("SWARM_BOUNDS_INVALID", `Autonomous-swarm bounds invalid: hops/depth 1-20, maxActivePeerTasks 1-${DEFAULT_MAX_CONCURRENT_BRANCHES}.`);
+    }
+  }
+
+  for (const node of definition.nodes) {
+    if (node.type === "parallel_split") {
+      const outgoing = definition.edges.filter((edge) => edge.source === node.id);
+      if (outgoing.length < 2) {
+        add("PARALLEL_SPLIT_JOIN_MISMATCH", `Parallel split "${node.id}" requires at least two outgoing specialist lanes.`, node.id);
+      }
+      if (outgoing.length > DEFAULT_MAX_CONCURRENT_BRANCHES) {
+        add("PARALLEL_BRANCH_LIMIT_EXCEEDED", `Parallel split "${node.id}" fans out to ${outgoing.length} branches; platform limit is ${DEFAULT_MAX_CONCURRENT_BRANCHES}.`, node.id);
+      }
+    }
+    if (node.type === "parallel_join") {
+      const config = node.config as ParallelJoinNodeConfig;
+      const policy = config.joinPolicy ?? "all_success";
+      if (policy !== "all_success" && policy !== "partial_allowed") {
+        add("PARALLEL_JOIN_POLICY_INVALID", `Parallel join "${node.id}" has invalid joinPolicy.`, node.id);
+      }
+      const incoming = definition.edges.filter((edge) => edge.target === node.id);
+      if (incoming.length < 2) {
+        add("PARALLEL_SPLIT_JOIN_MISMATCH", `Parallel join "${node.id}" requires at least two incoming specialist lanes.`, node.id);
+      }
+      if (Array.isArray(config.requiredBranchKeys)) {
+        const sources = new Set(incoming.map((edge) => edge.source));
+        for (const key of config.requiredBranchKeys) {
+          if (!sources.has(key)) {
+            add("PARALLEL_JOIN_POLICY_INVALID", `Parallel join "${node.id}" requiredBranchKeys entry "${key}" is not an incoming source.`, node.id);
+          }
+        }
+      }
+    }
+    if (node.type === "subgraph") {
+      const config = node.config as SubgraphNodeConfig;
+      const workflowId = typeof config.workflowId === "string" ? config.workflowId.trim() : "";
+      if (!workflowId) add("SUBGRAPH_REF_MISSING", `Subgraph node "${node.id}" requires a workflowId.`, node.id);
+      else if (workflowId === definition.id) {
+        add("SUBGRAPH_NESTING_UNSAFE", `Subgraph node "${node.id}" cannot reference its parent workflow (self-reference).`, node.id);
+      }
+      const depth = (config as { nestingDepth?: number }).nestingDepth;
+      if (typeof depth === "number" && depth > 3) {
+        add("SUBGRAPH_DEPTH_EXCEEDED", `Subgraph nesting depth ${depth} exceeds platform max 3.`, node.id);
+      }
+      for (const mapping of [...(config.inputMappings ?? []), ...(config.outputMappings ?? [])]) {
+        if (mapping.required !== false && (!mapping.source?.trim() || !mapping.target?.trim())) {
+          add("SUBGRAPH_MAPPING_INVALID", `Subgraph node "${node.id}" has a required mapping with empty source or target.`, node.id);
+        }
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
  * Client port of `apps/server/src/compiler/validation.ts` archetype rules.
  * Issue codes and messages match the server so the editor and Run gate agree
  * with save/compile without a network round-trip.
@@ -407,12 +552,12 @@ function validateArchetype(
     issues.push({ id: `issue-${severity}-${code}-${sequence++}`, code, severity, message, nodeId, edgeId });
   };
 
-  if (definition.archetype !== undefined && definition.archetype !== "linear-pipeline" && definition.archetype !== "hierarchical-supervisor") {
-    add("INVALID_ARCHETYPE", `Unknown workflow archetype "${String(definition.archetype)}". Allowed archetypes are "linear-pipeline" and "hierarchical-supervisor".`);
+  if (definition.archetype !== undefined && !isWorkflowArchetypeValid(definition.archetype)) {
+    add("INVALID_ARCHETYPE", `Unknown workflow archetype "${String(definition.archetype)}". Allowed archetypes are linear-pipeline, hierarchical-supervisor, evaluator-optimizer, and autonomous-swarm.`);
   }
 
-  if (definition.archetypeConfig?.category !== undefined && definition.archetypeConfig.category !== "linear-pipeline" && definition.archetypeConfig.category !== "hierarchical-supervisor") {
-    add("INVALID_ARCHETYPE", `Unknown archetypeConfig category "${String(definition.archetypeConfig.category)}". Allowed categories are "linear-pipeline" and "hierarchical-supervisor".`);
+  if (definition.archetypeConfig?.category !== undefined && !isWorkflowArchetypeValid(definition.archetypeConfig.category)) {
+    add("INVALID_ARCHETYPE", `Unknown archetypeConfig category "${String(definition.archetypeConfig.category)}". Allowed categories are linear-pipeline, hierarchical-supervisor, evaluator-optimizer, and autonomous-swarm.`);
   }
 
   const configuredCategory = definition.archetypeConfig?.category;

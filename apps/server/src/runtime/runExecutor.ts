@@ -124,6 +124,8 @@ export class RunExecutor {
       signal: (runId) => this.store.signal(runId),
       fail: (runId, error) => this.fail(runId, error),
       assertRunAccess: (runId) => this.assertRunAccess(runId),
+      studioStore: this.studioStore,
+      studioPrincipalForRun: (runId) => this.boardPrincipalForRun(runId),
     });
   }
 
@@ -933,7 +935,7 @@ export class RunExecutor {
     this.checkpointers.set(runId, checkpointer);
     if (!this.branchControllers.has(runId)) this.branchControllers.set(runId, new Map());
     try {
-      const compiled = compileWorkflow(request.workflow, request.agents, {
+      const compileOptionsBase = {
         runId,
         runtime: this.agentRuntime,
         toolRuntime: this.toolRuntime,
@@ -946,9 +948,23 @@ export class RunExecutor {
         stepBudget,
         guardrails: this.guardrails,
         branchSignals: this.branchControllers.get(runId),
-        onAgentEvent: (event) => {
+        onAgentEvent: (event: Parameters<NonNullable<CompileOptions["onAgentEvent"]>>[0]) => {
           this.appendAgentEvent(runId, event);
         },
+      } satisfies CompileOptions;
+      const compiled = compileWorkflow(request.workflow, request.agents, {
+        ...compileOptionsBase,
+        ...(this.studioStore && principal
+          ? {
+              subgraphRunner: (await import("../compiler/subgraphRunner")).createStudioSubgraphRunner({
+                studioStore: this.studioStore,
+                principal: { userId: principal.userId, tenantId: principal.tenantId },
+                agents: request.agents,
+                tools: request.tools,
+                baseOptions: compileOptionsBase,
+              }),
+            }
+          : {}),
       });
       // `memory` is workflow/shared execution state; `workingMemory` is the
       // separate run-scoped knowledge channel. Both start empty for a new run.

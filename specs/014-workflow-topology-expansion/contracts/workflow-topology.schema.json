@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://multi-agent.local/schemas/workflow-topology.schema.json",
+  "title": "WorkflowTopologyExpansion",
+  "description": "Additive schema for expanded workflow archetypes and topology primitives (evaluator-optimizer, autonomous-swarm, parallel_split/join, subgraph). Extends 009 workflow-archetype.schema.json.",
+  "type": "object",
+  "properties": {
+    "archetype": {
+      "type": "string",
+      "enum": [
+        "linear-pipeline",
+        "hierarchical-supervisor",
+        "evaluator-optimizer",
+        "autonomous-swarm"
+      ]
+    },
+    "archetypeConfig": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "linear-pipeline",
+            "hierarchical-supervisor",
+            "evaluator-optimizer",
+            "autonomous-swarm"
+          ]
+        },
+        "supervisorHubNodeId": { "type": "string" },
+        "maxExecutionSteps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000,
+          "default": 1000
+        },
+        "recursionGuards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["routeKey", "maxIterations", "fallbackBranch"],
+            "properties": {
+              "routeKey": { "type": "string" },
+              "maxIterations": { "type": "integer", "minimum": 1, "maximum": 10 },
+              "fallbackBranch": { "type": "string" }
+            }
+          }
+        },
+        "humanApprovalGateRequired": { "type": "boolean" },
+        "evaluatorOptimizer": {
+          "type": "object",
+          "required": [
+            "generatorNodeIds",
+            "evaluatorNodeIds",
+            "maxIterations",
+            "passBranch",
+            "failBranch",
+            "exhaustionOutcome"
+          ],
+          "properties": {
+            "generatorNodeIds": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string" }
+            },
+            "evaluatorNodeIds": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string" }
+            },
+            "maxIterations": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 3
+            },
+            "passBranch": { "type": "string" },
+            "failBranch": { "type": "string" },
+            "exhaustionOutcome": {
+              "type": "string",
+              "enum": ["fail", "exit_path"],
+              "default": "exit_path"
+            },
+            "exhaustionBranch": { "type": "string" }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "exhaustionOutcome": { "const": "exit_path" } }
+              },
+              "then": { "required": ["exhaustionBranch"] }
+            }
+          ]
+        },
+        "swarm": {
+          "type": "object",
+          "required": ["maxHops", "maxDepth", "maxActivePeerTasks"],
+          "properties": {
+            "maxHops": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "maxDepth": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "maxActivePeerTasks": { "type": "integer", "minimum": 1, "maximum": 8 },
+            "terminationBranch": { "type": "string" }
+          }
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "position", "config"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "tool",
+              "approval",
+              "memory",
+              "condition",
+              "input",
+              "output",
+              "parallel_split",
+              "parallel_join",
+              "subgraph"
+            ]
+          },
+          "position": {
+            "type": "object",
+            "required": ["x", "y"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          },
+          "config": {
+            "description": "Node-specific config; see parallel/subgraph shapes below when type matches.",
+            "type": "object"
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "type": { "const": "parallel_join" } } },
+            "then": {
+              "properties": {
+                "config": {
+                  "type": "object",
+                  "properties": {
+                    "joinPolicy": {
+                      "type": "string",
+                      "enum": ["all_success", "partial_allowed"],
+                      "default": "all_success"
+                    },
+                    "requiredBranchKeys": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "branchTimeoutMs": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "subgraph" } } },
+            "then": {
+              "properties": {
+                "config": {
+                  "type": "object",
+                  "required": ["workflowId", "inputMappings", "outputMappings"],
+                  "properties": {
+                    "workflowId": { "type": "string", "minLength": 1 },
+                    "label": { "type": "string" },
+                    "inputMappings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["source", "target"],
+                        "properties": {
+                          "source": { "type": "string" },
+                          "target": { "type": "string" },
+                          "required": { "type": "boolean", "default": true }
+                        }
+                      }
+                    },
+                    "outputMappings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["source", "target"],
+                        "properties": {
+                          "source": { "type": "string" },
+                          "target": { "type": "string" },
+                          "required": { "type": "boolean", "default": true }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,10 +1,15 @@
-import { assertNoCredentials, createEmptyDefinition, createHierarchicalSupervisorConfig, createLinearPipelineConfig, deserializeWorkflowDefinition, isWorkflowArchetypeValid, nowIso, type WorkflowArchetypeCategory, type WorkflowDefinition } from "@multi-agent/types";
+import { assertNoCredentials, createEmptyDefinition, createLinearPipelineConfig, deserializeWorkflowDefinition, isWorkflowArchetypeValid, nowIso, type WorkflowArchetypeCategory, type WorkflowDefinition } from "@multi-agent/types";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import type { RequestPrincipal } from "../../auth/principal";
 import { ApiError, isOwnershipError } from "../shared/http";
 import { requireResource } from "./resource";
 import { SAVE_BLOCKING_ISSUE_CODES, archetypeConflictMessage, validateWorkflow } from "../../compiler/validation";
 import { runtimeGuardrailsFromEnvironment } from "../../runtime/guardrails";
+import {
+  scaffoldAutonomousSwarm,
+  scaffoldEvaluatorOptimizer,
+  scaffoldHierarchicalSupervisor,
+} from "./topologyScaffolds";
 
 /**
  * Workflow CRUD. The server is authoritative for validation: structural
@@ -81,15 +86,13 @@ function normalizeWorkflowName(name: string | undefined): string {
 
 function stampWorkflowArchetype(definition: WorkflowDefinition, archetype: WorkflowArchetypeCategory): WorkflowDefinition {
   if (archetype === "hierarchical-supervisor") {
-    return {
-      ...definition,
-      archetype,
-      archetypeConfig: createHierarchicalSupervisorConfig(undefined, {
-        recursionGuards: [],
-        maxExecutionSteps: 1000,
-        humanApprovalGateRequired: true,
-      }),
-    };
+    return scaffoldHierarchicalSupervisor(definition);
+  }
+  if (archetype === "evaluator-optimizer") {
+    return scaffoldEvaluatorOptimizer(definition);
+  }
+  if (archetype === "autonomous-swarm") {
+    return scaffoldAutonomousSwarm(definition);
   }
   return {
     ...definition,

@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import type { WorkflowNode } from "@multi-agent/types";
 import { X } from "lucide-react";
 import { useRunStore } from "@/store/useRunStore";
-import { buildNodeExecutionView, selectNodeEvents } from "@/lib/runCanvasProjection";
+import { buildNodeExecutionView, projectRunCanvas, selectNodeEvents } from "@/lib/runCanvasProjection";
 import { ReadableContent } from "@/components/runs/ReadableContent";
 
 function Evidence({ value }: { value: unknown }) {
@@ -16,7 +16,8 @@ function Evidence({ value }: { value: unknown }) {
 export function NodeExecutionInspector({ nodeId, node, onClose }: { nodeId: string; node?: WorkflowNode; onClose: () => void }) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const events = useRunStore(useShallow(state => selectNodeEvents(state.events, nodeId)));
+  const allEvents = useRunStore(useShallow(state => state.events));
+  const events = useMemo(() => selectNodeEvents(allEvents, nodeId), [allEvents, nodeId]);
   const stepIndex = useRunStore(state => {
     let index = 0;
     for (const event of state.events) {
@@ -29,6 +30,9 @@ export function NodeExecutionInspector({ nodeId, node, onClose }: { nodeId: stri
   const run = useRunStore(state => state.run);
   const approvals = useRunStore(useShallow(state => state.approvals.filter(approval => approval.nodeId === nodeId)));
   const view = useMemo(() => buildNodeExecutionView(nodeId, { events, run, approvals }, node), [nodeId, events, run, approvals, node]);
+  const topologyHints = useMemo(() => projectRunCanvas({ events: allEvents, run, approvals }).topologyHints, [allEvents, run, approvals]);
+  const iteration = topologyHints?.iterationByNodeId?.[nodeId];
+  const subgraphFrame = topologyHints?.subgraphFrames?.find((frame) => frame.parentNodeId === nodeId);
   useEffect(() => {
     const previous = document.activeElement;
     closeRef.current?.focus();
@@ -49,6 +53,9 @@ export function NodeExecutionInspector({ nodeId, node, onClose }: { nodeId: stri
       <section><h3 className="mb-2 text-sm font-semibold text-zinc-200">Timing</h3><dl className="grid grid-cols-2 gap-2 text-xs text-zinc-300">
         <dt>Step</dt><dd>{stepIndex ?? view.stepIndex ?? "Unavailable"}</dd><dt>Starts / retries</dt><dd>{view.attemptCount}</dd>
         <dt>Started</dt><dd>{view.startedAt ?? "Unavailable"}</dd><dt>Completed</dt><dd>{view.completedAt ?? "Unavailable"}</dd><dt>Duration</dt><dd>{view.durationMs === undefined ? "Unavailable" : `${view.durationMs} ms`}</dd>
+        {iteration && (<><dt>Loop iteration</dt><dd>{iteration.current}/{iteration.max}{iteration.phase ? ` (${iteration.phase})` : ""}</dd></>)}
+        {subgraphFrame && (<><dt>Subgraph</dt><dd>{subgraphFrame.workflowId || "nested"} · depth {subgraphFrame.depth} · {subgraphFrame.status}</dd></>)}
+        {topologyHints?.swarmTerminationReason && (<><dt>Swarm</dt><dd>{topologyHints.swarmTerminationReason}</dd></>)}
       </dl></section>
       <section><h3 className="mb-2 text-sm font-semibold text-zinc-200">Stream</h3><Evidence value={view.streamText || undefined} />
         {view.thoughtsText && <details className="mt-2"><summary className="cursor-pointer text-xs text-zinc-300">Published thoughts</summary><Evidence value={view.thoughtsText} /></details>}

@@ -27,10 +27,14 @@ import {
   ContractForm,
   IOPortalForm,
   MemoryForm,
+  ParallelJoinForm,
+  SubgraphForm,
   ToolForm,
 } from "./NodeForms";
 import {
   ArchetypeSection,
+  AutonomousSwarmForm,
+  EvaluatorOptimizerForm,
   RecursionGuardsManager,
   SupervisorExecutionLimitsForm,
   SupervisorHubPicker,
@@ -99,6 +103,8 @@ export function NodeProperties({ node }: { node: WorkflowNode }) {
       {node.type === "approval" && <ApprovalForm node={node} />}
       {node.type === "memory" && <MemoryForm node={node} />}
       {node.type === "condition" && <ConditionForm node={node} />}
+      {node.type === "parallel_join" && <ParallelJoinForm node={node} />}
+      {node.type === "subgraph" && <SubgraphForm node={node} />}
       {(node.type === "input" || node.type === "output") && (
         <IOPortalForm node={node as WorkflowNode & { type: "input" | "output" }} />
       )}
@@ -273,6 +279,10 @@ export function Overview() {
           <SupervisorExecutionLimitsForm />
         </>
       )}
+      {archetype === "evaluator-optimizer" && (
+        <EvaluatorOptimizerForm agentNodes={tenantAgentNodes} />
+      )}
+      {archetype === "autonomous-swarm" && <AutonomousSwarmForm />}
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
         <div className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-2">
