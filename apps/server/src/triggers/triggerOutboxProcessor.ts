@@ -11,7 +11,7 @@ import {
   OrganizationAccessRevokedError,
   type RunOrganizationAccess,
 } from "../runtime/runOrganizationAccess";
-import type { TaskService } from "../api/studio/taskService";
+import { TaskService } from "../api/studio/taskService";
 import { log } from "../logging";
 import { OrganizationContextDeniedError, OrganizationContextResolver } from "../auth/organizationContext";
 import {
@@ -488,6 +488,39 @@ export class TriggerOutboxProcessor {
       const workflow = await this.store.getWorkflow(event.targetId, principal);
       if (!workflow) {
         throw new Error(`Target workflow "${event.targetId}" not found for tenant "${event.tenantId}"`);
+      }
+      // A signed webhook can request a task so project/workspace preparation runs
+      // through the same authorization and working-copy path as a manual task.
+      const webhookPayload = event.payload?.payload;
+      const webhookInput = webhookPayload && typeof webhookPayload === "object" && !Array.isArray(webhookPayload)
+        ? webhookPayload as Record<string, unknown> : undefined;
+      if (event.eventType === "webhook_inbound" && webhookInput?.task !== undefined) {
+        const taskInput = webhookInput.task;
+        if (!taskInput || typeof taskInput !== "object" || Array.isArray(taskInput)) {
+          throw new Error("Webhook task must be an object");
+        }
+        const input = taskInput as Record<string, unknown>;
+        if (typeof input.projectId !== "string" || typeof input.workspaceId !== "string" ||
+            typeof input.title !== "string" || typeof input.description !== "string") {
+          throw new Error("Webhook task requires projectId, workspaceId, title and description");
+        }
+        const tasks = this.taskService ?? new TaskService(this.store, this.executor);
+        const actor = { tenantId: principal.tenantId, userId: principal.userId };
+        const taskId = `task-${event.id}`;
+        let task = await this.store.getTask(taskId, principal);
+        if (!task) {
+          task = await tasks.create({
+            id: taskId, projectId: input.projectId, workspaceId: input.workspaceId,
+            title: input.title, description: input.description, workflowId: workflow.id,
+            metadata: { triggerEventId: event.id },
+          }, actor);
+        }
+        if (task.workflowId !== workflow.id || task.projectId !== input.projectId || task.workspaceId !== input.workspaceId) {
+          throw new Error("Webhook task binding mismatch");
+        }
+        if (task.runId) return task.runId;
+        const result = await tasks.start(task.id, actor, { triggerDispatchKey, input: webhookInput, requirePreparedWorkspace: true });
+        return result.runId;
       }
       const agents = await this.store.listAgents(principal);
       const tools = await this.store.listTools(principal);

@@ -33,7 +33,8 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function runGit(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  const { stdout, stderr } = await execFileAsync("git", args, {
+  const gitArgs = process.platform === "win32" ? ["-c", "core.longpaths=true", ...args] : args;
+  const { stdout, stderr } = await execFileAsync("git", gitArgs, {
     cwd,
     maxBuffer: 8 * 1024 * 1024,
     windowsHide: true,
@@ -133,8 +134,12 @@ export async function syncWorkspaceRepoWorkingCopy(
   try {
     const gitDir = join(absolutePath, ".git");
     if (!(await pathExists(gitDir))) {
-      await runGit(absolutePath, ["clone", "--branch", branch, "--single-branch", source, "."]);
+      const cloneConfig = process.platform === "win32" ? ["--config", "core.longpaths=true"] : [];
+      await runGit(absolutePath, ["clone", ...cloneConfig, "--branch", branch, "--single-branch", source, "."]);
     } else {
+      if (process.platform === "win32") {
+        await runGit(absolutePath, ["config", "core.longpaths", "true"]);
+      }
       try {
         await runGit(absolutePath, ["remote", "set-url", "origin", source]);
       } catch {

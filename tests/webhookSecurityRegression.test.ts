@@ -8,6 +8,7 @@ import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { InMemoryRunStore } from "../apps/server/src/runtime/runStore";
 import { InMemoryStudioStore } from "../src/studio/infrastructure/in-memory-studio-store";
 import { seedUs2 } from "./organizationUs2Fixtures";
+import { TaskService } from "../apps/server/src/api/studio/taskService";
 
 describe("webhook security regressions", () => {
   const owner = { tenantId: "org-a", userId: "admin" };
@@ -34,6 +35,36 @@ describe("webhook security regressions", () => {
     expect(responses.filter((r) => r.status === 202)).toHaveLength(1);
     expect(responses.filter((r) => r.status === 409)).toHaveLength(7);
     expect(await store.listTriggerEvents({ tenantId: "org-a" })).toHaveLength(1);
+  });
+
+  it("creates a scoped task and prepares repositories for a webhook workflow", async () => {
+    const stamp = nowIso();
+    await store.saveProject({ id: "project", tenantId: owner.tenantId, ownerId: owner.userId,
+      name: "Project", nameSource: "manual", description: "", status: "active", settings: {}, createdAt: stamp, updatedAt: stamp }, owner);
+    await store.saveWorkspace({ id: "workspace", tenantId: owner.tenantId, ownerId: owner.userId,
+      projectId: "project", name: "Workspace", nameSource: "manual", description: "", status: "active", settings: {},
+      settingsOverrides: {}, effectiveSettings: {}, overriddenKeys: [], createdAt: stamp, updatedAt: stamp }, owner);
+    const tasks = new TaskService(store);
+    const start = jest.spyOn(tasks, "start").mockResolvedValue({ success: true, runId: "run", task: {} as never });
+    const payload = { task: { projectId: "project", workspaceId: "workspace", title: "Bug", description: "Reproduction" }, workItem: { id: 123 } };
+    await store.acceptWebhookDelivery({ triggerId: "trigger", payload });
+    const processor = new TriggerOutboxProcessor(store, { start: jest.fn() } as never, tasks);
+    await processor.tick();
+    const created = (await store.listTasks(owner))[0];
+    expect(created).toMatchObject({ projectId: "project", workspaceId: "workspace", workflowId: "private-workflow", ownerId: "admin", title: "Bug" });
+    expect(start).toHaveBeenCalledWith(created.id, owner, expect.objectContaining({ input: payload, requirePreparedWorkspace: true }));
+    expect((await store.listTriggerEvents({ tenantId: "org-a" }))[0]).toMatchObject({ status: "processed", dispatchedRunId: "run" });
+  });
+
+  it("rejects a webhook task bound to an inaccessible project", async () => {
+    const tasks = new TaskService(store);
+    const start = jest.spyOn(tasks, "start");
+    await store.acceptWebhookDelivery({ triggerId: "trigger", payload: {
+      task: { projectId: "foreign-project", workspaceId: "foreign-workspace", title: "Bug", description: "Reproduction" },
+    } });
+    await new TriggerOutboxProcessor(store, { start: jest.fn() } as never, tasks).tick();
+    expect(start).not.toHaveBeenCalled();
+    expect(await store.listTasks(owner)).toHaveLength(0);
   });
 
   it("refuses an already accepted delivery after its creator loses membership", async () => {

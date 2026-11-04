@@ -30,6 +30,11 @@ afterAll(() => {
 });
 
 describe("Agent backend abstraction", () => {
+  test("preserves tenant ownership and system status when migrating agents", () => {
+    const migrated = migrateAgentRecord({ id: "agent-1", tenantId: "tenant-1", ownerId: "user-1", isSystem: true });
+    expect(migrated).toMatchObject({ tenantId: "tenant-1", ownerId: "user-1", isSystem: true });
+  });
+
   test("migrates legacy model/provider records into api backend", () => {
     const migrated = migrateAgentRecord({
       id: "agent-1",

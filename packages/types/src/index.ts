@@ -78,6 +78,7 @@ export type AgentBackend =
 export type AgentBackendType = AgentBackend["type"];
 
 export interface AgentModelSettings {
+  reasoningEffort?: "low" | "medium" | "high";
   temperature?: number;
   topP?: number;
   maxTokens?: number;
@@ -133,6 +134,9 @@ export interface AgentDiagnostics {
 
 /** Legacy persisted agent shape (pre-backend abstraction). */
 export interface LegacyAgentRecord {
+  ownerId?: string;
+  tenantId?: string;
+  isSystem?: boolean;
   id: string;
   name: string;
   description?: string;
@@ -234,6 +238,9 @@ export function migrateAgentRecord(raw: unknown): AgentRecord {
         : {},
     createdAt: typeof record.createdAt === "string" ? record.createdAt : stamp,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : stamp,
+    ...(typeof record.ownerId === "string" ? { ownerId: record.ownerId } : {}),
+    ...(typeof record.tenantId === "string" ? { tenantId: record.tenantId } : {}),
+    ...(typeof record.isSystem === "boolean" ? { isSystem: record.isSystem } : {}),
   };
 }
 

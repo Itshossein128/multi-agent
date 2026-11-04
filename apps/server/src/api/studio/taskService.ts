@@ -30,6 +30,7 @@ import {
   syncTaskWorkspaceWorkingCopies,
 } from "./workspaceWorkingCopyService";
 import { getWorkspaceStorageRoot } from "../../../../../src/studio/infrastructure/workspace-storage";
+import { dirname } from "node:path";
 import {
   buildClarificationPackage,
   fingerprintAnswers,
@@ -441,7 +442,7 @@ export class TaskService {
   async start(
     id: string,
     principal: RequestPrincipal,
-    options?: { triggerDispatchKey?: string },
+    options?: { triggerDispatchKey?: string; input?: Record<string, unknown>; requirePreparedWorkspace?: boolean },
   ): Promise<{ success: boolean; task: StudioTask; runId: string }> {
     if (!this.executor) throw new ApiError(500, "RunExecutor not configured");
     const task = await this.get(id, principal);
@@ -504,6 +505,7 @@ export class TaskService {
 
     const workspaceId = task.workspaceId ?? null;
     let preferredRepoPath: string | null = null;
+    let repositoryDirectories: Array<{ directory: string; branch: string }> = [];
     let workspaceStorageRoot: string | null = null;
     try {
       workspaceStorageRoot = getWorkspaceStorageRoot();
@@ -518,7 +520,15 @@ export class TaskService {
         principal,
       });
       preferredRepoPath = synced.primaryPath;
-    } catch {
+      repositoryDirectories = synced.states.map((state) => ({ directory: state.projectRepositoryId, branch: state.branch }));
+      if (options?.requirePreparedWorkspace) {
+        if (!synced.primaryPath || !synced.states.length || synced.states.some((state) => state.availability !== "ready")) {
+          throw new ApiError(503, "Workspace repositories are not ready");
+        }
+        preferredRepoPath = dirname(synced.primaryPath);
+      }
+    } catch (error) {
+      if (options?.requirePreparedWorkspace) throw error;
       // Working-copy sync must not block start when storage/git is unavailable.
     }
 
@@ -565,7 +575,8 @@ export class TaskService {
           workflow: workflowToRun,
           agents: agentsWithWorkspace,
           tools: toolsToRun,
-          input: { title: task.title, description: task.description, taskId: task.id },
+          input: { ...options?.input, ...(options?.requirePreparedWorkspace ? { repositoryDirectories } : {}),
+            title: task.title, description: task.description, taskId: task.id },
           metadata: {
             ...task.metadata,
             taskId: task.id,

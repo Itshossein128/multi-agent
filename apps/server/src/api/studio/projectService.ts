@@ -349,6 +349,12 @@ export class ProjectService {
         });
         const allRepos = (await tx.listProjectRepositories(projectId, principal))
           .filter((repo) => repo.status === "active");
+        await tx.rekeyWorkspaceRepoStates({
+          tenantId: principal.tenantId,
+          projectId,
+          fromWorkspaceId: null,
+          toWorkspaceId: defaultWorkspace.id,
+        });
         await applyWorkspaceMembership(tx, defaultWorkspace, allRepos, principal);
 
         const projectTasks = await tx.listTasksByProject(projectId, principal);
@@ -361,13 +367,6 @@ export class ProjectService {
             }, principal);
           }
         }
-
-        await tx.rekeyWorkspaceRepoStates({
-          tenantId: principal.tenantId,
-          projectId,
-          fromWorkspaceId: null,
-          toWorkspaceId: defaultWorkspace.id,
-        });
 
         materializedDefault = await withEffectiveSettings(tx, defaultWorkspace, principal);
       }

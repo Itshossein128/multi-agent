@@ -1332,10 +1332,8 @@ export class PostgresStudioStore implements StudioStore {
     memberships: WorkspaceRepositoryMembership[],
     principal?: StudioPrincipal,
   ): Promise<WorkspaceRepositoryMembership[]> {
-    if (principal) {
-      const workspace = await this.getWorkspace(workspaceId, principal);
-      if (!workspace) throw new Error("Access denied to workspace");
-    }
+    const workspace = await this.getWorkspace(workspaceId, principal);
+    if (!workspace) throw new Error("Access denied to workspace");
     await this.query("DELETE FROM studio_workspace_repositories WHERE workspace_id = $1", [workspaceId]);
     const stamp = nowIso();
     const saved: WorkspaceRepositoryMembership[] = [];
@@ -1348,9 +1346,9 @@ export class PostgresStudioStore implements StudioStore {
         updatedAt: stamp,
       };
       await this.query(
-        `INSERT INTO studio_workspace_repositories (workspace_id, project_repository_id, branch, created_at, updated_at)
-         VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)`,
-        [record.workspaceId, record.projectRepositoryId, record.branch, record.createdAt, record.updatedAt],
+        `INSERT INTO studio_workspace_repositories (tenant_id, workspace_id, project_repository_id, branch, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz)`,
+        [workspace.tenantId, record.workspaceId, record.projectRepositoryId, record.branch, record.createdAt, record.updatedAt],
       );
       saved.push(record);
     }

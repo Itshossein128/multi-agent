@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { runStudioMigrations } from "../src/studio/infrastructure/migrate";
+import { PostgresStudioStore } from "../src/studio/infrastructure/postgres-studio-store";
+import { ProjectService } from "../apps/server/src/api/studio/projectService";
 
 const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
 
@@ -64,6 +66,42 @@ const databaseUrl = process.env.MEMORY_TEST_DATABASE_URL;
 
     return { orgA, orgB, userA, userB, projA, projB, wsA, wsB };
   }
+
+  it("materializes implicit repository state when creating a workspace", async () => {
+    const { orgA, userA } = await seedOrgsAndProjects();
+    const projectId = randomUUID();
+    const repoId = randomUUID();
+    await pool.query(
+      `INSERT INTO studio_projects (id, tenant_id, name, owner_id) VALUES ($1, $2, 'Project', $3)`,
+      [projectId, orgA, userA],
+    );
+    await pool.query(
+      `INSERT INTO studio_project_repositories (id, tenant_id, project_id, name, source, default_branch)
+       VALUES ($1, $2, $3, 'repo', 'source', 'main')`,
+      [repoId, orgA, projectId],
+    );
+    await pool.query(
+      `INSERT INTO studio_workspace_repo_states (tenant_id, project_id, workspace_key, project_repository_id, branch, storage_path, has_uncommitted_changes, availability)
+       VALUES ($1, $2, '', $3, 'main', '', false, 'unavailable')`,
+      [orgA, projectId, repoId],
+    );
+    const previousRoot = process.env.STUDIO_WORKSPACE_STORAGE_ROOT;
+    delete process.env.STUDIO_WORKSPACE_STORAGE_ROOT;
+    try {
+      const result = await new ProjectService(new PostgresStudioStore(pool)).createWorkspace(
+        projectId, { name: "Test workspace" }, { tenantId: orgA, userId: userA },
+      );
+      expect(result.materializedDefault).toBeDefined();
+      const rows = await pool.query(
+        `SELECT tenant_id, workspace_id FROM studio_workspace_repositories WHERE project_repository_id = $1`, [repoId],
+      );
+      expect(rows.rows).toHaveLength(2);
+      expect(rows.rows.every((row) => row.tenant_id === orgA)).toBe(true);
+    } finally {
+      if (previousRoot === undefined) delete process.env.STUDIO_WORKSPACE_STORAGE_ROOT;
+      else process.env.STUDIO_WORKSPACE_STORAGE_ROOT = previousRoot;
+    }
+  });
 
   it("permits nullable project association on organization goals", async () => {
     const { orgA, userA } = await seedOrgsAndProjects();

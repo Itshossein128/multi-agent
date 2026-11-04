@@ -67,6 +67,7 @@ export class OpenAIProvider implements LLMProvider {
     return new ChatOpenAI({
       modelName,
       openAIApiKey: this.credential || process.env.OPENAI_API_KEY || 'mock-key',
+      reasoningEffort: this.settings.reasoningEffort,
       temperature: this.settings.temperature,
       topP: this.settings.topP,
       maxTokens: this.settings.maxTokens,

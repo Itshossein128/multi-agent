@@ -1,7 +1,7 @@
 import type { AgentBackend, AgentModelSettings, AgentRecord, WorkflowDefinition } from "./index";
 import { isMemoryNamespace } from "./memory";
 
-interface SettingSchema { key: keyof AgentModelSettings; label: string; min: number; max: number; step: number }
+interface SettingSchema { key: Exclude<keyof AgentModelSettings, "reasoningEffort">; label: string; min: number; max: number; step: number }
 const sampling: SettingSchema[] = [
   { key: "temperature", label: "Temperature", min: 0, max: 2, step: 0.1 },
   { key: "topP", label: "Top P", min: 0, max: 1, step: 0.05 },
@@ -94,6 +94,12 @@ export function validateAgent(agent: AgentRecord): string[] {
   if ((backend.type === "api" || backend.type === "local") && backend.settings) {
     const fields = modelSettingsSchema(backend);
     for (const [key, value] of Object.entries(backend.settings)) {
+      if (key === "reasoningEffort") {
+        if (backend.type !== "api" || backend.provider.toLowerCase() !== "openai" || !["low", "medium", "high"].includes(String(value))) {
+          errors.push("Invalid or unsupported model setting: reasoningEffort.");
+        }
+        continue;
+      }
       const schema = fields.find((field) => field.key === key);
       if (!schema || typeof value !== "number" || !Number.isFinite(value) || value < schema.min || value > schema.max || (schema.step === 1 && !Number.isInteger(value))) errors.push(`Invalid or unsupported model setting: ${key}.`);
     }
