@@ -126,6 +126,7 @@ export class AgentRuntime {
       agent: input.agent,
       task: input.input,
       systemPrompt: input.agent.systemPrompt,
+      taskInstruction: input.taskInstruction,
       history: history as HistoryEntry[],
       longTermMemoryContext: memoryContext,
       longTermMemoryEvents: memoryEvents,

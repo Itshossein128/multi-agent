@@ -273,10 +273,13 @@ function resolveFromSystemPath(name: string, env: NodeJS.ProcessEnv = process.en
 
 function serializeProcessInput(input: AgentExecutionInput): string {
   if (typeof input.input === "string") return input.input;
+  const stepInstruction =
+    typeof input.taskInstruction === "string" ? input.taskInstruction.trim() : "";
   return JSON.stringify({
     input: input.input,
     context: input.context,
     systemPrompt: input.agent.systemPrompt,
+    ...(stepInstruction ? { taskInstruction: stepInstruction } : {}),
   });
 }
 

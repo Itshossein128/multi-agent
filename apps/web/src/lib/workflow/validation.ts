@@ -19,7 +19,7 @@ import {
   agentHasConfiguredModel,
   validateRawNodeContract,
 } from "./types";
-import { resolveWorkflowArchetype, validateAgent, type WorkflowNode } from "@multi-agent/types";
+import { resolveWorkflowArchetype, validateAgent, validateAgentNodeStepConfig, type WorkflowNode } from "@multi-agent/types";
 
 export interface WorkflowIssue {
   id: string;
@@ -185,9 +185,11 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
         const config = node.config as AgentNodeConfig;
         const agent = config.agentId ? agents.find((a) => a.id === config.agentId) : undefined;
         if (!config.agentId || !agent) {
-          issues.push(error("Agent node is not linked to an agent", { nodeId: node.id }));
+          issues.push(error("Agent node is not linked to an agent", { nodeId: node.id }, "MISSING_AGENT_CONFIG"));
         } else {
-          if (agent.enabled === false) issues.push(error(`Agent "${agent.name}" is disabled`, { nodeId: node.id }));
+          if (agent.enabled === false) {
+            issues.push(error(`Agent "${agent.name}" is disabled`, { nodeId: node.id }, "AGENT_DISABLED"));
+          }
           for (const message of validateAgent(agent)) issues.push(error(message, { nodeId: node.id }));
           if (!agent.name.trim()) {
             issues.push(error(`Agent "${agent.id}" has no name`, { nodeId: node.id }));
@@ -201,6 +203,13 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
           }
           if (!agent.systemPrompt.trim()) {
             issues.push(warning(`Agent "${agent.name}" has no system prompt`, { nodeId: node.id }));
+          }
+          for (const stepIssue of validateAgentNodeStepConfig({
+            agent,
+            nodeConfig: config,
+            registryTools: tools,
+          })) {
+            issues.push(error(stepIssue.message, { nodeId: node.id }, stepIssue.code));
           }
         }
         break;

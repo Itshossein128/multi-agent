@@ -81,25 +81,32 @@ export class ApiAgentExecutor implements AgentExecutor {
           agentId: agent.id,
         });
       }
+      const effectiveModelSettings = mergeModelSettings(
+        agent.backend.settings,
+        input.modelSettingsOverride
+      );
       const model = this.getFactory().getModel(agent.backend.provider, {
         model: agent.backend.model,
-        settings: agent.backend.settings,
+        settings: effectiveModelSettings,
         ...(apiKey ? { apiKey } : {}),
       });
       const messages = buildMessages(input);
       const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };
 
+      const resolvedTools = (input.resolvedTools ?? []).filter((tool) => tool.enabled !== false);
+      const effectiveToolIds = resolvedTools.map((tool) => tool.id);
+      const assignedToolIds = Array.isArray(agent.tools) ? agent.tools : [];
+      const stepRestrictedTools = input.activeTools !== undefined;
       const settings = resolveEffectiveReactSettings({
-        agentTools: agent.tools ?? [],
+        agentTools: effectiveToolIds,
         agentMode: agent.executionMode,
         agentMaxToolSteps: agent.maxToolSteps,
         nodeMode: input.nodeExecutionMode,
         nodeMaxToolSteps: input.nodeMaxToolSteps,
       });
-      const resolvedTools = (input.resolvedTools ?? []).filter((tool) => tool.enabled !== false);
-      const assignedToolIds = Array.isArray(agent.tools) ? agent.tools : [];
       // Fail closed when ReAct is expected but trusted deps / usable tools are missing.
-      if (settings.mode === "react" && assignedToolIds.length > 0) {
+      // Authorization/bind use the effective set; intentional `activeTools: []` soft-degrades.
+      if (settings.mode === "react" && assignedToolIds.length > 0 && !stepRestrictedTools) {
         if (!input.toolRuntime) {
           throw new AgentExecutionFailedError(
             "ReAct mode requires a ToolRuntime, but none was injected for this agent node."
@@ -110,6 +117,10 @@ export class ApiAgentExecutor implements AgentExecutor {
             "ReAct mode expects assigned tools, but none resolved as enabled ToolRecords."
           );
         }
+      } else if (settings.mode === "react" && effectiveToolIds.length > 0 && !input.toolRuntime) {
+        throw new AgentExecutionFailedError(
+          "ReAct mode requires a ToolRuntime, but none was injected for this agent node."
+        );
       }
       const useReact =
         settings.mode === "react" &&
@@ -202,7 +213,7 @@ export class ApiAgentExecutor implements AgentExecutor {
 
         for (const call of toolCalls) {
           assertNotAborted(input.signal);
-          const authorized = resolveAuthorizedTool(call.name, resolvedTools, agent.tools);
+          const authorized = resolveAuthorizedTool(call.name, resolvedTools, effectiveToolIds);
           const toolCallId = call.id || `call_${toolRounds}_${call.name}`;
           const sanitizedArgs = sanitizeForTelemetry(call.args);
 
@@ -243,7 +254,7 @@ export class ApiAgentExecutor implements AgentExecutor {
                 runId: input.runId,
                 credentialPrincipal: input.credentialPrincipal,
                 agentId: agent.id,
-                authorizedToolIds: agent.tools,
+                authorizedToolIds: effectiveToolIds,
                 idempotencyKey: `${input.runId}:${input.nodeId}:${toolCallId}`,
                 approvalGranted: approvalGrantedForTool(authorized),
               }
@@ -458,14 +469,31 @@ function assertNotAborted(signal?: AbortSignal): void {
  * Build messages from AssembledContext when available, otherwise fall back to
  * legacy context assembly for backward compatibility.
  */
+function mergeModelSettings(
+  base: import("@multi-agent/types").AgentModelSettings | undefined,
+  override: import("@multi-agent/types").AgentModelSettings | undefined
+): import("@multi-agent/types").AgentModelSettings | undefined {
+  if (!override) return base;
+  const defined: import("@multi-agent/types").AgentModelSettings = {};
+  for (const [key, value] of Object.entries(override)) {
+    if (value !== undefined) (defined as Record<string, unknown>)[key] = value;
+  }
+  return { ...(base ?? {}), ...defined };
+}
+
 function buildMessages(input: AgentExecutionInput): unknown[] {
   if (input.assembledContext) {
     return assembledContextToMessages(input.assembledContext, input.agent);
   }
   // Legacy path: context assembled by executor
   const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
+  const stepInstruction =
+    typeof input.taskInstruction === "string" ? input.taskInstruction.trim() : "";
   return [
     { role: "system", content: systemPromptFor(input.agent) },
+    ...(stepInstruction
+      ? [{ role: "user" as const, content: `STEP INSTRUCTIONS:\n${stepInstruction}` }]
+      : []),
     ...history.flatMap((entry) => [
       { role: "user", content: serializeInput(entry.input) },
       { role: "assistant", content: serializeInput(entry.output) },
@@ -485,6 +513,11 @@ function assembledContextToMessages(ctx: import("./contextAssembler").AssembledC
     switch (item.source) {
       case "system":
         messages.push({ role: "system", content: content.text ?? systemPromptFor(agent) });
+        break;
+      case "step_instruction":
+        if (typeof content.text === "string" && content.text.trim()) {
+          messages.push({ role: "user", content: `STEP INSTRUCTIONS:\n${content.text}` });
+        }
         break;
       case "task":
         messages.push({ role: "user", content: content.text ?? "" });

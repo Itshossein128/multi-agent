@@ -144,12 +144,15 @@ export class WebhookAgentExecutor implements AgentExecutor {
           }
         }
 
+        const stepInstruction =
+          typeof input.taskInstruction === "string" ? input.taskInstruction.trim() : "";
         const payload = JSON.stringify({
           agentId: input.agent.id,
           runId: input.runId,
           nodeId: input.nodeId,
           workflowId: input.workflowId,
           systemPrompt: input.agent.systemPrompt,
+          ...(stepInstruction ? { taskInstruction: stepInstruction } : {}),
           input: input.input,
           context: input.context,
         });

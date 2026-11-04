@@ -1,5 +1,5 @@
-import type { AgentRecord, ToolRecord, WorkflowDefinition, WorkflowNode, WorkflowNodeType } from "@multi-agent/types";
-import { agentHasConfiguredModel, validateAgent, validateTool } from "@multi-agent/types";
+import type { AgentNodeConfig, AgentRecord, ToolRecord, WorkflowDefinition, WorkflowNode, WorkflowNodeType } from "@multi-agent/types";
+import { agentHasConfiguredModel, validateAgent, validateAgentNodeStepConfig, validateTool } from "@multi-agent/types";
 import type { WorkflowIssue, WorkflowValidationLimits } from "./validation";
 
 export interface ValidationContext {
@@ -15,11 +15,7 @@ export interface ValidationContext {
 export type NodeValidator = (node: WorkflowNode, ctx: ValidationContext) => void;
 
 function validateAgentNode(node: WorkflowNode, ctx: ValidationContext) {
-  const config = node.config as {
-    agentId?: string | null;
-    executionMode?: unknown;
-    maxToolSteps?: unknown;
-  };
+  const config = node.config as AgentNodeConfig;
   const agentId = config.agentId;
   const agent = ctx.agents.find((candidate) => candidate.id === agentId);
   if (!agent) ctx.add("error", "MISSING_AGENT_CONFIG", "Agent node is not linked to an agent", node.id);
@@ -41,6 +37,15 @@ function validateAgentNode(node: WorkflowNode, ctx: ValidationContext) {
     const n = Number(config.maxToolSteps);
     if (!Number.isInteger(n) || n < 1 || n > 10) {
       ctx.add("error", "INVALID_AGENT_NODE_MAX_TOOL_STEPS", "Agent node maxToolSteps must be an integer between 1 and 10.", node.id);
+    }
+  }
+  if (agent) {
+    for (const issue of validateAgentNodeStepConfig({
+      agent,
+      nodeConfig: config,
+      registryTools: ctx.tools,
+    })) {
+      ctx.add("error", issue.code, issue.message, node.id);
     }
   }
   if (node.retryPolicy && (!agent || agent.backend.type === "cli" || (Array.isArray(agent.tools) && agent.tools.length > 0))) {

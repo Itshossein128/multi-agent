@@ -569,6 +569,10 @@ export function compileWorkflow(
               options.pendingHuman = undefined;
             } else {
               const agentNodeConfig = node.config as import("@multi-agent/types").AgentNodeConfig;
+              const stepTaskInstruction =
+                typeof agentNodeConfig.taskInstruction === "string" && agentNodeConfig.taskInstruction.trim()
+                  ? agentNodeConfig.taskInstruction.trim()
+                  : undefined;
               value = options.agentRunner
                 ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id, signal })
                 : await runAgentThroughRuntime(agent, executionState, {
@@ -584,9 +588,12 @@ export function compileWorkflow(
                   signal,
                   onError: (err) => { agentFailed = true; agentError = err; },
                   toolRuntime,
-                  resolvedTools: resolveAgentToolsForRuntime(agent, options.tools),
+                  resolvedTools: resolveAgentToolsForRuntime(agent, options.tools, agentNodeConfig.activeTools),
                   nodeExecutionMode: agentNodeConfig.executionMode,
                   nodeMaxToolSteps: agentNodeConfig.maxToolSteps,
+                  taskInstruction: stepTaskInstruction,
+                  modelSettingsOverride: agentNodeConfig.modelSettingsOverride,
+                  activeTools: agentNodeConfig.activeTools,
                 });
             }
 
@@ -924,15 +931,32 @@ function resolveRetryPolicy(
   };
 }
 
-/** Resolve agent.tools ∩ compile options.tools ∩ enabled for ReAct injection. */
+/**
+ * Resolve effective step tools for ReAct injection:
+ * - `activeTools` omitted ⇒ agent.tools ∩ registry ∩ enabled
+ * - `activeTools: []` ⇒ no tools
+ * - nonempty ⇒ that subset ∩ agent.tools ∩ registry ∩ enabled (never expands beyond agent allowlist)
+ */
 export function resolveAgentToolsForRuntime(
   agent: AgentRecord,
-  registryTools: ToolRecord[] | undefined
+  registryTools: ToolRecord[] | undefined,
+  activeTools?: string[]
 ): ToolRecord[] {
-  if (!registryTools?.length || !agent.tools?.length) return [];
+  if (!registryTools?.length) return [];
   const byId = new Map(registryTools.map((tool) => [tool.id, tool]));
+  const allowed: string[] = [];
+  for (const toolId of agent.tools ?? []) {
+    const tool = byId.get(toolId);
+    if (tool && tool.enabled !== false) allowed.push(toolId);
+  }
+  const selected =
+    activeTools === undefined
+      ? allowed
+      : activeTools.length === 0
+        ? []
+        : activeTools.filter((id) => allowed.includes(id));
   const resolved: ToolRecord[] = [];
-  for (const toolId of agent.tools) {
+  for (const toolId of selected) {
     const tool = byId.get(toolId);
     if (tool && tool.enabled !== false) resolved.push(tool);
   }
@@ -958,6 +982,9 @@ async function runAgentThroughRuntime(
     resolvedTools?: ToolRecord[];
     nodeExecutionMode?: import("@multi-agent/types").AgentExecutionMode;
     nodeMaxToolSteps?: number;
+    taskInstruction?: string;
+    modelSettingsOverride?: import("@multi-agent/types").AgentModelSettings;
+    activeTools?: string[];
   }
 ): Promise<unknown> {
   let lastContent: unknown;
@@ -994,6 +1021,9 @@ async function runAgentThroughRuntime(
     resolvedTools: meta.resolvedTools,
     nodeExecutionMode: meta.nodeExecutionMode,
     nodeMaxToolSteps: meta.nodeMaxToolSteps,
+    taskInstruction: meta.taskInstruction,
+    modelSettingsOverride: meta.modelSettingsOverride,
+    activeTools: meta.activeTools,
   })) {
     meta.onAgentEvent?.(event);
     if (event.type === "agent.completed" || event.type === "agent.output") {

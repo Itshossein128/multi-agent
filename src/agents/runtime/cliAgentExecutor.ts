@@ -206,8 +206,11 @@ function prompt(input: AgentExecutionInput): string {
   // Legacy path
   const serialize = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value ?? {});
   const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
+  const stepInstruction =
+    typeof input.taskInstruction === "string" ? input.taskInstruction.trim() : "";
   return [
     input.agent.systemPrompt ? `SYSTEM INSTRUCTIONS:\n${input.agent.systemPrompt}` : "",
+    stepInstruction ? `STEP INSTRUCTIONS:\n${stepInstruction}` : "",
     ...history.map((entry) => `PREVIOUS USER INPUT:\n${serialize(entry.input)}\nPREVIOUS ASSISTANT OUTPUT:\n${serialize(entry.output)}`),
     typeof input.context?.memoryContext === "string" && input.context.memoryContext ? `MEMORY CONTEXT:\n${input.context.memoryContext}` : "",
     `USER INPUT:\n${serialize(input.input)}`,
@@ -223,6 +226,11 @@ function assembledContextToPrompt(ctx: import("./contextAssembler").AssembledCon
     switch (item.source) {
       case "system":
         if (content.text) sections.push(`SYSTEM INSTRUCTIONS:\n${content.text}`);
+        break;
+      case "step_instruction":
+        if (typeof content.text === "string" && content.text.trim()) {
+          sections.push(`STEP INSTRUCTIONS:\n${content.text}`);
+        }
         break;
       case "task":
         sections.push(`USER INPUT:\n${content.text ?? ""}`);

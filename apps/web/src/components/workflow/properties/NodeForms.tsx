@@ -5,12 +5,10 @@
  * Each form owns exactly one node type's config editing.
  */
 
+import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import {
-  AgentBackend,
-  AgentExecutionPolicy,
   AgentNodeConfig,
-  AgentRecord,
   ApprovalNodeConfig,
   ConditionNodeConfig,
   InputNodeConfig,
@@ -22,7 +20,11 @@ import {
   ToolRecord,
   TOOL_CATEGORIES,
   WorkflowNode,
+  agentBackendLabel,
+  modelSettingsSchema,
 } from "@/lib/workflow/types";
+import type { AgentModelSettings } from "@multi-agent/types";
+import { useOrgPath } from "@/components/organization/OrgProvider";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { cn } from "@/lib/utils";
 import { Field, JsonField, inputClass, labelClass } from "./fields";
@@ -33,30 +35,62 @@ function clampToolStepsInput(raw: string): number {
   return Math.min(10, Math.max(1, n || 5));
 }
 
+type ActiveToolsMode = "inherit" | "empty" | "subset";
+
+function activeToolsMode(config: AgentNodeConfig): ActiveToolsMode {
+  if (config.activeTools === undefined) return "inherit";
+  if (config.activeTools.length === 0) return "empty";
+  return "subset";
+}
+
 export function AgentForm({ node }: { node: WorkflowNode }) {
   const config = node.config as AgentNodeConfig;
   const agents = useWorkflowStore((s) => s.agents);
   const tools = useWorkflowStore((s) => s.tools);
   const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
-  const updateAgentRecord = useWorkflowStore((s) => s.updateAgentRecord);
+  const orgUrl = useOrgPath();
+  const router = useRouter();
 
   const agent = agents.find((a) => a.id === config.agentId);
+  const supportsModelOverride = agent?.backend.type === "api" || agent?.backend.type === "local";
+  const supportsActiveTools = agent?.backend.type === "api";
+  const schemaFields = agent && supportsModelOverride ? modelSettingsSchema(agent.backend) : [];
+  const baseSettings =
+    agent && (agent.backend.type === "api" || agent.backend.type === "local")
+      ? agent.backend.settings ?? {}
+      : {};
+  const override = config.modelSettingsOverride ?? {};
+  const toolsMode = activeToolsMode(config);
 
-  const patchAgent = (patch: Partial<AgentRecord>) => {
-    if (!agent) return;
-    updateAgentRecord(agent.id, patch);
+  const setModelOverride = (key: keyof AgentModelSettings, value: number | undefined) => {
+    const next: Partial<AgentModelSettings> = { ...override };
+    if (value === undefined) delete next[key];
+    else (next as Record<string, unknown>)[key] = value;
+    updateNodeConfig(node.id, {
+      modelSettingsOverride: Object.keys(next).length ? next : undefined,
+    });
   };
 
-  const defaultMode = agent && agent.tools.length > 0 ? "react" : "single_turn";
-  const agentMode = agent?.executionMode ?? defaultMode;
-  const agentMaxSteps = agent?.maxToolSteps ?? 5;
+  const openRegistryEditor = () => {
+    if (!agent) return;
+    const ok = window.confirm(
+      `Editing "${agent.name}" in the Agent Registry changes the shared base agent for every workflow step that uses it. Continue?`
+    );
+    if (!ok) return;
+    router.push(orgUrl(`/org/agents/${encodeURIComponent(agent.id)}`));
+  };
 
   return (
     <div className="space-y-3">
-      <Field label="Linked Agent">
+      <Field label="Base Agent">
         <select
+          data-testid="base-agent-select"
           value={config.agentId ?? ""}
-          onChange={(event) => updateNodeConfig(node.id, { agentId: event.target.value || null })}
+          onChange={(event) => {
+            const nextId = event.target.value || null;
+            // Preserve taskInstruction and overrides; incompatibilities surface in validation.
+            updateNodeConfig(node.id, { agentId: nextId });
+          }}
           className={inputClass}
         >
           <option value="">— not linked —</option>
@@ -67,175 +101,159 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
           ))}
         </select>
         <p className="text-[10px] text-zinc-600">
-          Agent configuration lives in the registry and is shared between nodes.
+          Step settings below apply only to this node. Shared agent defaults live in the registry.
         </p>
       </Field>
 
       {agent && (
         <>
-          <Field label="Name">
-            <input
-              type="text"
-              value={agent.name}
-              onChange={(event) => patchAgent({ name: event.target.value })}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Backend">
-            <select
-              value={agent.backend.type}
-              onChange={(event) => {
-                const type = event.target.value as AgentBackend["type"];
-                if (type === "api") {
-                  patchAgent({
-                    backend: {
-                      type: "api",
-                      provider:
-                        agent.backend.type === "api" ? agent.backend.provider : "openai",
-                      model:
-                        "model" in agent.backend && agent.backend.model
-                          ? agent.backend.model
-                          : "gpt-4o",
-                    },
-                  });
-                } else if (type === "cli") {
-                  patchAgent({
-                    backend: {
-                      type: "cli",
-                      provider:
-                        agent.backend.type === "cli" ? agent.backend.provider : "codex",
-                      model: "model" in agent.backend ? agent.backend.model : undefined,
-                    },
-                  });
-                } else {
-                  patchAgent({
-                    backend: {
-                      type: "local",
-                      provider:
-                        agent.backend.type === "local" ? agent.backend.provider : "ollama",
-                      model:
-                        "model" in agent.backend && agent.backend.model
-                          ? agent.backend.model
-                          : "llama3",
-                    },
-                  });
-                }
-              }}
-              className={inputClass}
-            >
-              <option value="api">API provider</option>
-              <option value="cli">CLI agent</option>
-              <option value="local">Local model</option>
-            </select>
-          </Field>
-          <Field label="Provider">
-            <input
-              type="text"
-              value={agent.backend.provider}
+          <div
+            data-testid="base-agent-summary"
+            className="rounded border border-zinc-800 bg-zinc-950/50 p-2 space-y-1 text-[11px] text-zinc-400"
+          >
+            <div className="text-zinc-200 font-medium">{agent.name}</div>
+            <div>{agentBackendLabel(agent.backend)}</div>
+            <div className="line-clamp-3 whitespace-pre-wrap font-mono text-[10px] text-zinc-500">
+              {agent.systemPrompt.trim() || "(no system prompt)"}
+            </div>
+            <div>
+              Tools:{" "}
+              {agent.tools.length
+                ? agent.tools
+                    .map((id) => tools.find((t) => t.id === id)?.name ?? id)
+                    .join(", ")
+                : "none"}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            data-testid="edit-agent-in-registry"
+            className="w-full rounded border border-zinc-700 px-2 py-1.5 text-xs text-indigo-300 hover:bg-zinc-900"
+            onClick={openRegistryEditor}
+          >
+            Edit Agent in Registry
+          </button>
+
+          <Field label="Step Instructions">
+            <textarea
+              data-testid="step-task-instruction"
+              value={config.taskInstruction ?? ""}
               onChange={(event) =>
-                patchAgent({
-                  backend: { ...agent.backend, provider: event.target.value } as AgentBackend,
+                updateNodeConfig(node.id, {
+                  taskInstruction: event.target.value || undefined,
                 })
               }
-              placeholder="openai, anthropic, codex, ollama…"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Model">
-            <input
-              type="text"
-              value={"model" in agent.backend ? agent.backend.model ?? "" : ""}
-              onChange={(event) =>
-                patchAgent({
-                  backend: { ...agent.backend, model: event.target.value } as AgentBackend,
-                })
-              }
-              placeholder="gpt-4o, claude-sonnet, llama3…"
-              className={inputClass}
-            />
-          </Field>
-          {agent.backend.type === "cli" && <>
-            <Field label="Executable (optional)"><input className={inputClass} value={agent.backend.executable ?? ""} placeholder="codex, claude, agent, or agy" onChange={(event) => patchAgent({ backend: { ...agent.backend, executable: event.target.value || undefined } as AgentBackend })} /></Field>
-            <Field label="Arguments (one per line)"><textarea className={inputClass} rows={3} value={(agent.backend.args ?? []).join("\n")} onChange={(event) => patchAgent({ backend: { ...agent.backend, args: event.target.value ? event.target.value.split("\n") : undefined } as AgentBackend })} /></Field>
-            <Field label="Workspace root"><input className={inputClass} value={agent.executionPolicy?.workspaceRoot ?? ""} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, workspaceRoot: event.target.value || undefined } })} /></Field>
-            <Field label="Shell access"><select className={inputClass} value={agent.executionPolicy?.shell ?? "disabled"} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, shell: event.target.value as AgentExecutionPolicy["shell"] } })}><option value="disabled">Disabled</option><option value="restricted">Restricted</option><option value="full">Full</option></select></Field>
-            <Field label="Filesystem access"><select className={inputClass} value={agent.executionPolicy?.filesystem ?? "none"} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, filesystem: event.target.value as AgentExecutionPolicy["filesystem"] } })}><option value="none">None</option><option value="read">Read</option><option value="read-write">Read/write</option></select></Field>
-            <Field label="Allowed commands (one per line)"><textarea className={inputClass} rows={3} value={(agent.executionPolicy?.allowedCommands ?? []).join("\n")} onChange={(event) => patchAgent({ executionPolicy: { ...agent.executionPolicy, allowedCommands: event.target.value.split("\n").map((value) => value.trim()).filter(Boolean) } })} /></Field>
-          </>}
-          {agent.backend.type === "local" && <Field label="Base URL (optional)"><input type="url" className={inputClass} value={agent.backend.baseUrl ?? ""} placeholder={agent.backend.provider === "lmstudio" ? "http://127.0.0.1:1234" : "http://127.0.0.1:11434"} onChange={(event) => patchAgent({ backend: { ...agent.backend, baseUrl: event.target.value || undefined } as AgentBackend })} /></Field>}
-          <Field label="Description">
-            <textarea
-              value={agent.description}
-              onChange={(event) => patchAgent({ description: event.target.value })}
-              rows={2}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="System Prompt">
-            <textarea
-              value={agent.systemPrompt}
-              onChange={(event) => patchAgent({ systemPrompt: event.target.value })}
-              rows={5}
-              placeholder="You are a senior code reviewer…"
+              rows={4}
+              placeholder="Task guidance for this step only (does not change the base system prompt)…"
               className={cn(inputClass, "font-mono text-[11px]")}
             />
           </Field>
-          <Field label="Assigned tools">
-            <textarea
-              data-testid="agent-tools"
-              value={agent.tools
-                .map((id) => {
-                  const match = tools.find((t) => t.id === id);
-                  return match ? `${match.name} (${id})` : id;
-                })
-                .join("\n")}
-              onChange={(event) =>
-                patchAgent({
-                  tools: event.target.value
-                    .split("\n")
-                    .map((line) => {
-                      const trimmed = line.trim();
-                      const paren = trimmed.match(/\(([^)]+)\)\s*$/);
-                      return (paren?.[1] ?? trimmed).trim();
-                    })
-                    .filter(Boolean),
-                })
-              }
-              rows={3}
-              placeholder={"web_search\ncode_exec"}
-              className={cn(inputClass, "font-mono text-[11px]")}
-            />
-            <p className="text-[10px] text-zinc-600">One tool id per line. Registry names shown when available.</p>
-          </Field>
-          <Field label="Execution mode">
-            <select
-              data-testid="agent-execution-mode"
-              value={agentMode}
-              onChange={(event) =>
-                patchAgent({
-                  executionMode: event.target.value as AgentRecord["executionMode"],
-                })
-              }
-              className={inputClass}
-            >
-              <option value="single_turn">Single-turn</option>
-              <option value="react">ReAct (autonomous)</option>
-            </select>
-          </Field>
-          <Field label="Max tool steps">
-            <input
-              data-testid="agent-max-tool-steps"
-              type="number"
-              min={1}
-              max={10}
-              value={agentMaxSteps}
-              onChange={(event) =>
-                patchAgent({ maxToolSteps: clampToolStepsInput(event.target.value) })
-              }
-              className={inputClass}
-            />
-            <p className="text-[10px] text-zinc-600">Tool-calling rounds per agent node (1–10, default 5).</p>
-          </Field>
+
+          {supportsModelOverride && schemaFields.length > 0 && (
+            <div className="space-y-2" data-testid="step-model-settings">
+              <p className={labelClass}>Model settings (step overrides)</p>
+              {schemaFields.map((field) => {
+                const overridden = Object.prototype.hasOwnProperty.call(override, field.key);
+                const inherited = baseSettings[field.key];
+                const effective = overridden
+                  ? override[field.key]
+                  : inherited;
+                return (
+                  <Field key={field.key} label={field.label}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        data-testid={`model-override-${field.key}`}
+                        type="number"
+                        min={field.min}
+                        max={field.max}
+                        step={field.step}
+                        value={overridden ? (override[field.key] as number) : ""}
+                        placeholder={
+                          inherited === undefined ? "inherit default" : `inherit ${inherited}`
+                        }
+                        onChange={(event) => {
+                          const raw = event.target.value.trim();
+                          if (raw === "") {
+                            setModelOverride(field.key, undefined);
+                            return;
+                          }
+                          const n = Number(raw);
+                          if (!Number.isFinite(n)) return;
+                          setModelOverride(field.key, field.step === 1 ? Math.trunc(n) : n);
+                        }}
+                        className={inputClass}
+                      />
+                      {overridden && (
+                        <button
+                          type="button"
+                          data-testid={`clear-model-override-${field.key}`}
+                          className="shrink-0 text-[10px] text-zinc-400 hover:text-zinc-200"
+                          onClick={() => setModelOverride(field.key, undefined)}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-zinc-600">
+                      {overridden ? "Override" : "Inherited"} · effective{" "}
+                      {effective === undefined ? "provider default" : String(effective)}
+                    </p>
+                  </Field>
+                );
+              })}
+            </div>
+          )}
+
+          {supportsActiveTools && (
+            <Field label="Active tools">
+              <select
+                data-testid="step-active-tools-mode"
+                value={toolsMode}
+                onChange={(event) => {
+                  const mode = event.target.value as ActiveToolsMode;
+                  if (mode === "inherit") {
+                    updateNodeConfig(node.id, { activeTools: undefined });
+                  } else if (mode === "empty") {
+                    updateNodeConfig(node.id, { activeTools: [] });
+                  } else {
+                    updateNodeConfig(node.id, {
+                      activeTools: config.activeTools?.length ? config.activeTools : [...agent.tools],
+                    });
+                  }
+                }}
+                className={inputClass}
+              >
+                <option value="inherit">Inherit agent tools</option>
+                <option value="empty">No tools for this step</option>
+                <option value="subset">Subset of agent tools</option>
+              </select>
+              {toolsMode === "subset" && (
+                <div className="mt-2 space-y-1" data-testid="step-active-tools-subset">
+                  {agent.tools.map((toolId) => {
+                    const label = tools.find((t) => t.id === toolId)?.name ?? toolId;
+                    const checked = (config.activeTools ?? []).includes(toolId);
+                    return (
+                      <label key={toolId} className="flex items-center gap-2 text-xs text-zinc-300">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(event) => {
+                            const current = new Set(config.activeTools ?? []);
+                            if (event.target.checked) current.add(toolId);
+                            else current.delete(toolId);
+                            updateNodeConfig(node.id, { activeTools: [...current] });
+                          }}
+                        />
+                        {label}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </Field>
+          )}
+
           <Field label="Node execution mode override">
             <select
               data-testid="node-execution-mode"
@@ -270,11 +288,6 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
               className={inputClass}
             />
           </Field>
-          <JsonField
-            label="Metadata"
-            value={agent.metadata}
-            onChange={(metadata) => patchAgent({ metadata })}
-          />
         </>
       )}
     </div>

@@ -40,6 +40,7 @@
   agentBackendLabel,
   agentHasConfiguredModel,
   agentRequiresModel,
+  modelSettingsSchema,
   migrateAgentRecord,
   createNode,
   createEdge,

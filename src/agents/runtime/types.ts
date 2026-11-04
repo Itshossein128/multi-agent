@@ -1,4 +1,4 @@
-import type { AgentExecutionMode, AgentRecord, ToolRecord } from "@multi-agent/types";
+import type { AgentExecutionMode, AgentModelSettings, AgentRecord, ToolRecord } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../memory/contracts";
 import type { ShortTermHistories } from "./shortTermMemory";
 import type { TrustedCredentialPrincipal } from "./workerCredentials";
@@ -73,13 +73,28 @@ export interface AgentExecutionInput {
   toolRuntime?: Pick<ToolRuntime, "execute">;
   /**
    * Trusted server composition only — tools already filtered to
-   * agent.tools ∩ registry ∩ enabled.
+   * effective step tools (agent.tools ∩ registry ∩ enabled ∩ activeTools).
    */
   resolvedTools?: ToolRecord[];
   /** Node-level executionMode override (wins over agent). */
   nodeExecutionMode?: AgentExecutionMode;
   /** Node-level maxToolSteps override (wins over agent; clamped at resolve). */
   nodeMaxToolSteps?: number;
+  /**
+   * Additive step task instruction from AgentNodeConfig.
+   * Trusted server composition only — delivered without mutating AgentRecord.systemPrompt.
+   */
+  taskInstruction?: string;
+  /**
+   * Partial model settings override from AgentNodeConfig.
+   * Applied ephemerally at model construction; never written back to the registry.
+   */
+  modelSettingsOverride?: Partial<AgentModelSettings>;
+  /**
+   * When set (including `[]`), the step explicitly restricted tools via `activeTools`.
+   * Omitted means inherit — empty `resolvedTools` with assigned agent tools then fails closed in ReAct.
+   */
+  activeTools?: string[];
 }
 
 /**

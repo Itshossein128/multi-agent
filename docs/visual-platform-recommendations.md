@@ -25,7 +25,7 @@ Key capabilities required by modern visual agentic platforms (LangGraph Studio, 
 1. **In-Canvas Live Execution (shipped)**: Studio Design|Live dual mode keeps operators on the React Flow canvas when running (`/org?workflowId=&runId=`). The dedicated `/runs/[runId]` page remains for bookmarks with an “Open on canvas” deep link.
 2. **Autonomous Agent Loops (ReAct) — shipped** (feature `012-react-agent-loop`): API agents bind assigned tools via `bindTools`, run a bounded ToolRuntime-backed loop (`executionMode` / `maxToolSteps`), and emit nested `tool.*` events. Standalone tool nodes remain valid for linear flows.
 3. **Implicit Data Passing (`state.lastValue`)**: There is no explicit variable mapping or visual port wiring. Data passes implicitly from step to step, causing data-loss friction when branching or joining.
-4. **Registry Mutation Anti-Pattern**: Editing an agent node on the canvas mutates the global `AgentRecord` in the database, preventing multiple nodes from sharing an agent persona with different step instructions.
+4. **Registry Mutation Anti-Pattern — shipped** (feature `013-agent-step-config`): Agent node properties write step-local `taskInstruction` / `modelSettingsOverride` / `activeTools` via `updateNodeConfig` only; registry edits require an explicit “Edit Agent in Registry” path.
 5. **Topology Restrictions**: The platform artificially restricts topologies to `linear-pipeline` and `hierarchical-supervisor`, blocking essential patterns like Evaluator-Optimizer feedback loops, parallel scatter-gather, and nested subgraphs.
 
 ---
@@ -43,7 +43,6 @@ flowchart TD
     end
 
     subgraph Remaining Gaps
-        A -->|Edit Agent Node| D[Mutates Global AgentRecord in DB]
         G[Data Flow] -->|Implicit| H[state.lastValue]
         H2[Data Flow] -.->|Still needed| I2[Typed Ports & mustache {{node.output}} Expressions]
     end
@@ -119,39 +118,14 @@ flowchart TD
 
 ---
 
-### Finding 4: Shared Registry Mutation vs. Step-Specific Configuration
-* **Location:** [`apps/web/src/components/workflow/properties/NodeForms.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/properties/NodeForms.tsx#L38-L72)
-* **Problem:**
-  When a user edits an Agent node in [`NodeForms.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/properties/NodeForms.tsx), changing the form values calls:
-  ```ts
-  const patchAgent = (patch: Partial<AgentRecord>) => {
-    if (!agent) return;
-    updateAgentRecord(agent.id, patch);
-  };
-  ```
-  This immediately mutates the **shared global entity** in the registry.
-* **Why it matters:**
-  If a workflow uses the same "Developer Agent" in two places (e.g. Node A: "Generate code from spec"; Node B: "Patch bugs found during QA"), modifying Node A's prompt or temperature corrupts Node B and any other workflow referencing that agent.
-* **Recommendations:**
-  1. **Clean Separation of Concerns**:
-     - **Agent Entity (Registry)**: Defines the persona, model provider, default credentials/tool access, and base system instructions.
-     - **Agent Node Config (Workflow-Specific)**:
-       ```ts
-       export interface AgentNodeConfig {
-         agentId: string;
-         /** Node-specific task instruction (e.g., "Refactor the code provided in {{input}}") */
-         taskInstruction?: string;
-         /** Overrides for temperature, reasoning effort, or max tokens */
-         modelSettingsOverride?: Partial<AgentModelSettings>;
-         /** Step-specific tool restrictions (subset of agent's allowed tools) */
-         activeTools?: string[];
-         mutatesCode?: boolean;
-       }
-       ```
-  2. **Update the Properties Panel**:
-     - Provide a "Base Agent" dropdown selector.
-     - Provide a "Step Instructions" textarea with variable substitution hints.
-     - Only allow editing the base agent if explicitly clicking "Edit Agent in Registry".
+### Finding 4: Shared Registry Mutation vs. Step-Specific Configuration — **SHIPPED** (feature `013-agent-step-config`)
+* **Location:** [`NodeForms.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/properties/NodeForms.tsx), [`packages/types/src/agentStepConfig.ts`](file:///E:/hossein/ai_agent/multi-agent/packages/types/src/agentStepConfig.ts), compiler + agent runtime executors
+* **Current behavior (implemented):**
+  - Agent node properties are a step-config surface: Base Agent selector, read-only base summary, Step Instructions, model inherit/override/clear, active-tools inherit/empty/subset, node execution overrides.
+  - Ordinary panel edits call `updateNodeConfig` only — no `updateAgentRecord` from `AgentForm`.
+  - Explicit **Edit Agent in Registry** warns about shared impact, then navigates to `/org/agents/{agentId}`.
+  - Pure `resolveEffectiveAgentStepConfig` / `validateAgentNodeStepConfig` feed web + server validation; compiler injects `taskInstruction`, ephemeral model overrides, and effective tools into runtime without mutating shared `AgentRecord`s.
+* **Historical note:** Earlier builds patched the shared registry from the canvas properties panel; that anti-pattern is removed for agent nodes.
 
 ---
 
@@ -235,7 +209,7 @@ timeline
             : Auto-Layout Engine (Dagre)
     Phase 2 : Autonomous ReAct Agent Loop (shipped core)
             : Provider Tool Binding bindTools (shipped)
-            : Agent Persona vs Step Task Separation
+            : Agent Persona vs Step Task Separation (shipped 013)
             : Multi-Handle Approval Node (Approved / Rejected)
     Phase 3 : Explicit Port & Variable Mapping ({{node.output}})
             : Code / Transform Node (JavaScript/Python)
@@ -259,8 +233,8 @@ timeline
 ### Phase 2: Autonomous ReAct Engine & Step Configuration
 1. ~~In `apiAgentExecutor.ts`, add tool calling via provider tools API / `bindTools`.~~ **Done** (`012-react-agent-loop`).
 2. ~~Bounded loop with `maxToolSteps` via `ToolRuntime.execute()`.~~ **Done**.
-3. In [`packages/types/src/index.ts`](file:///E:/hossein/ai_agent/multi-agent/packages/types/src/index.ts), expand `AgentNodeConfig` with `taskInstruction`, `temperatureOverride`, and `activeTools` (persona vs step separation — still open).
-4. Update [`NodeForms.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/properties/NodeForms.tsx) so editing an agent node config does not mutate the shared `AgentRecord` (partially addressed by node-level `executionMode` / `maxToolSteps` overrides; full persona decoupling still open).
+3. ~~Expand `AgentNodeConfig` with `taskInstruction`, `modelSettingsOverride`, and `activeTools` (persona vs step separation).~~ **Done** (`013-agent-step-config`).
+4. ~~Update `NodeForms.tsx` so agent-node editing does not mutate the shared `AgentRecord`; registry edits require explicit “Edit Agent in Registry”.~~ **Done** (`013-agent-step-config`).
 5. Update [`WorkflowNodes.tsx`](file:///E:/hossein/ai_agent/multi-agent/apps/web/src/components/workflow/nodes/WorkflowNodes.tsx) to give `ApprovalNodeComponent` distinct `approved` and `rejected` handles.
 
 ### Phase 3: Explicit Variable Mapping & Transform Nodes

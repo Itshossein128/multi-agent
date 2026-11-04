@@ -42,7 +42,12 @@ export class LocalAgentExecutor implements AgentExecutor {
     const ollama = backend.provider === "ollama";
     const origin = normalizeOrigin(baseUrl);
     if (!this.runtimePolicy.allowedOrigins.includes(origin)) throw new Error(`Local model origin "${origin}" is not allowed by the server runtime.`);
-    const settings = backend.settings ?? {};
+    const settings = {
+      ...(backend.settings ?? {}),
+      ...Object.fromEntries(
+        Object.entries(input.modelSettingsOverride ?? {}).filter(([, value]) => value !== undefined)
+      ),
+    };
     const response = await this.fetchImpl(new URL(ollama ? "/api/chat" : "/v1/chat/completions", baseUrl), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -69,8 +74,11 @@ function messages(input: AgentExecutionInput) {
   const system = input.agent.systemPrompt || "You are a helpful workflow agent.";
   const value = typeof input.input === "string" ? input.input : JSON.stringify(input.input ?? {});
   const history = (input.context?.history ?? []) as { input: unknown; output: unknown }[];
+  const stepInstruction =
+    typeof input.taskInstruction === "string" ? input.taskInstruction.trim() : "";
   return [
     { role: "system", content: system },
+    ...(stepInstruction ? [{ role: "user" as const, content: `STEP INSTRUCTIONS:\n${stepInstruction}` }] : []),
     ...history.flatMap((entry) => [{ role: "user", content: typeof entry.input === "string" ? entry.input : JSON.stringify(entry.input ?? {}) }, { role: "assistant", content: typeof entry.output === "string" ? entry.output : JSON.stringify(entry.output ?? {}) }]),
     ...(typeof input.context?.memoryContext === "string" && input.context.memoryContext ? [{ role: "user", content: input.context.memoryContext }] : []),
     { role: "user", content: value },

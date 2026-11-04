@@ -1,6 +1,10 @@
 /**
  * Effective ReAct settings: node → agent → derived defaults.
  * Clamp maxToolSteps to the integer range [1, 10] (default 5).
+ *
+ * Callers that apply step `activeTools` MUST pass the **effective** tool id list
+ * as `agentTools` so derived mode reflects the step (empty effective tools ⇒
+ * default `single_turn` when neither node nor agent sets an explicit mode).
  */
 
 export type AgentExecutionMode = "single_turn" | "react";

@@ -20,6 +20,7 @@ import {
 
 export type ContextSource =
   | "system"
+  | "step_instruction"
   | "task"
   | "history"
   | "long_term_memory"
@@ -57,6 +58,8 @@ export interface ContextAssemblyRequest {
   agent: AgentRecord;
   task: unknown;
   systemPrompt?: string;
+  /** Additive step task instruction; does not replace systemPrompt. */
+  taskInstruction?: string;
   history?: HistoryEntry[];
   longTermMemoryContext?: string;
   longTermMemoryEvents?: unknown[];
@@ -136,6 +139,8 @@ function resolveInputBudget(model?: { contextWindowTokens?: number }, reservedOu
 
 export const PRIORITY = {
   SYSTEM: 100,
+  /** After base system, before task/input. */
+  STEP_INSTRUCTION: 95,
   TASK: 90,
   HANDOFF: 70,
   WORKING_MEMORY: 65,
@@ -189,6 +194,20 @@ export class DefaultContextAssembler implements ContextAssembler {
       estimatedTokens: this.estimator.estimate(systemText),
       required: true,
     });
+
+    // Additive step instruction — after base system, before task/input
+    const stepInstruction =
+      typeof request.taskInstruction === "string" ? request.taskInstruction.trim() : "";
+    if (stepInstruction) {
+      items.push({
+        id: `step-instruction:${request.nodeId}`,
+        source: "step_instruction",
+        priority: PRIORITY.STEP_INSTRUCTION,
+        content: { type: "step_instruction", text: stepInstruction },
+        estimatedTokens: this.estimator.estimate(stepInstruction),
+        required: true,
+      });
+    }
 
     // Current task — always required
     const taskText = typeof request.task === "string"
@@ -516,6 +535,7 @@ export class DefaultContextAssembler implements ContextAssembler {
     // 4. Build diagnostics
     const sources: Record<ContextSource, { count: number; tokens: number }> = {
       system: sourceStats["system"] ?? { count: 0, tokens: 0 },
+      step_instruction: sourceStats["step_instruction"] ?? { count: 0, tokens: 0 },
       task: sourceStats["task"] ?? { count: 0, tokens: 0 },
       history: sourceStats["history"] ?? { count: 0, tokens: 0 },
       long_term_memory: sourceStats["long_term_memory"] ?? { count: 0, tokens: 0 },

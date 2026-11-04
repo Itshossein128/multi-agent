@@ -281,6 +281,19 @@ export interface AgentNodeConfig {
   executionMode?: AgentExecutionMode;
   /** Node-level override of agent maxToolSteps (clamp 1–10). */
   maxToolSteps?: number;
+  /** Additive step task guidance; omit/blank ⇒ legacy behavior (no step instruction). */
+  taskInstruction?: string;
+  /**
+   * Partial model setting overrides. Absent keys inherit from base agent backend.settings.
+   * Explicit `0` is a value. Cleared keys must be removed from the stored object (not null).
+   */
+  modelSettingsOverride?: Partial<AgentModelSettings>;
+  /**
+   * undefined ⇒ inherit agent.tools ∩ usable registry tools
+   * [] ⇒ no tools for this step
+   * nonempty ⇒ subset of allowed∩usable (else invalid)
+   */
+  activeTools?: string[];
 }
 
 export interface ToolNodeConfig {
@@ -532,17 +545,28 @@ export function createAgentRecord(input?: {
 export function createNode(
   type: WorkflowNodeType,
   position: WorkflowPosition,
-  options?: { agentId?: string; toolId?: string; role?: string; mutatesCode?: boolean }
+  options?: Partial<AgentNodeConfig> & { toolId?: string }
 ): WorkflowNode {
   let config: WorkflowNodeConfig;
   switch (type) {
-    case "agent":
+    case "agent": {
+      const agentOpts = options ?? {};
       config = {
-        agentId: options?.agentId ?? null,
-        ...(options?.role ? { role: options.role } : {}),
-        ...(options?.mutatesCode ? { mutatesCode: true } : {}),
+        agentId: agentOpts.agentId ?? null,
+        ...(agentOpts.role ? { role: agentOpts.role } : {}),
+        ...(agentOpts.mutatesCode ? { mutatesCode: true } : {}),
+        ...(agentOpts.executionMode === "single_turn" || agentOpts.executionMode === "react"
+          ? { executionMode: agentOpts.executionMode }
+          : {}),
+        ...(typeof agentOpts.maxToolSteps === "number" ? { maxToolSteps: agentOpts.maxToolSteps } : {}),
+        ...(typeof agentOpts.taskInstruction === "string" ? { taskInstruction: agentOpts.taskInstruction } : {}),
+        ...(agentOpts.modelSettingsOverride
+          ? { modelSettingsOverride: { ...agentOpts.modelSettingsOverride } }
+          : {}),
+        ...(agentOpts.activeTools !== undefined ? { activeTools: [...agentOpts.activeTools] } : {}),
       };
       break;
+    }
     case "tool":
       config = { toolId: options?.toolId ?? null };
       break;
@@ -857,6 +881,23 @@ export interface RunCreateResponse {
 export interface AgentTestRequest { agent: AgentRecord; input: Record<string, unknown> }
 
 export { ConfigurationValidationError, assertNoCredentials, credentialIssues, validateAgent, modelSettingsSchema, API_PROVIDER_SCHEMAS, removeAgentNodes } from "./agentConfiguration";
+
+export {
+  resolveEffectiveAgentStepConfig,
+  validateAgentNodeStepConfig,
+  INVALID_AGENT_NODE_TASK_INSTRUCTION,
+  INVALID_AGENT_NODE_MODEL_OVERRIDE,
+  UNSUPPORTED_STEP_MODEL_OVERRIDE,
+  INVALID_AGENT_NODE_ACTIVE_TOOLS,
+  UNSUPPORTED_STEP_ACTIVE_TOOLS,
+  INCOMPATIBLE_STEP_CONFIG_FOR_AGENT,
+} from "./agentStepConfig";
+export type {
+  StepConfigIssue,
+  StepConfigIssueCode,
+  EffectiveAgentStepConfig,
+  ResolveEffectiveAgentStepConfigInput,
+} from "./agentStepConfig";
 
 export interface RunEvent {
   id: string;
