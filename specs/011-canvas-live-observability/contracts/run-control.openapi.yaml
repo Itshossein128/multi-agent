@@ -1,0 +1,232 @@
+openapi: 3.0.3
+info:
+  title: Canvas Live Observability — Reused Run Control Plane
+  version: "1.0.0"
+  description: |
+    This feature does not introduce new execution APIs. The studio Live mode
+    consumes the existing authenticated BFF / execution routes already used by
+    the dedicated run page. Paths below are logical (org-scoped via web BFF).
+
+servers:
+  - url: /api/execution
+    description: Browser control-plane BFF (org-scoped in app)
+
+tags:
+  - name: Runs
+  - name: Events
+  - name: Approvals
+
+paths:
+  /runs:
+    post:
+      tags: [Runs]
+      summary: Start a run (EditorToolbar Run → enter Live)
+      operationId: startRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workflow]
+              properties:
+                workflow:
+                  type: object
+                  description: WorkflowDefinition snapshot
+                agents:
+                  type: array
+                  items: { type: object }
+                tools:
+                  type: array
+                  items: { type: object }
+                input:
+                  type: object
+                taskId:
+                  type: string
+      responses:
+        "200":
+          description: Run created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId]
+                properties:
+                  runId: { type: string }
+
+  /runs/{runId}:
+    get:
+      tags: [Runs]
+      summary: Load run header for tray / inspector
+      operationId: getRun
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Run record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Run"
+
+  /runs/{runId}/definition:
+    get:
+      tags: [Runs]
+      summary: Execution topology snapshot for Live canvas
+      operationId: getRunDefinition
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Workflow definition used for the run
+        "404":
+          description: Definition unavailable (client may fall back to sessionStorage)
+
+  /runs/{runId}/events:
+    get:
+      tags: [Events]
+      summary: Historical events (hydrate before SSE)
+      operationId: getRunEvents
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - name: afterSequence
+          in: query
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RunEvent"
+
+  /runs/{runId}/events/stream:
+    get:
+      tags: [Events]
+      summary: SSE live stream (EventSource)
+      operationId: streamRunEvents
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - name: afterSequence
+          in: query
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: |
+            text/event-stream of `run-event` messages. Client closes on
+            run.completed | run.failed | run.cancelled.
+
+  /runs/{runId}/cancel:
+    post:
+      tags: [Runs]
+      summary: Cancel in-flight run (Live tray)
+      operationId: cancelRun
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Cancel accepted
+
+  /runs/{runId}/retry:
+    post:
+      tags: [Runs]
+      summary: Whole-run retry (Live tray when failed)
+      operationId: retryRun
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: New run created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId]
+                properties:
+                  runId: { type: string }
+
+  /runs/{runId}/approvals:
+    get:
+      tags: [Approvals]
+      summary: List approvals for banner / inspector
+      operationId: getApprovals
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Approval list
+
+  /runs/{runId}/approvals/{approvalId}/resolve:
+    post:
+      tags: [Approvals]
+      summary: Approve / reject / needs_clarification from canvas
+      operationId: resolveApproval
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+        - name: approvalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [approved, rejected, needs_clarification]
+                response:
+                  type: string
+                  description: Decision notes / clarification text
+      responses:
+        "200":
+          description: Decision recorded
+        "409":
+          description: Already resolved / not actionable
+
+components:
+  parameters:
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string }
+
+  schemas:
+    Run:
+      type: object
+      required: [id, workflowId, status, startedAt, metadata]
+      properties:
+        id: { type: string }
+        workflowId: { type: string }
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled, waiting_for_human]
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        currentNodeId: { type: string }
+        error: { type: string }
+        metadata: { type: object }
+
+    RunEvent:
+      type: object
+      required: [id, runId, type, timestamp, sequence, payload]
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        type: { type: string }
+        timestamp: { type: string, format: date-time }
+        nodeId: { type: string }
+        sequence: { type: integer }
+        payload: { type: object }
+        agentId: { type: string }
+        toolId: { type: string }
+        parentEventId: { type: string }

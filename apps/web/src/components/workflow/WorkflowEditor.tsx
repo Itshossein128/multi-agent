@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -13,6 +13,11 @@ import { StatusBar } from "@/components/workflow/StatusBar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TriangleAlert } from "lucide-react";
+import { useLiveCanvasSession } from "./live/useLiveCanvasSession";
+import { isDesignMutationAllowed } from "./live/liveCanvas.types";
+import { LiveApprovalBanner } from "./live/LiveApprovalBanner";
+import { LiveRunTray } from "./live/LiveRunTray";
+import { NodeExecutionInspector } from "./live/NodeExecutionInspector";
 import { WorkflowSwitcher } from "./WorkflowSwitcher";
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -59,6 +64,11 @@ export function WorkflowEditor() {
 
 function WorkflowEditorContent() {
   const searchParams = useSearchParams();
+  const session = useLiveCanvasSession();
+  const live = !isDesignMutationAllowed(session.mode);
+  const { attachExistingRun, exitLive, liveDefinition, selectInspectNode } = session;
+  const closeInspector = useCallback(() => selectInspectNode(null), [selectInspectNode]);
+  const requestedRunId = searchParams.get("runId");
   const requestedWorkflowId = searchParams.get("workflowId") ?? undefined;
   const requestedNodeId = searchParams.get("focusNode");
   const [focusError, setFocusError] = useState<string | null>(null);
@@ -77,30 +87,38 @@ function WorkflowEditorContent() {
   // Initial load
   useEffect(() => {
     focused.current = false;
+    const draft = useWorkflowStore.getState();
+    if (draft.loadState === "ready" && (requestedRunId || draft.definition.id === requestedWorkflowId)) return;
     void loadWorkflow(requestedWorkflowId);
-  }, [loadWorkflow, requestedWorkflowId]);
+  }, [loadWorkflow, requestedWorkflowId, requestedRunId]);
 
   useEffect(() => {
-    if (loadState !== "ready" || !flowHelpers || focused.current) return;
+    if (requestedRunId) void attachExistingRun(requestedRunId, requestedWorkflowId);
+    else exitLive();
+  }, [requestedRunId, requestedWorkflowId, attachExistingRun, exitLive]);
+
+  useEffect(() => {
+    if ((!live && loadState !== "ready") || (live && !liveDefinition) || !flowHelpers || focused.current) return;
     const nodeId = requestedNodeId;
     if (!nodeId) return;
     // Wait for the canvas layout before centering and reporting navigation results.
     const frame = requestAnimationFrame(() => {
       focused.current = true;
       const workflowId = requestedWorkflowId;
-      if (workflowId && workflowId !== definition.id) { setFocusError("The requested workflow is not available in this browser’s saved workspace."); return; }
-      const node = definition.nodes.find((item) => item.id === nodeId);
+      if (workflowId && workflowId !== (live ? liveDefinition ?? definition : definition).id) { setFocusError("The requested workflow is not available in this browser’s saved workspace."); return; }
+      const node = (live ? liveDefinition ?? definition : definition).nodes.find((item) => item.id === nodeId);
       if (!node) { setFocusError("The requested node no longer exists in this workflow."); return; }
-      useWorkflowStore.getState().selectNodeOnly(node.id);
+      if (live) selectInspectNode(node.id);
+      else useWorkflowStore.getState().selectNodeOnly(node.id);
       flowHelpers.setCenter(node.position.x + 112, node.position.y + 40, 1.1);
     });
     return () => cancelAnimationFrame(frame);
-  }, [loadState, flowHelpers, definition, requestedNodeId, requestedWorkflowId]);
+  }, [loadState, flowHelpers, definition, requestedNodeId, requestedWorkflowId, live, liveDefinition, selectInspectNode]);
 
   // Global keyboard shortcuts (Ctrl/Cmd+S save, Ctrl/Cmd+Z undo, Shift+Z redo)
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target)) return;
+      if (live || isEditableTarget(event.target)) return;
       const mod = event.ctrlKey || event.metaKey;
       if (mod && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -127,31 +145,34 @@ function WorkflowEditorContent() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [saveWorkflow, undo, redo, clearSelection]);
+  }, [live, saveWorkflow, undo, redo, clearSelection]);
 
   return (
     <ReactFlowProvider>
       <div className="flex min-h-0 flex-1 flex-col">
-        <WorkflowSwitcher />
-        <EditorToolbar />
+        {!live && <WorkflowSwitcher />}
+        <EditorToolbar session={session} />
+        {session.error && <p role="alert" className="bg-red-950 p-3 text-sm text-red-200">{session.error}</p>}
         {saveError && <p role="alert" className="bg-red-950 p-3 text-sm text-red-200">{saveError}</p>}
         {focusError && <p role="status" className="bg-amber-950 p-3 text-sm text-amber-200">{focusError}</p>}
 
-        {loadState === "loading" && <LoadingState />}
-        {loadState === "error" && (
+        {!live && loadState === "loading" && <LoadingState />}
+        {!live && loadState === "error" && (
           <ErrorState message={loadError ?? "Unknown error"} onRetry={() => void loadWorkflow(requestedWorkflowId)} />
         )}
 
-        {loadState === "ready" && (
+        {(live || loadState === "ready") && (
           <>
             <div className="flex min-h-0 flex-1">
-              <NodePalette />
+              {!live && <NodePalette />}
               <main className="relative min-w-0 flex-1">
-                <FlowCanvas />
+                <FlowCanvas live={live} liveDefinition={liveDefinition} onInspectNode={selectInspectNode} />
+                {live && session.attachedRunId && <LiveApprovalBanner key={session.attachedRunId} runId={session.attachedRunId} onInspectNode={selectInspectNode} onAttachRun={session.enterLive} />}
+                {live && session.selectedInspectNodeId && <NodeExecutionInspector nodeId={session.selectedInspectNodeId} node={(liveDefinition ?? definition).nodes.find(node => node.id === session.selectedInspectNodeId)} onClose={closeInspector} />}
               </main>
-              <PropertiesPanel />
+              {!live && <PropertiesPanel />}
             </div>
-            <StatusBar />
+            {live && session.attachedRunId ? <LiveRunTray runId={session.attachedRunId} definition={liveDefinition ?? definition} onRetarget={session.enterLive} /> : <StatusBar />}
           </>
         )}
       </div>

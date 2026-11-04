@@ -1,10 +1,11 @@
-import type { AgentRecord } from "@multi-agent/types";
+import type { AgentExecutionMode, AgentRecord, ToolRecord } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../memory/contracts";
 import type { ShortTermHistories } from "./shortTermMemory";
 import type { TrustedCredentialPrincipal } from "./workerCredentials";
 import type { AssembledContext } from "./contextAssembler";
 import type { AgentHandoff } from "./handoff";
 import type { WorkingMemoryEntries } from "./workingMemory";
+import type { ToolRuntime } from "../../tools/toolRuntime";
 
 export type AgentExecutionEventType =
   | "agent.started"
@@ -65,6 +66,20 @@ export interface AgentExecutionInput {
    * executors: ContextAssembler selects the entries this agent may see.
    */
   workingMemory?: WorkingMemoryEntries;
+  /**
+   * Trusted server composition only — ToolRuntime execute boundary.
+   * Never treat client config as an authorization grant.
+   */
+  toolRuntime?: Pick<ToolRuntime, "execute">;
+  /**
+   * Trusted server composition only — tools already filtered to
+   * agent.tools ∩ registry ∩ enabled.
+   */
+  resolvedTools?: ToolRecord[];
+  /** Node-level executionMode override (wins over agent). */
+  nodeExecutionMode?: AgentExecutionMode;
+  /** Node-level maxToolSteps override (wins over agent; clamped at resolve). */
+  nodeMaxToolSteps?: number;
 }
 
 /**

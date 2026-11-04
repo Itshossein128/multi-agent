@@ -104,6 +104,9 @@ export interface AgentExecutionPolicy {
   allowedCommands?: string[];
 }
 
+/** Agent node / record execution loop mode (012 ReAct). */
+export type AgentExecutionMode = "single_turn" | "react";
+
 export interface AgentRecord {
   id: string;
   name: string;
@@ -111,6 +114,16 @@ export interface AgentRecord {
   backend: AgentBackend;
   systemPrompt: string;
   tools: string[];
+  /**
+   * Explicit loop mode override. When absent, derived from tools.length
+   * (non-empty ⇒ react, empty ⇒ single_turn).
+   */
+  executionMode?: AgentExecutionMode;
+  /**
+   * Max tool-calling model rounds per agent node. Clamped to integer 1–10;
+   * effective default is 5 when omitted.
+   */
+  maxToolSteps?: number;
   enabled?: boolean;
   memory?: AgentMemoryConfig;
   executionPolicy?: AgentExecutionPolicy;
@@ -151,6 +164,8 @@ export interface LegacyAgentRecord {
   updatedAt?: string;
   backend?: AgentBackend;
   executionPolicy?: AgentExecutionPolicy;
+  executionMode?: AgentExecutionMode;
+  maxToolSteps?: number;
 }
 
 export function createApiBackend(provider = "openai", model = "gpt-4o"): AgentBackend {
@@ -222,6 +237,16 @@ export function migrateAgentRecord(raw: unknown): AgentRecord {
     backend = { ...backend, provider: "webhook" } as any;
   }
 
+  const executionMode =
+    record.executionMode === "single_turn" || record.executionMode === "react"
+      ? record.executionMode
+      : undefined;
+  let maxToolSteps: number | undefined;
+  if (record.maxToolSteps !== undefined && record.maxToolSteps !== null) {
+    const n = Math.trunc(Number(record.maxToolSteps));
+    if (Number.isFinite(n)) maxToolSteps = Math.min(10, Math.max(1, n || 5));
+  }
+
   return {
     id: typeof record.id === "string" && record.id ? record.id : uid("agent"),
     name: typeof record.name === "string" && record.name.trim() ? record.name : "New Agent",
@@ -241,6 +266,8 @@ export function migrateAgentRecord(raw: unknown): AgentRecord {
     ...(typeof record.ownerId === "string" ? { ownerId: record.ownerId } : {}),
     ...(typeof record.tenantId === "string" ? { tenantId: record.tenantId } : {}),
     ...(typeof record.isSystem === "boolean" ? { isSystem: record.isSystem } : {}),
+    ...(executionMode ? { executionMode } : {}),
+    ...(maxToolSteps !== undefined ? { maxToolSteps } : {}),
   };
 }
 
@@ -250,6 +277,10 @@ export interface AgentNodeConfig {
   mutatesCode?: boolean;
   /** Specialist role used by supervisor safeguards, for example `gap_auditor`. */
   role?: string;
+  /** Node-level override of agent executionMode. */
+  executionMode?: AgentExecutionMode;
+  /** Node-level override of agent maxToolSteps (clamp 1–10). */
+  maxToolSteps?: number;
 }
 
 export interface ToolNodeConfig {

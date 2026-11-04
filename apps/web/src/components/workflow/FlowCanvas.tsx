@@ -22,13 +22,38 @@ import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { workflowNodeTypes } from "@/components/workflow/nodes/WorkflowNodes";
 import { workflowEdgeTypes } from "@/components/workflow/edges/WorkflowEdge";
 
+import { useCanvasStatusSnapshot } from "./live/useCanvasStatusSnapshot";
+import { projectRunCanvas, edgeLiveStyle } from "@/lib/runCanvasProjection";
+import type { WorkflowDefinition } from "@multi-agent/types";
+
 const PALETTE_NODE_MIME = "application/x-workflow-node";
 const PALETTE_AGENT_MIME = "application/x-workflow-agent";
 const PALETTE_TOOL_MIME = "application/x-workflow-tool";
 
-export function FlowCanvas() {
+const EMPTY_LIVE_DEFINITION: WorkflowDefinition = {
+  id: "",
+  name: "",
+  nodes: [],
+  edges: [],
+  updatedAt: "",
+};
+
+export function FlowCanvas({ live = false, liveDefinition, onInspectNode }: { live?: boolean; liveDefinition?: WorkflowDefinition | null; onInspectNode?: (nodeId: string) => void }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const definition = useWorkflowStore((s) => s.definition);
+  const draft = useWorkflowStore((s) => s.definition);
+  // Live mode must never silently render the editable draft as the observed run graph.
+  const awaitingLiveGraph = live && !liveDefinition;
+  const definition = live ? (liveDefinition ?? EMPTY_LIVE_DEFINITION) : draft;
+  const snapshot = useCanvasStatusSnapshot(live);
+  const statusEvents = snapshot.events;
+  const projection = useMemo(() => projectRunCanvas(snapshot), [snapshot]);
+  const errorCodeByNode = useMemo(() => {
+    const codes = new Map<string, string>();
+    for (const event of statusEvents) {
+      if (event.nodeId && event.type.endsWith("failed") && typeof event.payload.code === "string") codes.set(event.nodeId, event.payload.code);
+    }
+    return codes;
+  }, [statusEvents]);
   const agents = useWorkflowStore((s) => s.agents);
   const tools = useWorkflowStore((s) => s.tools);
   const selectedNodeIds = useWorkflowStore((s) => s.selectedNodeIds);
@@ -53,6 +78,9 @@ export function FlowCanvas() {
         selected: selectedNodeIds.includes(node.id),
         data: {
           node,
+          liveStatus: live ? projection.nodeStatus.get(node.id) ?? "idle" : undefined,
+          waitingApproval: live && projection.waitingApprovalNodeIds.has(node.id),
+          liveErrorCode: live ? errorCodeByNode.get(node.id) : undefined,
           agent:
             node.type === "agent"
               ? agents.find(
@@ -72,7 +100,7 @@ export function FlowCanvas() {
             .join("\n"),
         },
       })),
-    [definition.nodes, agents, tools, selectedNodeIds, issueCountByNode, issues]
+    [definition.nodes, agents, tools, selectedNodeIds, issueCountByNode, issues, live, projection, errorCodeByNode]
   );
 
   const rfEdges = useMemo<Edge[]>(
@@ -93,13 +121,14 @@ export function FlowCanvas() {
             height: 16,
           },
           selected: selectedEdgeIds.includes(edge.id),
-          data: { edge },
+          data: { edge, readOnly: live, ...edgeLiveStyle(edge, live && projection.traversedEdgeIds.has(edge.id)) },
         };
       }),
-    [definition.edges, definition.nodes, selectedEdgeIds]
+    [definition.edges, definition.nodes, selectedEdgeIds, live, projection]
   );
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
+    if (live) return;
     const positions = new Map<string, { x: number; y: number }>();
     const removed: string[] = [];
     for (const change of changes) {
@@ -112,9 +141,10 @@ export function FlowCanvas() {
     const store = useWorkflowStore.getState();
     if (positions.size > 0) store.moveNodes(positions);
     if (removed.length > 0) store.removeNodes(removed);
-  }, []);
+  }, [live]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    if (live) return;
     const removed: string[] = [];
     for (const change of changes) {
       if (change.type === "remove") removed.push(change.id);
@@ -122,9 +152,10 @@ export function FlowCanvas() {
     if (removed.length > 0) {
       useWorkflowStore.getState().removeEdges(removed);
     }
-  }, []);
+  }, [live]);
 
   const onConnect = useCallback((connection: Connection) => {
+    if (live) return;
     if (!connection.source || !connection.target) return;
     // The editor stores cycles as valid graph structure. Compilation/runtime
     // policy remains authoritative and can reject or bound unsupported loops.
@@ -133,18 +164,19 @@ export function FlowCanvas() {
       target: connection.target,
       sourceHandle: connection.sourceHandle,
     });
-  }, []);
+  }, [live]);
 
   const onSelectionChange = useCallback<OnSelectionChangeFunc>(({ nodes, edges }) => {
+    if (live) return;
     useWorkflowStore.getState().setSelection(
       nodes.map((n) => n.id),
       edges.map((e) => e.id)
     );
-  }, []);
+  }, [live]);
 
   const onNodeDragStart = useCallback(() => {
-    useWorkflowStore.getState().beginHistory();
-  }, []);
+    if (!live) useWorkflowStore.getState().beginHistory();
+  }, [live]);
 
   const onInit = useCallback(
     (instance: ReactFlowInstance) => {
@@ -171,6 +203,7 @@ export function FlowCanvas() {
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
+      if (live) return;
       const nodeType = event.dataTransfer.getData(PALETTE_NODE_MIME);
       const agentId = event.dataTransfer.getData(PALETTE_AGENT_MIME);
       const toolId = event.dataTransfer.getData(PALETTE_TOOL_MIME);
@@ -192,13 +225,13 @@ export function FlowCanvas() {
         }
       }
     },
-    [screenToFlowPosition]
+    [screenToFlowPosition, live]
   );
 
   const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  }, []);
+    event.dataTransfer.dropEffect = live ? "none" : "copy";
+  }, [live]);
 
   return (
     <div
@@ -212,13 +245,17 @@ export function FlowCanvas() {
         edges={rfEdges}
         nodeTypes={workflowNodeTypes}
         edgeTypes={workflowEdgeTypes}
+        onNodeClick={live ? (_event, node) => onInspectNode?.(node.id) : undefined}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStart={onNodeDragStart}
         onSelectionChange={onSelectionChange}
         onInit={onInit}
-        deleteKeyCode={["Backspace", "Delete"]}
+        nodesDraggable={!live}
+        nodesConnectable={!live}
+        edgesReconnectable={!live}
+        deleteKeyCode={live ? null : ["Backspace", "Delete"]}
         multiSelectionKeyCode={["Shift", "Control", "Meta"]}
         minZoom={0.15}
         maxZoom={2.5}
@@ -259,7 +296,17 @@ export function FlowCanvas() {
         />
       </ReactFlow>
 
-      {definition.nodes.length === 0 && (
+      {awaitingLiveGraph && (
+        <div role="status" className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-950/80 text-center">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
+          <p className="text-sm font-semibold text-zinc-300">Loading run graph…</p>
+          <p className="max-w-sm text-xs leading-relaxed text-zinc-500">
+            Waiting for the execution snapshot. The current draft is not shown as the live topology.
+          </p>
+        </div>
+      )}
+
+      {!live && definition.nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-center">
           <p className="text-sm font-semibold text-zinc-400">Empty canvas</p>
           <p className="max-w-sm text-xs leading-relaxed text-zinc-600">

@@ -90,6 +90,15 @@ export function validateAgent(agent: AgentRecord): string[] {
   if (agent.enabled !== undefined && typeof agent.enabled !== "boolean") errors.push("Enabled must be a boolean.");
   if (typeof agent.systemPrompt !== "string" || typeof agent.description !== "string") errors.push("Prompt and description must be strings.");
   if (!Array.isArray(agent.tools) || agent.tools.some((id) => typeof id !== "string" || !id.trim())) errors.push("Tool IDs must be nonempty strings.");
+  if (agent.executionMode !== undefined && agent.executionMode !== "single_turn" && agent.executionMode !== "react") {
+    errors.push('executionMode must be "single_turn" or "react".');
+  }
+  if (agent.maxToolSteps !== undefined) {
+    const n = Number(agent.maxToolSteps);
+    if (!Number.isFinite(n) || Math.trunc(n) < 1 || Math.trunc(n) > 10) {
+      errors.push("maxToolSteps must be an integer between 1 and 10.");
+    }
+  }
   if (!agent.metadata || typeof agent.metadata !== "object" || Array.isArray(agent.metadata) || Object.entries(agent.metadata).some(([key, value]) => !key.trim() || !["string", "number", "boolean"].includes(typeof value))) errors.push("Metadata values must be strings, numbers, or booleans.");
   if ((backend.type === "api" || backend.type === "local") && backend.settings) {
     const fields = modelSettingsSchema(backend);

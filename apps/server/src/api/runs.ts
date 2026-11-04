@@ -40,7 +40,7 @@ export function createRunsRouter(
     taskId: c.req.query("taskId") || undefined, status: c.req.query("status") as RunStatus | undefined, from: c.req.query("from") || undefined, to: c.req.query("to") || undefined }, c.get("principal"))));
   app.post("/", async (c) => c.json({ runId: await service.startRun(await c.req.json<Partial<RunCreateRequest>>(), c.req.raw, c.get("principal")) }, 202));
   app.get("/:runId/definition", (c) => c.json(service.definition(c.req.param("runId"))));
-  app.get("/:runId/approvals", (c) => c.json(service.approvals(c.req.param("runId"))));
+  app.get("/:runId/approvals", async (c) => c.json(await service.approvals(c.req.param("runId"), c.get("principal"))));
   app.post("/:runId/approvals/:approvalId/resolve", async (c) => {
     await service.resolveApproval(
       c.req.param("runId"),

@@ -1,0 +1,72 @@
+/** @jest-environment jsdom */
+import { act } from "react";
+import { WorkflowEditor } from "../apps/web/src/components/workflow/WorkflowEditor";
+import { useWorkflowStore } from "../apps/web/src/store/useWorkflowStore";
+import { renderUi } from "./renderUi";
+let mockQuery = new URLSearchParams("workflowId=w&runId=r");
+const mockAttach = jest.fn(async () => { });
+const mockExit = jest.fn();
+const mockSession = { mode: "live", attachedRunId: "r", liveDefinition: null, selectedInspectNodeId: null as string | null, attachExistingRun: mockAttach, exitLive: mockExit, enterLive: jest.fn(), selectInspectNode: jest.fn() };
+jest.mock("next/navigation", () => ({ useSearchParams: () => mockQuery }));
+jest.mock("../apps/web/src/components/workflow/live/useLiveCanvasSession", () => ({ useLiveCanvasSession: () => mockSession }));
+jest.mock("@xyflow/react/dist/style.css", () => ({}));
+jest.mock("@xyflow/react", () => ({ ReactFlowProvider: ({ children }: any) => children }));
+jest.mock("../apps/web/src/components/workflow/FlowCanvas", () => ({ FlowCanvas: ({ live, onInspectNode }: any) => <div data-testid="canvas" data-live={live}><button onClick={() => onInspectNode("n")}>Inspect node</button></div> }));
+jest.mock("../apps/web/src/components/workflow/EditorToolbar", () => ({ EditorToolbar: ({ session }: any) => <button onClick={session.exitLive}>Exit Live</button> }));
+jest.mock("../apps/web/src/components/workflow/NodePalette", () => ({ NodePalette: () => <div>Palette</div> }));
+jest.mock("../apps/web/src/components/workflow/PropertiesPanel", () => ({ PropertiesPanel: () => <div>Properties</div> }));
+jest.mock("../apps/web/src/components/workflow/WorkflowSwitcher", () => ({ WorkflowSwitcher: () => <div>Switcher</div> }));
+jest.mock("../apps/web/src/components/workflow/StatusBar", () => ({ StatusBar: () => null }));
+test("deep link attaches, freezes design, and preserves canvas through Exit", async () => {
+  const undo = jest.fn();
+  useWorkflowStore.setState({ ...useWorkflowStore.getInitialState(), loadState: "ready", loadWorkflow: jest.fn(async () => { }), undo });
+  const view = await renderUi(<WorkflowEditor />);
+  expect(mockAttach).toHaveBeenCalledWith("r", "w");
+  expect(view.container.textContent).not.toContain("Palette");
+  expect(view.container.textContent).not.toContain("Properties");
+  const canvas = view.container.querySelector('[data-testid="canvas"]');
+  expect(canvas?.getAttribute("data-live")).toBe("true");
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true })));
+  expect(undo).not.toHaveBeenCalled();
+  await act(async () => view.container.querySelector("button")!.click());
+  expect(mockExit).toHaveBeenCalled();
+  mockQuery = new URLSearchParams("workflowId=w");
+  mockSession.mode = "design";
+  await view.rerender(<WorkflowEditor />);
+  expect(view.container.textContent).toContain("Palette");
+  expect(view.container.textContent).toContain("Properties");
+  expect(view.container.querySelector('[data-testid="canvas"]')).toBe(canvas);
+  await view.unmount();
+});
+
+jest.mock("../apps/web/src/components/workflow/live/NodeExecutionInspector", () => ({ NodeExecutionInspector: ({ nodeId, onClose }: any) => <aside data-testid="inspector">{nodeId}<button onClick={onClose}>Close inspector</button></aside> }));
+test("Live clicks select the inspector without recording a design selection or replacing canvas", async () => {
+ mockQuery = new URLSearchParams("workflowId=w&runId=r"); mockSession.mode = "live"; mockSession.selectedInspectNodeId = null;
+ useWorkflowStore.setState({ ...useWorkflowStore.getInitialState(), loadState: "ready", loadWorkflow: jest.fn(async () => {}) });
+ const view = await renderUi(<WorkflowEditor />);
+ const canvas = view.container.querySelector('[data-testid="canvas"]');
+ await act(async () => [...view.container.querySelectorAll("button")].find(button => button.textContent === "Inspect node")!.click());
+ expect(mockSession.selectInspectNode).toHaveBeenCalledWith("n");
+ expect(useWorkflowStore.getState().selectedNodeIds).toEqual([]);
+ mockSession.selectedInspectNodeId = "n"; await view.rerender(<WorkflowEditor />);
+ expect(view.container.querySelector('[data-testid="inspector"]')).not.toBeNull();
+ await act(async () => [...view.container.querySelectorAll("button")].find(button => button.textContent === "Close inspector")!.click());
+ expect(mockSession.selectInspectNode).toHaveBeenCalledWith(null);
+ expect(view.container.querySelector('[data-testid="canvas"]')).toBe(canvas);
+ expect(useWorkflowStore.getState().isDirty).toBe(false); await view.unmount();
+});
+
+jest.mock("../apps/web/src/components/workflow/live/LiveApprovalBanner", () => ({ LiveApprovalBanner: ({ runId }: any) => <section data-testid="approval-banner">Approval for {runId}</section> }));
+jest.mock("../apps/web/src/components/workflow/live/LiveRunTray", () => ({ LiveRunTray: ({ runId, onRetarget }: any) => <section data-testid="run-tray">Tray for {runId}<button onClick={() => onRetarget("retry-run")}>Retry target</button></section> }));
+test("Live hosts approval and tray controls and retry retargets the shared session", async () => {
+ mockQuery = new URLSearchParams("workflowId=w&runId=r"); mockSession.mode = "live"; mockSession.selectedInspectNodeId = null;
+ useWorkflowStore.setState({ ...useWorkflowStore.getInitialState(), loadState: "ready", loadWorkflow: jest.fn(async () => {}) });
+ const view = await renderUi(<WorkflowEditor />);
+ expect(view.container.querySelector('[data-testid="approval-banner"]')?.textContent).toContain("r");
+ expect(view.container.querySelector('[data-testid="run-tray"]')?.textContent).toContain("r");
+ await act(async () => [...view.container.querySelectorAll("button")].find(button => button.textContent === "Retry target")!.click());
+ expect(mockSession.enterLive).toHaveBeenCalledWith("retry-run");
+ mockSession.mode = "design"; mockQuery = new URLSearchParams("workflowId=w"); await view.rerender(<WorkflowEditor />);
+ expect(view.container.querySelector('[data-testid="approval-banner"]')).toBeNull();
+ expect(view.container.querySelector('[data-testid="run-tray"]')).toBeNull(); await view.unmount();
+});

@@ -96,3 +96,11 @@ html[data-appearance="light"] .text-indigo-400 {
 html[data-appearance="light"] .text-emerald-400 {
   color: var(--color-emerald-700);
 }
+
+@keyframes workflow-live-dash {
+  to { stroke-dashoffset: -24; }
+}
+.workflow-live-edge { animation: workflow-live-dash 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .workflow-live-edge { animation: none; }
+}

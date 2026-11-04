@@ -48,6 +48,7 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
       <Button variant="ghost" size="icon" onClick={() => router.push(orgUrl("/runs"))}><ArrowLeft className="h-4 w-4" /></Button>
       <div><h1 className="text-sm font-semibold">Run {runId}</h1><p className="text-[10px] uppercase tracking-widest text-zinc-500">{run?.status ?? status}</p></div>
       <div className="ml-auto flex items-center gap-2">
+        {run?.workflowId && <a className="text-xs text-indigo-300 hover:underline" href={orgUrl(`/org?${new URLSearchParams({ workflowId: run.workflowId, runId })}`)}>Open on canvas</a>}
         {(run?.status === "failed" || run?.status === "cancelled") && <Button variant="outline" size="sm" disabled={retrying} onClick={async () => {
           setRetrying(true); setControlError(null);
           try { const retried = await runService.retryRun(runId); router.push(orgUrl(`/runs/${encodeURIComponent(retried.runId)}`)); }

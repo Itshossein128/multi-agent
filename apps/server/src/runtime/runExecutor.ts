@@ -408,7 +408,9 @@ export class RunExecutor {
     const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
     const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
     const tools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
-    if (!workflow || !agents?.length) throw new Error("Run definition snapshot is not available for retry");
+    // Empty agent snapshots are valid for tool/approval-only workflows.
+    // Missing snapshots still fail closed; start() validates required agent links.
+    if (!workflow || !agents) throw new Error("Run definition snapshot is not available for retry");
     return this.start({
       workflow,
       agents,
@@ -1112,6 +1114,18 @@ export function classifyRunFailure(error: unknown): NodeResultEnvelope {
     });
   }
   if (error instanceof AgentExecutionFailedError) {
+    const limitExceeded =
+      error.code === "AGENT_TOOL_LIMIT_EXCEEDED" ||
+      /AGENT_TOOL_LIMIT_EXCEEDED/.test(error.message || "");
+    if (limitExceeded) {
+      return createResultEnvelope("failed", {
+        error: {
+          code: "AGENT_TOOL_LIMIT_EXCEEDED",
+          message: (error.message || "Agent exceeded max tool steps").slice(0, 300),
+          retryable: false,
+        },
+      });
+    }
     return createResultEnvelope("failed", {
       error: { code: "AGENT_EXECUTION_FAILED", message: (error.message || "Agent execution failed").slice(0, 300), retryable: true },
     });

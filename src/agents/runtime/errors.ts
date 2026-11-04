@@ -13,8 +13,11 @@ export class UnsupportedBackendError extends Error {
 }
 
 export class AgentExecutionFailedError extends Error {
-  constructor(message: string) {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "AgentExecutionFailedError";
+    this.code = code;
   }
 }

@@ -4,6 +4,11 @@ import React from "react";
 import { Handle, NodeProps, NodeTypes, Position } from "@xyflow/react";
 import {
   Bot,
+  Circle,
+  CheckCircle2,
+  Clock3,
+  LoaderCircle,
+  CircleMinus,
   CircleAlert,
   Database,
   GitBranch,
@@ -26,7 +31,9 @@ import {
 } from "@/lib/workflow/types";
 import { cn } from "@/lib/utils";
 
-export interface WorkflowNodeData extends Record<string, unknown> {
+import type { CanvasNodeLiveStatus, LiveWorkflowNodeDataFields } from "../live/liveCanvas.types";
+
+export interface WorkflowNodeData extends Record<string, unknown>, LiveWorkflowNodeDataFields {
   node: WorkflowNode;
   agent?: AgentRecord;
   tool?: ToolRecord;
@@ -41,7 +48,27 @@ function useNodeData(props: NodeProps): WorkflowNodeData {
 const HANDLE_CLASS =
   "!h-2.5 !w-2.5 !rounded-full !border-2 !border-zinc-950 !bg-zinc-500 hover:!bg-indigo-400";
 
-interface NodeShellProps {
+const liveClasses: Record<CanvasNodeLiveStatus, string> = {
+  idle: "ring-1 ring-zinc-600",
+  running: "ring-2 ring-indigo-400 border-indigo-400",
+  waiting_human: "ring-2 ring-amber-400 border-amber-400",
+  completed: "ring-2 ring-emerald-400 border-emerald-400",
+  failed: "ring-2 ring-red-400 border-red-400",
+  skipped: "opacity-50 border-dashed ring-1 ring-zinc-500",
+};
+
+function LiveStatusBadge({ liveStatus, liveErrorCode, waitingApproval }: LiveWorkflowNodeDataFields) {
+  const status = waitingApproval ? "waiting_human" : liveStatus;
+  if (!status) return null;
+  const Icon = { idle: Circle, running: LoaderCircle, waiting_human: Clock3, completed: CheckCircle2, failed: CircleAlert, skipped: CircleMinus }[status];
+  const label = { idle: "Idle", running: "Running", waiting_human: "Waiting for approval", completed: "Completed", failed: "Failed", skipped: "Skipped" }[status];
+  return <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-800 pt-1.5 text-xs text-zinc-200" role="status">
+    <Icon aria-hidden="true" className={cn("h-3.5 w-3.5", status === "running" && "animate-spin motion-reduce:animate-none")} />
+    <span>{label}{status === "failed" && liveErrorCode ? ` · ${liveErrorCode}` : ""}</span>
+  </div>;
+}
+
+interface NodeShellProps extends LiveWorkflowNodeDataFields {
   selected: boolean;
   node: WorkflowNode;
   issueCount: number;
@@ -56,6 +83,9 @@ interface NodeShellProps {
 
 function NodeShell({
   selected,
+  liveStatus,
+  liveErrorCode,
+  waitingApproval,
   node,
   issueCount,
   issueTitle,
@@ -69,12 +99,14 @@ function NodeShell({
   const meta = NODE_TYPE_META[node.type];
   return (
     <div
+      data-live-status={waitingApproval ? "waiting_human" : liveStatus}
       title={issueTitle || undefined}
       data-issue-code={issueTitle?.includes("LINEAR_PIPELINE_CYCLE_FORBIDDEN") ? "LINEAR_PIPELINE_CYCLE_FORBIDDEN" : undefined}
       className={cn(
         "w-56 rounded-xl border bg-zinc-950/95 px-3 py-2.5 shadow-xl backdrop-blur-md transition-all",
         selected ? cn(meta.borderSelected, "shadow-indigo-500/10") : meta.border,
-        issueCount > 0 && "border-red-500/70 ring-1 ring-red-500/40"
+        issueCount > 0 && "border-red-500/70 ring-1 ring-red-500/40",
+        liveStatus && liveClasses[waitingApproval ? "waiting_human" : liveStatus]
       )}
     >
       {showTarget && <Handle type="target" position={Position.Top} id="in" className={HANDLE_CLASS} />}
@@ -97,6 +129,7 @@ function NodeShell({
         )}
       </div>
       {children}
+      <LiveStatusBadge liveStatus={liveStatus} liveErrorCode={liveErrorCode} waitingApproval={waitingApproval} />
       {showSource && (
         <Handle type="source" position={Position.Bottom} id="out" className={HANDLE_CLASS} />
       )}
@@ -110,6 +143,7 @@ function AgentNodeComponent(props: NodeProps) {
   const linked = Boolean(config.agentId && agent);
   return (
     <NodeShell
+      {...useNodeData(props)}
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
@@ -135,6 +169,7 @@ function ToolNodeComponent(props: NodeProps) {
   const config = node.config as ToolNodeConfig;
   return (
     <NodeShell
+      {...useNodeData(props)}
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
@@ -160,6 +195,7 @@ function ApprovalNodeComponent(props: NodeProps) {
   const config = node.config as ApprovalNodeConfig;
   return (
     <NodeShell
+      {...useNodeData(props)}
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
@@ -182,6 +218,7 @@ function MemoryNodeComponent(props: NodeProps) {
   const config = node.config as MemoryNodeConfig;
   return (
     <NodeShell
+      {...useNodeData(props)}
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
@@ -195,10 +232,12 @@ function MemoryNodeComponent(props: NodeProps) {
 
 function ConditionNodeComponent(props: NodeProps) {
   const { node, issueCount, issueTitle } = useNodeData(props);
+  const liveData = useNodeData(props);
   const config = node.config as ConditionNodeConfig;
   const branches = config.branches;
   return (
     <div
+      data-live-status={liveData.waitingApproval ? "waiting_human" : liveData.liveStatus}
       title={issueTitle || undefined}
       data-issue-code={issueTitle?.includes("LINEAR_PIPELINE_CYCLE_FORBIDDEN") ? "LINEAR_PIPELINE_CYCLE_FORBIDDEN" : undefined}
       className={cn(
@@ -206,7 +245,8 @@ function ConditionNodeComponent(props: NodeProps) {
         props.selected
           ? cn(NODE_TYPE_META.condition.borderSelected, "shadow-indigo-500/10")
           : NODE_TYPE_META.condition.border,
-        issueCount > 0 && "border-red-500/70 ring-1 ring-red-500/40"
+        issueCount > 0 && "border-red-500/70 ring-1 ring-red-500/40",
+        liveData.liveStatus && liveClasses[liveData.waitingApproval ? "waiting_human" : liveData.liveStatus]
       )}
     >
       <Handle type="target" position={Position.Top} id="in" className={HANDLE_CLASS} />
@@ -229,6 +269,7 @@ function ConditionNodeComponent(props: NodeProps) {
         {issueCount > 0 && <CircleAlert className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />}
       </div>
 
+      <LiveStatusBadge {...liveData} />
       {/* Branch chips — one source handle per branch, spread across the bottom */}
       <div className="mt-2 flex items-center justify-between gap-1 border-t border-zinc-800/80 pt-1.5">
         {branches.map((branch, index) => (
@@ -263,6 +304,7 @@ function InputNodeComponent(props: NodeProps) {
   const { node, issueCount, issueTitle } = useNodeData(props);
   return (
     <NodeShell
+      {...useNodeData(props)}
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}
@@ -279,6 +321,7 @@ function OutputNodeComponent(props: NodeProps) {
   const { node, issueCount, issueTitle } = useNodeData(props);
   return (
     <NodeShell
+      {...useNodeData(props)}
       selected={Boolean(props.selected)}
       node={node}
       issueCount={issueCount}

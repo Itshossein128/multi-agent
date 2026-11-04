@@ -375,7 +375,11 @@ describe("Persisted Ownership and Authorization Enforcement", () => {
       const bobExecAliceWf = await app.fetch(req("/", "POST", { workflow, agents: [], input: {} }, bob));
       expect(bobExecAliceWf.status).toBe(404);
 
-      // Alice resolves the approval successfully
+      // Ownership alone does not grant a Human Approval Gate reviewer role.
+      expect((await app.fetch(req(`/${runId}/approvals/${approvals[0].id}/resolve`, "POST", { decision: "approved" }, alice))).status).toBe(403);
+      const membershipStamp = new Date().toISOString();
+      await studioStore.saveMembership({ organizationId: alice.tenantId, userId: alice.userId, role: "owner", status: "active", version: 1, createdAt: membershipStamp, updatedAt: membershipStamp });
+      // Alice resolves the approval with an active trusted membership.
       const resolveRes = await app.fetch(
         req(`/${runId}/approvals/${approvals[0].id}/resolve`, "POST", { decision: "approved" }, alice),
       );

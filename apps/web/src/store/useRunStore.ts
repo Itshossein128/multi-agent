@@ -15,14 +15,27 @@ type StreamStatus = "idle" | "connecting" | "live" | "error" | "closed";
 
 interface RunStoreState {
   runId: string | null; run: Run | null; events: RunEvent[]; approvals: ApprovalRequest[]; selectedEventId: string | null; streamStatus: StreamStatus; error: string | null;
+  refreshApprovals: (runId: string) => Promise<void>;
   load: (runId: string) => Promise<void>; attach: (runId: string) => () => void; selectEvent: (id: string | null) => void; clear: () => void;
 }
 
-export const useRunStore = create<RunStoreState>((set) => {
-  const refreshApprovals = (runId: string) => { void runService.getApprovals(runId).then((approvals) => set({ approvals })).catch(() => undefined); };
+export const useRunStore = create<RunStoreState>((set, get) => {
+  let generation = 0;
+  let approvalRequest = 0;
+  let approvalCommit = 0;
+  const refreshApprovals = async (runId: string, attachment: number) => {
+    const request = ++approvalRequest;
+    const approvals = await runService.getApprovals(runId);
+      if (generation !== attachment || get().runId !== runId || request !== approvalRequest) return;
+      approvalCommit = request;
+      set({ approvals });
+  };
   return {
     runId: null, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "idle", error: null,
+    refreshApprovals: (runId) => get().runId === runId ? refreshApprovals(runId, generation) : Promise.resolve(),
     load: async (runId) => {
+      const loading = ++generation;
+      const loadedApprovalCommit = approvalCommit;
       set({ runId, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "idle", error: null });
       try {
         const [run, approvals, history] = await Promise.all([
@@ -31,20 +44,26 @@ export const useRunStore = create<RunStoreState>((set) => {
           runService.getRunEvents(runId).catch(() => []),
         ]);
         set((state) => {
-          if (state.runId !== runId) return state;
+          if (state.runId !== runId || generation !== loading) return state;
           const events = mergeTimelineEvents(state.events, history);
           const terminal = findTerminalEvent(events);
-          return { run: terminal ? applyTerminalEvent(run, terminal) : run, approvals, events, error: null };
+          // Live lifecycle events may arrive while the fetched snapshot is loading.
+          // Keep fetched terminal state authoritative over older nonterminal history.
+          const observed = ["completed", "failed", "cancelled"].includes(run.status) ? run : events.reduce(applyRunEvent, run);
+          return { run: terminal ? applyTerminalEvent(observed, terminal) : observed, approvals: approvalCommit === loadedApprovalCommit ? approvals : state.approvals, events, error: null };
         });
-      } catch (error) { set((state) => state.runId === runId ? { error: error instanceof Error ? error.message : String(error) } : state); }
+      } catch (error) { set((state) => state.runId === runId && generation === loading ? { error: error instanceof Error ? error.message : String(error) } : state); }
     },
     attach: (runId) => {
+      if (get().runId !== runId) ++generation;
+      const attachment = generation;
       set((state) => state.runId === runId
         ? { runId, streamStatus: "idle" }
         : { runId, events: [], approvals: [], selectedEventId: null, streamStatus: "idle" });
       const stream = createRunEventStream(runId, {
-        onStatus: (streamStatus) => set((state) => state.runId === runId ? { streamStatus } : state),
+        onStatus: (streamStatus) => set((state) => state.runId === runId && generation === attachment ? { streamStatus } : state),
         onEvent: (event) => {
+          if (get().runId !== runId || generation !== attachment) return;
           set((state) => {
             if (state.runId !== runId) return state;
             const events = state.events.some((item) => item.id === event.id)
@@ -54,12 +73,12 @@ export const useRunStore = create<RunStoreState>((set) => {
             if (run) run = applyRunEvent(run, event);
             return { events, run };
           });
-          if (event.type === "human_approval.requested" || event.type === "human_approval.resolved" || event.type === "human_approval.approved" || event.type === "human_approval.rejected") refreshApprovals(runId);
+          if (event.type.startsWith("human_approval.")) void refreshApprovals(runId, attachment).catch(() => undefined);
         },
       });
       return stream.close;
     },
     selectEvent: (selectedEventId) => set({ selectedEventId }),
-    clear: () => set({ runId: null, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "idle", error: null }),
+    clear: () => { ++generation; set({ runId: null, run: null, events: [], approvals: [], selectedEventId: null, streamStatus: "idle", error: null }); },
   };
 });

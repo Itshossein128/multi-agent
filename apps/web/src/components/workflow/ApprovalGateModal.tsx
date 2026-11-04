@@ -7,12 +7,12 @@ import {
   Clock,
   FileCode2,
   ShieldAlert,
-  ShieldCheck,
   X,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
+  ApprovalDecision,
   ConsolidatedGapReport,
   HumanApprovalInterruptContext,
   IdentifiedGap,
@@ -22,6 +22,7 @@ export interface ApprovalGateModalProps {
   isOpen: boolean;
   context: HumanApprovalInterruptContext | null;
   isSubmitting?: boolean;
+  allowedDecisions?: ApprovalDecision[];
   errorMessage?: string | null;
   onApprove: (decisionNotes?: string) => Promise<void> | void;
   onReject: (decisionNotes?: string) => Promise<void> | void;
@@ -33,6 +34,7 @@ export function ApprovalGateModal({
   isOpen,
   context,
   isSubmitting = false,
+  allowedDecisions = ["approved", "rejected", "needs_clarification"],
   errorMessage = null,
   onApprove,
   onReject,
@@ -266,7 +268,7 @@ export function ApprovalGateModal({
             <span>Timeout: {new Date(context.timeoutAt).toLocaleTimeString()}</span>
           </div>
           <div className="flex items-center gap-3">
-            {onNeedsClarification && (
+            {onNeedsClarification && allowedDecisions.includes("needs_clarification") && (
               <Button
                 type="button"
                 variant="outline"
@@ -276,7 +278,7 @@ export function ApprovalGateModal({
                 Needs clarification
               </Button>
             )}
-            <Button
+            {allowedDecisions.includes("rejected") && <Button
               type="button"
               variant="outline"
               onClick={handleReject}
@@ -285,8 +287,8 @@ export function ApprovalGateModal({
             >
               <XCircle className="mr-1.5 h-4 w-4 text-rose-400" />
               Reject &amp; Halt
-            </Button>
-            <Button
+            </Button>}
+            {allowedDecisions.includes("approved") && <Button
               type="button"
               onClick={handleApprove}
               disabled={isSubmitting}
@@ -294,7 +296,7 @@ export function ApprovalGateModal({
             >
               <CheckCircle2 className="mr-1.5 h-4 w-4" />
               Approve Remediation
-            </Button>
+            </Button>}
           </div>
         </div>
       </div>

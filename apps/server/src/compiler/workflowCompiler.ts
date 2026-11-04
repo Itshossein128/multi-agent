@@ -568,6 +568,7 @@ export function compileWorkflow(
               });
               options.pendingHuman = undefined;
             } else {
+              const agentNodeConfig = node.config as import("@multi-agent/types").AgentNodeConfig;
               value = options.agentRunner
                 ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id, signal })
                 : await runAgentThroughRuntime(agent, executionState, {
@@ -582,6 +583,10 @@ export function compileWorkflow(
                   onWorkingMemoryUpdate: updates => { workingMemoryCandidates = updates; },
                   signal,
                   onError: (err) => { agentFailed = true; agentError = err; },
+                  toolRuntime,
+                  resolvedTools: resolveAgentToolsForRuntime(agent, options.tools),
+                  nodeExecutionMode: agentNodeConfig.executionMode,
+                  nodeMaxToolSteps: agentNodeConfig.maxToolSteps,
                 });
             }
 
@@ -919,6 +924,21 @@ function resolveRetryPolicy(
   };
 }
 
+/** Resolve agent.tools ∩ compile options.tools ∩ enabled for ReAct injection. */
+export function resolveAgentToolsForRuntime(
+  agent: AgentRecord,
+  registryTools: ToolRecord[] | undefined
+): ToolRecord[] {
+  if (!registryTools?.length || !agent.tools?.length) return [];
+  const byId = new Map(registryTools.map((tool) => [tool.id, tool]));
+  const resolved: ToolRecord[] = [];
+  for (const toolId of agent.tools) {
+    const tool = byId.get(toolId);
+    if (tool && tool.enabled !== false) resolved.push(tool);
+  }
+  return resolved;
+}
+
 async function runAgentThroughRuntime(
   agent: AgentRecord,
   state: RuntimeState,
@@ -934,6 +954,10 @@ async function runAgentThroughRuntime(
     onWorkingMemoryUpdate?: (updates: unknown[]) => void;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
     onError?: (error: string) => void;
+    toolRuntime?: Pick<ToolRuntime, "execute">;
+    resolvedTools?: ToolRecord[];
+    nodeExecutionMode?: import("@multi-agent/types").AgentExecutionMode;
+    nodeMaxToolSteps?: number;
   }
 ): Promise<unknown> {
   let lastContent: unknown;
@@ -966,6 +990,10 @@ async function runAgentThroughRuntime(
     },
     handoffs: state.handoffs,
     workingMemory: state.workingMemory ?? {},
+    toolRuntime: meta.toolRuntime,
+    resolvedTools: meta.resolvedTools,
+    nodeExecutionMode: meta.nodeExecutionMode,
+    nodeMaxToolSteps: meta.nodeMaxToolSteps,
   })) {
     meta.onAgentEvent?.(event);
     if (event.type === "agent.completed" || event.type === "agent.output") {

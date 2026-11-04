@@ -93,6 +93,19 @@ export { OfflineTestAgentExecutor } from "./offlineTestAgentExecutor";
 export { NotImplementedAgentExecutor } from "./notImplementedExecutor";
 export { UnsupportedBackendError, AgentExecutionFailedError } from "./errors";
 export { mapAgentExecutionEvent } from "./mapAgentExecutionEvent";
+export {
+  resolveEffectiveReactSettings,
+  clampMaxToolSteps,
+  normalizeExecutionMode,
+  AGENT_TOOL_LIMIT_EXCEEDED,
+} from "./reactSettings";
+export type { AgentExecutionMode, EffectiveReactSettings } from "./reactSettings";
+export {
+  buildBoundToolSchemas,
+  resolveToolCallName,
+  asBindToolsInput,
+} from "./toolBinding";
+export type { BoundToolSchema, BindableFunctionTool } from "./toolBinding";
 export type { MemoryAccessContext, RuntimeMemoryDependencies } from "../../memory/contracts";
 export {
   BrokerWorkerCredentialResolver,

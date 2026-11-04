@@ -15,7 +15,12 @@ export interface ValidationContext {
 export type NodeValidator = (node: WorkflowNode, ctx: ValidationContext) => void;
 
 function validateAgentNode(node: WorkflowNode, ctx: ValidationContext) {
-  const agentId = (node.config as { agentId?: string | null }).agentId;
+  const config = node.config as {
+    agentId?: string | null;
+    executionMode?: unknown;
+    maxToolSteps?: unknown;
+  };
+  const agentId = config.agentId;
   const agent = ctx.agents.find((candidate) => candidate.id === agentId);
   if (!agent) ctx.add("error", "MISSING_AGENT_CONFIG", "Agent node is not linked to an agent", node.id);
   else if (!agentHasConfiguredModel(agent)) {
@@ -28,6 +33,15 @@ function validateAgentNode(node: WorkflowNode, ctx: ValidationContext) {
     const assigned = ctx.tools.find((tool) => tool.id === toolId);
     if (!assigned) ctx.add("error", "UNKNOWN_AGENT_TOOL", `Agent "${agent.name}" references missing tool "${toolId}".`, node.id);
     else if (!assigned.enabled) ctx.add("error", "DISABLED_AGENT_TOOL", `Agent "${agent.name}" references disabled tool "${toolId}".`, node.id);
+  }
+  if (config.executionMode !== undefined && config.executionMode !== "single_turn" && config.executionMode !== "react") {
+    ctx.add("error", "INVALID_AGENT_NODE_EXECUTION_MODE", 'Agent node executionMode must be "single_turn" or "react".', node.id);
+  }
+  if (config.maxToolSteps !== undefined) {
+    const n = Number(config.maxToolSteps);
+    if (!Number.isInteger(n) || n < 1 || n > 10) {
+      ctx.add("error", "INVALID_AGENT_NODE_MAX_TOOL_STEPS", "Agent node maxToolSteps must be an integer between 1 and 10.", node.id);
+    }
   }
   if (node.retryPolicy && (!agent || agent.backend.type === "cli" || (Array.isArray(agent.tools) && agent.tools.length > 0))) {
     ctx.add("error", "UNSAFE_NODE_RETRY", "Agent retries require a non-CLI agent with no assigned side-effecting tools.", node.id);

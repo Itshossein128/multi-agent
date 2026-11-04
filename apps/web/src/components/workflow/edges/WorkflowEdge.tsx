@@ -26,6 +26,7 @@ function WorkflowEdgeComponent(props: EdgeProps) {
     selected,
   } = props;
   const edge = (props.data as { edge?: WorkflowEdge } | undefined)?.edge;
+  const readOnly = Boolean(props.data?.readOnly);
   const selectEdgeOnly = useWorkflowStore((s) => s.selectEdgeOnly);
   const removeEdges = useWorkflowStore((s) => s.removeEdges);
 
@@ -39,8 +40,10 @@ function WorkflowEdgeComponent(props: EdgeProps) {
     borderRadius: 14,
   });
 
+  const traversed = Boolean(props.data?.traversed);
+  const animated = traversed && Boolean(props.data?.liveAnimated);
   const isConditional = edge?.kind === "conditional";
-  const stroke = selected ? "#818cf8" : isConditional ? "#c084fc" : "#52525b";
+  const stroke = traversed ? (isConditional ? "#c084fc" : "#818cf8") : selected ? "#818cf8" : isConditional ? "#c084fc" : "#52525b";
   const chipLabel = isConditional
     ? edge?.branchKey || "branch?"
     : edge?.label;
@@ -50,11 +53,13 @@ function WorkflowEdgeComponent(props: EdgeProps) {
       <BaseEdge
         id={id}
         path={path}
+        className={animated ? "workflow-live-edge" : undefined}
         markerEnd={markerEnd}
         style={{
           stroke,
-          strokeWidth: selected ? 2.4 : 1.8,
-          strokeDasharray: isConditional ? "7 5" : undefined,
+          strokeWidth: traversed ? 3 : selected ? 2.4 : 1.8,
+          filter: traversed ? `drop-shadow(0 0 4px ${stroke})` : undefined,
+          strokeDasharray: isConditional ? "7 5" : animated ? "6 4" : undefined,
         }}
       />
       <EdgeLabelRenderer>
@@ -69,7 +74,7 @@ function WorkflowEdgeComponent(props: EdgeProps) {
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                selectEdgeOnly(id);
+                if (!readOnly) selectEdgeOnly(id);
               }}
               className={cn(
                 "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer",
@@ -82,7 +87,7 @@ function WorkflowEdgeComponent(props: EdgeProps) {
             >
               {isConditional && <GitBranch className="h-2.5 w-2.5" />}
               {chipLabel}
-              <span
+              {!readOnly && <span
                 role="button"
                 tabIndex={-1}
                 title="Delete edge"
@@ -93,7 +98,7 @@ function WorkflowEdgeComponent(props: EdgeProps) {
                 className="ml-0.5 rounded-full text-zinc-500 hover:text-red-400"
               >
                 <X className="h-3 w-3" />
-              </span>
+              </span>}
             </button>
           </div>
         )}

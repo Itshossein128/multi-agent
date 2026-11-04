@@ -1,4 +1,4 @@
-import { assertNoCredentials, migrateAgentRecord, nowIso, validateAgent, type AgentRecord, type AgentTestRequest, type RunCreateRequest, type RunStatus, type WorkflowDefinition } from "@multi-agent/types";
+import { assertNoCredentials, migrateAgentRecord, nowIso, validateAgent, type ApprovalDecision, type AgentRecord, type AgentTestRequest, type RunCreateRequest, type RunStatus, type WorkflowDefinition } from "@multi-agent/types";
 import type { StudioStore } from "../../../../../src/studio/contracts";
 import { type MemoryAccessResolver, deriveMemoryAccessFromPrincipal } from "../../memory/access";
 import type { RequestPrincipal } from "../../auth/principal";
@@ -8,7 +8,7 @@ import { replayRunEvents } from "../../runtime/replay";
 import { redact } from "../../adapters/langGraphEventAdapter";
 import { ApiError } from "../shared/http";
 import { buildClarificationPackage, fingerprintAnswers, validateClarificationAnswers } from "../clarification";
-import { assertApprovalDecisionAuthorized } from "./approvalAuthorization";
+import { assertApprovalDecisionAuthorized, extractGateAuthorization } from "./approvalAuthorization";
 
 export interface RunListQuery {
   agentId?: string;
@@ -103,7 +103,29 @@ export class RunApiService {
     return { workflow, agents: entry.agentsSnapshot ?? [], tools: entry.toolsSnapshot ?? [] };
   }
 
-  approvals(runId: string) { this.requireRun(runId); return this.store.listApprovals(runId); }
+  async approvals(runId: string, principal?: RequestPrincipal | null) {
+    const entry = this.requireRun(runId);
+    // These hints must respect the outer run-write gate as well as approval
+    // roles. Undefined permission claims retain legacy router behavior.
+    const canWriteRun = Boolean(principal && this.canAccess(principal, runId, false)
+      && (principal.permissions === undefined || principal.permissions.includes("runs.execute")));
+    return Promise.all(this.store.listApprovals(runId).map(async approval => {
+      const viewerAllowedDecisions: ApprovalDecision[] = [];
+      if (canWriteRun && approval.status === "requested") {
+        for (const decision of extractGateAuthorization(approval).allowedDecisions) {
+          try {
+            await assertApprovalDecisionAuthorized({ studioStore: this.studioStore, principal, tenantId: entry.run.tenantId, approval, decision });
+            viewerAllowedDecisions.push(decision);
+          } catch (error) {
+            if (!(error instanceof ApiError) || ![400, 401, 403].includes(error.status)) throw error;
+          }
+        }
+      }
+      // Per-viewer display capabilities are response-only. Always overwrite
+      // stored/untrusted hints; write authorization never consumes these fields.
+      return { ...approval, metadata: { ...approval.metadata, canDecide: viewerAllowedDecisions.length > 0, viewerAllowedDecisions } };
+    }));
+  }
 
   async resolveApproval(
     runId: string,

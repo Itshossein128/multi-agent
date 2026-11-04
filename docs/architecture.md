@@ -37,6 +37,16 @@ LangGraph StateGraph
 
 `AgentRuntime` قبل از ساخت executor، agent فعال، backend، policy و tool assignment را بررسی می‌کند. `AgentExecutorFactory` برای backendهای API، local model و CLI executor مناسب را می‌سازد و eventهای provider-specific را به قرارداد مشترک `RunEvent` تبدیل می‌کند.
 
+### ReAct loop (API agents)
+
+`ApiAgentExecutor` می‌تواند در حالت `react` یک حلقهٔ محدود reason–act–observe اجرا کند:
+
+- فیلدهای اختیاری `executionMode` (`single_turn` | `react`) و `maxToolSteps` (۱–۱۰، پیش‌فرض مؤثر ۵) روی `AgentRecord` و override سطح node روی `AgentNodeConfig`.
+- بدون مقدار صریح: اگر `tools` خالی باشد `single_turn`، وگرنه `react`.
+- Compiler فقط `toolRuntime` و `resolvedTools` (تقاطع `agent.tools` ∩ registry ∩ enabled) را به‌صورت trusted injection می‌دهد؛ اجرای واقعی فقط از `ToolRuntime.execute` است (بدون `approvalGranted` خودکار برای ابزارهای mutating).
+- سقف گام fail-closed است با کد `AGENT_TOOL_LIMIT_EXCEEDED`. رویدادهای تو در توی `tool.*` زیر `nodeId` عامل برای inspector منتشر می‌شوند.
+- CLI/worker agents همچنان single-turn می‌مانند.
+
 CLI از `WorkerRuntime` عبور می‌کند:
 
 - `local`: process محدودشده برای کد trusted؛ sandbox امنیتی OS نیست.

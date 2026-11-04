@@ -517,3 +517,54 @@ describe("Postgres persistence of contract metadata and results", () => {
     }
   });
 });
+
+
+describe("retry snapshots for workflows without agents", () => {
+  test("retries a failed tool-only workflow with an explicitly empty agent snapshot", async () => {
+    const store = new RunStore();
+    const tool = createToolRecord({ name: "Retryable local tool" });
+    const input = createNode("input", { x: 0, y: 0 });
+    const toolNode = createNode("tool", { x: 1, y: 0 });
+    toolNode.config = { ...toolNode.config, toolId: tool.id };
+    const output = createNode("output", { x: 2, y: 0 });
+    const workflow: WorkflowDefinition = {
+      ...createEmptyDefinition("Tool-only retry"), nodes: [input, toolNode, output],
+      edges: [createEdge({ source: input.id, target: toolNode.id }), createEdge({ source: toolNode.id, target: output.id })],
+    };
+    let failFirst = true;
+    const executeTool = jest.fn(async () => {
+      if (failFirst) { failFirst = false; throw new Error("Transient tool failure"); }
+      return { content: "retried tool result" };
+    });
+    const executor = new RunExecutor(store, fakeRuntime(() => { throw new Error("Agent execution is unexpected"); }), undefined, undefined, undefined, { execute: executeTool });
+    const firstRunId = executor.start({ workflow, agents: [], tools: [tool], input: { request: "retry me" } }, undefined, await principal());
+    await waitFor(() => store.get(firstRunId)?.run.status === "failed");
+    expect(store.getAgentSnapshot(firstRunId)).toEqual([]);
+    const retriedRunId = await executor.retry(firstRunId);
+    expect(retriedRunId).not.toBe(firstRunId);
+    await waitFor(() => store.get(retriedRunId)?.run.status === "completed");
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(store.get(retriedRunId)?.run).toMatchObject({ input: { request: "retry me" }, output: { content: "retried tool result" }, metadata: { retriedFromRunId: firstRunId } });
+    expect(store.getAgentSnapshot(retriedRunId)).toEqual([]);
+    expect(store.getToolSnapshot(retriedRunId)).toEqual([tool]);
+  });
+
+  test.each(["workflow", "agents"] as const)("still rejects a missing %s snapshot", async missing => {
+    const store = new RunStore();
+    const { workflow } = linearAgentWorkflow();
+    store.create({ id: "missing", workflowId: workflow.id, status: "failed", startedAt: nowIso(), metadata: {} }, undefined, missing === "workflow" ? { agents: [] } : { workflow });
+    const executor = new RunExecutor(store);
+    const start = jest.spyOn(executor, "start");
+    await expect(executor.retry("missing")).rejects.toThrow("Run definition snapshot is not available for retry");
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("an empty snapshot cannot bypass validation for a workflow that requires an agent", async () => {
+    const store = new RunStore();
+    const { workflow } = linearAgentWorkflow();
+    store.create({ id: "requires-agent", workflowId: workflow.id, status: "failed", startedAt: nowIso(), metadata: {} }, undefined, { workflow, agents: [] });
+    const executor = new RunExecutor(store);
+    await expect(executor.retry("requires-agent")).rejects.toThrow(/agent/i);
+    expect(store.list()).toHaveLength(1);
+  });
+});

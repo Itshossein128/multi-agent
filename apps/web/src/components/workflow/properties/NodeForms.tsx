@@ -27,9 +27,16 @@ import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { cn } from "@/lib/utils";
 import { Field, JsonField, inputClass, labelClass } from "./fields";
 
+function clampToolStepsInput(raw: string): number {
+  const n = Math.trunc(Number(raw));
+  if (!Number.isFinite(n)) return 5;
+  return Math.min(10, Math.max(1, n || 5));
+}
+
 export function AgentForm({ node }: { node: WorkflowNode }) {
   const config = node.config as AgentNodeConfig;
   const agents = useWorkflowStore((s) => s.agents);
+  const tools = useWorkflowStore((s) => s.tools);
   const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
   const updateAgentRecord = useWorkflowStore((s) => s.updateAgentRecord);
 
@@ -39,6 +46,10 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
     if (!agent) return;
     updateAgentRecord(agent.id, patch);
   };
+
+  const defaultMode = agent && agent.tools.length > 0 ? "react" : "single_turn";
+  const agentMode = agent?.executionMode ?? defaultMode;
+  const agentMaxSteps = agent?.maxToolSteps ?? 5;
 
   return (
     <div className="space-y-3">
@@ -169,20 +180,94 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
               className={cn(inputClass, "font-mono text-[11px]")}
             />
           </Field>
-          <Field label="Tools (one per line)">
+          <Field label="Assigned tools">
             <textarea
-              value={agent.tools.join("\n")}
+              data-testid="agent-tools"
+              value={agent.tools
+                .map((id) => {
+                  const match = tools.find((t) => t.id === id);
+                  return match ? `${match.name} (${id})` : id;
+                })
+                .join("\n")}
               onChange={(event) =>
                 patchAgent({
                   tools: event.target.value
                     .split("\n")
-                    .map((t) => t.trim())
+                    .map((line) => {
+                      const trimmed = line.trim();
+                      const paren = trimmed.match(/\(([^)]+)\)\s*$/);
+                      return (paren?.[1] ?? trimmed).trim();
+                    })
                     .filter(Boolean),
                 })
               }
               rows={3}
               placeholder={"web_search\ncode_exec"}
               className={cn(inputClass, "font-mono text-[11px]")}
+            />
+            <p className="text-[10px] text-zinc-600">One tool id per line. Registry names shown when available.</p>
+          </Field>
+          <Field label="Execution mode">
+            <select
+              data-testid="agent-execution-mode"
+              value={agentMode}
+              onChange={(event) =>
+                patchAgent({
+                  executionMode: event.target.value as AgentRecord["executionMode"],
+                })
+              }
+              className={inputClass}
+            >
+              <option value="single_turn">Single-turn</option>
+              <option value="react">ReAct (autonomous)</option>
+            </select>
+          </Field>
+          <Field label="Max tool steps">
+            <input
+              data-testid="agent-max-tool-steps"
+              type="number"
+              min={1}
+              max={10}
+              value={agentMaxSteps}
+              onChange={(event) =>
+                patchAgent({ maxToolSteps: clampToolStepsInput(event.target.value) })
+              }
+              className={inputClass}
+            />
+            <p className="text-[10px] text-zinc-600">Tool-calling rounds per agent node (1–10, default 5).</p>
+          </Field>
+          <Field label="Node execution mode override">
+            <select
+              data-testid="node-execution-mode"
+              value={config.executionMode ?? ""}
+              onChange={(event) => {
+                const value = event.target.value;
+                updateNodeConfig(node.id, {
+                  executionMode: value === "single_turn" || value === "react" ? value : undefined,
+                });
+              }}
+              className={inputClass}
+            >
+              <option value="">— use agent default —</option>
+              <option value="single_turn">Single-turn</option>
+              <option value="react">ReAct (autonomous)</option>
+            </select>
+          </Field>
+          <Field label="Node max tool steps override">
+            <input
+              data-testid="node-max-tool-steps"
+              type="number"
+              min={1}
+              max={10}
+              value={config.maxToolSteps ?? ""}
+              placeholder="—"
+              onChange={(event) => {
+                const raw = event.target.value.trim();
+                updateNodeConfig(node.id, {
+                  maxToolSteps: raw === "" ? undefined : clampToolStepsInput(raw),
+                });
+              }}
+              className={inputClass}
             />
           </Field>
           <JsonField

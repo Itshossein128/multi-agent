@@ -1,21 +1,39 @@
-import { nowIso, type AgentRecord, type AgentModelSettings } from "@multi-agent/types";
+import { nowIso, type AgentRecord, type AgentModelSettings, type ToolRecord } from "@multi-agent/types";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
 import { llmFactory } from "../core/llmFactory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
 import { NO_API_CREDENTIALS, type ApiProviderCredentialResolver } from "../../security/providerCredentials";
+import { AGENT_TOOL_LIMIT_EXCEEDED, resolveEffectiveReactSettings } from "./reactSettings";
+import { asBindToolsInput, buildBoundToolSchemas, resolveToolCallName } from "./toolBinding";
+import { ToolPolicyError } from "../../tools/errors";
+
+type ChatModelResult = {
+  content: unknown;
+  usage_metadata?: Record<string, unknown>;
+  response_metadata?: Record<string, unknown>;
+  tool_calls?: ModelToolCallLike[];
+};
+
+type ModelToolCallLike = {
+  id?: string;
+  name?: string;
+  args?: unknown;
+  function?: { name?: string; arguments?: string | Record<string, unknown> };
+};
 
 type ChatModel = {
-  invoke: (messages: unknown[], options?: { signal?: AbortSignal }) => Promise<{
-    content: unknown;
-    usage_metadata?: Record<string, unknown>;
-    response_metadata?: Record<string, unknown>;
-  }>;
+  invoke: (messages: unknown[], options?: { signal?: AbortSignal }) => Promise<ChatModelResult>;
+  bindTools?: (tools: unknown[]) => ChatModel;
 };
 
 type LLMFactoryLike = {
   getModel: (provider: string, options?: { model?: string; settings?: AgentModelSettings; apiKey?: string }) => ChatModel;
 };
+
+const SECRET_KEY =
+  /^(?:.*[_-])?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|oauth[_-]?token|password|secret|authorization|credentials?|private[_-]?key|bearer)$/i;
 
 /**
  * Wraps the existing API/LLM provider stack behind AgentExecutor.
@@ -24,6 +42,9 @@ type LLMFactoryLike = {
  * When a broker-backed resolver is configured, each invocation leases a
  * short-lived provider key bound to tenant/principal/run/agent and passes it
  * straight into the model; the key is never persisted or logged.
+ *
+ * ReAct mode (012): bind assigned tools, execute authorized calls via ToolRuntime,
+ * feed observations back until a final answer or maxToolSteps.
  */
 export class ApiAgentExecutor implements AgentExecutor {
   constructor(
@@ -67,25 +88,369 @@ export class ApiAgentExecutor implements AgentExecutor {
       });
       const messages = buildMessages(input);
       const telemetryContext = { runId, workflowId: input.workflowId, nodeId, agentId: agent.id, agentName: agent.name, backendType: agent.backend.type, provider: agent.backend.provider, model: agent.backend.model, input: messages };
-      const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
-      const content = result.content;
-      const usage = result.usage_metadata;
-      const finishReason = result.response_metadata?.finish_reason ?? result.response_metadata?.stop_reason;
+
+      const settings = resolveEffectiveReactSettings({
+        agentTools: agent.tools ?? [],
+        agentMode: agent.executionMode,
+        agentMaxToolSteps: agent.maxToolSteps,
+        nodeMode: input.nodeExecutionMode,
+        nodeMaxToolSteps: input.nodeMaxToolSteps,
+      });
+      const resolvedTools = (input.resolvedTools ?? []).filter((tool) => tool.enabled !== false);
+      const assignedToolIds = Array.isArray(agent.tools) ? agent.tools : [];
+      // Fail closed when ReAct is expected but trusted deps / usable tools are missing.
+      if (settings.mode === "react" && assignedToolIds.length > 0) {
+        if (!input.toolRuntime) {
+          throw new AgentExecutionFailedError(
+            "ReAct mode requires a ToolRuntime, but none was injected for this agent node."
+          );
+        }
+        if (resolvedTools.length === 0) {
+          throw new AgentExecutionFailedError(
+            "ReAct mode expects assigned tools, but none resolved as enabled ToolRecords."
+          );
+        }
+      }
+      const useReact =
+        settings.mode === "react" &&
+        resolvedTools.length > 0 &&
+        Boolean(input.toolRuntime);
+
+      if (!useReact) {
+        const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
+        const content = result.content;
+        const usage = result.usage_metadata;
+        const finishReason = result.response_metadata?.finish_reason ?? result.response_metadata?.stop_reason;
+        yield baseEvent("llm.completed", input, {
+          provider: agent.backend.provider,
+          model: agent.backend.model,
+          durationMs: Date.now() - startedAt,
+          ...(usage ? { usage } : {}),
+          ...(finishReason !== undefined ? { finishReason } : {}),
+        });
+        yield baseEvent("agent.output", input, { content });
+        yield baseEvent("agent.completed", input, { content });
+        return;
+      }
+
+      // --- ReAct loop ---
+      if (typeof model.bindTools !== "function") {
+        throw new AgentExecutionFailedError(
+          `Provider model for "${agent.backend.provider}" does not support bindTools required for ReAct mode.`
+        );
+      }
+      const boundSchemas = buildBoundToolSchemas(resolvedTools);
+      const boundModel = model.bindTools(asBindToolsInput(boundSchemas));
+      const transcript: unknown[] = [...messages];
+      let toolRounds = 0;
+      let lastUsage: Record<string, unknown> | undefined;
+      let lastFinish: unknown;
+      let finalContent: unknown;
+
+      while (true) {
+        assertNotAborted(input.signal);
+
+        const result = await this.telemetry.withAgent(telemetryContext, () =>
+          this.telemetry.withGeneration(telemetryContext, () =>
+            boundModel.invoke(transcript, { signal: input.signal })
+          )
+        );
+        lastUsage = result.usage_metadata;
+        lastFinish = result.response_metadata?.finish_reason ?? result.response_metadata?.stop_reason;
+
+        const toolCalls = extractToolCalls(result);
+        if (toolCalls.length === 0) {
+          finalContent = normalizeContent(result.content);
+          break;
+        }
+
+        if (toolRounds >= settings.maxToolSteps) {
+          const payload = {
+            code: AGENT_TOOL_LIMIT_EXCEEDED,
+            maxToolSteps: settings.maxToolSteps,
+            iterationsCompleted: toolRounds,
+            error: `Agent exceeded max tool steps (${settings.maxToolSteps}).`,
+          };
+          yield baseEvent("agent.failed", input, payload);
+          throw new AgentExecutionFailedError(
+            `AGENT_TOOL_LIMIT_EXCEEDED: Agent exceeded max tool steps (${settings.maxToolSteps}).`,
+            AGENT_TOOL_LIMIT_EXCEEDED
+          );
+        }
+
+        const iteration = toolRounds; // 0-based round index for payloads; research also accepts 1-based — use 0-based matching data-model
+        const iterationDisplay = toolRounds + 1;
+        const aiContent =
+          typeof result.content === "string"
+            ? result.content
+            : result.content == null
+              ? ""
+              : typeof normalizeContent(result.content) === "string"
+                ? (normalizeContent(result.content) as string)
+                : JSON.stringify(result.content);
+        transcript.push(
+          new AIMessage({
+            content: aiContent,
+            tool_calls: toolCalls.map((call) => ({
+              id: call.id,
+              name: call.name,
+              args: call.args,
+              type: "tool_call" as const,
+            })),
+          })
+        );
+
+        for (const call of toolCalls) {
+          assertNotAborted(input.signal);
+          const authorized = resolveAuthorizedTool(call.name, resolvedTools, agent.tools);
+          const toolCallId = call.id || `call_${toolRounds}_${call.name}`;
+          const sanitizedArgs = sanitizeForTelemetry(call.args);
+
+          if (!authorized) {
+            yield baseEvent("tool.failed", input, {
+              name: call.name,
+              error: `Unauthorized tool call: "${call.name}" is not assigned to this agent.`,
+              toolCallId,
+              code: "TOOL_UNAUTHORIZED",
+              iteration: iterationDisplay,
+            });
+            transcript.push(
+              new ToolMessage({
+                content: `Error: tool "${call.name}" is not authorized for this agent.`,
+                tool_call_id: toolCallId,
+              })
+            );
+            continue;
+          }
+
+          yield baseEvent("tool.started", input, {
+            toolId: authorized.id,
+            name: authorized.name,
+            arguments: sanitizedArgs,
+            iteration: iterationDisplay,
+            toolCallId,
+          });
+
+          const toolStartedAt = Date.now();
+          try {
+            // Decision 5: grant only when read-only or requiresApproval === false;
+            // never blanket-approve mutating tools that still require approval.
+            const output = await input.toolRuntime!.execute(
+              authorized,
+              asRecord(call.args),
+              input.signal,
+              {
+                runId: input.runId,
+                credentialPrincipal: input.credentialPrincipal,
+                agentId: agent.id,
+                authorizedToolIds: agent.tools,
+                idempotencyKey: `${input.runId}:${input.nodeId}:${toolCallId}`,
+                approvalGranted: approvalGrantedForTool(authorized),
+              }
+            );
+            const durationMs = Date.now() - toolStartedAt;
+            const sanitizedOutput = sanitizeForTelemetry(output) as Record<string, unknown>;
+            yield baseEvent("tool.completed", input, {
+              toolId: authorized.id,
+              output: sanitizedOutput,
+              durationMs,
+              toolCallId,
+            });
+            transcript.push(
+              new ToolMessage({
+                content: serializeToolObservation(output),
+                tool_call_id: toolCallId,
+              })
+            );
+          } catch (toolError) {
+            const durationMs = Date.now() - toolStartedAt;
+            if (isAbortError(toolError) || input.signal?.aborted) {
+              throw toolError;
+            }
+            if (isFatalToolError(toolError)) {
+              const message = toolError instanceof Error ? toolError.message : String(toolError);
+              yield baseEvent("tool.failed", input, {
+                toolId: authorized.id,
+                error: message.slice(0, 500),
+                toolCallId,
+                durationMs,
+                code: (toolError as { code?: string }).code,
+              });
+              yield baseEvent("agent.failed", input, { error: message.slice(0, 500), code: (toolError as { code?: string }).code });
+              throw new AgentExecutionFailedError(message);
+            }
+            const message = toolError instanceof Error ? toolError.message : String(toolError);
+            yield baseEvent("tool.failed", input, {
+              toolId: authorized.id,
+              error: message.slice(0, 500),
+              toolCallId,
+              durationMs,
+              code: toolError instanceof ToolPolicyError ? "TOOL_POLICY_REJECTED" : (toolError as { code?: string }).code,
+            });
+            transcript.push(
+              new ToolMessage({
+                content: `Error executing tool "${authorized.name}": ${message.slice(0, 500)}`,
+                tool_call_id: toolCallId,
+              })
+            );
+          }
+        }
+
+        toolRounds += 1;
+        void iteration;
+      }
+
       yield baseEvent("llm.completed", input, {
         provider: agent.backend.provider,
         model: agent.backend.model,
         durationMs: Date.now() - startedAt,
-        ...(usage ? { usage } : {}),
-        ...(finishReason !== undefined ? { finishReason } : {}),
+        ...(lastUsage ? { usage: lastUsage } : {}),
+        ...(lastFinish !== undefined ? { finishReason: lastFinish } : {}),
+        toolRounds,
       });
-      yield baseEvent("agent.output", input, { content });
-      yield baseEvent("agent.completed", input, { content });
+      yield baseEvent("agent.output", input, { content: finalContent });
+      yield baseEvent("agent.completed", input, { content: finalContent });
     } catch (error) {
+      // Limit-exceeded and other fail-closed paths already emitted agent.failed.
+      if (error instanceof AgentExecutionFailedError) {
+        throw error;
+      }
+      if (isAbortError(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       yield baseEvent("llm.failed", input, { provider: agent.backend.provider, model: agent.backend.model, error: message.slice(0, 500) });
       yield baseEvent("agent.failed", input, { error: message });
       throw new AgentExecutionFailedError(message);
     }
+  }
+}
+
+function resolveAuthorizedTool(
+  callName: string,
+  resolvedTools: ToolRecord[],
+  agentToolIds: readonly string[]
+): ToolRecord | undefined {
+  const tool = resolveToolCallName(callName, resolvedTools);
+  if (!tool) return undefined;
+  if (!agentToolIds.includes(tool.id)) return undefined;
+  return tool;
+}
+
+function extractToolCalls(result: ChatModelResult): Array<{ id: string; name: string; args: Record<string, unknown> }> {
+  const raw =
+    result.tool_calls ??
+    (result as { additional_kwargs?: { tool_calls?: ModelToolCallLike[] } }).additional_kwargs?.tool_calls ??
+    [];
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+
+  return raw.map((call, index) => {
+    const name =
+      (typeof call.name === "string" && call.name) ||
+      (typeof call.function?.name === "string" && call.function.name) ||
+      `unknown_${index}`;
+    let args: Record<string, unknown> = {};
+    if (call.args && typeof call.args === "object" && !Array.isArray(call.args)) {
+      args = call.args as Record<string, unknown>;
+    } else if (typeof call.function?.arguments === "string") {
+      try {
+        const parsed = JSON.parse(call.function.arguments);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) args = parsed;
+      } catch {
+        args = { raw: call.function.arguments };
+      }
+    } else if (call.function?.arguments && typeof call.function.arguments === "object") {
+      args = call.function.arguments as Record<string, unknown>;
+    }
+    return {
+      id: typeof call.id === "string" && call.id ? call.id : `call_${index}_${name}`,
+      name,
+      args,
+    };
+  });
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  return {};
+}
+
+function normalizeContent(content: unknown): unknown {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && "text" in part) return String((part as { text: unknown }).text ?? "");
+        return "";
+      })
+      .join("");
+  }
+  return content;
+}
+
+function serializeToolObservation(output: unknown): string {
+  try {
+    return JSON.stringify(output ?? {});
+  } catch {
+    return String(output);
+  }
+}
+
+function sanitizeForTelemetry(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    if (/\b(?:sk-|AIza)[a-zA-Z0-9_-]{12,}|Bearer\s+\S+/i.test(value)) return "[redacted]";
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(sanitizeForTelemetry);
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (SECRET_KEY.test(key)) {
+        out[key] = "[redacted]";
+      } else {
+        out[key] = sanitizeForTelemetry(child);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
+/** Map ToolRecord policy → ToolRuntime approvalGranted (Decision 5). */
+function approvalGrantedForTool(tool: ToolRecord): boolean {
+  if (tool.impact === "read-only") return true;
+  // Non-read-only: grant only when policy explicitly opts out of approval.
+  return tool.executionPolicy?.requiresApproval === false;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = (error as { name?: string }).name;
+  return name === "AbortError" || name === "TimeoutError";
+}
+
+function isFatalToolError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: string }).code;
+  if (code === "CREDENTIAL_BROKER_FAILURE" || code === "SECURITY_BREACH" || code === "TOOL_SECURITY_VIOLATION") {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (/credential.*(fail|denied|unavailable)|security breach/i.test(message) && /fail-closed|hard fail|broker/i.test(message)) {
+    return true;
+  }
+  // Explicit fatal marker used by tests / credential path
+  if ((error as { fatal?: boolean }).fatal === true) return true;
+  return false;
+}
+
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    const err = new Error("Agent execution was cancelled.");
+    err.name = "AbortError";
+    throw err;
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useOrgPath } from "@/components/organization/OrgProvider";
+import type { LiveCanvasController } from "./live/liveCanvas.types";
 
 import React from "react";
 import {
@@ -18,7 +18,7 @@ import { useReactFlow } from "@xyflow/react";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+
 import { runService } from "@/services/runService";
 import { parseWorkflowRunInput, type WorkflowRunInputMode } from "@/lib/workflowRunInput";
 
@@ -51,15 +51,15 @@ function ToolButton({
   );
 }
 
-export function EditorToolbar() {
-  const orgUrl = useOrgPath();
-  const router = useRouter();
+export function EditorToolbar({ session }: { session: Pick<LiveCanvasController, "mode" | "enterLive" | "exitLive"> }) {
+  const live = session.mode === "live";
   const [runInput, setRunInput] = React.useState("");
   const [inputMode, setInputMode] = React.useState<WorkflowRunInputMode>("text");
   const [inputError, setInputError] = React.useState<string | null>(null);
   const [isStarting, setIsStarting] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const inputErrorId = React.useId();
+  const loadState = useWorkflowStore(s => s.loadState);
   const definition = useWorkflowStore((s) => s.definition);
   const agents = useWorkflowStore((s) => s.agents);
   const tools = useWorkflowStore((s) => s.tools);
@@ -88,6 +88,7 @@ export function EditorToolbar() {
       <input
         type="text"
         value={name}
+        disabled={live}
         onChange={(event) => setWorkflowName(event.target.value)}
         placeholder="Workflow name"
         className="h-8 w-52 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-semibold text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -103,15 +104,15 @@ export function EditorToolbar() {
 
       <div className="mx-1 h-5 w-px bg-zinc-800" />
 
-      <ToolButton title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo}>
+      <ToolButton title="Undo (Ctrl+Z)" disabled={live || !canUndo} onClick={undo}>
         <Undo2 className="h-4 w-4" />
       </ToolButton>
-      <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={!canRedo} onClick={redo}>
+      <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={live || !canRedo} onClick={redo}>
         <Redo2 className="h-4 w-4" />
       </ToolButton>
       <ToolButton
         title="Delete selected nodes/edges (Del)"
-        disabled={!hasSelection}
+        disabled={live || !hasSelection}
         onClick={() => removeSelection(selectedNodeIds, selectedEdgeIds)}
       >
         <Trash2 className="h-4 w-4" />
@@ -129,9 +130,12 @@ export function EditorToolbar() {
         <Maximize className="h-4 w-4" />
       </ToolButton>
 
+      <span role="status" className="text-xs font-semibold text-indigo-300">{live ? "Live · Read only" : "Design"}</span>
       <div className="ml-auto flex items-center gap-2">
+        {live && <Button size="sm" variant="outline" onClick={session.exitLive}>Exit Live</Button>}
         <Button
           variant="outline"
+          disabled={live}
           size="sm"
           onClick={() => {
             const firstError = useWorkflowStore
@@ -176,17 +180,23 @@ export function EditorToolbar() {
         </div>
         <Button
           size="sm"
-          title={hasErrors ? "Resolve validation errors before running" : "Run workflow"}
-          disabled={hasErrors || isStarting}
+          title={hasErrors ? "Resolve validation errors before running" : live ? "Start a new run and replace Live observation" : "Run workflow"}
+          disabled={loadState !== "ready" || hasErrors || isStarting}
           onClick={async () => {
+            if (live) {
+              const confirmed = window.confirm(
+                "Start a new run and replace the live observation on this canvas?\n\nThe previous run keeps executing server-side and remains available from its run page or deep link.",
+              );
+              if (!confirmed) return;
+            }
             let input: Record<string, unknown>;
             try { input = parseWorkflowRunInput(runInput, inputMode); setInputError(null); }
             catch (error) { setInputError((error as Error).message); inputRef.current?.focus(); return; }
             setIsStarting(true);
             try {
               const { runId } = await runService.startRun(definition, agents, input, undefined, tools);
-              sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition));
-              router.push(orgUrl(`/runs/${runId}`));
+              try { sessionStorage.setItem(`run-definition:${runId}`, JSON.stringify(definition)); } catch { /* Server snapshot remains available when browser storage is full. */ }
+              await session.enterLive(runId, definition);
             } catch (error) {
               window.alert(error instanceof Error ? error.message : String(error));
             } finally {
@@ -196,12 +206,12 @@ export function EditorToolbar() {
           className="h-8 cursor-pointer gap-1.5 bg-emerald-600 text-xs text-white hover:bg-emerald-500"
         >
           <Play className="h-3.5 w-3.5" />
-          {isStarting ? "Starting…" : "Run"}
+          {isStarting ? "Starting…" : live ? "New Run" : "Run"}
         </Button>
         <Button
           size="sm"
           onClick={() => saveWorkflow()}
-          disabled={isSaving}
+          disabled={live || isSaving}
           className="h-8 cursor-pointer gap-1.5 bg-indigo-600 text-xs text-white hover:bg-indigo-500"
         >
           <Save className={cn("h-3.5 w-3.5", isSaving && "animate-pulse")} />

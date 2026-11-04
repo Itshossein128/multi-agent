@@ -297,6 +297,10 @@ Do not omit `CLI_CODEX_AUTH_FILE` if you want isolation; the default is `~/.code
 
 function پیش‌فرض data-only است. `repo-tests` و `repo-checks` خاموش هستند و فقط با `WorkerRuntime` اجرا می‌شوند؛ local trusted-only و container حالت پیشنهادی است. `repo-checks` فقط checkهای ثابت `test,typecheck,build,lint,diff` را می‌پذیرد و command دلخواه اجرا نمی‌کند. categoryهای پشتیبانی‌نشده باید fail-closed بمانند. جزئیات در [phase-6-tools.md](phase-6-tools.md) است.
 
+### ReAct agent loop (API)
+
+API agents can run a bounded ReAct loop when `executionMode` is `react` (default when the agent has assigned tools). Configure `maxToolSteps` (integer 1–10, effective default 5) on the agent or as a node override. Tool schemas are bound for the model; execution goes only through `ToolRuntime` with the agent’s authorized tool IDs. Exhausting the step ceiling fails closed with `AGENT_TOOL_LIMIT_EXCEEDED`. Primary suite: `pnpm test --runInBand -- tests/apiAgentExecutorReAct.test.ts`.
+
 برای smoke/load verification داخلی:
 
 ```bash
@@ -304,3 +308,29 @@ pnpm verification:load
 ```
 
 این harness graph compilation، loop budget، چند subscriber هم‌زمان SSE، event retention و بار چند run را بررسی می‌کند. اجرای سناریوی Docker به image digest-pinned و Docker daemon محیط deployment نیاز دارد.
+
+
+## Studio Design and Live modes
+
+The workflow editor opens in **Design** mode. **Run** starts execution through the existing authenticated run API, then stays on the same visual canvas in **Live** mode. The studio URL includes the run, so it can be copied or reopened:
+
+```text
+/o/{orgSlug}/org?workflowId={workflowId}&runId={runId}
+/o/{orgSlug}/org?workflowId={workflowId}&runId={runId}&focusNode={nodeId}
+```
+
+The `runId` query parameter selects Live mode. Live displays the execution definition snapshot, leaving the current draft intact. Palette insertion, dragging, connecting, deletion, property editing, and edit shortcuts are disabled. **Exit Live** removes `runId` and restores Design; it does not cancel server execution. Standalone `/o/{orgSlug}/runs/{runId}` bookmarks continue to work and include **Open on canvas**.
+
+Live node rings and labeled badges show idle, running, waiting for approval, completed, failed, or skipped evidence. Traversed edges glow and animate, with reduced-motion support. Clicking a node opens its execution inspector alongside the mounted canvas. The inspector shows recorded inputs, timings, starts/retries, published output/thoughts, tool calls, result envelopes, and failure diagnostics. Missing event evidence is labeled unavailable rather than inferred from the draft.
+
+Pending approvals and run controls remain authenticated server operations. Use the in-canvas approval panel for decisions/clarification, and the bottom tray for status/connection health, elapsed time, step budget, Cancel, Retry, and event filtering. Retry attaches a new run ID. Authorization errors are shown in place; client display state does not grant permission or assert outcomes. Decision controls use server-calculated capabilities for the current reviewer, including trusted custom approval-role overrides. The server checks authorization again when a decision is submitted.
+
+### Live rendering budget
+
+Graph status snapshots are committed on a fixed **32 ms** window, bounded within the 16–50 ms design target. New lifecycle events replace the pending snapshot without restarting its timer, so sustained tool bursts cannot indefinitely postpone the graph update. Changing the attached run flushes immediately to avoid displaying previous-run evidence. Stream-only log/state/memory events do not invalidate the graph's status slice, and pending timers/subscriptions are cleared when leaving Live or unmounting.
+
+The node inspector subscribes directly to only the selected node's explicitly associated event slice. Its stream updates are independent of the graph commit window; unrelated-node output does not rebuild the inspector. The store's existing event-retention bounds still apply. These are update/coalescing guarantees, not a browser FPS measurement; validate pan/zoom responsiveness under representative production runs separately.
+
+```bash
+pnpm test --runInBand -- tests/flowCanvasLiveMode.test.tsx tests/nodeExecutionInspector.test.tsx
+```
