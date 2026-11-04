@@ -178,13 +178,25 @@ export class ApprovalManager {
   rearmApprovalTimers(runId: string) {
     for (const approval of this.deps.store.listApprovals(runId)) {
       if (approval.status !== "requested") continue;
-      const timeoutSeconds = Number((approval.metadata as { timeoutSeconds?: number })?.timeoutSeconds
-        ?? this.deps.store.get(runId)?.events.find((event) => event.type === "human_approval.requested" && (event.payload as { approvalId?: string }).approvalId === approval.id)?.payload?.timeoutSeconds);
+      const requestedPayload = this.deps.store.get(runId)?.events.find(
+        (event) => event.type === "human_approval.requested" && (event.payload as { approvalId?: string }).approvalId === approval.id,
+      )?.payload as { timeoutSeconds?: number; approvalType?: string; onTimeout?: string } | undefined;
+      const approvalType = (approval.metadata as { approvalType?: string } | undefined)?.approvalType ?? requestedPayload?.approvalType;
+      const onTimeout = (approval.metadata as { onTimeout?: string } | undefined)?.onTimeout ?? requestedPayload?.onTimeout;
+      if (approvalType !== "timeout" && approvalType !== "required" && onTimeout !== "fail_closed") continue;
+
+      const timeoutSeconds = Number((approval.metadata as { timeoutSeconds?: number })?.timeoutSeconds ?? requestedPayload?.timeoutSeconds);
       if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) continue;
       const elapsedMs = Date.now() - Date.parse(approval.requestedAt);
       const remaining = Math.max(0, timeoutSeconds * 1000 - elapsedMs);
       const timer = setTimeout(() => {
-        try { this.resolveApproval(runId, approval.id, { decision: "approved" }); } catch { /* already resolved */ }
+        try {
+          if (approvalType === "timeout") {
+            this.resolveApproval(runId, approval.id, { decision: "approved" });
+          } else if (approvalType === "required" || onTimeout === "fail_closed") {
+            this.resolveApproval(runId, approval.id, { decision: "rejected", response: "Approval request timed out (fail-closed)" });
+          }
+        } catch { /* already resolved */ }
       }, remaining);
       this.deps.store.setApprovalTimer(runId, approval.id, timer);
     }
