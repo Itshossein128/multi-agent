@@ -1,9 +1,8 @@
 import { Pool } from "pg";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createHash } from "node:crypto";
 import { runStudioMigrations } from "../studio/infrastructure/migrate";
-import { runMemoryMigrations } from "../memory/infrastructure/migrate";
+import { migrationChecksumMatches, runMemoryMigrations } from "../memory/infrastructure/migrate";
 import { executeOfflineWorkflowRun } from "../runtime/workflowRunScheduler";
 
 export interface OnboardingOptions {
@@ -169,10 +168,9 @@ export async function runOnboarding(options: OnboardingOptions = {}): Promise<On
         for (const applied of appliedStudio) {
           try {
             const sql = await readFile(resolve(studioDir, applied.name), "utf8");
-            const expectedHash = createHash("sha256").update(sql).digest("hex");
-            if (applied.checksum !== expectedHash) {
+            if (!migrationChecksumMatches(applied.checksum, sql)) {
               report.database.checksumErrors.push(
-                `Studio migration checksum mismatch for ${applied.name} (DB: ${applied.checksum.slice(0, 8)}, disk: ${expectedHash.slice(0, 8)})`
+                `Studio migration checksum mismatch for ${applied.name} (DB: ${applied.checksum.slice(0, 8)})`
               );
             }
           } catch {
@@ -220,10 +218,9 @@ export async function runOnboarding(options: OnboardingOptions = {}): Promise<On
         for (const applied of appliedMemory) {
           try {
             const sql = await readFile(resolve(memoryDir, applied.name), "utf8");
-            const expectedHash = createHash("sha256").update(sql).digest("hex");
-            if (applied.checksum !== expectedHash) {
+            if (!migrationChecksumMatches(applied.checksum, sql)) {
               report.database.checksumErrors.push(
-                `Memory migration checksum mismatch for ${applied.name} (DB: ${applied.checksum.slice(0, 8)}, disk: ${expectedHash.slice(0, 8)})`
+                `Memory migration checksum mismatch for ${applied.name} (DB: ${applied.checksum.slice(0, 8)})`
               );
             }
           } catch {

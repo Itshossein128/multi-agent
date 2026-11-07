@@ -3,6 +3,18 @@ import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import type { PgPool } from "./postgres-memory-store";
 
+/** Hash LF-normalized SQL so Windows CRLF checkouts match Linux-applied ledgers. */
+export function hashMigrationSql(sql: string): string {
+  return createHash("sha256").update(sql.replace(/\r\n/g, "\n")).digest("hex");
+}
+
+/** Accept raw, LF, or CRLF hashes of the same SQL (mixed historical ledgers). */
+export function migrationChecksumMatches(stored: string, sql: string): boolean {
+  const lf = sql.replace(/\r\n/g, "\n");
+  const crlf = lf.replace(/\n/g, "\r\n");
+  return [sql, lf, crlf].some((value) => createHash("sha256").update(value).digest("hex") === stored);
+}
+
 /** Explicit operator action only. Never called from a store constructor or server startup. */
 export async function runMemoryMigrations(pool: PgPool, options: { vectorEnabled?: boolean; directory?: string } = {}): Promise<string[]> {
   const directory = options.directory ?? resolve(process.cwd(), "infrastructure/memory/migrations");
@@ -15,7 +27,10 @@ export async function runMemoryMigrations(pool: PgPool, options: { vectorEnabled
     "006_organization_tenant_rls.sql",
     "007_memory_job_claims.sql",
   ];
-  const migrations = await Promise.all(names.map(async name => { const sql = await readFile(resolve(directory, name), "utf8"); return { name, sql, checksum: createHash("sha256").update(sql).digest("hex") }; }));
+  const migrations = await Promise.all(names.map(async name => {
+    const sql = await readFile(resolve(directory, name), "utf8");
+    return { name, sql, checksum: hashMigrationSql(sql) };
+  }));
   const client = await pool.connect();
   const applied: string[] = [];
   try {
@@ -25,7 +40,9 @@ export async function runMemoryMigrations(pool: PgPool, options: { vectorEnabled
     for (const migration of migrations) {
       const existing = await client.query("SELECT checksum FROM studio_memory_migrations WHERE name = $1", [migration.name]);
       if (existing.rows.length) {
-        if (existing.rows[0].checksum !== migration.checksum) throw new Error(`Memory migration checksum mismatch: ${migration.name}`);
+        if (!migrationChecksumMatches(existing.rows[0].checksum, migration.sql)) {
+          throw new Error(`Memory migration checksum mismatch: ${migration.name}`);
+        }
         continue;
       }
       await client.query(migration.sql);

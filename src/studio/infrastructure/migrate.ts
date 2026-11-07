@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createHash } from "node:crypto";
 import type { PgPool } from "../../memory/infrastructure";
+import { hashMigrationSql, migrationChecksumMatches } from "../../memory/infrastructure/migrate";
 
 type LegacySchemaRequirements = Record<string, readonly string[]>;
 
@@ -133,7 +133,7 @@ export async function runStudioMigrations(pool: PgPool, options: { directory?: s
   ];
   const migrations = await Promise.all(names.map(async (name) => {
     const sql = await readFile(resolve(directory, name), "utf8");
-    return { name, sql, checksum: createHash("sha256").update(sql).digest("hex") };
+    return { name, sql, checksum: hashMigrationSql(sql) };
   }));
   const client = await pool.connect();
   const applied: string[] = [];
@@ -144,7 +144,9 @@ export async function runStudioMigrations(pool: PgPool, options: { directory?: s
     for (const migration of migrations) {
       const existing = await client.query("SELECT checksum FROM studio_migrations WHERE name = $1", [migration.name]);
       if (existing.rows.length) {
-        if (existing.rows[0].checksum !== migration.checksum) throw new Error(`Studio migration checksum mismatch: ${migration.name}`);
+        if (!migrationChecksumMatches(existing.rows[0].checksum, migration.sql)) {
+          throw new Error(`Studio migration checksum mismatch: ${migration.name}`);
+        }
         continue;
       }
       if (await reconcileLegacySchema(client, migration.name)) {
