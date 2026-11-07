@@ -1,4 +1,4 @@
-﻿export {
+export {
   type WorkflowNodeType,
   type WorkflowEdgeKind,
   type AgentBackend,
@@ -7,6 +7,10 @@
   type AgentRecord,
   type LegacyAgentRecord,
   type AgentNodeConfig,
+  type AgentSessionMode,
+  type AgentResumePromptMode,
+  type AgentNodeInputMode,
+  type AgentSessionState,
   type ToolNodeConfig,
   type LegacyToolNodeConfig,
   type ToolCategory,

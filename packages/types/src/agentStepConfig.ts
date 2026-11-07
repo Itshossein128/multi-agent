@@ -7,7 +7,10 @@ import type {
   AgentExecutionMode,
   AgentModelSettings,
   AgentNodeConfig,
+  AgentNodeInputMode,
   AgentRecord,
+  AgentResumePromptMode,
+  AgentSessionMode,
   ToolRecord,
 } from "./index";
 import { modelSettingsSchema } from "./agentConfiguration";
@@ -18,6 +21,10 @@ export const UNSUPPORTED_STEP_MODEL_OVERRIDE = "UNSUPPORTED_STEP_MODEL_OVERRIDE"
 export const INVALID_AGENT_NODE_ACTIVE_TOOLS = "INVALID_AGENT_NODE_ACTIVE_TOOLS" as const;
 export const UNSUPPORTED_STEP_ACTIVE_TOOLS = "UNSUPPORTED_STEP_ACTIVE_TOOLS" as const;
 export const INCOMPATIBLE_STEP_CONFIG_FOR_AGENT = "INCOMPATIBLE_STEP_CONFIG_FOR_AGENT" as const;
+export const INVALID_AGENT_NODE_SESSION_MODE = "INVALID_AGENT_NODE_SESSION_MODE" as const;
+export const INVALID_AGENT_NODE_SESSION_KEY = "INVALID_AGENT_NODE_SESSION_KEY" as const;
+export const INVALID_AGENT_NODE_RESUME_PROMPT_MODE = "INVALID_AGENT_NODE_RESUME_PROMPT_MODE" as const;
+export const INVALID_AGENT_NODE_INPUT_MODE = "INVALID_AGENT_NODE_INPUT_MODE" as const;
 
 export type StepConfigIssueCode =
   | typeof INVALID_AGENT_NODE_TASK_INSTRUCTION
@@ -26,6 +33,10 @@ export type StepConfigIssueCode =
   | typeof INVALID_AGENT_NODE_ACTIVE_TOOLS
   | typeof UNSUPPORTED_STEP_ACTIVE_TOOLS
   | typeof INCOMPATIBLE_STEP_CONFIG_FOR_AGENT
+  | typeof INVALID_AGENT_NODE_SESSION_MODE
+  | typeof INVALID_AGENT_NODE_SESSION_KEY
+  | typeof INVALID_AGENT_NODE_RESUME_PROMPT_MODE
+  | typeof INVALID_AGENT_NODE_INPUT_MODE
   | "MISSING_AGENT_CONFIG"
   | "AGENT_DISABLED"
   | string;
@@ -44,6 +55,10 @@ export interface EffectiveAgentStepConfig {
   tools: ToolRecord[];
   executionMode: AgentExecutionMode;
   maxToolSteps: number;
+  sessionMode: AgentSessionMode;
+  sessionKey?: string;
+  resumePromptMode: AgentResumePromptMode;
+  inputMode: AgentNodeInputMode;
   incompatibilities: StepConfigIssue[];
 }
 
@@ -309,6 +324,8 @@ export function resolveEffectiveAgentStepConfig(
     nodeMaxToolSteps: nodeConfig.maxToolSteps,
   });
 
+  const sessionConfig = validateSessionAndInputConfig(nodeConfig, incompatibilities);
+
   return {
     agentId: agent.id,
     ...(instruction ? { taskInstruction: instruction } : {}),
@@ -317,8 +334,89 @@ export function resolveEffectiveAgentStepConfig(
     tools,
     executionMode,
     maxToolSteps,
+    sessionMode: sessionConfig.sessionMode,
+    ...(sessionConfig.sessionKey ? { sessionKey: sessionConfig.sessionKey } : {}),
+    resumePromptMode: sessionConfig.resumePromptMode,
+    inputMode: sessionConfig.inputMode,
     incompatibilities,
   };
+}
+
+const SESSION_KEY_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+
+function validateSessionAndInputConfig(
+  nodeConfig: AgentNodeConfig,
+  issues: StepConfigIssue[]
+): {
+  sessionMode: AgentSessionMode;
+  sessionKey?: string;
+  resumePromptMode: AgentResumePromptMode;
+  inputMode: AgentNodeInputMode;
+} {
+  let sessionMode: AgentSessionMode = "stateless";
+  if (nodeConfig.sessionMode !== undefined) {
+    if (
+      nodeConfig.sessionMode === "stateless" ||
+      nodeConfig.sessionMode === "node" ||
+      nodeConfig.sessionMode === "shared"
+    ) {
+      sessionMode = nodeConfig.sessionMode;
+    } else {
+      issues.push({
+        code: INVALID_AGENT_NODE_SESSION_MODE,
+        message: 'Agent node sessionMode must be "stateless", "node", or "shared".',
+        path: "sessionMode",
+      });
+    }
+  }
+
+  let sessionKey: string | undefined;
+  if (nodeConfig.sessionKey !== undefined) {
+    if (typeof nodeConfig.sessionKey !== "string" || !SESSION_KEY_IDENTIFIER.test(nodeConfig.sessionKey.trim())) {
+      issues.push({
+        code: INVALID_AGENT_NODE_SESSION_KEY,
+        message: "Agent node sessionKey must be 1-120 safe identifier characters.",
+        path: "sessionKey",
+      });
+    } else {
+      sessionKey = nodeConfig.sessionKey.trim();
+    }
+  }
+  if (sessionMode === "shared" && !sessionKey) {
+    issues.push({
+      code: INVALID_AGENT_NODE_SESSION_KEY,
+      message: 'Agent node sessionKey is required when sessionMode is "shared".',
+      path: "sessionKey",
+    });
+  }
+
+  let resumePromptMode: AgentResumePromptMode = "delta";
+  if (nodeConfig.resumePromptMode !== undefined) {
+    if (nodeConfig.resumePromptMode === "delta" || nodeConfig.resumePromptMode === "full") {
+      resumePromptMode = nodeConfig.resumePromptMode;
+    } else {
+      issues.push({
+        code: INVALID_AGENT_NODE_RESUME_PROMPT_MODE,
+        message: 'Agent node resumePromptMode must be "delta" or "full".',
+        path: "resumePromptMode",
+      });
+    }
+  }
+
+  let inputMode: AgentNodeInputMode = "auto";
+  if (nodeConfig.inputMode !== undefined) {
+    if (nodeConfig.inputMode === "auto" || nodeConfig.inputMode === "last_value") {
+      inputMode = nodeConfig.inputMode;
+    } else {
+      issues.push({
+        code: INVALID_AGENT_NODE_INPUT_MODE,
+        message: 'Agent node inputMode must be "auto" or "last_value".',
+        path: "inputMode",
+      });
+    }
+  }
+
+  return { sessionMode, sessionKey, resumePromptMode, inputMode };
 }
 
 /**
@@ -337,6 +435,9 @@ export function validateAgentNodeStepConfig(input: ResolveEffectiveAgentStepConf
 
   // Tools: use validation codes.
   resolveToolIds(agent, nodeConfig, registryTools, issues, false);
+
+  // Session continuation & input mode validation.
+  validateSessionAndInputConfig(nodeConfig, issues);
 
   // Surface incompatibilities that matter after agent switch (same checks).
   // When overrides are present but invalid for this agent/backend, also emit

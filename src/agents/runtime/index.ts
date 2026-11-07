@@ -81,7 +81,16 @@ export {
   selectWorkingMemoryForContext,
 } from "./workingMemory";
 export { AgentRuntime } from "./agentRuntime";
-export { CliAgentExecutor } from "./cliAgentExecutor";
+export {
+  CliAgentExecutor,
+  codexArgs,
+  codexSessionArgs,
+  sessionCommandArgs,
+  parseCodexOutput,
+  parseClaudeOutput,
+  parseAgyStreamOutputWithSession,
+  continuationPrompt,
+} from "./cliAgentExecutor";
 export { LocalAgentExecutor } from "./localAgentExecutor";
 export { ProcessAgentExecutor } from "./processAgentExecutor";
 export { WebhookAgentExecutor } from "./webhookAgentExecutor";

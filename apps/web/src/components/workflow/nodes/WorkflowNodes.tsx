@@ -145,6 +145,14 @@ function AgentNodeComponent(props: NodeProps) {
   const { node, agent, issueCount, issueTitle } = useNodeData(props);
   const config = node.config as AgentNodeConfig;
   const linked = Boolean(config.agentId && agent);
+  const hasPersistentSession =
+    config.sessionMode === "node" || config.sessionMode === "shared";
+  const sessionBadgeLabel =
+    config.sessionMode === "shared"
+      ? `Session: ${config.sessionKey?.trim() || "shared"}`
+      : config.sessionMode === "node"
+        ? "Session: node-persistent"
+        : null;
   return (
     <NodeShell
       {...useNodeData(props)}
@@ -156,6 +164,19 @@ function AgentNodeComponent(props: NodeProps) {
       title={agent?.name ?? "Unlinked agent"}
       subtitle={agent ? `${agentBackendLabel(agent.backend)} · ${agent.tools.length} tools` : "Not linked to an agent"}
     >
+      {hasPersistentSession && sessionBadgeLabel && (
+        <div
+          data-testid="agent-node-session-badge"
+          className="mt-1.5 flex items-center gap-1 border-t border-zinc-800/80 pt-1.5"
+        >
+          <span
+            className="truncate rounded bg-indigo-950/70 px-1.5 py-0.5 font-mono text-[10px] font-medium text-indigo-300"
+            title={sessionBadgeLabel}
+          >
+            {sessionBadgeLabel}
+          </span>
+        </div>
+      )}
       {agent?.description && (
         <p className="mt-1.5 line-clamp-2 border-t border-zinc-800/80 pt-1.5 text-[10px] leading-snug text-zinc-500">
           {agent.description}

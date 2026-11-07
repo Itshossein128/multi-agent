@@ -21,9 +21,38 @@ export interface ToolExecutor {
 
 export type StudioTaskToolAction =
   | "query_tasks"
+  | "get_task"
+  | "create_task"
+  | "bulk_create_tasks"
   | "update_task_status"
   | "assign_task"
   | "add_task_comment";
+
+export interface StudioTaskGetInput {
+  taskId: string;
+  includeComments?: boolean;
+}
+
+export interface StudioTaskCreateInput {
+  id?: string;
+  taskId?: string;
+  title: string;
+  description?: string;
+  priority?: "high" | "medium" | "low";
+  status?: TaskStatus;
+  projectId?: string;
+  workspaceId?: string;
+  parentTaskId?: string | null;
+  dependencies?: string[];
+  assignedAgent?: string | null;
+  assignedAgents?: string[];
+  workflowId?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface StudioTaskBulkCreateInput {
+  tasks: StudioTaskCreateInput[];
+}
 
 export interface StudioTaskQueryInput {
   status?: TaskStatus;
@@ -62,6 +91,9 @@ export interface StudioTaskAddCommentInput {
 
 export type StudioTaskToolInput =
   | { action: "query_tasks"; params?: StudioTaskQueryInput }
+  | { action: "get_task"; params: StudioTaskGetInput }
+  | { action: "create_task"; params: StudioTaskCreateInput }
+  | { action: "bulk_create_tasks"; params: StudioTaskBulkCreateInput }
   | { action: "update_task_status"; params: StudioTaskUpdateStatusInput }
   | { action: "assign_task"; params: StudioTaskAssignInput }
   | { action: "add_task_comment"; params: StudioTaskAddCommentInput };

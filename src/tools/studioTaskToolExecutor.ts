@@ -13,6 +13,9 @@ import { InMemoryStudioStore } from "../studio/infrastructure/in-memory-studio-s
 import type {
   StudioTaskAddCommentInput,
   StudioTaskAssignInput,
+  StudioTaskBulkCreateInput,
+  StudioTaskCreateInput,
+  StudioTaskGetInput,
   StudioTaskQueryInput,
   StudioTaskToolAction,
   StudioTaskToolErrorCode,
@@ -65,6 +68,8 @@ export const STUDIO_TASK_TOOL_NAME = "studio_task_tool";
 export const DEFAULT_STUDIO_TASK_TOOL_AUTHORIZED_AGENT_IDS: readonly string[] = [
   "agent-lead-orchestrator",
   "spec-delivery-lead-orchestrator",
+  "agent-delivery-plan-orchestrator",
+  "agent-phase-subphase-architect",
 ];
 
 export interface StudioTaskToolAuthorizationOptions {
@@ -135,6 +140,9 @@ export class StudioTaskToolExecutor implements ToolExecutor {
 
     const validActions: StudioTaskToolAction[] = [
       "query_tasks",
+      "get_task",
+      "create_task",
+      "bulk_create_tasks",
       "update_task_status",
       "assign_task",
       "add_task_comment",
@@ -194,6 +202,12 @@ export class StudioTaskToolExecutor implements ToolExecutor {
         switch (action) {
           case "query_tasks":
             return await this.handleQueryTasks(params as StudioTaskQueryInput, principal, store, now);
+          case "get_task":
+            return await this.handleGetTask(params as unknown as StudioTaskGetInput, principal, store, now);
+          case "create_task":
+            return await this.handleCreateTask(params as unknown as StudioTaskCreateInput, principal, store, now);
+          case "bulk_create_tasks":
+            return await this.handleBulkCreateTasks(params as unknown as StudioTaskBulkCreateInput, principal, store, now);
           case "update_task_status":
             return await this.handleUpdateTaskStatus(params as unknown as StudioTaskUpdateStatusInput, principal, store, now);
           case "assign_task":
@@ -624,6 +638,193 @@ export class StudioTaskToolExecutor implements ToolExecutor {
       action: "add_task_comment",
       data: {
         comment: savedComment,
+      },
+      timestamp,
+    };
+  }
+
+  private async handleGetTask(
+    params: StudioTaskGetInput,
+    principal: StudioPrincipal,
+    store: StudioStore,
+    timestamp: string,
+  ): Promise<StudioTaskToolOutput> {
+    if (!params.taskId || typeof params.taskId !== "string") {
+      return {
+        success: false,
+        action: "get_task",
+        error: {
+          code: "INVALID_INPUT",
+          message: "taskId is required",
+        },
+        timestamp,
+      };
+    }
+
+    const task = await store.getTask(params.taskId);
+    if (!task) {
+      return {
+        success: false,
+        action: "get_task",
+        error: {
+          code: "TASK_NOT_FOUND",
+          message: `Task "${params.taskId}" not found`,
+        },
+        timestamp,
+      };
+    }
+
+    if (task.tenantId && task.tenantId !== principal.tenantId) {
+      return {
+        success: false,
+        action: "get_task",
+        error: {
+          code: "TENANT_ISOLATION_VIOLATION",
+          message: `Tenant isolation violation: Task "${params.taskId}" does not belong to tenant "${principal.tenantId}"`,
+        },
+        timestamp,
+      };
+    }
+
+    const comments = params.includeComments !== false ? await store.listComments(params.taskId) : undefined;
+    return {
+      success: true,
+      action: "get_task",
+      data: {
+        task,
+        ...(comments !== undefined ? { comments } : {}),
+      },
+      timestamp,
+    };
+  }
+
+  private async upsertSingleTask(
+    params: StudioTaskCreateInput,
+    principal: StudioPrincipal,
+    store: StudioStore,
+    timestamp: string,
+  ): Promise<StudioTask> {
+    const title = typeof params.title === "string" ? params.title.trim() : "";
+    if (!title) {
+      throw new StudioTaskToolError("INVALID_INPUT", "Task title is required");
+    }
+    const id = typeof params.id === "string" && params.id.trim()
+      ? params.id.trim()
+      : typeof params.taskId === "string" && params.taskId.trim()
+        ? params.taskId.trim()
+        : uid("task");
+    const existing = await store.getTask(id);
+    if (existing && existing.tenantId && existing.tenantId !== principal.tenantId) {
+      throw new TenantIsolationViolationError(
+        `Tenant isolation violation: Task "${id}" belongs to a different tenant`,
+      );
+    }
+
+    const assignedAgent =
+      params.assignedAgent !== undefined
+        ? params.assignedAgent
+        : existing?.assignedAgent ?? null;
+    const assignedAgents = Array.isArray(params.assignedAgents)
+      ? params.assignedAgents.filter((a): a is string => typeof a === "string" && Boolean(a.trim()))
+      : assignedAgent
+        ? [assignedAgent]
+        : existing?.assignedAgents ?? [];
+
+    let effectiveProjectId = params.projectId ?? existing?.projectId;
+    if (!effectiveProjectId) {
+      try {
+        const projects = await store.listProjects(principal);
+        effectiveProjectId = projects[0]?.id;
+      } catch {
+        // ignore
+      }
+    }
+    if (!effectiveProjectId) {
+      effectiveProjectId = `project-${principal.tenantId}`;
+    }
+
+    const taskRecord: StudioTask = {
+      id,
+      tenantId: principal.tenantId,
+      ownerId: existing?.ownerId ?? principal.userId,
+      projectId: effectiveProjectId,
+      workspaceId: params.workspaceId ?? existing?.workspaceId,
+      parentTaskId: params.parentTaskId !== undefined ? params.parentTaskId : existing?.parentTaskId ?? null,
+      title,
+      description: typeof params.description === "string" ? params.description : existing?.description ?? "",
+      priority:
+        params.priority === "high" || params.priority === "medium" || params.priority === "low"
+          ? params.priority
+          : existing?.priority ?? "medium",
+      status: params.status ?? existing?.status ?? "queued",
+      assignedAgent,
+      assignedAgents,
+      workflowId: params.workflowId !== undefined ? params.workflowId : existing?.workflowId ?? null,
+      dependencies: Array.isArray(params.dependencies)
+        ? params.dependencies.filter((d): d is string => typeof d === "string" && Boolean(d.trim()))
+        : existing?.dependencies ?? [],
+      retryCount: existing?.retryCount ?? 0,
+      paused: existing?.paused ?? false,
+      output: existing?.output ?? null,
+      metadata: {
+        ...(existing?.metadata ?? {}),
+        ...(params.metadata && typeof params.metadata === "object" ? params.metadata : {}),
+      },
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+
+    return await store.saveTask(taskRecord, principal);
+  }
+
+  private async handleCreateTask(
+    params: StudioTaskCreateInput,
+    principal: StudioPrincipal,
+    store: StudioStore,
+    timestamp: string,
+  ): Promise<StudioTaskToolOutput> {
+    const saved = await this.upsertSingleTask(params, principal, store, timestamp);
+    return {
+      success: true,
+      action: "create_task",
+      data: {
+        task: saved,
+      },
+      timestamp,
+    };
+  }
+
+  private async handleBulkCreateTasks(
+    params: StudioTaskBulkCreateInput,
+    principal: StudioPrincipal,
+    store: StudioStore,
+    timestamp: string,
+  ): Promise<StudioTaskToolOutput> {
+    if (!Array.isArray(params.tasks) || params.tasks.length === 0 || params.tasks.length > 100) {
+      return {
+        success: false,
+        action: "bulk_create_tasks",
+        error: {
+          code: "INVALID_INPUT",
+          message: "tasks must be an array of 1 to 100 task definitions",
+        },
+        timestamp,
+      };
+    }
+
+    const created: StudioTask[] = [];
+    for (const item of params.tasks) {
+      const saved = await this.upsertSingleTask(item, principal, store, timestamp);
+      created.push(saved);
+    }
+
+    return {
+      success: true,
+      action: "bulk_create_tasks",
+      data: {
+        tasks: created,
+        count: created.length,
+        createdCount: created.length,
       },
       timestamp,
     };

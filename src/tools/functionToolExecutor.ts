@@ -11,6 +11,12 @@ import {
 } from "../agents/runtime/workerRuntime";
 import type { CliRuntimePolicy, CliWorkerMode } from "../agents/runtime/cliAgentExecutor";
 import type { ToolExecutionInput, ToolExecutor } from "./types";
+import {
+  executeBrowserQaProbe,
+  executeDeliveryPlanReader,
+  executeEmployerRequirementsExtractor,
+  executeSpecKitWorkspaceInspector,
+} from "./deliverySystemTools";
 
 /**
  * Function-category executor. The default behavior is a local data-only echo.
@@ -30,6 +36,18 @@ export class FunctionToolExecutor implements ToolExecutor {
     }
     if (kind === "repo-checks") {
       return runRepoChecks(tool.configuration, signal, this.workerRuntime);
+    }
+    if (kind === "delivery-plan-reader") {
+      return executeDeliveryPlanReader(tool.configuration, input);
+    }
+    if (kind === "employer-requirements-extractor") {
+      return executeEmployerRequirementsExtractor(tool.configuration, input);
+    }
+    if (kind === "speckit-workspace-inspector") {
+      return executeSpecKitWorkspaceInspector(tool.configuration, input);
+    }
+    if (kind === "browser-qa-probe") {
+      return executeBrowserQaProbe(tool.configuration, input, signal);
     }
     if (kind === "pisa-normalize-intake") return normalizePisaIntake(tool.configuration, input);
     if (kind === "pisa-package-evidence") return packagePisaEvidence(tool.configuration, input);

@@ -30,8 +30,10 @@ import {
   GAP_ENGINEER_PERSONA_ID,
 } from "../../agents/personas/qaVerifier";
 
-dotenv.config({ path: path.resolve(".env") });
-dotenv.config({ path: path.resolve("apps/server/.env") });
+if (process.env.NODE_ENV !== "test" && !process.env.JEST_WORKER_ID) {
+  dotenv.config({ path: path.resolve(".env") });
+  dotenv.config({ path: path.resolve("apps/server/.env") });
+}
 
 export const SEED_TENANT_ID = "org-building-gap";
 export const SEED_TENANT_SLUG = "building-gap";
@@ -84,7 +86,7 @@ export const seedSpecialistAgents: AgentRecord[] = [
       type: "cli",
       provider: "codex",
       executable: "codex",
-      args: ["--sandbox", "workspace-read"],
+      args: ["--sandbox", "read-only"],
     },
     systemPrompt: `You are the Spec & Code Gap Auditor. Compare atomic specs against the sandbox repository (${SEED_SANDBOX_ROOT}). Compute completeness score 0-100%, check acceptance criteria, and return structured SpecAuditResultPayload findings.`,
     tools: [],
@@ -111,7 +113,7 @@ export const seedSpecialistAgents: AgentRecord[] = [
       type: "cli",
       provider: "codex",
       executable: "codex",
-      args: ["--sandbox", "workspace-read"],
+      args: ["--sandbox", "read-only"],
     },
     systemPrompt: "Audit sandbox code against atomic specs.",
     tools: [],
@@ -138,7 +140,7 @@ export const seedSpecialistAgents: AgentRecord[] = [
       type: "cli",
       provider: "codex",
       executable: "codex",
-      args: ["--sandbox", "workspace-read"],
+      args: ["--sandbox", "read-only"],
     },
     systemPrompt: `You are the Gap Report Consolidator. Aggregate individual spec audit findings across all queued tasks into a ConsolidatedGapReport with totalUserStories, auditedCount, averageCompletenessScore, criticalGapsCount, and remediation plan summary.`,
     tools: [],
@@ -164,7 +166,7 @@ export const seedSpecialistAgents: AgentRecord[] = [
       type: "cli",
       provider: "codex",
       executable: "codex",
-      args: ["--sandbox", "workspace-read"],
+      args: ["--sandbox", "read-only"],
     },
     systemPrompt: "Synthesize gap audits.",
     tools: [],
@@ -1034,8 +1036,11 @@ export async function seedBuildingGapOrg(options?: {
 
 if (require.main === module) {
   seedBuildingGapOrg()
-    .then((result) => {
+    .then(async (result) => {
       console.log("Successfully seeded building-gap org:", result);
+      const { seedVeloraDeliverySystem } = await import("./veloraDeliverySystemSeed");
+      const veloraResult = await seedVeloraDeliverySystem();
+      console.log("Successfully seeded velora delivery system:", veloraResult);
       process.exit(0);
     })
     .catch((err) => {

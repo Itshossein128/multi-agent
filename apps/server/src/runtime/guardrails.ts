@@ -1,3 +1,4 @@
+import { TOOL_CATEGORIES, type ToolCategory } from "@multi-agent/types";
 import type { WorkflowValidationLimits } from "../compiler/validation";
 
 export interface RuntimeGuardrails extends WorkflowValidationLimits {
@@ -11,6 +12,10 @@ export interface RuntimeGuardrails extends WorkflowValidationLimits {
 
 /** Server-owned bounds. Browser-supplied workflows never control these limits. */
 export function runtimeGuardrailsFromEnvironment(env = process.env): RuntimeGuardrails {
+  const configuredCategories = (env.WORKFLOW_SUPPORTED_TOOL_CATEGORIES ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item): item is ToolCategory => (TOOL_CATEGORIES as readonly string[]).includes(item));
   return {
     maxNodes: bounded(env.WORKFLOW_MAX_NODES, 100, 1, 1_000),
     maxEdges: bounded(env.WORKFLOW_MAX_EDGES, 250, 1, 5_000),
@@ -21,7 +26,7 @@ export function runtimeGuardrailsFromEnvironment(env = process.env): RuntimeGuar
     maxConcurrentBranches: bounded(env.WORKFLOW_MAX_CONCURRENT_BRANCHES, 8, 1, 100),
     maxNodeRetryAttempts: bounded(env.NODE_RETRY_MAX_ATTEMPTS, 3, 1, 10),
     maxNodeRetryBackoffMs: bounded(env.NODE_RETRY_MAX_BACKOFF_MS, 30_000, 0, 300_000),
-    supportedToolCategories: ["function", "http"],
+    supportedToolCategories: configuredCategories.length ? configuredCategories : ["function", "http"],
     allowToolSideEffects: env.TOOL_ALLOW_SIDE_EFFECTS === "true",
   };
 }

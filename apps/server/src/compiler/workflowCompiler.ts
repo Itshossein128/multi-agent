@@ -14,6 +14,7 @@ import {
   resolveWorkflowArchetype,
   validateAgainstSchema,
   type AgentRecord,
+  type AgentSessionState,
   type ApprovalNodeConfig,
   type BranchRouteReason,
   type ConsolidatedGapReport,
@@ -64,6 +65,8 @@ export interface RuntimeState {
   nodeOutcomes?: Record<string, NodeResultEnvelope>;
   nodeResults?: Record<string, unknown>;
   loopIterations?: Record<string, number>;
+  /** Active CLI/API session continuation state keyed by effective sessionKey. */
+  agentSessions?: Record<string, AgentSessionState>;
   /** Sticky once a human approval gate records `approved` for this run. */
   humanApproval?: "approved" | "needs_clarification";
   approvedGateNodeId?: string;
@@ -99,6 +102,10 @@ const State = Annotation.Root({
     default: () => ({}),
   }),
   loopIterations: Annotation<Record<string, number>>({
+    reducer: (current, next) => ({ ...current, ...next }),
+    default: () => ({}),
+  }),
+  agentSessions: Annotation<Record<string, AgentSessionState>>({
     reducer: (current, next) => ({ ...current, ...next }),
     default: () => ({}),
   }),
@@ -701,9 +708,21 @@ export function compileWorkflow(
 
             let shortTermHistories: ShortTermHistories = {};
             let workingMemoryCandidates: unknown[] = [];
+            let updatedSessionState: AgentSessionState | undefined;
             let agentFailed = false;
             let agentError: string | undefined;
             let value: unknown;
+            const agentNodeConfig = node.config as import("@multi-agent/types").AgentNodeConfig;
+            const sessionMode = agentNodeConfig.sessionMode;
+            const effectiveSessionKey =
+              sessionMode === "shared"
+                ? agentNodeConfig.sessionKey?.trim()
+                : sessionMode === "node"
+                  ? node.id
+                  : undefined;
+            const priorSession = effectiveSessionKey
+              ? state.agentSessions?.[effectiveSessionKey]
+              : undefined;
             const pendingHuman = options.pendingHuman?.nodeId === node.id ? options.pendingHuman : undefined;
             if (pendingHuman) {
               // LangGraph re-enters the node after resume. Replaying the provider
@@ -745,11 +764,19 @@ export function compileWorkflow(
               });
               options.pendingHuman = undefined;
             } else {
-              const agentNodeConfig = node.config as import("@multi-agent/types").AgentNodeConfig;
               const stepTaskInstruction =
                 typeof agentNodeConfig.taskInstruction === "string" && agentNodeConfig.taskInstruction.trim()
                   ? agentNodeConfig.taskInstruction.trim()
                   : undefined;
+              if (effectiveSessionKey && priorSession) {
+                emit("log", {
+                  kind: "agent.session_resumed",
+                  sessionKey: effectiveSessionKey,
+                  sessionId: priorSession.sessionId,
+                  turnCount: priorSession.turnCount + 1,
+                  agentId: agent.id,
+                });
+              }
               value = options.agentRunner
                 ? await options.agentRunner(agent, executionState, { runId, nodeId: node.id, signal })
                 : await runAgentThroughRuntime(agent, executionState, {
@@ -762,6 +789,7 @@ export function compileWorkflow(
                   credentialPrincipal: options.credentialPrincipal,
                   onShortTermUpdate: update => { shortTermHistories = mergeHistories(shortTermHistories, update); },
                   onWorkingMemoryUpdate: updates => { workingMemoryCandidates = updates; },
+                  onSessionUpdate: session => { updatedSessionState = session; },
                   signal,
                   onError: (err) => { agentFailed = true; agentError = err; },
                   toolRuntime,
@@ -771,6 +799,10 @@ export function compileWorkflow(
                   taskInstruction: stepTaskInstruction,
                   modelSettingsOverride: agentNodeConfig.modelSettingsOverride,
                   activeTools: agentNodeConfig.activeTools,
+                  sessionMode,
+                  sessionKey: effectiveSessionKey,
+                  resumePromptMode: agentNodeConfig.resumePromptMode,
+                  resumeSession: priorSession,
                 });
             }
 
@@ -875,11 +907,26 @@ export function compileWorkflow(
               emit("log", { kind: "working_memory.updated", agentId: agent.id, ...workingMemoryWrite.diagnostics });
             }
             const handoffs = { [node.id]: handoff };
+            if (effectiveSessionKey && updatedSessionState) {
+              emit("state.updated", {
+                agentSession: {
+                  sessionKey: effectiveSessionKey,
+                  sessionId: updatedSessionState.sessionId,
+                  turnCount: updatedSessionState.turnCount,
+                  resumed: Boolean(priorSession),
+                  agentId: agent.id,
+                  provider: updatedSessionState.provider,
+                },
+              });
+            }
             result = {
               lastValue: agentValue,
               shortTermHistories,
               handoffs,
               workingMemory: workingMemoryWrite.entries,
+              ...(effectiveSessionKey && updatedSessionState
+                ? { agentSessions: { [effectiveSessionKey]: updatedSessionState } }
+                : {}),
             };
           }
           if (branchSignal?.aborted && !options.signal?.aborted) {
@@ -1074,6 +1121,15 @@ function valueForNode(node: WorkflowNode, state: RuntimeState, definition: Workf
   // workflows where gate nodes also point to the output, while ordinary output
   // nodes retain join semantics for parallel fan-in.
   if (node.type === "output" && (node.config as { inputMode?: string }).inputMode === "last_value") return state.lastValue;
+  if (node.type === "agent") {
+    const agentCfg = node.config as import("@multi-agent/types").AgentNodeConfig;
+    if (
+      agentCfg.inputMode === "last_value" ||
+      (agentCfg.inputMode === undefined && (agentCfg.sessionMode === "node" || agentCfg.sessionMode === "shared"))
+    ) {
+      return state.lastValue;
+    }
+  }
   const incoming = incomingEdges.map((edge) => edge.source);
   if (incoming.length < 2 && node.type !== "parallel_join") return state.lastValue;
   const results = state.nodeResults ?? {};
@@ -1198,6 +1254,7 @@ async function runAgentThroughRuntime(
     credentialPrincipal?: TrustedCredentialPrincipal;
     onShortTermUpdate: (update: ShortTermHistories) => void;
     onWorkingMemoryUpdate?: (updates: unknown[]) => void;
+    onSessionUpdate?: (session: AgentSessionState) => void;
     onAgentEvent?: (event: AgentExecutionEvent) => void;
     onError?: (error: string) => void;
     toolRuntime?: Pick<ToolRuntime, "execute">;
@@ -1207,6 +1264,10 @@ async function runAgentThroughRuntime(
     taskInstruction?: string;
     modelSettingsOverride?: import("@multi-agent/types").AgentModelSettings;
     activeTools?: string[];
+    sessionMode?: import("@multi-agent/types").AgentSessionMode;
+    sessionKey?: string;
+    resumePromptMode?: import("@multi-agent/types").AgentResumePromptMode;
+    resumeSession?: AgentSessionState;
   }
 ): Promise<unknown> {
   let lastContent: unknown;
@@ -1222,6 +1283,7 @@ async function runAgentThroughRuntime(
     shortTermHistories: state.shortTermHistories ?? {},
     onShortTermUpdate: meta.onShortTermUpdate,
     onWorkingMemoryUpdate: meta.onWorkingMemoryUpdate,
+    onSessionUpdate: meta.onSessionUpdate,
     onBackgroundEvent: meta.onAgentEvent,
     context: {
       memory: state.memory,
@@ -1229,6 +1291,7 @@ async function runAgentThroughRuntime(
       previousOutput: state.lastValue,
       workflowInput: state.input,
       nodeResults: state.nodeResults ?? {},
+      agentSessions: state.agentSessions ?? {},
     },
     // Preserve the immutable workflow input as first-class context. Node
     // handoffs intentionally use lastValue, but that value may be replaced by
@@ -1246,6 +1309,10 @@ async function runAgentThroughRuntime(
     taskInstruction: meta.taskInstruction,
     modelSettingsOverride: meta.modelSettingsOverride,
     activeTools: meta.activeTools,
+    sessionMode: meta.sessionMode,
+    sessionKey: meta.sessionKey,
+    resumePromptMode: meta.resumePromptMode,
+    resumeSession: meta.resumeSession,
   })) {
     meta.onAgentEvent?.(event);
     if (event.type === "agent.completed" || event.type === "agent.output") {

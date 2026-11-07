@@ -5,10 +5,14 @@
  * Each form owns exactly one node type's config editing.
  */
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import {
   AgentNodeConfig,
+  AgentNodeInputMode,
+  AgentResumePromptMode,
+  AgentSessionMode,
   ApprovalNodeConfig,
   ConditionNodeConfig,
   InputNodeConfig,
@@ -61,6 +65,13 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
       : {};
   const override = config.modelSettingsOverride ?? {};
   const toolsMode = activeToolsMode(config);
+  const [sessionKeyBlurred, setSessionKeyBlurred] = useState(false);
+  const sessionMode: AgentSessionMode = config.sessionMode ?? "stateless";
+  const sessionKeyMissing =
+    sessionMode === "shared" &&
+    sessionKeyBlurred &&
+    (!config.sessionKey || config.sessionKey.trim().length === 0);
+  const fieldIdPrefix = `agent-node-${node.id}`;
 
   const setModelOverride = (key: keyof AgentModelSettings, value: number | undefined) => {
     const next: Partial<AgentModelSettings> = { ...override };
@@ -288,6 +299,140 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
               className={inputClass}
             />
           </Field>
+
+          <fieldset
+            data-testid="node-session-continuation-fieldset"
+            className="space-y-2.5 rounded-lg border border-zinc-800/80 bg-zinc-950/40 p-2.5"
+          >
+            <legend className={cn(labelClass, "px-1")}>Session &amp; Loop Continuation</legend>
+
+            <div className="space-y-1">
+              <label htmlFor={`${fieldIdPrefix}-session-mode`} className={labelClass}>
+                Session Continuation Mode
+              </label>
+              <select
+                id={`${fieldIdPrefix}-session-mode`}
+                name="sessionMode"
+                data-testid="node-session-mode"
+                aria-describedby={`${fieldIdPrefix}-session-mode-help`}
+                value={sessionMode}
+                onChange={(event) => {
+                  const nextMode = event.target.value as AgentSessionMode;
+                  setSessionKeyBlurred(false);
+                  updateNodeConfig(node.id, {
+                    sessionMode: nextMode === "stateless" ? undefined : nextMode,
+                    ...(nextMode !== "shared" ? { sessionKey: undefined } : {}),
+                    ...(nextMode === "stateless" ? { resumePromptMode: undefined } : {}),
+                  });
+                }}
+                className={inputClass}
+              >
+                <option value="stateless">Stateless (fresh turn each visit)</option>
+                <option value="node">Node-persistent (resume same session on loop)</option>
+                <option value="shared">Shared session key (resume across steps/loops)</option>
+              </select>
+              <p id={`${fieldIdPrefix}-session-mode-help`} className="text-[10px] text-zinc-500">
+                Resumes native CLI threads (Codex, Claude Code, Antigravity) or API history across Converge/QA loops.
+              </p>
+            </div>
+
+            {sessionMode === "shared" && (
+              <div className="space-y-1">
+                <label htmlFor={`${fieldIdPrefix}-session-key`} className={labelClass}>
+                  Shared Session Key <span className="text-amber-400">*</span>
+                </label>
+                <input
+                  id={`${fieldIdPrefix}-session-key`}
+                  name="sessionKey"
+                  type="text"
+                  required
+                  data-testid="node-session-key"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  aria-invalid={sessionKeyMissing ? "true" : undefined}
+                  aria-describedby={
+                    sessionKeyMissing
+                      ? `${fieldIdPrefix}-session-key-help ${fieldIdPrefix}-session-key-error`
+                      : `${fieldIdPrefix}-session-key-help`
+                  }
+                  value={config.sessionKey ?? ""}
+                  placeholder="subphase-implementer-session"
+                  onBlur={() => setSessionKeyBlurred(true)}
+                  onChange={(event) => {
+                    if (sessionKeyBlurred && event.target.value.trim().length > 0) {
+                      setSessionKeyBlurred(false);
+                    }
+                    updateNodeConfig(node.id, {
+                      sessionKey: event.target.value || undefined,
+                    });
+                  }}
+                  className={cn(
+                    inputClass,
+                    "font-mono text-[11px]",
+                    sessionKeyMissing && "border-red-500/70 focus:ring-red-500"
+                  )}
+                />
+                <p id={`${fieldIdPrefix}-session-key-help`} className="text-[10px] text-zinc-500">
+                  Steps with the same key continue the exact same CLI session ID.
+                </p>
+                <p
+                  id={`${fieldIdPrefix}-session-key-error`}
+                  aria-live="polite"
+                  className="text-[10px] text-red-400"
+                >
+                  {sessionKeyMissing ? "Shared Session Key is required when mode is Shared." : ""}
+                </p>
+              </div>
+            )}
+
+            {sessionMode !== "stateless" && (
+              <div className="space-y-1">
+                <label htmlFor={`${fieldIdPrefix}-resume-prompt-mode`} className={labelClass}>
+                  Resume Prompt Mode
+                </label>
+                <select
+                  id={`${fieldIdPrefix}-resume-prompt-mode`}
+                  name="resumePromptMode"
+                  data-testid="node-resume-prompt-mode"
+                  value={config.resumePromptMode ?? "delta"}
+                  onChange={(event) => {
+                    const next = event.target.value as AgentResumePromptMode;
+                    updateNodeConfig(node.id, {
+                      resumePromptMode: next === "delta" ? undefined : next,
+                    });
+                  }}
+                  className={inputClass}
+                >
+                  <option value="delta">Delta (only new step guidance &amp; loop feedback)</option>
+                  <option value="full">Full (re-send base system prompt + feedback)</option>
+                </select>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label htmlFor={`${fieldIdPrefix}-input-mode`} className={labelClass}>
+                Incoming Input Mode
+              </label>
+              <select
+                id={`${fieldIdPrefix}-input-mode`}
+                name="inputMode"
+                data-testid="node-input-mode"
+                value={config.inputMode ?? "auto"}
+                onChange={(event) => {
+                  const next = event.target.value as AgentNodeInputMode;
+                  updateNodeConfig(node.id, {
+                    inputMode: next === "auto" ? undefined : next,
+                  });
+                }}
+                className={inputClass}
+              >
+                <option value="auto">Auto (fan-in branches or session last value)</option>
+                <option value="last_value">Latest upstream value only (recommended for loops)</option>
+              </select>
+            </div>
+          </fieldset>
         </>
       )}
     </div>

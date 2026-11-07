@@ -73,7 +73,10 @@ export class AgentRuntime {
       ) as WorkingMemoryEntries,
     };
     const memory = input.agent.memory;
-    const shortEnabled = memory?.enabled && memory.shortTerm?.enabled !== false;
+    const sessionContinuationEnabled = input.sessionMode === "node" || input.sessionMode === "shared";
+    const shortEnabled =
+      (memory?.enabled && memory.shortTerm?.enabled !== false) ||
+      (sessionContinuationEnabled && input.agent.backend.type !== "cli");
     const key = historyKey(input);
     const store = input.memoryStore ?? new Map<string, { input: unknown; output: unknown }[]>();
     const maxEntries = boundedInteger(memory?.maxEntries, 20, 100);
@@ -82,7 +85,9 @@ export class AgentRuntime {
     const prior = input.shortTermHistories ? checkpointEntries : (store.get(key) ?? []).map((entry, i) => ({ ...entry, id: String(i) }));
     const history = shortEnabled && memory?.mode !== "write"
       ? boundHistory({ entries: prior, maxEntries, maxTokens }).entries.map(({ input, output }) => ({ input, output })) : [];
-    if (shortEnabled && memory?.mode !== "write") yield { type: "memory.read", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: history.length, scope: memory?.scope, tier: "short_term" } };
+    if (memory?.enabled && memory.shortTerm?.enabled !== false && memory?.mode !== "write") {
+      yield { type: "memory.read", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: history.length, scope: memory?.scope, tier: "short_term" } };
+    }
     const longTerm = new RuntimeMemory(input, this.memoryDependencies, this.telemetry);    // Caller context cannot smuggle memory into the executor when long-term access is disabled/denied.
     let memoryContext: string | undefined;
     let memoryEvents: unknown[] | undefined;
@@ -149,7 +154,19 @@ export class AgentRuntime {
     let output: unknown;
     let completion: AgentExecutionEvent | undefined;
     let failed = false;
-    for await (const event of executor.execute({ ...input, context: { ...input.context, history, memoryContext }, assembledContext: assembled })) {
+    let executorUpdatedSession = false;
+    const wrappedSessionUpdate = input.onSessionUpdate
+      ? (session: import("@multi-agent/types").AgentSessionState) => {
+          executorUpdatedSession = true;
+          input.onSessionUpdate!(session);
+        }
+      : undefined;
+    for await (const event of executor.execute({
+      ...input,
+      onSessionUpdate: wrappedSessionUpdate,
+      context: { ...input.context, history, memoryContext },
+      assembledContext: assembled,
+    })) {
       input.signal?.throwIfAborted();
       if (event.type === "agent.completed") {
         const eventPayload = event.payload as { content?: unknown } | undefined;
@@ -201,6 +218,25 @@ export class AgentRuntime {
     }
     yield completion;
     input.signal?.throwIfAborted();
+    if (sessionContinuationEnabled && input.onSessionUpdate && !executorUpdatedSession) {
+      const now = nowIso();
+      const effectiveSessionKey = input.sessionMode === "shared"
+        ? (input.sessionKey?.trim() || input.nodeId)
+        : input.nodeId;
+      const providerLabel = "provider" in input.agent.backend && input.agent.backend.provider
+        ? input.agent.backend.provider
+        : input.agent.backend.type;
+      input.onSessionUpdate({
+        sessionId: input.resumeSession?.sessionId ?? `${providerLabel}-session-${input.runId}-${effectiveSessionKey}`,
+        sessionKey: effectiveSessionKey,
+        provider: providerLabel,
+        agentId: input.agent.id,
+        nodeId: input.nodeId,
+        turnCount: (input.resumeSession?.turnCount ?? 0) + 1,
+        createdAt: input.resumeSession?.createdAt ?? now,
+        updatedAt: now,
+      });
+    }
     if (shortEnabled && memory?.mode !== "read") {
       if (input.shortTermHistories) {
         const prefix = `${input.nodeId}:`;
@@ -214,7 +250,9 @@ export class AgentRuntime {
         // Preserve the public Phase 5 Map contract for standalone callers.
         store.set(key, maxEntries ? [...(store.get(key) ?? []), { input: input.input, output }].slice(-maxEntries) : []);
       }
-      yield { type: "memory.write", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: Math.min(prior.length + 1, maxEntries), scope: memory?.scope, tier: "short_term" } };
+      if (memory?.enabled && memory.shortTerm?.enabled !== false) {
+        yield { type: "memory.write", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: Math.min(prior.length + 1, maxEntries), scope: memory?.scope, tier: "short_term" } };
+      }
     }
   }
 }

@@ -9,22 +9,45 @@ import {
 export interface SandboxExecutionBarrierOptions {
   sandboxRoot?: string;
   canonicalSandboxRoot?: string;
+  allowedRoots?: string[];
   forbiddenPaths?: string[];
   forbiddenHostPaths?: string[];
   allowedExecutables?: string[];
   processTimeoutMs?: number;
 }
 
+const DEFAULT_SANDBOX_ALLOWED_EXECUTABLES: readonly string[] = [
+  "git",
+  "pnpm",
+  "npm",
+  "npx",
+  "pytest",
+  "node",
+  "python3",
+  "python",
+  "codex",
+  "claude",
+  "agy",
+  "cursor",
+  "playwright",
+  "google-chrome",
+  "chromium",
+  "bash",
+  "uv",
+];
+
 /**
  * Sandboxed Execution Barrier
  *
  * Confines all agent file inspections, test executions, and code modifications
- * strictly to the designated sandbox workspace (e.g. workspaces/building-management-sandbox).
+ * strictly to the designated sandbox workspace (e.g. workspaces/building-management-sandbox)
+ * or explicitly authorized workspace roots.
  * Blocks write/delete access to host repositories (e.g. /home/hossein/Desktop/projects/building-management)
- * and rejects path traversal escapes (../../) fail-closed.
+ * unless explicitly cleared via SANDBOX_FORBIDDEN_HOST_PATHS=none, and rejects path traversal escapes (../../) fail-closed.
  */
 export class SandboxExecutionBarrier {
   readonly canonicalSandboxRoot: string;
+  readonly allowedRoots: readonly string[];
   readonly forbiddenPaths: readonly string[];
   readonly allowedExecutables: readonly string[];
   readonly processTimeoutMs: number;
@@ -34,19 +57,35 @@ export class SandboxExecutionBarrier {
     forbiddenPaths?: string[],
   ) {
     let rawRoot: string;
+    let rawAllowedRoots: string[] = [];
     let rawForbidden: string[] = [];
-    let executables: string[] = ["git", "pnpm", "npm", "pytest", "node", "python3"];
+    let explicitForbiddenProvided = false;
+    let executables: string[] = [...DEFAULT_SANDBOX_ALLOWED_EXECUTABLES];
     let timeoutMs = 300_000;
 
     if (typeof sandboxRootOrPolicy === "string") {
       rawRoot = sandboxRootOrPolicy;
       if (Array.isArray(forbiddenPaths)) {
         rawForbidden = [...forbiddenPaths];
+        explicitForbiddenProvided = true;
       }
     } else if (sandboxRootOrPolicy && typeof sandboxRootOrPolicy === "object") {
       const opts = sandboxRootOrPolicy as SandboxExecutionBarrierOptions;
-      rawRoot = opts.canonicalSandboxRoot ?? opts.sandboxRoot ?? path.resolve(process.cwd(), "workspaces/building-management-sandbox");
-      rawForbidden = opts.forbiddenHostPaths ?? opts.forbiddenPaths ?? [];
+      rawRoot =
+        opts.canonicalSandboxRoot ??
+        opts.sandboxRoot ??
+        process.env.SANDBOX_CANONICAL_ROOT?.trim() ??
+        path.resolve(process.cwd(), "workspaces/building-management-sandbox");
+      if (Array.isArray(opts.allowedRoots)) {
+        rawAllowedRoots = [...opts.allowedRoots];
+      }
+      if (Array.isArray(opts.forbiddenHostPaths)) {
+        rawForbidden = [...opts.forbiddenHostPaths];
+        explicitForbiddenProvided = true;
+      } else if (Array.isArray(opts.forbiddenPaths)) {
+        rawForbidden = [...opts.forbiddenPaths];
+        explicitForbiddenProvided = true;
+      }
       if (opts.allowedExecutables) {
         executables = [...opts.allowedExecutables];
       }
@@ -54,17 +93,49 @@ export class SandboxExecutionBarrier {
         timeoutMs = opts.processTimeoutMs;
       }
     } else {
-      rawRoot = path.resolve(process.cwd(), "workspaces/building-management-sandbox");
+      rawRoot =
+        process.env.SANDBOX_CANONICAL_ROOT?.trim() ||
+        path.resolve(process.cwd(), "workspaces/building-management-sandbox");
     }
 
-    if (!rawForbidden.length && process.env.SANDBOX_FORBIDDEN_HOST_PATHS) {
-      rawForbidden = process.env.SANDBOX_FORBIDDEN_HOST_PATHS.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!rawAllowedRoots.length && process.env.SANDBOX_ALLOWED_ROOTS) {
+      rawAllowedRoots = process.env.SANDBOX_ALLOWED_ROOTS
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
-    if (!rawForbidden.length) {
+
+    const extraEnvExecutables = [
+      ...(process.env.SANDBOX_ALLOWED_EXECUTABLES ?? "").split(","),
+      ...(process.env.CLI_AGENT_ALLOWED_EXECUTABLES ?? "").split(","),
+    ]
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const exe of extraEnvExecutables) {
+      if (!executables.includes(exe)) {
+        executables.push(exe);
+      }
+    }
+
+    let explicitlyClearedForbidden = false;
+    if (!explicitForbiddenProvided && process.env.SANDBOX_FORBIDDEN_HOST_PATHS) {
+      const envForbiddenRaw = process.env.SANDBOX_FORBIDDEN_HOST_PATHS.trim();
+      if (envForbiddenRaw.toLowerCase() === "none") {
+        rawForbidden = [];
+        explicitlyClearedForbidden = true;
+      } else {
+        rawForbidden = envForbiddenRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+    if (!explicitForbiddenProvided && !explicitlyClearedForbidden && !rawForbidden.length) {
       rawForbidden = ["/home/hossein/Desktop/projects/building-management"];
     }
 
     this.canonicalSandboxRoot = SandboxExecutionBarrier.canonicalizePath(rawRoot);
+    const canonicalExtras = rawAllowedRoots
+      .map((r) => SandboxExecutionBarrier.canonicalizePath(r))
+      .filter((r) => r !== this.canonicalSandboxRoot);
+    this.allowedRoots = Object.freeze([this.canonicalSandboxRoot, ...canonicalExtras]);
     this.forbiddenPaths = Object.freeze(rawForbidden.map((p) => SandboxExecutionBarrier.canonicalizePath(p)));
     this.allowedExecutables = Object.freeze([...executables]);
     this.processTimeoutMs = timeoutMs;
@@ -118,11 +189,11 @@ export class SandboxExecutionBarrier {
       }
     }
 
-    // 2. Write operations must resolve strictly inside sandbox root
+    // 2. Write operations must resolve strictly inside sandbox root or configured allowedRoots
     if (mode === "write") {
-      const isWithinSandbox =
-        canonicalTarget === this.canonicalSandboxRoot ||
-        canonicalTarget.startsWith(this.canonicalSandboxRoot + path.sep);
+      const isWithinSandbox = this.allowedRoots.some(
+        (root) => canonicalTarget === root || canonicalTarget.startsWith(root + path.sep),
+      );
 
       if (!isWithinSandbox) {
         throw new SandboxBoundaryViolationError(targetPath, this.canonicalSandboxRoot);

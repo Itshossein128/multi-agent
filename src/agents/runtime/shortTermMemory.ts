@@ -5,6 +5,12 @@ export interface ShortTermHistory { entries: HistoryEntry[]; maxEntries: number;
 export type ShortTermHistories = Record<string, ShortTermHistory>;
 
 export function historyKey(input: AgentExecutionInput): string {
+  if (input.sessionMode === "shared" && input.sessionKey?.trim()) {
+    return JSON.stringify([input.runId, "shared-session", input.sessionKey.trim()]);
+  }
+  if (input.sessionMode === "node") {
+    return JSON.stringify([input.runId, input.agent.id, input.nodeId]);
+  }
   return JSON.stringify([input.runId, input.agent.id, input.agent.memory?.scope === "node" ? input.nodeId : "agent"]);
 }
 

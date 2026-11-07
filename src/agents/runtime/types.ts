@@ -1,4 +1,12 @@
-import type { AgentExecutionMode, AgentModelSettings, AgentRecord, ToolRecord } from "@multi-agent/types";
+import type {
+  AgentExecutionMode,
+  AgentModelSettings,
+  AgentRecord,
+  AgentResumePromptMode,
+  AgentSessionMode,
+  AgentSessionState,
+  ToolRecord,
+} from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../memory/contracts";
 import type { ShortTermHistories } from "./shortTermMemory";
 import type { TrustedCredentialPrincipal } from "./workerCredentials";
@@ -95,6 +103,16 @@ export interface AgentExecutionInput {
    * Omitted means inherit — empty `resolvedTools` with assigned agent tools then fails closed in ReAct.
    */
   activeTools?: string[];
+  /** Session continuation mode ("stateless" | "node" | "shared"). */
+  sessionMode?: AgentSessionMode;
+  /** Shared session key across workflow nodes (when sessionMode === "shared"). */
+  sessionKey?: string;
+  /** Prompt composition strategy when resuming an existing CLI session. */
+  resumePromptMode?: AgentResumePromptMode;
+  /** Prior session state from workflow checkpoint when continuing an active session. */
+  resumeSession?: AgentSessionState;
+  /** Callback invoked when a provider/CLI session starts or continues. */
+  onSessionUpdate?: (session: AgentSessionState) => void;
 }
 
 /**

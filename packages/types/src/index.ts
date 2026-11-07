@@ -111,6 +111,40 @@ export interface AgentExecutionPolicy {
 /** Agent node / record execution loop mode (012 ReAct). */
 export type AgentExecutionMode = "single_turn" | "react";
 
+/**
+ * Session continuation mode across workflow loop iterations and shared nodes:
+ * - "stateless": fresh session on every invocation (default)
+ * - "node": continue the same CLI/agent session across re-entries of this node
+ * - "shared": continue a named CLI/agent session shared by `sessionKey` across nodes
+ */
+export type AgentSessionMode = "stateless" | "node" | "shared";
+
+/**
+ * Controls prompt composition when resuming an existing CLI session:
+ * - "delta": send only step instructions + latest feedback/input (default)
+ * - "full": send full assembled context including system prompt and history
+ */
+export type AgentResumePromptMode = "delta" | "full";
+
+/**
+ * Controls how incoming values are resolved on an agent node with multiple incoming edges:
+ * - "auto": join completed predecessors unless fewer than two have executed (default)
+ * - "last_value": always pass the immediately preceding active carrier (`state.lastValue`)
+ */
+export type AgentNodeInputMode = "auto" | "last_value";
+
+/** Durable run-scoped session state for CLI/API session continuation across loops. */
+export interface AgentSessionState {
+  sessionId: string;
+  sessionKey: string;
+  provider: string;
+  agentId: string;
+  nodeId: string;
+  turnCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AgentRecord {
   id: string;
   name: string;
@@ -298,6 +332,14 @@ export interface AgentNodeConfig {
    * nonempty ⇒ subset of allowed∩usable (else invalid)
    */
   activeTools?: string[];
+  /** Session continuation mode across loops ("stateless" | "node" | "shared"). */
+  sessionMode?: AgentSessionMode;
+  /** Shared session key (required when sessionMode === "shared"). */
+  sessionKey?: string;
+  /** Prompt composition when resuming an active CLI session ("delta" | "full"). */
+  resumePromptMode?: AgentResumePromptMode;
+  /** Select incoming value resolution when multiple edges target this agent node. */
+  inputMode?: AgentNodeInputMode;
 }
 
 export interface ToolNodeConfig {
@@ -639,6 +681,20 @@ export function createNode(
           ? { modelSettingsOverride: { ...agentOpts.modelSettingsOverride } }
           : {}),
         ...(agentOpts.activeTools !== undefined ? { activeTools: [...agentOpts.activeTools] } : {}),
+        ...(agentOpts.sessionMode === "stateless" ||
+        agentOpts.sessionMode === "node" ||
+        agentOpts.sessionMode === "shared"
+          ? { sessionMode: agentOpts.sessionMode }
+          : {}),
+        ...(typeof agentOpts.sessionKey === "string" && agentOpts.sessionKey.trim()
+          ? { sessionKey: agentOpts.sessionKey.trim() }
+          : {}),
+        ...(agentOpts.resumePromptMode === "delta" || agentOpts.resumePromptMode === "full"
+          ? { resumePromptMode: agentOpts.resumePromptMode }
+          : {}),
+        ...(agentOpts.inputMode === "auto" || agentOpts.inputMode === "last_value"
+          ? { inputMode: agentOpts.inputMode }
+          : {}),
       };
       break;
     }
@@ -982,6 +1038,10 @@ export {
   INVALID_AGENT_NODE_ACTIVE_TOOLS,
   UNSUPPORTED_STEP_ACTIVE_TOOLS,
   INCOMPATIBLE_STEP_CONFIG_FOR_AGENT,
+  INVALID_AGENT_NODE_SESSION_MODE,
+  INVALID_AGENT_NODE_SESSION_KEY,
+  INVALID_AGENT_NODE_RESUME_PROMPT_MODE,
+  INVALID_AGENT_NODE_INPUT_MODE,
 } from "./agentStepConfig";
 export type {
   StepConfigIssue,
