@@ -21,9 +21,10 @@
 5. ساخت Agent و طراحی Workflow
 6. مدیریت Task (پیوند به یک workspace و یک یا چند project) و مشاهده‌ی Run
 7. Tools، Approvals و Memory
-8. Persistence، Worker و Credential Broker
-9. فهرست/داشبورد Project و Workspace در Studio (جدا از package import/export در `/studio/workspace`)
-10. Deployment، Troubleshooting و Limitations
+8. هدف‌های سازمانی و تفویض، Routines زمان‌بندی‌شده، Webhooks ورودی و سقف بودجه (Budgets)
+9. Persistence، Worker و Credential Broker
+10. فهرست/داشبورد Project و Workspace در Studio (جدا از package import/export در `/studio/workspace`)
+11. Deployment، Troubleshooting و Limitations
 
 این سایت نقش tutorial و navigation را دارد؛ فایل‌های این پوشه همچنان منبع جزئیات معماری، verification و محدودیت‌های فنی هستند.
 

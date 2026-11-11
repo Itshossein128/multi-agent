@@ -1,23 +1,176 @@
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, LockKeyhole, Network, Terminal } from "lucide-react";
+import { docPages } from "@/lib/docs";
+import { faGroups, faLabels } from "@/lib/faDocs";
 
-const cards = [
-  ["getting-started", "شروع کار", "نصب، اجرای محیط محلی و ساخت حساب."],
-  ["running-the-platform", "راه‌های اجرا", "Studio، CLI، broker، worker و build تولیدی."],
-  ["first-workflow", "اولین Workflow", "از Agent تا Task و نتیجه‌ی نهایی."],
-  ["concepts", "مفاهیم اصلی", "رابطه‌ی Organization، Agent، Workflow و Run."],
-  ["agents", "ساخت Agent", "تنظیم backend و استفاده‌ی مجدد از Agent."],
-  ["workflows", "طراحی Workflow", "ساخت graph، شرط‌ها و approvalها."],
+const learningSteps = [
+  {
+    number: "۰۱",
+    title: "نصب و راه‌اندازی سازمان",
+    text: "اجرای PostgreSQL، اعمال Migrationها، ساخت حساب کاربری و تکمیل ویزارد سازمان.",
+    slug: "getting-started",
+  },
+  {
+    number: "۰۲",
+    title: "پروژه‌ها و Workspaceها",
+    text: "ساخت پروژه، اتصال مخازن Git و تعریف Workspaceهای ایزوله با Branch اختصاصی.",
+    slug: "projects-and-workspaces",
+  },
+  {
+    number: "۰۳",
+    title: "ساخت Agent و Tool",
+    text: "تعریف عامل‌های API، CLI یا Local، تنظیم سیاست‌های امنیتی، ضربان خودکار و تست زنده.",
+    slug: "agents",
+  },
+  {
+    number: "۰۴",
+    title: "طراحی گراف Workflow",
+    text: "کار با ۱۰ نوع گره و ۴ الگوی معماری (Linear، Supervisor، Evaluator-Optimizer و Swarm).",
+    slug: "workflows",
+  },
+  {
+    number: "۰۵",
+    title: "مدیریت Task، تایید و Run",
+    text: "اجرای کار در بورد کانبان، پاسخ به درگاه تایید انسانی و بررسی تایم‌لاین زنده‌ی رویدادها.",
+    slug: "tasks",
+  },
+  {
+    number: "۰۶",
+    title: "اتوماسیون، اهداف و بودجه",
+    text: "تفویض اهداف سازمانی، زمان‌بندی Routines، وب‌هوک‌های HMAC و سقف بودجه‌ی دلاری.",
+    slug: "goals-and-delegation",
+  },
 ];
 
 export default function PersianHomePage() {
-  return <>
-    <section className="hero">
-      <div className="hero-copy"><span className="status-pill"><span className="pulse" /> مستندات فارسی · نسخه‌ی جاری</span><h1>Workflowهای agentic را<br /><span>با اطمینان بسازید.</span></h1><p>راهنمای کامل Multi-Agent Studio برای نصب، ساخت Agent و Workflow، اجرای Task، مشاهده‌ی نتیجه و آماده‌سازی deployment.</p><div className="hero-actions"><Link className="button primary" href="/fa/docs/getting-started">شروع آموزش <ArrowLeft size={16} /></Link><Link className="button secondary" href="/fa/docs/architecture">مشاهده‌ی معماری</Link></div></div>
-      <div className="hero-visual" aria-label="پیش‌نمایش معماری پلتفرم"><div className="visual-grid" /><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="core-node"><Network size={26} /><span>AgentRuntime</span></div><div className="floating-node node-a"><Terminal size={16} /><span>Workflow</span></div><div className="floating-node node-b"><LockKeyhole size={16} /><span>Policy</span></div><div className="floating-node node-c"><CheckCircle2 size={16} /><span>RunStore</span></div></div>
-    </section>
-    <section className="signal-row"><div><strong>Self-hosted</strong><span>زیرساخت و داده در اختیار شما</span></div><div><strong>قراردادهای Typed</strong><span>Nodeها و نتیجه‌های قابل پیش‌بینی</span></div><div><strong>Fail-closed</strong><span>امنیت در تمام مرزها</span></div></section>
-    <section className="content-section"><div className="section-heading"><div><span className="eyebrow">نقشه‌ی مستندات</span><h2>مسیر خود را در پلتفرم پیدا کنید.</h2></div><Link href="/fa/docs/concepts" className="text-link">مفاهیم اصلی <ArrowLeft size={15} /></Link></div><div className="doc-grid">{cards.map(([slug, title, description], index) => <Link className="doc-card" href={`/fa/docs/${slug}`} key={slug}><span className="card-index">0{index + 1}</span><div><h3>{title}</h3><p>{description}</p></div><ArrowLeft size={17} className="card-arrow" /></Link>)}</div></section>
-    <section className="content-section tutorial-section"><div className="section-heading"><div><span className="eyebrow">مسیر یادگیری</span><h2>از نصب تا یک Run قابل اعتماد.</h2></div></div><div className="tutorial-steps">{[["۰۱", "نصب", "محیط محلی را اجرا و حساب بسازید.", "getting-started"], ["۰۲", "راه‌های اجرا", "مسیر Studio، CLI، broker یا worker را انتخاب کنید.", "running-the-platform"], ["۰۳", "ساخت", "Agent و graph خود را بسازید.", "first-workflow"], ["۰۴", "عملیات", "Task را اجرا و timeline را بخوانید.", "runs"]].map(([number, title, text, slug]) => <Link className="tutorial-step" href={`/fa/docs/${slug}`} key={number}><span>{number}</span><div><h3>{title}</h3><p>{text}</p></div><ArrowLeft size={16} /></Link>)}</div></section>
-  </>;
+  return (
+    <>
+      <section className="hero">
+        <div className="hero-copy">
+          <span className="status-pill">
+            <span className="pulse" /> آموزش جامع کاربری · ۲۴ راهنمای گام‌به‌گام
+          </span>
+          <h1>
+            تسلط کامل بر Multi-Agent Studio
+            <br />
+            <span>از نصب اولیه تا عملیات Production.</span>
+          </h1>
+          <p>
+            راهنمای آموزشی کامل و گام‌به‌گام برای کار با تمامی بخش‌های Multi-Agent Studio:
+            سازمان‌ها، پروژه‌ها، Workspaceها، ساخت Agent و Tool، طراحی گراف‌های تصویری، بورد کانبان
+            Taskها، تایید انسانی، حافظه‌ی بلندمدت، اهداف سازمانی، زمان‌بندی‌ها، وب‌هوک‌ها و کنترل بودجه.
+          </p>
+          <div className="hero-actions">
+            <Link className="button primary" href="/fa/docs/getting-started">
+              شروع آموزش گام‌به‌گام <ArrowLeft size={16} />
+            </Link>
+            <Link className="button secondary" href="/fa/docs/first-workflow">
+              اولین Workflow در ۱۰ دقیقه
+            </Link>
+          </div>
+        </div>
+        <div className="hero-visual" aria-label="پیش‌نمایش معماری پلتفرم">
+          <div className="visual-grid" />
+          <div className="orbit orbit-one" />
+          <div className="orbit orbit-two" />
+          <div className="core-node">
+            <Network size={26} />
+            <span>AgentRuntime</span>
+          </div>
+          <div className="floating-node node-a">
+            <Terminal size={16} />
+            <span>Workflow</span>
+          </div>
+          <div className="floating-node node-b">
+            <LockKeyhole size={16} />
+            <span>Policy</span>
+          </div>
+          <div className="floating-node node-c">
+            <CheckCircle2 size={16} />
+            <span>RunStore</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="signal-row">
+        <div>
+          <strong>وب Studio (:3060) و سرور (:4000)</strong>
+          <span>رابط کنترلی Next.js به همراه موتور اجرایی Hono و LangGraph</span>
+        </div>
+        <div>
+          <strong>۴ الگوی معماری و ۱۰ نوع گره</strong>
+          <span>پشتیبانی از Linear DAG، Supervisor، Evaluator-Optimizer و Swarm</span>
+        </div>
+        <div>
+          <strong>حاکمیت و امنیت Fail-Closed</strong>
+          <span>ایزولاسیون RLS، سرویس Credential Broker، کانتینر ورکر و سقف بودجه</span>
+        </div>
+      </section>
+
+      <section className="content-section tutorial-section">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">مسیر یادگیری گام‌به‌گام</span>
+            <h2>در ۶ مرحله از نصب اولیه به اجرای خودکار و سازمانی برسید.</h2>
+          </div>
+          <Link href="/fa/docs/first-workflow" className="text-link">
+            آموزش عملی اولین گراف <ArrowLeft size={15} />
+          </Link>
+        </div>
+        <div className="tutorial-steps tutorial-steps-six">
+          {learningSteps.map((step) => (
+            <Link className="tutorial-step" href={`/fa/docs/${step.slug}`} key={step.number}>
+              <span>{step.number}</span>
+              <div>
+                <h3>{step.title}</h3>
+                <p>{step.text}</p>
+              </div>
+              <ArrowLeft size={16} />
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="content-section">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">فهرست کامل مستندات و آموزش‌ها</span>
+            <h2>تمامی صفحات، قابلیت‌ها و مرزهای عملیاتی پلتفرم در یک نگاه.</h2>
+          </div>
+          <Link href="/fa/docs/architecture" className="text-link">
+            مشاهده‌ی معماری <ArrowLeft size={15} />
+          </Link>
+        </div>
+
+        <div className="category-stack">
+          {faGroups.map((group) => {
+            const pages = docPages.filter((page) => faLabels[page.slug]?.group === group);
+            return (
+              <div key={group} className="category-block">
+                <h3 className="category-heading">{group}</h3>
+                <div className="doc-grid">
+                  {pages.map((page) => {
+                    const globalIndex = docPages.findIndex((item) => item.slug === page.slug) + 1;
+                    const label = faLabels[page.slug];
+                    return (
+                      <Link className="doc-card" href={`/fa/docs/${page.slug}`} key={page.slug}>
+                        <span className="card-index">
+                          {globalIndex < 10 ? `0${globalIndex}` : globalIndex}
+                        </span>
+                        <div>
+                          <h3>{label?.title ?? page.title}</h3>
+                          <p>{label?.description ?? page.description}</p>
+                        </div>
+                        <ArrowLeft size={17} className="card-arrow" />
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </>
+  );
 }
