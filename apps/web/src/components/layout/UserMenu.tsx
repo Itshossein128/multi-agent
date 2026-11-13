@@ -19,10 +19,12 @@ export function UserMenu() {
       variant="ghost"
       size="sm"
       onClick={handleSignOut}
-      className="h-8 gap-1.5 text-xs text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800"
+      aria-label="Sign Out"
+      title="Sign Out"
+      className="h-8 gap-1.5 px-2 sm:px-2.5 text-xs text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
     >
-      <LogOut className="h-3.5 w-3.5" />
-      Sign Out
+      <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span className="hidden sm:inline">Sign Out</span>
     </Button>
   );
 }

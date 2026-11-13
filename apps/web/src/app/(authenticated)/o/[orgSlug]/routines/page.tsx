@@ -336,7 +336,7 @@ export default function RoutinesPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
               <CalendarClock className="h-5 w-5" />
             </div>
             <div>
@@ -350,7 +350,7 @@ export default function RoutinesPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
           <button
             type="button"
             onClick={toggleLocale}

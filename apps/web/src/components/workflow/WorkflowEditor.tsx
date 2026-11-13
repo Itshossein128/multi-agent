@@ -19,6 +19,15 @@ import { LiveApprovalBanner } from "./live/LiveApprovalBanner";
 import { LiveRunTray } from "./live/LiveRunTray";
 import { NodeExecutionInspector } from "./live/NodeExecutionInspector";
 import { WorkflowSwitcher } from "./WorkflowSwitcher";
+import { cn } from "@/lib/utils";
+
+type MobileEditorPanel = "canvas" | "palette" | "properties";
+
+const MOBILE_PANELS: Array<{ id: MobileEditorPanel; label: string }> = [
+  { id: "canvas", label: "Canvas" },
+  { id: "palette", label: "Nodes" },
+  { id: "properties", label: "Properties" },
+];
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -72,6 +81,7 @@ function WorkflowEditorContent() {
   const requestedWorkflowId = searchParams.get("workflowId") ?? undefined;
   const requestedNodeId = searchParams.get("focusNode");
   const [focusError, setFocusError] = useState<string | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<MobileEditorPanel>("canvas");
   const focused = useRef(false);
   const definition = useWorkflowStore((s) => s.definition);
   const flowHelpers = useWorkflowStore((s) => s.flowHelpers);
@@ -163,14 +173,55 @@ function WorkflowEditorContent() {
 
         {(live || loadState === "ready") && (
           <>
-            <div className="flex min-h-0 flex-1">
-              {!live && <NodePalette />}
-              <main className="relative min-w-0 flex-1">
+            {!live && (
+              <div
+                role="tablist"
+                aria-label="Workflow editor panels"
+                className="flex items-center gap-1 border-b border-zinc-800/80 bg-zinc-950 px-3 py-1.5 lg:hidden"
+              >
+                {MOBILE_PANELS.map((panel) => {
+                  const selected = mobilePanel === panel.id;
+                  return (
+                    <button
+                      key={panel.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      onClick={() => setMobilePanel(panel.id)}
+                      className={cn(
+                        "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer",
+                        selected
+                          ? "bg-indigo-600 text-white"
+                          : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
+                      )}
+                    >
+                      {panel.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+              {!live && (
+                <NodePalette
+                  className={mobilePanel === "palette" ? "flex flex-1 lg:flex-initial" : "hidden lg:flex"}
+                />
+              )}
+              <div
+                className={cn(
+                  "relative min-h-[55dvh] min-w-0 flex-1 lg:min-h-0",
+                  !live && mobilePanel !== "canvas" ? "hidden lg:block" : "block",
+                )}
+              >
                 <FlowCanvas live={live} liveDefinition={liveDefinition} onInspectNode={selectInspectNode} />
                 {live && session.attachedRunId && <LiveApprovalBanner key={session.attachedRunId} runId={session.attachedRunId} onInspectNode={selectInspectNode} onAttachRun={session.enterLive} />}
                 {live && session.selectedInspectNodeId && <NodeExecutionInspector nodeId={session.selectedInspectNodeId} node={(liveDefinition ?? definition).nodes.find(node => node.id === session.selectedInspectNodeId)} onClose={closeInspector} />}
-              </main>
-              {!live && <PropertiesPanel />}
+              </div>
+              {!live && (
+                <PropertiesPanel
+                  className={mobilePanel === "properties" ? "block flex-1 lg:flex-initial" : "hidden lg:block"}
+                />
+              )}
             </div>
             {live && session.attachedRunId ? <LiveRunTray runId={session.attachedRunId} definition={liveDefinition ?? definition} onRetarget={session.enterLive} /> : <StatusBar />}
           </>

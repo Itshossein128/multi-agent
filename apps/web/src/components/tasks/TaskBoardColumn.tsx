@@ -97,22 +97,23 @@ export function TaskBoardColumn({
       {/* Column header */}
       <div className="flex items-center justify-between gap-2 px-3.5 pt-3.5 pb-2 border-b border-zinc-800/40">
         <div className="flex items-center gap-2 min-w-0">
-          <Icon className={cn("h-4 w-4 flex-shrink-0", config.accent)} />
+          <Icon className={cn("h-4 w-4 flex-shrink-0", config.accent)} aria-hidden="true" />
           <span className={cn("text-xs font-semibold uppercase tracking-wider", config.accent)}>
             {config.label}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className={cn("h-1.5 w-1.5 rounded-full", config.dot)} />
+            <span className={cn("h-1.5 w-1.5 rounded-full", config.dot)} aria-hidden="true" />
             <span className="text-xs text-zinc-500">{tasks.length}</span>
           </span>
         </div>
         <button
           type="button"
           title={`New task in ${config.label}`}
+          aria-label={`New task in ${config.label}`}
           onClick={() => onAddTask(config.targetStatus)}
-          className="flex h-6 w-6 items-center justify-center rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-colors cursor-pointer"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors cursor-pointer"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 

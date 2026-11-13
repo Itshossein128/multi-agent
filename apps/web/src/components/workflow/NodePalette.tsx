@@ -91,7 +91,7 @@ function PaletteItem({
   );
 }
 
-export function NodePalette() {
+export function NodePalette({ className }: { className?: string }) {
   const orgUrl = useOrgPath();
   const addNode = useWorkflowStore((s) => s.addNode);
   const addAgentAndNode = useWorkflowStore((s) => s.addAgentAndNode);
@@ -120,7 +120,13 @@ export function NodePalette() {
   };
 
   return (
-    <aside className="flex w-56 flex-shrink-0 flex-col gap-4 overflow-y-auto border-r border-zinc-800/80 bg-zinc-950/60 p-3">
+    <aside
+      aria-label="Node palette"
+      className={cn(
+        "flex w-full lg:w-56 flex-shrink-0 flex-col gap-4 overflow-y-auto border-r border-zinc-800/80 bg-zinc-950/60 p-3",
+        className,
+      )}
+    >
       <section className="space-y-1.5">
         <h3 className="px-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
           Node Types

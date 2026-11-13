@@ -16,7 +16,7 @@ export default function DashboardPage() {
   return (
     <>
       {/* Main Content Dashboard */}
-      <main className="flex-1 container mx-auto px-4 lg:px-8 py-6 space-y-6">
+      <div className="flex-1 container mx-auto px-4 lg:px-8 py-6 space-y-6">
         {/* 1. Header Metrics Row */}
         <section>
           <StatCards />
@@ -39,7 +39,7 @@ export default function DashboardPage() {
         <section>
           <CompletedAndCostSection />
         </section>
-      </main>
+      </div>
 
       {/* Footer */}
       <footer className="border-t border-zinc-900 bg-zinc-950/50 py-4 mt-12">

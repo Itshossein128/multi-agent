@@ -5,10 +5,11 @@
  * Panel and form implementations live in ./properties/.
  */
 
+import { cn } from "@/lib/utils";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { EdgeProperties, MultiSelectProperties, NodeProperties, Overview } from "./properties/panels";
 
-export function PropertiesPanel() {
+export function PropertiesPanel({ className }: { className?: string }) {
   const definition = useWorkflowStore((s) => s.definition);
   const selectedNodeIds = useWorkflowStore((s) => s.selectedNodeIds);
   const selectedEdgeIds = useWorkflowStore((s) => s.selectedEdgeIds);
@@ -23,7 +24,13 @@ export function PropertiesPanel() {
       : undefined;
 
   return (
-    <aside className="w-80 flex-shrink-0 overflow-y-auto border-l border-zinc-800/80 bg-zinc-950/60 p-3">
+    <aside
+      aria-label="Workflow properties"
+      className={cn(
+        "w-full lg:w-80 flex-shrink-0 overflow-y-auto border-l border-zinc-800/80 bg-zinc-950/60 p-3",
+        className,
+      )}
+    >
       {selectedNode && <NodeProperties node={selectedNode} />}
       {!selectedNode && selectedEdge && <EdgeProperties edge={selectedEdge} />}
       {!selectedNode && !selectedEdge && selectedNodeIds.length > 1 && (

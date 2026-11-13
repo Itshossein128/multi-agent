@@ -32,9 +32,9 @@ export function StatusBar() {
             : "Ready";
 
   return (
-    <div className="relative flex h-9 flex-shrink-0 items-center justify-between gap-3 border-t border-zinc-800/80 bg-zinc-950/90 px-3 text-[11px]">
+    <div className="relative flex min-h-9 flex-shrink-0 flex-wrap items-center justify-between gap-2 border-t border-zinc-800/80 bg-zinc-950/90 px-3 py-1.5 text-[11px]">
       {/* Validation summary */}
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         {errors.length === 0 && warnings.length === 0 ? (
           <span className="flex items-center gap-1 text-emerald-400">
             <CircleCheck className="h-3.5 w-3.5" />

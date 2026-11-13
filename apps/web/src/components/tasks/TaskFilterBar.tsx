@@ -80,31 +80,34 @@ export function TaskFilterBar({
       <div className="flex flex-wrap items-center gap-2">
         {/* Search input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-initial">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
           <input
             type="text"
+            aria-label="Search tasks"
             value={filters.search}
             onChange={(e) => onFilterChange("search", e.target.value)}
             placeholder="Search tasks..."
-            className="h-8 w-full sm:w-56 rounded-lg border border-zinc-800 bg-zinc-900 pl-8 pr-7 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            className="h-8 w-full sm:w-56 rounded-lg border border-zinc-800 bg-zinc-900 pl-8 pr-8 text-xs text-zinc-100 placeholder-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           />
           {filters.search && (
             <button
               type="button"
               onClick={() => onFilterChange("search", "")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+              className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               title="Clear search"
+              aria-label="Clear search"
             >
-              <X className="h-3 w-3" />
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
         </div>
 
         {/* Workspace select */}
         <select
+          aria-label="Filter by workspace"
           value={filters.workspaceId ?? "all"}
           onChange={(e) => onFilterChange("workspaceId", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.workspaceId && filters.workspaceId !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -122,9 +125,10 @@ export function TaskFilterBar({
 
         {/* Project select */}
         <select
+          aria-label="Filter by project"
           value={filters.projectId ?? "all"}
           onChange={(e) => onFilterChange("projectId", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.projectId && filters.projectId !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -142,9 +146,10 @@ export function TaskFilterBar({
 
         {/* Status select */}
         <select
+          aria-label="Filter by status"
           value={filters.status ?? "all"}
           onChange={(e) => onFilterChange("status", e.target.value as TaskStatus | "all")}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.status && filters.status !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -171,9 +176,10 @@ export function TaskFilterBar({
 
         {/* Priority select */}
         <select
+          aria-label="Filter by priority"
           value={filters.priority}
           onChange={(e) => onFilterChange("priority", e.target.value as TaskPriority | "all")}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.priority !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -190,9 +196,10 @@ export function TaskFilterBar({
 
         {/* Agent select */}
         <select
+          aria-label="Filter by agent"
           value={filters.agent}
           onChange={(e) => onFilterChange("agent", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.agent !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -210,9 +217,10 @@ export function TaskFilterBar({
 
         {/* Workflow select */}
         <select
+          aria-label="Filter by workflow"
           value={filters.workflow}
           onChange={(e) => onFilterChange("workflow", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.workflow !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -230,11 +238,12 @@ export function TaskFilterBar({
 
         {/* Operational state select */}
         <select
+          aria-label="Filter by state"
           value={filters.operationalState ?? "all"}
           onChange={(e) =>
             onFilterChange("operationalState", e.target.value as TaskFilterOperationalState)
           }
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.operationalState && filters.operationalState !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -268,7 +277,7 @@ export function TaskFilterBar({
               onClick={onResetFilters}
               className="h-7 gap-1 px-2 text-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
             >
-              <RotateCcw className="h-3 w-3" />
+              <RotateCcw className="h-3 w-3" aria-hidden="true" />
               Clear all
             </Button>
           )}
@@ -279,7 +288,7 @@ export function TaskFilterBar({
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
           <span className="flex items-center gap-1 text-[11px] font-medium text-zinc-500 mr-1">
-            <SlidersHorizontal className="h-3 w-3" />
+            <SlidersHorizontal className="h-3 w-3" aria-hidden="true" />
             Filters:
           </span>
           {chips.map((chip) => (
@@ -292,10 +301,11 @@ export function TaskFilterBar({
               <button
                 type="button"
                 onClick={() => handleRemoveChip(chip.key)}
-                className="ml-0.5 rounded p-0.5 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 cursor-pointer"
+                className="ml-0.5 flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
                 title={`Remove ${chip.category} filter`}
+                aria-label={`Remove ${chip.category} filter`}
               >
-                <X className="h-2.5 w-2.5" />
+                <X className="h-3 w-3" aria-hidden="true" />
               </button>
             </span>
           ))}
