@@ -1,3 +1,4 @@
+jest.mock("server-only", () => ({}), { virtual: true });
 jest.mock("@/auth", () => ({ auth: jest.fn() }));
 jest.mock("@/lib/db", () => ({ getDbPool: jest.fn() }));
 jest.mock("next/navigation", () => ({ redirect: jest.fn((path: string) => { throw new Error(`REDIRECT:${path}`); }) }), { virtual: true });
@@ -17,4 +18,12 @@ test("stale last organization falls back to first active membership", async () =
 test("zero memberships redirects to creation", async () => {
   query.mockResolvedValue({ rows: [] });
   await expect(Home()).rejects.toThrow("REDIRECT:/onboarding/organization");
+});
+test("signed-out visitors go to login", async () => {
+  (auth as jest.Mock).mockResolvedValueOnce(null);
+  await expect(Home()).rejects.toThrow("REDIRECT:/login");
+});
+test("database failure is not treated as a missing organization", async () => {
+  query.mockRejectedValue(new Error("password authentication failed"));
+  await expect(Home()).rejects.toThrow("password authentication failed");
 });

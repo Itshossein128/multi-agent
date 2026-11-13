@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedPrincipal } from "@/auth";
+import { getAuthenticatedPrincipal, getSessionUserId } from "@/auth";
+import { findActiveOrganization } from "@/lib/activeOrganization";
 import { StudioEntityError, getOrganizationCurrent, patchOrganizationCurrent } from "@/lib/projectsWorkspaces";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const principal = await getAuthenticatedPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = await getSessionUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    return NextResponse.json(await getOrganizationCurrent(principal));
+    const organization = await findActiveOrganization(userId);
+    if (!organization) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(await getOrganizationCurrent({ userId, tenantId: organization.id }));
   } catch (error) {
     if (error instanceof StudioEntityError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });

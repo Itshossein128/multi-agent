@@ -55,6 +55,7 @@ export default function OrganizationOnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     const draft = loadDraft();
@@ -63,15 +64,29 @@ export default function OrganizationOnboardingPage() {
     setDefaultTimezone(draft.defaultTimezone);
     setAllowMemberInvites(draft.allowMemberInvites);
     void (async () => {
+      let leaving = false;
       try {
         const res = await fetch("/api/organizations/current");
+        if (res.status === 401) {
+          leaving = true;
+          router.replace("/login?callbackUrl=%2Fonboarding%2Forganization");
+          return;
+        }
         if (res.ok) {
+          leaving = true;
           const org = (await res.json().catch(() => ({}))) as { slug?: string };
           router.replace(org.slug ? orgPath(org.slug, "/projects") : "/");
           return;
         }
+        if (res.status !== 404) {
+          setUnavailable(true);
+          setError("Unable to verify organization setup.");
+        }
+      } catch {
+        setUnavailable(true);
+        setError("Unable to verify organization setup.");
       } finally {
-        setChecking(false);
+        if (!leaving) setChecking(false);
       }
     })();
   }, [router]);
@@ -125,6 +140,14 @@ export default function OrganizationOnboardingPage() {
     return (
       <div className="container mx-auto max-w-lg px-4 py-16 text-sm text-zinc-400">
         Checking organization setup…
+      </div>
+    );
+  }
+
+  if (unavailable) {
+    return (
+      <div className="container mx-auto max-w-lg px-4 py-16 text-sm text-red-300" role="alert">
+        {error ?? "Unable to verify organization setup."}
       </div>
     );
   }
