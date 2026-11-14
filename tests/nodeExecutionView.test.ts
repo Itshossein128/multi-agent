@@ -1,5 +1,6 @@
-import type { RunEvent } from "@multi-agent/types";
+import type { Run, RunEvent } from "@multi-agent/types";
 import { buildNodeExecutionView, isStatusChangingEvent } from "../apps/web/src/lib/runCanvasProjection";
+import { THINKING_COPY } from "../src/agents/runtime/thinkingText";
 const event = (type: RunEvent["type"], sequence: number, payload: Record<string, unknown> = {}, extra: Partial<RunEvent> = {}): RunEvent => ({ id: `e${sequence}`, runId: "r", nodeId: "n", type, sequence, timestamp: new Date(sequence * 1000).toISOString(), payload, ...extra });
 test("projects exact input, timing, step and attempts from ordered evidence", () => {
  const view = buildNodeExecutionView("n", { events: [event("node.completed", 5), event("node.started", 1, { input: { question: "hello" }, step: 7 }), event("node.retrying", 2), event("node.started", 3)] });
@@ -35,6 +36,92 @@ test("associates explicitly keyed state evidence without attributing another nod
 test("preserves explicit null tool arguments and results", () => {
  const view = buildNodeExecutionView("n", { events: [event("tool.started", 1, { toolCallId: "call", arguments: null }), event("tool.completed", 2, { toolCallId: "call", result: null })] });
  expect(view.toolCalls[0].arguments).toBeNull(); expect(view.toolCalls[0].result).toBeNull();
+});
+
+test("projects thinking chunks in order, keeps tool markers between them, and ignores another node", () => {
+  const view = buildNodeExecutionView("n", { events: [
+    event("log", 1, { channel: "thinking", thoughts: "before ", thinkingStatus: "shared", final: false, part: 0 }),
+    event("tool.started", 2, { name: "search", toolCallId: "call-1" }),
+    event("tool.completed", 3, { toolCallId: "call-1" }),
+    event("log", 4, { channel: "thinking", thoughts: "after", thinkingStatus: "shared", final: true, part: 1 }),
+    event("log", 5, { channel: "thinking", thoughts: "other step", thinkingStatus: "shared", final: true, part: 0 }, { nodeId: "other" }),
+  ] });
+  expect(view.thinkingAttempts[0].segments).toEqual([
+    { kind: "thinking", text: "before " },
+    { kind: "tool", label: "search", status: "completed" },
+    { kind: "thinking", text: "after" },
+  ]);
+  expect(view.thoughtsText).toBe("before after");
+  expect(JSON.stringify(view.thinkingAttempts)).not.toContain("other step");
+});
+
+test("keeps each attempt's thinking and labels stop, completion, and failure", () => {
+  const separated = buildNodeExecutionView("n", { events: [
+    event("node.started", 1, { attempt: 1 }),
+    event("log", 2, { channel: "thinking", thoughts: "first", thinkingStatus: "shared", final: true, part: 0 }),
+    event("node.failed", 3, { terminal: false }),
+    event("node.retrying", 4, { nextAttempt: 2 }),
+    event("node.started", 5, { attempt: 2 }),
+    event("log", 6, { channel: "thinking", thoughts: "second", thinkingStatus: "shared", final: true, part: 0 }),
+    event("node.completed", 7),
+  ] });
+  expect(separated.thinkingAttempts.map((attempt) => [attempt.attempt, attempt.text, attempt.outcome])).toEqual([
+    [1, "first", "failed"],
+    [2, "second", "completed"],
+  ]);
+  expect(separated.thoughtsText).toBe("second");
+
+  const stopped = buildNodeExecutionView("n", {
+    events: [
+      event("node.started", 1, { attempt: 1 }),
+      event("log", 2, { channel: "thinking", thoughts: "partial", thinkingStatus: "shared", final: false, part: 0 }),
+      event("agent.failed", 3, { error: "Worker cancelled" }),
+    ],
+    run: { status: "cancelled" } as Run,
+  });
+  expect(stopped.thinkingAttempts[0]).toMatchObject({ text: "partial", outcome: "stopped", availability: "shared" });
+
+  const failed = buildNodeExecutionView("n", { events: [
+    event("node.started", 1, { attempt: 1 }),
+    event("log", 2, { channel: "thinking", thoughts: "broke", thinkingStatus: "shared", final: true, part: 0 }),
+    event("node.failed", 3, { error: "bad", terminal: true }),
+  ] });
+  expect(failed.thinkingAttempts[0].outcome).toBe("failed");
+});
+
+test("pending, none, and unavailable use different sentences", () => {
+  const pending = buildNodeExecutionView("n", { events: [event("node.started", 1, { attempt: 1 }), event("agent.started", 2)] });
+  expect(pending.thinkingAttempts[0].availability).toBe("pending");
+  expect(THINKING_COPY.pending).toBe("Thinking has not arrived yet.");
+
+  const none = buildNodeExecutionView("n", { events: [
+    event("node.started", 1, { attempt: 1 }),
+    event("log", 2, { channel: "thinking", thoughts: "   ", thinkingStatus: "none", final: true, part: 0 }),
+    event("node.completed", 3),
+  ] });
+  expect(none.thinkingAttempts[0].availability).toBe("none");
+  expect(THINKING_COPY.none).toBe("No thinking was shared.");
+
+  const unavailable = buildNodeExecutionView("n", { events: [event("node.started", 1, { attempt: 1 }), event("agent.completed", 2, { content: "answer" }), event("node.completed", 3)] });
+  expect(unavailable.thinkingAttempts[0].availability).toBe("unavailable");
+  expect(THINKING_COPY.unavailable).toBe("Thinking is unavailable for this run.");
+
+  const sharedWins = buildNodeExecutionView("n", { events: [
+    event("log", 1, { channel: "thinking", thoughts: "real", thinkingStatus: "shared", final: false, part: 0 }),
+    event("log", 2, { channel: "thinking", thoughts: "", thinkingStatus: "none", final: true, part: 1 }),
+    event("node.completed", 3),
+  ] });
+  expect(sharedWins.thinkingAttempts[0].availability).toBe("shared");
+  expect(sharedWins.thinkingAttempts[0].text).toBe("real");
+});
+
+test("a run that stopped accepting events marks thinking incomplete without dropping saved text", () => {
+  const view = buildNodeExecutionView("n", { events: [
+    event("log", 1, { channel: "thinking", thoughts: "saved", thinkingStatus: "shared", final: false, part: 0 }),
+    event("log", 2, { eventLimitReached: true }, { nodeId: undefined }),
+  ] });
+  expect(view.thinkingAttempts[0].text).toBe("saved");
+  expect(view.thinkingAttempts[0].recordIncomplete).toBe(true);
 });
 
 test("projects nested ReAct tool activity under an agent nodeId", () => {

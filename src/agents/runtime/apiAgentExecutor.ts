@@ -8,11 +8,13 @@ import { NO_API_CREDENTIALS, type ApiProviderCredentialResolver } from "../../se
 import { AGENT_TOOL_LIMIT_EXCEEDED, resolveEffectiveReactSettings } from "./reactSettings";
 import { asBindToolsInput, buildBoundToolSchemas, resolveToolCallName } from "./toolBinding";
 import { ToolPolicyError } from "../../tools/errors";
+import { buildThinkingLogs, noneThinkingLog, splitModelContent, thinkingFromAdditional, type ThinkingLogPayload } from "./thinkingText";
 
 type ChatModelResult = {
   content: unknown;
   usage_metadata?: Record<string, unknown>;
   response_metadata?: Record<string, unknown>;
+  additional_kwargs?: unknown;
   tool_calls?: ModelToolCallLike[];
 };
 
@@ -66,6 +68,13 @@ export class ApiAgentExecutor implements AgentExecutor {
       model: agent.backend.model,
     });
 
+    let sharedThinking = false;
+    const noteThinking = function* (result: ChatModelResult): Generator<AgentExecutionEvent> {
+      const logs = thinkingLogsForModel(result);
+      if (logs.length === 0) return;
+      sharedThinking = true;
+      for (const log of logs) yield baseEvent("log", input, log);
+    };
     try {
       const startedAt = Date.now();
       yield baseEvent("llm.started", input, { provider: agent.backend.provider, model: agent.backend.model });
@@ -129,7 +138,8 @@ export class ApiAgentExecutor implements AgentExecutor {
 
       if (!useReact) {
         const result = await this.telemetry.withAgent(telemetryContext, () => this.telemetry.withGeneration(telemetryContext, () => model.invoke(messages, { signal: input.signal })));
-        const content = result.content;
+        yield* noteThinking(result);
+        const content = answerFromModel(result);
         const usage = result.usage_metadata;
         const finishReason = result.response_metadata?.finish_reason ?? result.response_metadata?.stop_reason;
         yield baseEvent("llm.completed", input, {
@@ -139,8 +149,10 @@ export class ApiAgentExecutor implements AgentExecutor {
           ...(usage ? { usage } : {}),
           ...(finishReason !== undefined ? { finishReason } : {}),
         });
-        yield baseEvent("agent.output", input, { content });
-        yield baseEvent("agent.completed", input, { content });
+        if (!sharedThinking) yield baseEvent("log", input, noneThinkingLog());
+        const thinkingStatus = sharedThinking ? "shared" : "none";
+        yield baseEvent("agent.output", input, { content, thinkingStatus });
+        yield baseEvent("agent.completed", input, { content, thinkingStatus });
         return;
       }
 
@@ -168,10 +180,11 @@ export class ApiAgentExecutor implements AgentExecutor {
         );
         lastUsage = result.usage_metadata;
         lastFinish = result.response_metadata?.finish_reason ?? result.response_metadata?.stop_reason;
+        yield* noteThinking(result);
 
         const toolCalls = extractToolCalls(result);
         if (toolCalls.length === 0) {
-          finalContent = normalizeContent(result.content);
+          finalContent = answerFromModel(result);
           break;
         }
 
@@ -319,19 +332,24 @@ export class ApiAgentExecutor implements AgentExecutor {
         ...(lastFinish !== undefined ? { finishReason: lastFinish } : {}),
         toolRounds,
       });
-      yield baseEvent("agent.output", input, { content: finalContent });
-      yield baseEvent("agent.completed", input, { content: finalContent });
+      if (!sharedThinking) yield baseEvent("log", input, noneThinkingLog());
+      const thinkingStatus = sharedThinking ? "shared" : "none";
+      yield baseEvent("agent.output", input, { content: finalContent, thinkingStatus });
+      yield baseEvent("agent.completed", input, { content: finalContent, thinkingStatus });
     } catch (error) {
       // Limit-exceeded and other fail-closed paths already emitted agent.failed.
       if (error instanceof AgentExecutionFailedError) {
+        if (!sharedThinking) yield baseEvent("log", input, noneThinkingLog());
         throw error;
       }
       if (isAbortError(error)) {
+        if (!sharedThinking) yield baseEvent("log", input, noneThinkingLog());
         throw error;
       }
       const message = error instanceof Error ? error.message : String(error);
+      if (!sharedThinking) yield baseEvent("log", input, noneThinkingLog());
       yield baseEvent("llm.failed", input, { provider: agent.backend.provider, model: agent.backend.model, error: message.slice(0, 500) });
-      yield baseEvent("agent.failed", input, { error: message });
+      yield baseEvent("agent.failed", input, { error: message, thinkingStatus: sharedThinking ? "shared" : "none" });
       throw new AgentExecutionFailedError(message);
     }
   }
@@ -384,6 +402,17 @@ function extractToolCalls(result: ChatModelResult): Array<{ id: string; name: st
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
   return {};
+}
+
+function thinkingLogsForModel(result: ChatModelResult): ThinkingLogPayload[] {
+  const split = splitModelContent(result.content);
+  const extra = thinkingFromAdditional(result.additional_kwargs);
+  const thinking = `${split.thinking}${extra}`;
+  return thinking.trim() ? buildThinkingLogs(thinking) : [];
+}
+
+function answerFromModel(result: ChatModelResult): unknown {
+  return splitModelContent(result.content).answer;
 }
 
 function normalizeContent(content: unknown): unknown {

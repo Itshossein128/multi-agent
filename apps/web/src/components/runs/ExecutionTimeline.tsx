@@ -117,7 +117,7 @@ function durationFor(event: RunEvent, events: RunEvent[], index: number): string
   return milliseconds === undefined ? undefined : `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
-const TEXT_KEYS = ["content", "output", "error", "message", "text", "log", "stdout", "stderr", "summary"] as const;
+const TEXT_KEYS = ["content", "output", "error", "message", "text", "log", "stdout", "stderr", "summary", "thoughts"] as const;
 const META_SKIP = new Set(["durationMs", ...TEXT_KEYS]);
 
 type NormalizedPayload = {
@@ -132,7 +132,7 @@ function normalizePayload(payload: Record<string, unknown>): NormalizedPayload {
 
   for (const key of TEXT_KEYS) {
     if (!(key in payload)) continue;
-    const extracted = extractText(payload[key], key);
+    const extracted = extractText(payload[key], key === "thoughts" ? "Thinking" : key);
     if (!extracted) continue;
     sections.push(extracted);
     used.add(key);

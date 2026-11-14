@@ -86,6 +86,24 @@ export interface NodeToolCallView {
   error?: string;
 }
 
+export type ThinkingOutcome = "in_progress" | "completed" | "stopped" | "failed";
+
+export type ThinkingAvailability = "pending" | "shared" | "none" | "unavailable";
+
+export type ThinkingSegment =
+  | { kind: "thinking"; text: string }
+  | { kind: "tool"; label: string; status: string };
+
+/** One attempt of one agent step. Projected from run events, not stored. */
+export interface ThinkingAttemptView {
+  attempt: number;
+  outcome: ThinkingOutcome;
+  availability: ThinkingAvailability;
+  text: string;
+  segments: ThinkingSegment[];
+  recordIncomplete: boolean;
+}
+
 /** Slide-over inspector model (FR-008 / FR-009). */
 export interface NodeExecutionView {
   nodeId: string;
@@ -98,6 +116,7 @@ export interface NodeExecutionView {
   durationMs?: number;
   streamText: string;
   thoughtsText?: string;
+  thinkingAttempts: ThinkingAttemptView[];
   toolCalls: NodeToolCallView[];
   result?: NodeResultEnvelope;
   error?: string;

@@ -14,7 +14,10 @@ coverage
 graphify-out
 workspaces
 *.log
+*.log*
 *.tmp
 .env*
 tmp-*
+Dockerfile*
+.dockerignore
 

@@ -6,6 +6,7 @@ import { AgentExecutionFailedError } from "./errors";
 import type { WorkerRuntime, WorkerSpec } from "./workerRuntime";
 import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolicyFromEnvironment } from "./workerRuntime";
 import { configuredAgentTimeout } from "./agentTimeout";
+import { noneThinkingLog } from "./thinkingText";
 
 export interface ProcessRuntimePolicy {
   enabled: boolean;
@@ -74,14 +75,16 @@ export class ProcessAgentExecutor implements AgentExecutor {
 
     if (!this.runtimePolicy.enabled) {
       const msg = "Process agent execution is disabled on this server. Set PROCESS_AGENT_ENABLED=true and configure server allowlists.";
-      yield event("agent.failed", input, { error: msg });
+      yield event("log", input, noneThinkingLog());
+      yield event("agent.failed", input, { error: msg, thinkingStatus: "none" });
       throw new AgentExecutionFailedError(msg);
     }
 
     // Tenant / isolation check: host execution is trusted-only
     if (this.runtimePolicy.workerMode === "local" && !this.runtimePolicy.trustedHostAllowed) {
       const msg = "Local process host execution is restricted to trusted operators (PROCESS_AGENT_TRUSTED_HOST_ALLOWED=true). Multi-tenant execution requires container isolation or fails closed.";
-      yield event("agent.failed", input, { error: msg });
+      yield event("log", input, noneThinkingLog());
+      yield event("agent.failed", input, { error: msg, thinkingStatus: "none" });
       throw new AgentExecutionFailedError(msg);
     }
 
@@ -110,7 +113,8 @@ export class ProcessAgentExecutor implements AgentExecutor {
       });
       if (!workspaceAllowed) {
         const msg = `Process working directory "${resolvedCwd}" is not within allowed workspace roots.`;
-        yield event("agent.failed", input, { error: msg });
+        yield event("log", input, noneThinkingLog());
+        yield event("agent.failed", input, { error: msg, thinkingStatus: "none" });
         throw new AgentExecutionFailedError(msg);
       }
     }
@@ -150,14 +154,16 @@ export class ProcessAgentExecutor implements AgentExecutor {
         }
 
         const outputContent = result.stdout.trim();
-        yield event("agent.output", input, { content: outputContent });
-        yield event("agent.completed", input, { content: outputContent });
+        yield event("log", input, noneThinkingLog());
+        yield event("agent.output", input, { content: outputContent, thinkingStatus: "none" });
+        yield event("agent.completed", input, { content: outputContent, thinkingStatus: "none" });
       } finally {
         await this.workerRuntime.cleanup(handle.workerId);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      yield event("agent.failed", input, { error: message });
+      yield event("log", input, noneThinkingLog());
+      yield event("agent.failed", input, { error: message, thinkingStatus: "none" });
       throw new AgentExecutionFailedError(message);
     }
   }

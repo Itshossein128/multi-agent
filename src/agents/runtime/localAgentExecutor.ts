@@ -1,6 +1,7 @@
 import { nowIso } from "@multi-agent/types";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
+import { noneThinkingLog } from "./thinkingText";
 
 export type LocalFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -27,12 +28,14 @@ export class LocalAgentExecutor implements AgentExecutor {
     try {
       const result = await this.invoke(backend, input);
       yield event("llm.completed", input, { provider: backend.provider, model: backend.model, durationMs: Date.now() - startedAt, ...(result.usage ? { usage: result.usage } : {}), ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}) });
-      yield event("agent.output", input, { content: result.content });
-      yield event("agent.completed", input, { content: result.content });
+      yield event("log", input, noneThinkingLog());
+      yield event("agent.output", input, { content: result.content, thinkingStatus: "none" });
+      yield event("agent.completed", input, { content: result.content, thinkingStatus: "none" });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      yield event("log", input, noneThinkingLog());
       yield event("llm.failed", input, { provider: backend.provider, model: backend.model, error: message.slice(0, 500) });
-      yield event("agent.failed", input, { error: message });
+      yield event("agent.failed", input, { error: message, thinkingStatus: "none" });
       throw new AgentExecutionFailedError(message);
     }
   }

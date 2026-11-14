@@ -1,5 +1,6 @@
 import { parseResultEnvelope, type RunEvent } from "@multi-agent/types";
 import type { NodeExecutionView, NodeToolCallView } from "../components/workflow/live/liveCanvas.types";
+import { projectThinkingAttempts } from "./thinkingProjection";
 import type { RunCanvasProjectionApi, CanvasNodeLiveStatus } from "../components/workflow/live/liveCanvas.types";
 const statuses: Record<string, CanvasNodeLiveStatus> = {
   "node.started": "running", "node.retrying": "running", "agent.started": "running", "llm.started": "running", "tool.started": "running",
@@ -119,7 +120,7 @@ export const buildNodeExecutionView: RunCanvasProjectionApi["buildNodeExecutionV
   const scopedEvents = events.map(event => event.nodeId ? event : { ...event, nodeId });
   const view: NodeExecutionView = {
     nodeId, liveStatus: projectRunCanvas({ ...input, events: scopedEvents }).nodeStatus.get(nodeId) ?? "idle",
-    attemptCount: 0, streamText: "", thoughtsText: "", toolCalls: [], events,
+    attemptCount: 0, streamText: "", thoughtsText: "", thinkingAttempts: [], toolCalls: [], events,
     approval: input.approvals?.find(approval => approval.nodeId === nodeId && approval.status === "requested"),
     input: node?.type === "input" ? input.run?.input : undefined,
   };
@@ -171,14 +172,15 @@ export const buildNodeExecutionView: RunCanvasProjectionApi["buildNodeExecutionV
     }
     if (event.type === "log" || event.type.startsWith("agent.") || event.type.startsWith("llm.")) {
       const content = text(payload.delta ?? payload.chunk ?? payload.content ?? payload.text ?? payload.output);
-      const thoughts = text(payload.thoughts ?? payload.reasoning);
       // Completion payloads are snapshots, not another copy of streamed chunks.
       if (event.type.endsWith("completed")) {
         if (content) view.streamText = content;
-        if (thoughts) view.thoughtsText = thoughts;
-      } else { view.streamText += content; view.thoughtsText += thoughts; }
+      } else view.streamText += content;
     }
   }
+  const recordStopped = input.events.some((item) => item.type === "log" && item.payload.eventLimitReached === true);
+  view.thinkingAttempts = projectThinkingAttempts(events, input.run?.status, recordStopped);
+  view.thoughtsText = view.thinkingAttempts.length > 0 ? view.thinkingAttempts[view.thinkingAttempts.length - 1].text : "";
   view.toolCalls = [...tools.values()];
   if (view.startedAt && view.completedAt) {
     const duration = Date.parse(view.completedAt) - Date.parse(view.startedAt);

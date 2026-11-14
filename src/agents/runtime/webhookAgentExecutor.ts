@@ -2,6 +2,7 @@ import { nowIso } from "@multi-agent/types";
 import { fetch as undiciFetch } from "undici";
 import type { AgentExecutionEvent, AgentExecutionInput, AgentExecutor } from "./types";
 import { AgentExecutionFailedError } from "./errors";
+import { noneThinkingLog } from "./thinkingText";
 import {
   assertSafeDestinationUrl,
   createPinnedSsrfDispatcher,
@@ -65,14 +66,16 @@ export class WebhookAgentExecutor implements AgentExecutor {
 
       if (!this.policy.enabled) {
         const msg = "Webhook agent execution is disabled on this server. Set WEBHOOK_AGENT_ENABLED=true and configure server allowlists.";
-        yield event("agent.failed", input, { error: msg });
+        yield event("log", input, noneThinkingLog());
+        yield event("agent.failed", input, { error: msg, thinkingStatus: "none" });
         throw new AgentExecutionFailedError(msg);
       }
 
       // Fail closed if credentialAlias is set but credentialGateway is absent
       if (backend.credentialAlias && !this.credentialGateway) {
         const msg = "Webhook agent requires a credential gateway when credentialAlias is configured.";
-        yield event("agent.failed", input, { error: msg });
+        yield event("log", input, noneThinkingLog());
+        yield event("agent.failed", input, { error: msg, thinkingStatus: "none" });
         throw new AgentExecutionFailedError(msg);
       }
 
@@ -246,8 +249,9 @@ export class WebhookAgentExecutor implements AgentExecutor {
           durationMs: Date.now() - startedAt,
         });
 
-        yield event("agent.output", input, { content });
-        yield event("agent.completed", input, { content });
+        yield event("log", input, noneThinkingLog());
+        yield event("agent.output", input, { content, thinkingStatus: "none" });
+        yield event("agent.completed", input, { content, thinkingStatus: "none" });
 
         completedSuccessfully = true;
       } catch (error) {
@@ -262,7 +266,8 @@ export class WebhookAgentExecutor implements AgentExecutor {
         }
         const message = redactSecret(rawMessage, leaseToken);
         yield event("llm.failed", input, { provider: "webhook", error: message.slice(0, 500) });
-        yield event("agent.failed", input, { error: message });
+        yield event("log", input, noneThinkingLog());
+        yield event("agent.failed", input, { error: message, thinkingStatus: "none" });
         throw new AgentExecutionFailedError(message);
       }
     } finally {

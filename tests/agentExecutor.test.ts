@@ -192,7 +192,7 @@ describe("CLI and local executors", () => {
       expect.stringContaining("USER INPUT:\nsummarize"),
       undefined,
     );
-    expect(events.map(event => event.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
+    expect(events.map(event => event.type)).toEqual(["agent.started", "log", "agent.output", "agent.completed"]);
     expect((events[2].payload as { content: string }).content).toBe("CLI answer");
   });
 
@@ -264,8 +264,8 @@ describe("CLI and local executors", () => {
     const events: AgentExecutionEvent[] = [];
     for await (const event of new LocalAgentExecutor(fetchImpl, { allowedOrigins: ["http://ollama.test"] }).execute({ agent, input: "hello", runId: "r", nodeId: "n" })) events.push(event);
     expect(fetchImpl).toHaveBeenCalledWith(new URL("http://ollama.test/api/chat"), expect.objectContaining({ method: "POST" }));
-    expect(events.map(event => event.type)).toEqual(["agent.started", "llm.started", "llm.completed", "agent.output", "agent.completed"]);
-    expect((events[4].payload as { content: string }).content).toBe("local answer");
+    expect(events.map(event => event.type)).toEqual(["agent.started", "llm.started", "llm.completed", "log", "agent.output", "agent.completed"]);
+    expect((events[5].payload as { content: string }).content).toBe("local answer");
   });
 
   test("uses safe non-interactive defaults for agy and includes model and prompt context", async () => {
@@ -314,9 +314,9 @@ describe("CLI and local executors", () => {
     });
     expect(decodedStdin.message.content).toContain("review");
 
-    expect(events.map((e) => e.type)).toEqual(["agent.started", "agent.output", "agent.completed"]);
-    expect((events[1].payload as { content: string }).content).toBe("Agy answer");
+    expect(events.map((e) => e.type)).toEqual(["agent.started", "log", "agent.output", "agent.completed"]);
     expect((events[2].payload as { content: string }).content).toBe("Agy answer");
+    expect((events[3].payload as { content: string }).content).toBe("Agy answer");
   });
 
   describe("agyArgs helper", () => {
@@ -869,10 +869,11 @@ describe("ApiAgentExecutor", () => {
       "agent.started",
       "llm.started",
       "llm.completed",
+      "log",
       "agent.output",
       "agent.completed",
     ]);
-    expect((events[4]?.payload as { content: string }).content).toBe("answer");
+    expect((events[5]?.payload as { content: string }).content).toBe("answer");
     expect(events[2]?.payload).toEqual(expect.objectContaining({ usage: { input_tokens: 8, output_tokens: 3, total_tokens: 11 }, finishReason: "stop" }));
   });
 });

@@ -7,6 +7,12 @@ import { X } from "lucide-react";
 import { useRunStore } from "@/store/useRunStore";
 import { buildNodeExecutionView, projectRunCanvas, selectNodeEvents } from "@/lib/runCanvasProjection";
 import { ReadableContent } from "@/components/runs/ReadableContent";
+import { ThinkingTranscript } from "@/components/workflow/live/ThinkingTranscript";
+
+function showThinking(nodeType: string | undefined, events: { type: string; payload: Record<string, unknown> }[]): boolean {
+  if (nodeType === "agent") return true;
+  return events.some((event) => event.type === "agent.started" || event.payload.channel === "thinking" || typeof event.payload.thoughts === "string" || typeof event.payload.reasoning === "string");
+}
 
 function Evidence({ value }: { value: unknown }) {
   if (value === undefined) return <p className="text-xs text-zinc-400">Not available in recorded events.</p>;
@@ -16,8 +22,7 @@ function Evidence({ value }: { value: unknown }) {
 export function NodeExecutionInspector({ nodeId, node, onClose }: { nodeId: string; node?: WorkflowNode; onClose: () => void }) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
-  const allEvents = useRunStore(useShallow(state => state.events));
-  const events = useMemo(() => selectNodeEvents(allEvents, nodeId), [allEvents, nodeId]);
+  const events = useRunStore(useShallow(state => selectNodeEvents(state.events, nodeId)));
   const stepIndex = useRunStore(state => {
     let index = 0;
     for (const event of state.events) {
@@ -30,7 +35,7 @@ export function NodeExecutionInspector({ nodeId, node, onClose }: { nodeId: stri
   const run = useRunStore(state => state.run);
   const approvals = useRunStore(useShallow(state => state.approvals.filter(approval => approval.nodeId === nodeId)));
   const view = useMemo(() => buildNodeExecutionView(nodeId, { events, run, approvals }, node), [nodeId, events, run, approvals, node]);
-  const topologyHints = useMemo(() => projectRunCanvas({ events: allEvents, run, approvals }).topologyHints, [allEvents, run, approvals]);
+  const topologyHints = useMemo(() => projectRunCanvas({ events, run, approvals }).topologyHints, [events, run, approvals]);
   const iteration = topologyHints?.iterationByNodeId?.[nodeId];
   const subgraphFrame = topologyHints?.subgraphFrames?.find((frame) => frame.parentNodeId === nodeId);
   useEffect(() => {
@@ -57,9 +62,10 @@ export function NodeExecutionInspector({ nodeId, node, onClose }: { nodeId: stri
         {subgraphFrame && (<><dt>Subgraph</dt><dd>{subgraphFrame.workflowId || "nested"} · depth {subgraphFrame.depth} · {subgraphFrame.status}</dd></>)}
         {topologyHints?.swarmTerminationReason && (<><dt>Swarm</dt><dd>{topologyHints.swarmTerminationReason}</dd></>)}
       </dl></section>
-      <section><h3 className="mb-2 text-sm font-semibold text-zinc-200">Stream</h3><Evidence value={view.streamText || undefined} />
-        {view.thoughtsText && <details className="mt-2"><summary className="cursor-pointer text-xs text-zinc-300">Published thoughts</summary><Evidence value={view.thoughtsText} /></details>}
-      </section>
+      {showThinking(node?.type, events) && <section aria-label="Thinking"><h3 className="mb-2 text-sm font-semibold text-zinc-200">Thinking</h3>
+        <ThinkingTranscript attempts={view.thinkingAttempts.length > 0 ? view.thinkingAttempts : [{ attempt: 1, outcome: view.liveStatus === "failed" ? "failed" : view.liveStatus === "completed" ? "completed" : "in_progress", availability: view.liveStatus === "running" ? "pending" : "unavailable", text: "", segments: [], recordIncomplete: false }]} />
+      </section>}
+      <section><h3 className="mb-2 text-sm font-semibold text-zinc-200">Stream</h3><Evidence value={view.streamText || undefined} /></section>
       <section><h3 className="mb-2 text-sm font-semibold text-zinc-200">Tools</h3>
         {view.toolCalls.length === 0 && <p className="text-xs text-zinc-400">No recorded tool calls.</p>}
         {view.toolCalls.map(call => <details key={call.id} className="mb-2 rounded border border-zinc-800 p-2"><summary className="cursor-pointer text-xs text-zinc-300">{call.toolId ?? call.id} · {call.status}</summary><p className="my-2 text-xs text-zinc-400">Arguments</p><Evidence value={call.arguments} /><p className="my-2 text-xs text-zinc-400">Result</p><Evidence value={call.result} />{call.error && <Evidence value={call.error} />}</details>)}

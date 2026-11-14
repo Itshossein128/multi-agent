@@ -9,6 +9,7 @@ import { ContainerWorkerRuntime, LocalProcessWorkerRuntime, containerWorkerPolic
 import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver, type WorkerLaunchSecrets } from "./workerCredentials";
 import { defaultCliExecutable } from "./cliProviderDefaults";
 import { configuredAgentTimeout } from "./agentTimeout";
+import { CliThinkingParser, chunkThinkingText, noneThinkingLog, type ThinkingLogPayload } from "./thinkingText";
 
 export interface CliRuntimePolicy {
   enabled: boolean;
@@ -158,6 +159,7 @@ export class CliAgentExecutor implements AgentExecutor {
         : {}),
     });
 
+    let sharedThinking = false;
     try {
       let launchSecrets: WorkerLaunchSecrets | undefined;
       if (input.credentialPrincipal) {
@@ -193,6 +195,68 @@ export class CliAgentExecutor implements AgentExecutor {
       const handle = await this.workerRuntime.start(spec, input.signal, workerInput, launchSecrets);
 
       try {
+        let part = 0;
+        const pendingFinal: { log?: ThinkingLogPayload } = {};
+        const queue: AgentExecutionEvent[] = [];
+        let wake: (() => void) | undefined;
+        let signalled = false;
+        const notify = () => {
+          signalled = true;
+          const resolve = wake;
+          wake = undefined;
+          resolve?.();
+        };
+        const parser = new CliThinkingParser(backend.provider);
+        const consider = (pieces: string[]) => {
+          for (const piece of pieces) {
+            if (!piece.trim()) continue;
+            for (const thoughts of chunkThinkingText(piece)) {
+              if (pendingFinal.log) queue.push(event("log", input, pendingFinal.log));
+              pendingFinal.log = { channel: "thinking", thoughts, thinkingStatus: "shared", final: false, part: part++ };
+            }
+          }
+          if (queue.length > 0 || pendingFinal.log) notify();
+        };
+        let streamDone = false;
+        const streamTask = (async () => {
+          try {
+            for await (const workerEvent of this.workerRuntime.stream(handle.workerId)) {
+              if (workerEvent.type === "stdout" && workerEvent.data) consider(parser.push(workerEvent.data));
+            }
+            consider(parser.finish());
+          } catch {
+            // The answer is still taken from wait(). A missing stream is not thinking.
+          } finally {
+            streamDone = true;
+            notify();
+          }
+        })();
+        while (!streamDone || queue.length > 0 || pendingFinal.log) {
+          if (queue.length === 0 && !(streamDone && pendingFinal.log)) {
+            if (streamDone) break;
+            await new Promise<void>((resolve) => {
+              if (signalled) {
+                signalled = false;
+                resolve();
+                return;
+              }
+              wake = () => {
+                signalled = false;
+                resolve();
+              };
+            });
+            continue;
+          }
+          while (queue.length > 0) yield queue.shift()!;
+          if (streamDone && pendingFinal.log) {
+            yield event("log", input, { ...pendingFinal.log, final: true });
+            pendingFinal.log = undefined;
+            sharedThinking = true;
+          }
+        }
+        await streamTask;
+        if (part > 0) sharedThinking = true;
+
         const result = await this.workerRuntime.wait(handle.workerId);
         input.signal?.throwIfAborted();
 
@@ -248,9 +312,12 @@ export class CliAgentExecutor implements AgentExecutor {
           input.onSessionUpdate?.(updatedSession);
         }
 
-        yield event("agent.output", input, { content: outputContent });
+        const thinkingStatus = sharedThinking ? "shared" : "none";
+        if (!sharedThinking) yield event("log", input, noneThinkingLog());
+        yield event("agent.output", input, { content: outputContent, thinkingStatus });
         yield event("agent.completed", input, {
           content: outputContent,
+          thinkingStatus,
           ...(updatedSession
             ? {
                 sessionId: updatedSession.sessionId,
@@ -265,7 +332,8 @@ export class CliAgentExecutor implements AgentExecutor {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      yield event("agent.failed", input, { error: message });
+      if (!sharedThinking) yield event("log", input, noneThinkingLog());
+      yield event("agent.failed", input, { error: message, thinkingStatus: sharedThinking ? "shared" : "none" });
       throw new AgentExecutionFailedError(message);
     }
   }
