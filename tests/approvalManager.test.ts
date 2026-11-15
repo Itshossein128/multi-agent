@@ -295,7 +295,12 @@ describe("ApprovalManager", () => {
   });
 
   describe("rearmApprovalTimers", () => {
-    test("re-arms pending approvals with remaining timeout", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test("re-arms pending approvals with remaining timeout and auto-approves when timeout expires", () => {
+      jest.useFakeTimers();
       const store = createMockStore();
       const deps = createMockDeps(store);
       const manager = new ApprovalManager(deps);
@@ -306,11 +311,59 @@ describe("ApprovalManager", () => {
       });
 
       // Simulate timer cleared (e.g., after restart)
-      store.state.timers.get("run-1")?.delete("approval-1");
-      expect(store.state.timers.get("run-1")?.has("approval-1")).toBe(false);
+      store.clearApprovalTimer("run-1", "approval-1");
+      expect(store.state.timers.get("run-1")?.has("approval-1")).toBeFalsy();
 
       manager.rearmApprovalTimers("run-1");
       expect(store.state.timers.get("run-1")?.has("approval-1")).toBe(true);
+
+      jest.advanceTimersByTime(11000);
+      expect(store.getApproval("run-1", "approval-1")?.status).toBe("approved");
+    });
+
+    test("re-arms required gate and rejects with fail-closed response when timeout expires", () => {
+      jest.useFakeTimers();
+      const store = createMockStore();
+      const deps = createMockDeps(store);
+      const manager = new ApprovalManager(deps);
+
+      manager.handleApprovalRequested("run-1", {
+        id: "approval-req",
+        value: {
+          nodeId: "n1",
+          message: "Authorize remediation?",
+          approvalType: "required",
+          timeoutSeconds: 10,
+          onTimeout: "fail_closed",
+        },
+      });
+
+      // Clear initial timer to simulate server restart recovery
+      store.clearApprovalTimer("run-1", "approval-req");
+      expect(store.state.timers.get("run-1")?.has("approval-req")).toBeFalsy();
+
+      manager.rearmApprovalTimers("run-1");
+      expect(store.state.timers.get("run-1")?.has("approval-req")).toBe(true);
+
+      jest.advanceTimersByTime(11000);
+      const resolved = store.getApproval("run-1", "approval-req");
+      expect(resolved?.status).toBe("rejected");
+      expect(resolved?.response).toBe("Approval request timed out (fail-closed)");
+      expect(store.state.eventLog.map((e) => e.type)).toContain("human_approval.rejected");
+    });
+
+    test("skips manual approval gates without timeout", () => {
+      const store = createMockStore();
+      const deps = createMockDeps(store);
+      const manager = new ApprovalManager(deps);
+
+      manager.handleApprovalRequested("run-1", {
+        id: "approval-manual",
+        value: { nodeId: "n1", message: "Manual check", approvalType: "manual", timeoutSeconds: 300 },
+      });
+
+      manager.rearmApprovalTimers("run-1");
+      expect(store.state.timers.get("run-1")?.has("approval-manual")).toBeFalsy();
     });
 
     test("skips already-resolved approvals", () => {
@@ -324,10 +377,10 @@ describe("ApprovalManager", () => {
       });
 
       manager.resolveApproval("run-1", "approval-1", { decision: "approved" });
-      store.state.timers.get("run-1")?.delete("approval-1");
+      store.clearApprovalTimer("run-1", "approval-1");
 
       manager.rearmApprovalTimers("run-1");
-      expect(store.state.timers.get("run-1")?.has("approval-1")).toBe(false);
+      expect(store.state.timers.get("run-1")?.has("approval-1")).toBeFalsy();
     });
   });
 });
