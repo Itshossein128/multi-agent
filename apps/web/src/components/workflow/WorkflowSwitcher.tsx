@@ -5,6 +5,7 @@ import { useOrgPath } from "@/components/organization/OrgProvider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus, Trash2, Upload } from "lucide-react";
 import { isWorkflowArchetypeValid, resolveWorkflowArchetype, type AgentRecord, type ToolRecord, type WorkflowArchetypeCategory, type WorkflowDefinition } from "@multi-agent/types";
 import { workflowService } from "@/services/workflowService";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
@@ -118,127 +119,151 @@ export function WorkflowSwitcher() {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-200">
-      <label className="flex items-center gap-2">
-        <span>Workflow</span>
-        <select
-          aria-label="Saved workflow"
-          className="max-w-72 rounded border border-zinc-700 bg-zinc-900 p-2 text-zinc-100"
-          value={definition.id}
-          disabled={busy}
-          onChange={(event) => {
-            const nextId = event.target.value;
-            if (nextId === definition.id) return;
-            if (canLeave()) {
-              router.push(orgUrl(`/org?workflowId=${encodeURIComponent(nextId)}`));
-            }
-          }}
+    <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/90 px-3 py-1.5 text-xs text-zinc-200">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <label className="flex min-w-0 items-center gap-2">
+          <span className="hidden text-[10px] font-semibold uppercase tracking-wider text-zinc-500 sm:inline">
+            Workflow
+          </span>
+          <select
+            aria-label="Saved workflow"
+            className="h-8 max-w-52 cursor-pointer truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-medium text-zinc-100 transition-colors hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:max-w-60"
+            value={definition.id}
+            disabled={busy}
+            onChange={(event) => {
+              const nextId = event.target.value;
+              if (nextId === definition.id) return;
+              if (canLeave()) {
+                router.push(orgUrl(`/org?workflowId=${encodeURIComponent(nextId)}`));
+              }
+            }}
+          >
+            {!workflows.data?.some((item) => item.id === definition.id) && (
+              <option value={definition.id}>
+                {definition.name} · {formatArchetypeLabel(currentArchetype)}
+              </option>
+            )}
+            {workflows.data?.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} · {formatArchetypeLabel(resolveWorkflowArchetype(item))}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Archetype Badge */}
+        <span
+          data-testid="workflow-archetype-badge"
+          className={`hidden items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium xl:inline-flex ${
+            isSupervisor
+              ? "studio-badge-purple border-purple-500/40 bg-purple-950/60 text-purple-300"
+              : "studio-badge-blue border-blue-500/40 bg-blue-950/60 text-blue-300"
+          }`}
         >
-          {!workflows.data?.some((item) => item.id === definition.id) && (
-            <option value={definition.id}>
-              {definition.name} [{formatArchetypeLabel(currentArchetype)}]
-            </option>
-          )}
-          {workflows.data?.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name} [{formatArchetypeLabel(resolveWorkflowArchetype(item))}]
-            </option>
-          ))}
-        </select>
-      </label>
+          {formatArchetypeLabel(currentArchetype)}
+        </span>
 
-      {/* Archetype Badge */}
-      <span
-        data-testid="workflow-archetype-badge"
-        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-          isSupervisor
-            ? "border border-purple-500/40 bg-purple-950/60 text-purple-300"
-            : "border border-blue-500/40 bg-blue-950/60 text-blue-300"
-        }`}
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              if (!canLeave()) return;
+              setCreateOpen(true);
+            }}
+            className="h-8 gap-1.5 px-2.5 text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            New workflow
+          </Button>
+          <CreateWorkflowDialog
+            isOpen={createOpen}
+            isSubmitting={busy}
+            onClose={() => { if (!busy) setCreateOpen(false); }}
+            onSubmit={async (payload: CreateWorkflowDialogSubmitPayload) => {
+              setBusy(true);
+              setError("");
+              try {
+                const created = await workflowService.createWorkflow(payload.name, payload.archetype as WorkflowArchetypeCategory);
+                setCreateOpen(false);
+                router.push(orgUrl(`/org?workflowId=${encodeURIComponent(created.id)}`));
+                setBusy(false);
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : String(cause));
+                setBusy(false);
+              }
+            }}
+          />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file || !canLeave()) return;
+              setBusy(true);
+              setError("");
+              try {
+                await importPackage(JSON.parse(await file.text()) as WorkspacePackage);
+                setBusy(false);
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : String(cause));
+                setBusy(false);
+              }
+            }}
+          />
+
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              if (!canLeave()) return;
+              fileInputRef.current?.click();
+            }}
+            className="hidden h-8 gap-1.5 px-2.5 text-xs sm:inline-flex"
+          >
+            <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+            Import package
+          </Button>
+
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={busy}
+            onClick={() => { void deleteCurrentWorkflow(); }}
+            className="h-8 gap-1.5 px-2.5 text-xs"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Delete
+          </Button>
+        </div>
+      </div>
+
+      <nav
+        aria-label="Workflow studio shortcuts"
+        className="flex w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-zinc-800/80 bg-zinc-900/50 p-0.5 lg:ml-auto lg:w-auto"
       >
-        {formatArchetypeLabel(currentArchetype)}
-      </span>
-
-      <Button
-        variant="outline"
-        disabled={busy}
-        onClick={() => {
-          if (!canLeave()) return;
-          setCreateOpen(true);
-        }}
-      >
-        New workflow
-      </Button>
-      <CreateWorkflowDialog
-        isOpen={createOpen}
-        isSubmitting={busy}
-        onClose={() => { if (!busy) setCreateOpen(false); }}
-        onSubmit={async (payload: CreateWorkflowDialogSubmitPayload) => {
-          setBusy(true);
-          setError("");
-          try {
-            const created = await workflowService.createWorkflow(payload.name, payload.archetype as WorkflowArchetypeCategory);
-            setCreateOpen(false);
-            router.push(orgUrl(`/org?workflowId=${encodeURIComponent(created.id)}`));
-            setBusy(false);
-          } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause));
-            setBusy(false);
-          }
-        }}
-      />
-
-      <Button variant="destructive" disabled={busy} onClick={() => { void deleteCurrentWorkflow(); }}>
-        Delete
-      </Button>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/json,.json"
-        className="hidden"
-        onChange={async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (!file || !canLeave()) return;
-          setBusy(true);
-          setError("");
-          try {
-            await importPackage(JSON.parse(await file.text()) as WorkspacePackage);
-            setBusy(false);
-          } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause));
-            setBusy(false);
-          }
-        }}
-      />
-
-      <Button
-        variant="outline"
-        disabled={busy}
-        onClick={() => {
-          if (!canLeave()) return;
-          fileInputRef.current?.click();
-        }}
-      >
-        Import package
-      </Button>
-
-      <Button variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/org/agents")); }}>
-        Agent registry
-      </Button>
-      <Button variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/org/tools")); }}>
-        Tool registry
-      </Button>
-      <Button variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/org/memory")); }}>
-        Memory explorer
-      </Button>
-      <Button variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/runs")); }}>
-        Run history
-      </Button>
+        <Button size="sm" variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/org/agents")); }} className="h-7 shrink-0 rounded-md px-2.5 text-xs">
+          Agent registry
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/org/tools")); }} className="h-7 shrink-0 rounded-md px-2.5 text-xs">
+          Tool registry
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/org/memory")); }} className="h-7 shrink-0 rounded-md px-2.5 text-xs">
+          Memory explorer
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => { if (canLeave()) router.push(orgUrl("/runs")); }} className="h-7 shrink-0 rounded-md px-2.5 text-xs">
+          Run history
+        </Button>
+      </nav>
 
       {(error || workflows.error) && (
-        <p role="alert" className="text-red-300">
+        <p role="alert" className="w-full text-xs text-red-400">
           {error || workflows.error?.message}
         </p>
       )}

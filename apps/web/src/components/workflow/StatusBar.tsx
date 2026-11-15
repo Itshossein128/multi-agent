@@ -44,7 +44,7 @@ export function StatusBar() {
           <button
             type="button"
             onClick={() => setShowIssues((v) => !v)}
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex min-h-6 items-center gap-2 rounded px-1.5 hover:bg-zinc-900 cursor-pointer"
           >
             {errors.length > 0 && (
               <span className="flex items-center gap-1 text-red-400 hover:text-red-300">

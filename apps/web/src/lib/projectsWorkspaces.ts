@@ -131,7 +131,11 @@ async function studioRequest<T>(
     const body = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
     throw new StudioEntityError(body.error ?? body.message ?? `Studio request failed (${response.status})`, response.status);
   }
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export function listProjects(principal: AuthenticatedPrincipal, status = "active") {

@@ -7,6 +7,7 @@ import { Suspense, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import type { RunStatus } from "@multi-agent/types";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { runService } from "@/services/runService";
 import { formatDateTime } from "@/lib/formatDateTime";
 
@@ -41,10 +42,10 @@ function RunsHistoryContent() {
   });
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100">
+    <PageContainer>
       {/* Header managed by layout */}
 
-      <section className="grid gap-3 border-b border-zinc-800 p-4 md:grid-cols-5">
+      <section className="grid gap-3 border-b border-zinc-800 pb-6 md:grid-cols-5">
         <label className="text-xs text-zinc-400">Workflow id
           <input className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm" value={workflowId} onChange={(e) => setWorkflowId(e.target.value)} />
         </label>
@@ -64,7 +65,7 @@ function RunsHistoryContent() {
         </label>
       </section>
 
-      <section className="p-4">
+      <section>
         {runs.isLoading && <p className="text-sm text-zinc-500">Loading runs…</p>}
         {runs.error && <p role="alert" className="text-sm text-red-300">{(runs.error as Error).message}</p>}
         {!runs.isLoading && !runs.data?.length && <p className="text-sm text-zinc-500">No runs match these filters.</p>}
@@ -81,13 +82,13 @@ function RunsHistoryContent() {
           ))}
         </ul>
       </section>
-    </main>
+    </PageContainer>
   );
 }
 
 export default function RunsHistoryPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-zinc-950 p-4 text-sm text-zinc-500">Loading runs…</div>}>
+    <Suspense fallback={<PageContainer className="text-sm text-zinc-500">Loading runs…</PageContainer>}>
       <RunsHistoryContent />
     </Suspense>
   );

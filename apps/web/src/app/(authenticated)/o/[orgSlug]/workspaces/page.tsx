@@ -6,6 +6,7 @@ import { scopedApiPath } from "@/lib/orgRoute";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 
 interface WorkspaceRow {
@@ -141,7 +142,7 @@ export default function WorkspacesPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8 space-y-6">
+    <PageContainer>
       <div>
         <h1 className="text-xl font-semibold text-zinc-100">Project workspaces</h1>
         <p className="text-sm text-zinc-400">
@@ -250,6 +251,6 @@ export default function WorkspacesPage() {
           </ul>
         </section>
       ))}
-    </div>
+    </PageContainer>
   );
 }

@@ -1,5 +1,5 @@
 import React from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getDbPool } from "@/lib/db";
 import { AppShell } from "@/components/layout/AppShell";
@@ -62,7 +62,10 @@ export default async function OrganizationLayout({
   const { orgSlug } = await Promise.resolve(params);
   const session = await auth();
   const userId = (session?.user as { id?: string } | undefined)?.id;
-  if (!userId) notFound();
+  if (!userId) {
+    const callbackUrl = encodeURIComponent(`/o/${orgSlug}`);
+    redirect(`/login?callbackUrl=${callbackUrl}`);
+  }
 
   let ctx: Awaited<ReturnType<typeof loadMembershipContext>> = null;
   try {
@@ -70,7 +73,10 @@ export default async function OrganizationLayout({
   } catch {
     notFound();
   }
-  if (!ctx) notFound();
+  if (!ctx) {
+    // Authenticated but no access — send to home (org switch / onboarding), not a soft-404.
+    redirect("/");
+  }
 
   // Persist last-used organization for redirects (non-authoritative).
   try {

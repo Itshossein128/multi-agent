@@ -266,7 +266,7 @@ export function FlowCanvas({ live = false, liveDefinition, onInspectNode }: { li
         maxZoom={2.5}
         fitView
       >
-        <Background variant={BackgroundVariant.Dots} color="#27272a" gap={18} size={1.2} />
+        <Background variant={BackgroundVariant.Dots} color="var(--color-zinc-800)" gap={18} size={1.2} />
         <Controls
           position="bottom-left"
           showInteractive={false}
@@ -277,7 +277,7 @@ export function FlowCanvas({ live = false, liveDefinition, onInspectNode }: { li
           pannable
           zoomable
           className="!rounded-lg !border !border-zinc-800 !bg-zinc-900"
-          maskColor="rgba(9, 9, 11, 0.75)"
+          maskColor="color-mix(in srgb, var(--color-zinc-950) 72%, transparent)"
           nodeColor={(node) => {
             switch (node.type) {
               case "agent":

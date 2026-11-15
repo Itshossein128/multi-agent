@@ -42,10 +42,10 @@ function ToolButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950/60 text-zinc-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+        "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-300 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
         disabled
-          ? "cursor-not-allowed opacity-40"
-          : "cursor-pointer hover:border-zinc-600 hover:text-zinc-100"
+          ? "cursor-not-allowed opacity-35"
+          : "cursor-pointer hover:bg-zinc-800 hover:text-zinc-100"
       )}
     >
       {children}
@@ -88,7 +88,7 @@ export function EditorToolbar({ session }: { session: Pick<LiveCanvasController,
   const hasErrors = issues.some((issue) => issue.severity === "error");
 
   return (
-    <div className="flex min-h-12 flex-shrink-0 flex-wrap items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/80 px-3 py-2 lg:py-1.5">
+    <div className="flex min-h-11 flex-shrink-0 flex-wrap items-center gap-2 border-b border-zinc-800/80 bg-zinc-950/80 px-3 py-1.5">
       <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
         <input
           type="text"
@@ -97,55 +97,62 @@ export function EditorToolbar({ session }: { session: Pick<LiveCanvasController,
           disabled={live}
           onChange={(event) => setWorkflowName(event.target.value)}
           placeholder="Workflow name"
-          className="h-8 min-w-0 flex-1 sm:w-52 sm:flex-initial rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-semibold text-zinc-100 placeholder-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 text-xs font-semibold text-zinc-100 placeholder-zinc-500 transition-colors hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:w-48 sm:flex-initial"
         />
         {isDirty ? (
-          <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+          <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" aria-hidden="true" />
             Unsaved
           </span>
         ) : (
-          <span className="shrink-0 text-[10px] uppercase tracking-wider text-zinc-600">Saved</span>
+          <span className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+            Saved
+          </span>
         )}
       </div>
 
-      <div className="mx-1 hidden h-5 w-px bg-zinc-800 sm:block" />
-
       <div className="flex flex-wrap items-center gap-1.5">
-        <ToolButton title="Undo (Ctrl+Z)" disabled={live || !canUndo} onClick={undo}>
-          <Undo2 className="h-4 w-4" aria-hidden="true" />
-        </ToolButton>
-        <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={live || !canRedo} onClick={redo}>
-          <Redo2 className="h-4 w-4" aria-hidden="true" />
-        </ToolButton>
-        <ToolButton
-          title="Delete selected nodes/edges (Del)"
-          disabled={live || !hasSelection}
-          onClick={() => removeSelection(selectedNodeIds, selectedEdgeIds)}
+        <div className="flex items-center gap-0.5 rounded-lg border border-zinc-800/90 bg-zinc-900/60 p-0.5">
+          <ToolButton title="Undo (Ctrl+Z)" disabled={live || !canUndo} onClick={undo}>
+            <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </ToolButton>
+          <ToolButton title="Redo (Ctrl+Shift+Z)" disabled={live || !canRedo} onClick={redo}>
+            <Redo2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </ToolButton>
+          <ToolButton
+            title="Delete selected nodes/edges (Del)"
+            disabled={live || !hasSelection}
+            onClick={() => removeSelection(selectedNodeIds, selectedEdgeIds)}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          </ToolButton>
+        </div>
+
+        <div className="flex items-center gap-0.5 rounded-lg border border-zinc-800/90 bg-zinc-900/60 p-0.5">
+          <ToolButton title="Zoom out" onClick={() => zoomOut()}>
+            <ZoomOut className="h-3.5 w-3.5" aria-hidden="true" />
+          </ToolButton>
+          <ToolButton title="Zoom in" onClick={() => zoomIn()}>
+            <ZoomIn className="h-3.5 w-3.5" aria-hidden="true" />
+          </ToolButton>
+          <ToolButton title="Fit view" onClick={() => fitView({ duration: 300 })}>
+            <Maximize className="h-3.5 w-3.5" aria-hidden="true" />
+          </ToolButton>
+          <ToolButton
+            title="Auto-Arrange"
+            disabled={live || nodeCount === 0}
+            onClick={() => autoArrangeNodes()}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+          </ToolButton>
+        </div>
+
+        <span
+          role="status"
+          className="rounded-md border border-indigo-500/25 bg-indigo-500/10 px-2 py-1 text-[11px] font-semibold text-indigo-300"
         >
-          <Trash2 className="h-4 w-4" aria-hidden="true" />
-        </ToolButton>
-
-        <div className="mx-0.5 hidden h-5 w-px bg-zinc-800 sm:block" />
-
-        <ToolButton title="Zoom out" onClick={() => zoomOut()}>
-          <ZoomOut className="h-4 w-4" aria-hidden="true" />
-        </ToolButton>
-        <ToolButton title="Zoom in" onClick={() => zoomIn()}>
-          <ZoomIn className="h-4 w-4" aria-hidden="true" />
-        </ToolButton>
-        <ToolButton title="Fit view" onClick={() => fitView({ duration: 300 })}>
-          <Maximize className="h-4 w-4" aria-hidden="true" />
-        </ToolButton>
-        <ToolButton
-          title="Auto-Arrange"
-          disabled={live || nodeCount === 0}
-          onClick={() => autoArrangeNodes()}
-        >
-          <LayoutGrid className="h-4 w-4" aria-hidden="true" />
-        </ToolButton>
-
-        <span role="status" className="text-xs font-semibold text-indigo-300">{live ? "Live · Read only" : "Design"}</span>
+          {live ? "Live · Read only" : "Design"}
+        </span>
       </div>
       <div className="flex w-full flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
         {live && <Button size="sm" variant="outline" onClick={session.exitLive}>Exit Live</Button>}
@@ -166,33 +173,35 @@ export function EditorToolbar({ session }: { session: Pick<LiveCanvasController,
           <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
           Validate
         </Button>
-        <select
-          aria-label="Run input format"
-          value={inputMode}
-          onChange={(event) => { setInputMode(event.target.value as WorkflowRunInputMode); setInputError(null); }}
-          className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-        >
-          <option value="text">Text</option>
-          <option value="json">JSON object</option>
-        </select>
-        <div className="relative min-w-[120px] flex-1 sm:min-w-0 sm:flex-initial">
-        <input
-          ref={inputRef}
-          aria-label="Run input"
-          aria-invalid={Boolean(inputError)}
-          aria-describedby={inputError ? inputErrorId : undefined}
-          type="text"
-          value={runInput}
-          onChange={(event) => { setRunInput(event.target.value); setInputError(null); }}
-          onBlur={() => {
-            if (inputMode !== "json") return;
-            try { parseWorkflowRunInput(runInput, inputMode); setInputError(null); }
-            catch (error) { setInputError((error as Error).message); }
-          }}
-          placeholder={inputMode === "json" ? '{"delivery_request": "..."}' : "Run input"}
-          className="h-8 w-full min-w-0 sm:w-40 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-        />
-        {inputError && <p id={inputErrorId} role="alert" className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-red-800 bg-zinc-950 p-2 text-xs text-red-300">{inputError}</p>}
+        <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
+          <select
+            aria-label="Run input format"
+            value={inputMode}
+            onChange={(event) => { setInputMode(event.target.value as WorkflowRunInputMode); setInputError(null); }}
+            className="h-8 shrink-0 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-100 transition-colors hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          >
+            <option value="text">Text</option>
+            <option value="json">JSON object</option>
+          </select>
+          <div className="relative min-w-0 flex-1 sm:flex-initial">
+            <input
+              ref={inputRef}
+              aria-label="Run input"
+              aria-invalid={Boolean(inputError)}
+              aria-describedby={inputError ? inputErrorId : undefined}
+              type="text"
+              value={runInput}
+              onChange={(event) => { setRunInput(event.target.value); setInputError(null); }}
+              onBlur={() => {
+                if (inputMode !== "json") return;
+                try { parseWorkflowRunInput(runInput, inputMode); setInputError(null); }
+                catch (error) { setInputError((error as Error).message); }
+              }}
+              placeholder={inputMode === "json" ? '{"delivery_request": "..."}' : "Run input"}
+              className="h-8 w-full min-w-0 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs text-zinc-100 placeholder-zinc-500 transition-colors hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 sm:w-40"
+            />
+            {inputError && <p id={inputErrorId} role="alert" className="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-red-800 bg-zinc-950 p-2 text-xs text-red-300 shadow-lg">{inputError}</p>}
+          </div>
         </div>
         <Button
           size="sm"

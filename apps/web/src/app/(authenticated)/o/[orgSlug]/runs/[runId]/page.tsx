@@ -7,6 +7,7 @@ import { ArrowLeft, Ban, CheckCircle2, Circle, CircleDot, Clock3, Loader2, XCirc
 import { useRouter } from "next/navigation";
 import type { RunEvent, RunStatus, WorkflowDefinition } from "@multi-agent/types";
 import { useRunStore } from "@/store/useRunStore";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { runService } from "@/services/runService";
 import { Button } from "@/components/ui/button";
 import { ExecutionTimeline } from "@/components/runs/ExecutionTimeline";
@@ -44,8 +45,8 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
   const traversedEdges = new Set(events.filter((event) => event.type === "edge.traversed" && typeof event.payload.edgeId === "string").map((event) => String(event.payload.edgeId)));
   const runActive = !!run && ACTIVE_RUN_STATUSES.includes(run.status);
 
-  return <main className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
-    <header className="flex h-14 items-center gap-3 border-b border-zinc-800 px-4">
+  return <PageContainer className="flex flex-1 flex-col gap-4 space-y-0">
+    <header className="flex min-h-14 flex-wrap items-center gap-3 border-b border-zinc-800 pb-3">
       <Button variant="ghost" size="icon" onClick={() => router.push(orgUrl("/runs"))}><ArrowLeft className="h-4 w-4" /></Button>
       <div><h1 className="text-sm font-semibold">Run {runId}</h1><p className="text-[10px] uppercase tracking-widest text-zinc-500">{run?.status ?? status}</p></div>
       <div className="ml-auto flex items-center gap-2">
@@ -58,14 +59,14 @@ export default function RunPage({ params }: { params: Promise<{ runId: string }>
         {runActive && <Button variant="destructive" size="sm" onClick={() => void runService.cancelRun(runId)}><Ban className="mr-1.5 h-3.5 w-3.5" />Cancel</Button>}
       </div>
     </header>
-    {controlError && <p role="alert" className="px-4 pt-3 text-sm text-red-300">{controlError}</p>}
-    {approvals.some((approval) => approval.status === "requested") && <div className="p-4 pb-0"><ApprovalPanel runId={runId} approvals={approvals} /></div>}
+    {controlError && <p role="alert" className="text-sm text-red-300">{controlError}</p>}
+    {approvals.some((approval) => approval.status === "requested") && <ApprovalPanel runId={runId} approvals={approvals} />}
     <RunThinkingSection events={events} run={run} />
-    <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[1.3fr_0.7fr]">
+    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1.3fr_0.7fr]">
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4"><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Workflow execution</h2><RuntimeGraph definition={definition} nodeStatus={nodeStatus} traversedEdges={traversedEdges} runActive={runActive} /></section>
       <section className="min-h-0 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4"><h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Event timeline</h2><ExecutionTimeline events={events} emptyMessage="Waiting for execution events…" /></section>
     </div>
-  </main>;
+  </PageContainer>;
 }
 
 function RuntimeGraph({ definition, nodeStatus, traversedEdges, runActive }: { definition?: WorkflowDefinition; nodeStatus: Map<string, RunEvent["type"]>; traversedEdges: Set<string>; runActive: boolean }) {

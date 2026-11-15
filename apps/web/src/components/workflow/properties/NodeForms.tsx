@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import {
   AgentNodeConfig,
   AgentNodeInputMode,
@@ -31,7 +31,16 @@ import type { AgentModelSettings } from "@multi-agent/types";
 import { useOrgPath } from "@/components/organization/OrgProvider";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { cn } from "@/lib/utils";
-import { Field, JsonField, inputClass, labelClass } from "./fields";
+import {
+  Field,
+  JsonField,
+  PanelSection,
+  checkboxClass,
+  inputClass,
+  labelClass,
+  selectChevronStyle,
+  selectClass,
+} from "./fields";
 
 function clampToolStepsInput(raw: string): number {
   const n = Math.trunc(Number(raw));
@@ -92,221 +101,243 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
   };
 
   return (
-    <div className="space-y-3">
-      <Field label="Base Agent">
-        <select
-          data-testid="base-agent-select"
-          value={config.agentId ?? ""}
-          onChange={(event) => {
-            const nextId = event.target.value || null;
-            // Preserve taskInstruction and overrides; incompatibilities surface in validation.
-            updateNodeConfig(node.id, { agentId: nextId });
-          }}
-          className={inputClass}
-        >
-          <option value="">— not linked —</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-        <p className="text-[10px] text-zinc-600">
-          Step settings below apply only to this node. Shared agent defaults live in the registry.
-        </p>
-      </Field>
+    <div className="space-y-3.5">
+      <PanelSection title="Base Agent">
+        <Field label="Linked Agent">
+          <select
+            data-testid="base-agent-select"
+            value={config.agentId ?? ""}
+            style={selectChevronStyle()}
+            onChange={(event) => {
+              const nextId = event.target.value || null;
+              // Preserve taskInstruction and overrides; incompatibilities surface in validation.
+              updateNodeConfig(node.id, { agentId: nextId });
+            }}
+            className={selectClass}
+          >
+            <option value="">— not linked —</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] leading-snug text-zinc-400">
+            Step settings below apply only to this node. Shared defaults live in the registry.
+          </p>
+        </Field>
+
+        {agent && (
+          <>
+            <div
+              data-testid="base-agent-summary"
+              className="space-y-1.5 rounded-lg border border-zinc-800/80 bg-zinc-950/60 p-2.5 text-[11px] text-zinc-400"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-semibold text-zinc-100">{agent.name}</span>
+                <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                  {agentBackendLabel(agent.backend)}
+                </span>
+              </div>
+              <div className="line-clamp-3 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-zinc-400">
+                {agent.systemPrompt.trim() || "(no system prompt)"}
+              </div>
+              <div className="text-[11px] text-zinc-400">
+                <span className="text-zinc-500">Tools: </span>
+                {agent.tools.length
+                  ? agent.tools
+                      .map((id) => tools.find((t) => t.id === id)?.name ?? id)
+                      .join(", ")
+                  : "none"}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="edit-agent-in-registry"
+              className="w-full rounded-lg border border-zinc-700/80 bg-zinc-900/80 px-3 py-1.5 text-xs font-medium text-indigo-300 transition-colors hover:border-indigo-500/40 hover:bg-zinc-800 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+              onClick={openRegistryEditor}
+            >
+              Edit Agent in Registry
+            </button>
+          </>
+        )}
+      </PanelSection>
 
       {agent && (
         <>
-          <div
-            data-testid="base-agent-summary"
-            className="rounded border border-zinc-800 bg-zinc-950/50 p-2 space-y-1 text-[11px] text-zinc-400"
-          >
-            <div className="text-zinc-200 font-medium">{agent.name}</div>
-            <div>{agentBackendLabel(agent.backend)}</div>
-            <div className="line-clamp-3 whitespace-pre-wrap font-mono text-[10px] text-zinc-500">
-              {agent.systemPrompt.trim() || "(no system prompt)"}
-            </div>
-            <div>
-              Tools:{" "}
-              {agent.tools.length
-                ? agent.tools
-                    .map((id) => tools.find((t) => t.id === id)?.name ?? id)
-                    .join(", ")
-                : "none"}
-            </div>
-          </div>
+          <PanelSection title="Step Overrides">
+            <Field label="Step Instructions">
+              <textarea
+                data-testid="step-task-instruction"
+                value={config.taskInstruction ?? ""}
+                onChange={(event) =>
+                  updateNodeConfig(node.id, {
+                    taskInstruction: event.target.value || undefined,
+                  })
+                }
+                rows={4}
+                placeholder="Task guidance for this step only (does not change the base system prompt)…"
+                className={cn(inputClass, "font-mono text-[11px] leading-relaxed")}
+              />
+            </Field>
 
-          <button
-            type="button"
-            data-testid="edit-agent-in-registry"
-            className="w-full rounded border border-zinc-700 px-2 py-1.5 text-xs text-indigo-300 hover:bg-zinc-900"
-            onClick={openRegistryEditor}
-          >
-            Edit Agent in Registry
-          </button>
-
-          <Field label="Step Instructions">
-            <textarea
-              data-testid="step-task-instruction"
-              value={config.taskInstruction ?? ""}
-              onChange={(event) =>
-                updateNodeConfig(node.id, {
-                  taskInstruction: event.target.value || undefined,
-                })
-              }
-              rows={4}
-              placeholder="Task guidance for this step only (does not change the base system prompt)…"
-              className={cn(inputClass, "font-mono text-[11px]")}
-            />
-          </Field>
-
-          {supportsModelOverride && schemaFields.length > 0 && (
-            <div className="space-y-2" data-testid="step-model-settings">
-              <p className={labelClass}>Model settings (step overrides)</p>
-              {schemaFields.map((field) => {
-                const overridden = Object.prototype.hasOwnProperty.call(override, field.key);
-                const inherited = baseSettings[field.key];
-                const effective = overridden
-                  ? override[field.key]
-                  : inherited;
-                return (
-                  <Field key={field.key} label={field.label}>
-                    <div className="flex items-center gap-2">
-                      <input
-                        data-testid={`model-override-${field.key}`}
-                        type="number"
-                        min={field.min}
-                        max={field.max}
-                        step={field.step}
-                        value={overridden ? (override[field.key] as number) : ""}
-                        placeholder={
-                          inherited === undefined ? "inherit default" : `inherit ${inherited}`
-                        }
-                        onChange={(event) => {
-                          const raw = event.target.value.trim();
-                          if (raw === "") {
-                            setModelOverride(field.key, undefined);
-                            return;
+            {supportsModelOverride && schemaFields.length > 0 && (
+              <div className="space-y-2.5 pt-1" data-testid="step-model-settings">
+                <p className={labelClass}>Model settings (step overrides)</p>
+                {schemaFields.map((field) => {
+                  const overridden = Object.prototype.hasOwnProperty.call(override, field.key);
+                  const inherited = baseSettings[field.key];
+                  const effective = overridden ? override[field.key] : inherited;
+                  return (
+                    <Field key={field.key} label={field.label}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          data-testid={`model-override-${field.key}`}
+                          type="number"
+                          min={field.min}
+                          max={field.max}
+                          step={field.step}
+                          value={overridden ? (override[field.key] as number) : ""}
+                          placeholder={
+                            inherited === undefined ? "inherit default" : `inherit ${inherited}`
                           }
-                          const n = Number(raw);
-                          if (!Number.isFinite(n)) return;
-                          setModelOverride(field.key, field.step === 1 ? Math.trunc(n) : n);
-                        }}
-                        className={inputClass}
-                      />
-                      {overridden && (
-                        <button
-                          type="button"
-                          data-testid={`clear-model-override-${field.key}`}
-                          className="shrink-0 text-[10px] text-zinc-400 hover:text-zinc-200"
-                          onClick={() => setModelOverride(field.key, undefined)}
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-zinc-600">
-                      {overridden ? "Override" : "Inherited"} · effective{" "}
-                      {effective === undefined ? "provider default" : String(effective)}
-                    </p>
-                  </Field>
-                );
-              })}
-            </div>
-          )}
+                          onChange={(event) => {
+                            const raw = event.target.value.trim();
+                            if (raw === "") {
+                              setModelOverride(field.key, undefined);
+                              return;
+                            }
+                            const n = Number(raw);
+                            if (!Number.isFinite(n)) return;
+                            setModelOverride(field.key, field.step === 1 ? Math.trunc(n) : n);
+                          }}
+                          className={inputClass}
+                        />
+                        {overridden && (
+                          <button
+                            type="button"
+                            data-testid={`clear-model-override-${field.key}`}
+                            className="shrink-0 rounded px-1.5 py-1 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 cursor-pointer"
+                            onClick={() => setModelOverride(field.key, undefined)}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400">
+                        {overridden ? "Override" : "Inherited"} · effective{" "}
+                        {effective === undefined ? "provider default" : String(effective)}
+                      </p>
+                    </Field>
+                  );
+                })}
+              </div>
+            )}
 
-          {supportsActiveTools && (
-            <Field label="Active tools">
+            {supportsActiveTools && (
+              <Field label="Active tools">
+                <select
+                  data-testid="step-active-tools-mode"
+                  value={toolsMode}
+                  style={selectChevronStyle()}
+                  onChange={(event) => {
+                    const mode = event.target.value as ActiveToolsMode;
+                    if (mode === "inherit") {
+                      updateNodeConfig(node.id, { activeTools: undefined });
+                    } else if (mode === "empty") {
+                      updateNodeConfig(node.id, { activeTools: [] });
+                    } else {
+                      updateNodeConfig(node.id, {
+                        activeTools: config.activeTools?.length
+                          ? config.activeTools
+                          : [...agent.tools],
+                      });
+                    }
+                  }}
+                  className={selectClass}
+                >
+                  <option value="inherit">Inherit agent tools</option>
+                  <option value="empty">No tools for this step</option>
+                  <option value="subset">Subset of agent tools</option>
+                </select>
+                {toolsMode === "subset" && (
+                  <div
+                    className="mt-2 space-y-1.5 rounded-lg border border-zinc-800/80 bg-zinc-950/50 p-2"
+                    data-testid="step-active-tools-subset"
+                  >
+                    {agent.tools.map((toolId) => {
+                      const label = tools.find((t) => t.id === toolId)?.name ?? toolId;
+                      const checked = (config.activeTools ?? []).includes(toolId);
+                      return (
+                        <label
+                          key={toolId}
+                          className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            className={checkboxClass}
+                            checked={checked}
+                            onChange={(event) => {
+                              const current = new Set(config.activeTools ?? []);
+                              if (event.target.checked) current.add(toolId);
+                              else current.delete(toolId);
+                              updateNodeConfig(node.id, { activeTools: [...current] });
+                            }}
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </Field>
+            )}
+
+            <Field label="Node execution mode override">
               <select
-                data-testid="step-active-tools-mode"
-                value={toolsMode}
+                data-testid="node-execution-mode"
+                value={config.executionMode ?? ""}
+                style={selectChevronStyle()}
                 onChange={(event) => {
-                  const mode = event.target.value as ActiveToolsMode;
-                  if (mode === "inherit") {
-                    updateNodeConfig(node.id, { activeTools: undefined });
-                  } else if (mode === "empty") {
-                    updateNodeConfig(node.id, { activeTools: [] });
-                  } else {
-                    updateNodeConfig(node.id, {
-                      activeTools: config.activeTools?.length ? config.activeTools : [...agent.tools],
-                    });
-                  }
+                  const value = event.target.value;
+                  updateNodeConfig(node.id, {
+                    executionMode: value === "single_turn" || value === "react" ? value : undefined,
+                  });
+                }}
+                className={selectClass}
+              >
+                <option value="">— use agent default —</option>
+                <option value="single_turn">Single-turn</option>
+                <option value="react">ReAct (autonomous)</option>
+              </select>
+            </Field>
+            <Field label="Node max tool steps override">
+              <input
+                data-testid="node-max-tool-steps"
+                type="number"
+                min={1}
+                max={10}
+                value={config.maxToolSteps ?? ""}
+                placeholder="—"
+                onChange={(event) => {
+                  const raw = event.target.value.trim();
+                  updateNodeConfig(node.id, {
+                    maxToolSteps: raw === "" ? undefined : clampToolStepsInput(raw),
+                  });
                 }}
                 className={inputClass}
-              >
-                <option value="inherit">Inherit agent tools</option>
-                <option value="empty">No tools for this step</option>
-                <option value="subset">Subset of agent tools</option>
-              </select>
-              {toolsMode === "subset" && (
-                <div className="mt-2 space-y-1" data-testid="step-active-tools-subset">
-                  {agent.tools.map((toolId) => {
-                    const label = tools.find((t) => t.id === toolId)?.name ?? toolId;
-                    const checked = (config.activeTools ?? []).includes(toolId);
-                    return (
-                      <label key={toolId} className="flex items-center gap-2 text-xs text-zinc-300">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            const current = new Set(config.activeTools ?? []);
-                            if (event.target.checked) current.add(toolId);
-                            else current.delete(toolId);
-                            updateNodeConfig(node.id, { activeTools: [...current] });
-                          }}
-                        />
-                        {label}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
+              />
             </Field>
-          )}
-
-          <Field label="Node execution mode override">
-            <select
-              data-testid="node-execution-mode"
-              value={config.executionMode ?? ""}
-              onChange={(event) => {
-                const value = event.target.value;
-                updateNodeConfig(node.id, {
-                  executionMode: value === "single_turn" || value === "react" ? value : undefined,
-                });
-              }}
-              className={inputClass}
-            >
-              <option value="">— use agent default —</option>
-              <option value="single_turn">Single-turn</option>
-              <option value="react">ReAct (autonomous)</option>
-            </select>
-          </Field>
-          <Field label="Node max tool steps override">
-            <input
-              data-testid="node-max-tool-steps"
-              type="number"
-              min={1}
-              max={10}
-              value={config.maxToolSteps ?? ""}
-              placeholder="—"
-              onChange={(event) => {
-                const raw = event.target.value.trim();
-                updateNodeConfig(node.id, {
-                  maxToolSteps: raw === "" ? undefined : clampToolStepsInput(raw),
-                });
-              }}
-              className={inputClass}
-            />
-          </Field>
+          </PanelSection>
 
           <fieldset
             data-testid="node-session-continuation-fieldset"
-            className="space-y-2.5 rounded-lg border border-zinc-800/80 bg-zinc-950/40 p-2.5"
+            className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/35 p-3"
           >
             <legend className={cn(labelClass, "px-1")}>Session &amp; Loop Continuation</legend>
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label htmlFor={`${fieldIdPrefix}-session-mode`} className={labelClass}>
                 Session Continuation Mode
               </label>
@@ -316,6 +347,7 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
                 data-testid="node-session-mode"
                 aria-describedby={`${fieldIdPrefix}-session-mode-help`}
                 value={sessionMode}
+                style={selectChevronStyle()}
                 onChange={(event) => {
                   const nextMode = event.target.value as AgentSessionMode;
                   setSessionKeyBlurred(false);
@@ -325,19 +357,23 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
                     ...(nextMode === "stateless" ? { resumePromptMode: undefined } : {}),
                   });
                 }}
-                className={inputClass}
+                className={selectClass}
               >
                 <option value="stateless">Stateless (fresh turn each visit)</option>
                 <option value="node">Node-persistent (resume same session on loop)</option>
                 <option value="shared">Shared session key (resume across steps/loops)</option>
               </select>
-              <p id={`${fieldIdPrefix}-session-mode-help`} className="text-[10px] text-zinc-500">
-                Resumes native CLI threads (Codex, Claude Code, Antigravity) or API history across Converge/QA loops.
+              <p
+                id={`${fieldIdPrefix}-session-mode-help`}
+                className="text-[11px] leading-snug text-zinc-400"
+              >
+                Resumes native CLI threads (Codex, Claude Code, Antigravity) or API history across
+                Converge/QA loops.
               </p>
             </div>
 
             {sessionMode === "shared" && (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <label htmlFor={`${fieldIdPrefix}-session-key`} className={labelClass}>
                   Shared Session Key <span className="text-amber-400">*</span>
                 </label>
@@ -371,16 +407,16 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
                   className={cn(
                     inputClass,
                     "font-mono text-[11px]",
-                    sessionKeyMissing && "border-red-500/70 focus:ring-red-500"
+                    sessionKeyMissing && "border-red-500/70 focus-visible:ring-red-500",
                   )}
                 />
-                <p id={`${fieldIdPrefix}-session-key-help`} className="text-[10px] text-zinc-500">
+                <p id={`${fieldIdPrefix}-session-key-help`} className="text-[11px] text-zinc-400">
                   Steps with the same key continue the exact same CLI session ID.
                 </p>
                 <p
                   id={`${fieldIdPrefix}-session-key-error`}
                   aria-live="polite"
-                  className="text-[10px] text-red-400"
+                  className="text-[11px] text-red-400"
                 >
                   {sessionKeyMissing ? "Shared Session Key is required when mode is Shared." : ""}
                 </p>
@@ -388,7 +424,7 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
             )}
 
             {sessionMode !== "stateless" && (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <label htmlFor={`${fieldIdPrefix}-resume-prompt-mode`} className={labelClass}>
                   Resume Prompt Mode
                 </label>
@@ -397,13 +433,14 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
                   name="resumePromptMode"
                   data-testid="node-resume-prompt-mode"
                   value={config.resumePromptMode ?? "delta"}
+                  style={selectChevronStyle()}
                   onChange={(event) => {
                     const next = event.target.value as AgentResumePromptMode;
                     updateNodeConfig(node.id, {
                       resumePromptMode: next === "delta" ? undefined : next,
                     });
                   }}
-                  className={inputClass}
+                  className={selectClass}
                 >
                   <option value="delta">Delta (only new step guidance &amp; loop feedback)</option>
                   <option value="full">Full (re-send base system prompt + feedback)</option>
@@ -411,7 +448,7 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
               </div>
             )}
 
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label htmlFor={`${fieldIdPrefix}-input-mode`} className={labelClass}>
                 Incoming Input Mode
               </label>
@@ -420,13 +457,14 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
                 name="inputMode"
                 data-testid="node-input-mode"
                 value={config.inputMode ?? "auto"}
+                style={selectChevronStyle()}
                 onChange={(event) => {
                   const next = event.target.value as AgentNodeInputMode;
                   updateNodeConfig(node.id, {
                     inputMode: next === "auto" ? undefined : next,
                   });
                 }}
-                className={inputClass}
+                className={selectClass}
               >
                 <option value="auto">Auto (fan-in branches or session last value)</option>
                 <option value="last_value">Latest upstream value only (recommended for loops)</option>
@@ -453,12 +491,13 @@ export function ToolForm({ node }: { node: WorkflowNode }) {
   };
 
   return (
-    <div className="space-y-3">
+    <PanelSection title="Tool Configuration">
       <Field label="Linked Tool">
         <select
           value={config.toolId ?? ""}
+          style={selectChevronStyle()}
           onChange={(event) => updateNodeConfig(node.id, { toolId: event.target.value || null })}
-          className={inputClass}
+          className={selectClass}
         >
           <option value="">— not linked —</option>
           {tools.map((t) => (
@@ -467,16 +506,17 @@ export function ToolForm({ node }: { node: WorkflowNode }) {
             </option>
           ))}
         </select>
-        <p className="text-[10px] text-zinc-600">
+        <p className="text-[11px] leading-snug text-zinc-400">
           Tool configuration lives in the registry and is shared between nodes.
         </p>
       </Field>
 
       {tool && (
         <>
-          <label className="flex items-center gap-2 text-xs text-zinc-300">
+          <label className="flex items-center gap-2 rounded-lg border border-zinc-800/70 bg-zinc-950/50 px-2.5 py-2 text-xs text-zinc-200 cursor-pointer">
             <input
               type="checkbox"
+              className={checkboxClass}
               checked={tool.enabled}
               onChange={(event) => patchTool({ enabled: event.target.checked })}
             />
@@ -493,8 +533,11 @@ export function ToolForm({ node }: { node: WorkflowNode }) {
           <Field label="Category">
             <select
               value={tool.category}
-              onChange={(event) => patchTool({ category: event.target.value as ToolRecord["category"] })}
-              className={inputClass}
+              style={selectChevronStyle()}
+              onChange={(event) =>
+                patchTool({ category: event.target.value as ToolRecord["category"] })
+              }
+              className={selectClass}
             >
               {TOOL_CATEGORIES.map((category) => (
                 <option key={category} value={category}>
@@ -518,7 +561,7 @@ export function ToolForm({ node }: { node: WorkflowNode }) {
           />
         </>
       )}
-    </div>
+    </PanelSection>
   );
 }
 
@@ -526,7 +569,7 @@ export function ApprovalForm({ node }: { node: WorkflowNode }) {
   const config = node.config as ApprovalNodeConfig;
   const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
   return (
-    <div className="space-y-3">
+    <PanelSection title="Approval Gate">
       <Field label="Approval Message">
         <textarea
           value={config.message}
@@ -539,10 +582,11 @@ export function ApprovalForm({ node }: { node: WorkflowNode }) {
       <Field label="Approval Type">
         <select
           value={config.approvalType}
+          style={selectChevronStyle()}
           onChange={(event) =>
             updateNodeConfig(node.id, { approvalType: event.target.value })
           }
-          className={inputClass}
+          className={selectClass}
         >
           <option value="manual">Manual — wait for human</option>
           <option value="timeout">Timeout — auto-approve after</option>
@@ -561,7 +605,7 @@ export function ApprovalForm({ node }: { node: WorkflowNode }) {
           />
         </Field>
       )}
-    </div>
+    </PanelSection>
   );
 }
 
@@ -569,12 +613,13 @@ export function MemoryForm({ node }: { node: WorkflowNode }) {
   const config = node.config as MemoryNodeConfig;
   const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
   return (
-    <div className="space-y-3">
+    <PanelSection title="Memory Settings">
       <Field label="Memory Type">
         <select
           value={config.memoryType}
+          style={selectChevronStyle()}
           onChange={(event) => updateNodeConfig(node.id, { memoryType: event.target.value })}
-          className={inputClass}
+          className={selectClass}
         >
           <option value="short_term">Short term (per run)</option>
           <option value="long_term">Long term (persistent)</option>
@@ -584,8 +629,9 @@ export function MemoryForm({ node }: { node: WorkflowNode }) {
       <Field label="Access Mode">
         <select
           value={config.mode}
+          style={selectChevronStyle()}
           onChange={(event) => updateNodeConfig(node.id, { mode: event.target.value })}
-          className={inputClass}
+          className={selectClass}
         >
           <option value="read">Read</option>
           <option value="write">Write</option>
@@ -596,15 +642,18 @@ export function MemoryForm({ node }: { node: WorkflowNode }) {
         <Field label="Write Source">
           <select
             value={config.writeSource ?? "last_value"}
+            style={selectChevronStyle()}
             onChange={(event) => updateNodeConfig(node.id, { writeSource: event.target.value })}
-            className={inputClass}
+            className={selectClass}
           >
             <option value="last_value">Immediately preceding value</option>
             <option value="node_results">All completed node results</option>
             <option value="handoffs">Structured agent handoffs</option>
             <option value="run_report">Complete run report</option>
           </select>
-          <p className="mt-1 text-xs text-zinc-500">Use a complete run report for final evidence aggregation.</p>
+          <p className="mt-1 text-[11px] leading-snug text-zinc-400">
+            Use a complete run report for final evidence aggregation.
+          </p>
         </Field>
       )}
       <Field label="Memory Key">
@@ -616,7 +665,7 @@ export function MemoryForm({ node }: { node: WorkflowNode }) {
           className={cn(inputClass, "font-mono text-[11px]")}
         />
       </Field>
-    </div>
+    </PanelSection>
   );
 }
 
@@ -632,36 +681,39 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
   };
 
   return (
-    <div className="space-y-3">
+    <PanelSection title="Condition Routing">
       <div className="space-y-2">
-        <label className={labelClass}>Branches (outgoing paths)</label>
+        <span className={labelClass}>Branches (outgoing paths)</span>
         {config.branches.map((branch, index) => (
           <div key={index} className="flex items-center gap-1.5">
             <input
               type="text"
               value={branch.key}
+              aria-label={`Branch ${index + 1} key`}
               onChange={(event) => updateBranch(index, { key: event.target.value })}
               placeholder="key"
-              className={cn(inputClass, "w-20 font-mono text-[11px]")}
+              className={cn(inputClass, "w-20 shrink-0 font-mono text-[11px]")}
             />
             <input
               type="text"
               value={branch.label}
+              aria-label={`Branch ${index + 1} label`}
               onChange={(event) => updateBranch(index, { label: event.target.value })}
               placeholder="Label"
-              className={cn(inputClass, "flex-1")}
+              className={cn(inputClass, "min-w-0 flex-1")}
             />
             <button
               type="button"
+              aria-label={`Remove branch ${index + 1}`}
               title="Remove branch"
               onClick={() =>
                 updateNodeConfig(node.id, {
                   branches: config.branches.filter((_, i) => i !== index),
                 })
               }
-              className="text-zinc-500 hover:text-red-400 cursor-pointer"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800/80 text-zinc-400 transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 cursor-pointer"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         ))}
@@ -672,7 +724,7 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
               branches: [...config.branches, { key: "", label: "" }],
             })
           }
-          className="w-full rounded-lg border border-dashed border-zinc-700 py-1.5 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 cursor-pointer"
+          className="w-full rounded-lg border border-dashed border-zinc-700 py-1.5 text-[11px] font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-100 cursor-pointer"
         >
           + Add branch
         </button>
@@ -680,12 +732,13 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
       <Field label="Branch Source">
         <select
           value={config.valueSource ?? "input"}
+          style={selectChevronStyle()}
           onChange={(event) =>
             updateNodeConfig(node.id, {
               valueSource: event.target.value === "last_value" ? "last_value" : "input",
             })
           }
-          className={inputClass}
+          className={selectClass}
         >
           <option value="input">Run input (legacy-compatible input routing)</option>
           <option value="last_value">Previous node result</option>
@@ -701,17 +754,18 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
           placeholder="e.g. status"
           className={cn(inputClass, "font-mono text-[11px]")}
         />
-        <p className="text-[10px] text-zinc-600">
+        <p className="text-[11px] leading-snug text-zinc-400">
           Field of the selected carrier that holds the structured result / branch value.
         </p>
       </Field>
       <Field label="Unknown / Error Route">
         <select
           value={config.unknownRoute ?? ""}
+          style={selectChevronStyle()}
           onChange={(event) =>
             updateNodeConfig(node.id, { unknownRoute: event.target.value || undefined })
           }
-          className={inputClass}
+          className={selectClass}
         >
           <option value="">— fail closed with BRANCH_ROUTING_UNKNOWN —</option>
           {config.branches
@@ -722,7 +776,7 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
               </option>
             ))}
         </select>
-        <p className="text-[10px] text-zinc-600">
+        <p className="text-[11px] leading-snug text-zinc-400">
           Route taken when the branch value is missing, malformed, undeclared, mistyped, or
           ambiguous. Without an explicit route the run fails instead of falling back to the
           first branch.
@@ -731,23 +785,24 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
       <Field label="Malformed / Type Error Route">
         <select
           value={config.errorRoute ?? ""}
+          style={selectChevronStyle()}
           onChange={(event) => updateNodeConfig(node.id, { errorRoute: event.target.value || undefined })}
-          className={inputClass}
+          className={selectClass}
         >
           <option value="">— use unknown route or fail closed —</option>
           {config.branches.filter((branch) => branch.key.trim()).map((branch) => (
             <option key={branch.key} value={branch.key}>{branch.key}</option>
           ))}
         </select>
-        <p className="text-[10px] text-zinc-600">
+        <p className="text-[11px] leading-snug text-zinc-400">
           Handles missing, malformed, or mistyped branch carriers separately from valid-but-undeclared values.
         </p>
       </Field>
-      <p className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-2 text-[10px] leading-relaxed text-zinc-500">
+      <p className="rounded-lg border border-zinc-800/70 bg-zinc-950/50 p-2.5 text-[11px] leading-relaxed text-zinc-400">
         Connect each branch handle (bottom of the node) to a target. The edge inherits the branch
         key — edit it on the edge itself.
       </p>
-    </div>
+    </PanelSection>
   );
 }
 
@@ -758,57 +813,102 @@ export function ConditionForm({ node }: { node: WorkflowNode }) {
 export function ContractForm({ node }: { node: WorkflowNode }) {
   const updateNodeContract = useWorkflowStore((s) => s.updateNodeContract);
   const contract: NodeContract = node.contract ?? { version: NODE_CONTRACT_VERSION };
+  const hasConfiguredContract = Boolean(
+    node.contract &&
+      (Object.keys(node.contract.inputSchema ?? {}).length > 0 ||
+        Object.keys(node.contract.outputSchema ?? {}).length > 0 ||
+        node.contract.maxPayloadBytes !== undefined ||
+        node.contract.captureEvidence === true),
+  );
+  const [open, setOpen] = useState(hasConfiguredContract);
 
   return (
-    <div className="space-y-3 rounded-lg border border-zinc-800/60 bg-zinc-900/30 p-2.5">
-      <div className="flex items-center justify-between">
-        <label className={labelClass}>I/O Contract</label>
-        <span className="text-[10px] text-zinc-500">
-          {node.contract ? `version ${contract.version}` : "not set (unvalidated beyond bounds)"}
+    <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/35">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-2 p-3 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-xl cursor-pointer"
+      >
+        <span className="flex items-center gap-1.5">
+          {open ? (
+            <ChevronDown className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" />
+          )}
+          <span className={labelClass}>I/O Contract</span>
         </span>
-      </div>
-      <JsonField
-        label="Input Schema (JSON)"
-        value={(contract.inputSchema ?? {}) as Record<string, unknown>}
-        onChange={(inputSchema) => updateNodeContract(node.id, { ...contract, version: contract.version || NODE_CONTRACT_VERSION, inputSchema })}
-      />
-      <JsonField
-        label="Output Schema (JSON)"
-        value={(contract.outputSchema ?? {}) as Record<string, unknown>}
-        onChange={(outputSchema) => updateNodeContract(node.id, { ...contract, version: contract.version || NODE_CONTRACT_VERSION, outputSchema })}
-      />
-      <Field label="Max payload bytes (optional)">
-        <input
-          type="number"
-          min={1024}
-          max={10 * 1024 * 1024}
-          value={contract.maxPayloadBytes ?? ""}
-          onChange={(event) =>
-            updateNodeContract(node.id, {
-              ...contract,
-              version: contract.version || NODE_CONTRACT_VERSION,
-              maxPayloadBytes: event.target.value ? Number(event.target.value) : undefined,
-            })
-          }
-          placeholder="default: no node-level bound"
-          className={cn(inputClass, "font-mono text-[11px]")}
-        />
-      </Field>
-      <label className="flex items-center gap-2 text-xs text-zinc-300">
-        <input
-          type="checkbox"
-          checked={contract.captureEvidence === true}
-          onChange={(event) =>
-            updateNodeContract(node.id, {
-              ...contract,
-              version: contract.version || NODE_CONTRACT_VERSION,
-              captureEvidence: event.target.checked || undefined,
-            })
-          }
-        />
-        Capture evidence / provenance on results
-      </label>
-    </div>
+        <span
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-medium",
+            hasConfiguredContract
+              ? "bg-indigo-950/70 text-indigo-300 border border-indigo-500/30"
+              : "bg-zinc-900 text-zinc-400",
+          )}
+        >
+          {node.contract ? `v${contract.version}` : "Optional"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="space-y-3 border-t border-zinc-800/70 p-3">
+          <JsonField
+            label="Input Schema (JSON)"
+            value={(contract.inputSchema ?? {}) as Record<string, unknown>}
+            onChange={(inputSchema) =>
+              updateNodeContract(node.id, {
+                ...contract,
+                version: contract.version || NODE_CONTRACT_VERSION,
+                inputSchema,
+              })
+            }
+          />
+          <JsonField
+            label="Output Schema (JSON)"
+            value={(contract.outputSchema ?? {}) as Record<string, unknown>}
+            onChange={(outputSchema) =>
+              updateNodeContract(node.id, {
+                ...contract,
+                version: contract.version || NODE_CONTRACT_VERSION,
+                outputSchema,
+              })
+            }
+          />
+          <Field label="Max payload bytes (optional)">
+            <input
+              type="number"
+              min={1024}
+              max={10 * 1024 * 1024}
+              value={contract.maxPayloadBytes ?? ""}
+              onChange={(event) =>
+                updateNodeContract(node.id, {
+                  ...contract,
+                  version: contract.version || NODE_CONTRACT_VERSION,
+                  maxPayloadBytes: event.target.value ? Number(event.target.value) : undefined,
+                })
+              }
+              placeholder="default: no node-level bound"
+              className={cn(inputClass, "font-mono text-[11px]")}
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+            <input
+              type="checkbox"
+              className={checkboxClass}
+              checked={contract.captureEvidence === true}
+              onChange={(event) =>
+                updateNodeContract(node.id, {
+                  ...contract,
+                  version: contract.version || NODE_CONTRACT_VERSION,
+                  captureEvidence: event.target.checked || undefined,
+                })
+              }
+            />
+            Capture evidence / provenance on results
+          </label>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -827,7 +927,7 @@ export function IOPortalForm({
     : (node.config as OutputNodeConfig).description;
 
   return (
-    <div className="space-y-3">
+    <PanelSection title={isInput ? "Input Portal" : "Output Portal"}>
       <Field label={isInput ? "Input Key" : "Output Key"}>
         <input
           type="text"
@@ -844,7 +944,7 @@ export function IOPortalForm({
           className={inputClass}
         />
       </Field>
-    </div>
+    </PanelSection>
   );
 }
 
@@ -852,12 +952,13 @@ export function ParallelJoinForm({ node }: { node: WorkflowNode }) {
   const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
   const config = node.config as { joinPolicy?: string; branchTimeoutMs?: number; requiredBranchKeys?: string[] };
   return (
-    <div className="space-y-3">
+    <PanelSection title="Parallel Join">
       <Field label="Join policy">
         <select
           value={config.joinPolicy ?? "all_success"}
+          style={selectChevronStyle()}
           onChange={(event) => updateNodeConfig(node.id, { joinPolicy: event.target.value })}
-          className={inputClass}
+          className={selectClass}
         >
           <option value="all_success">All success (fail-closed)</option>
           <option value="partial_allowed">Partial allowed</option>
@@ -892,7 +993,7 @@ export function ParallelJoinForm({ node }: { node: WorkflowNode }) {
           className={cn(inputClass, "font-mono text-[11px]")}
         />
       </Field>
-    </div>
+    </PanelSection>
   );
 }
 
@@ -913,56 +1014,71 @@ function MappingRowsEditor({
         <span className={labelClass}>{label}</span>
         <button
           type="button"
-          className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200"
+          className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-indigo-300 transition-colors hover:bg-indigo-500/10 hover:text-indigo-200 cursor-pointer"
           onClick={() => onChange([...rows, { source: "", target: "", required: true }])}
         >
-          Add row
+          + Add row
         </button>
       </div>
-      {rows.length === 0 && <p className="text-[11px] text-zinc-500">No mappings yet.</p>}
+      {rows.length === 0 && (
+        <p className="rounded-lg border border-dashed border-zinc-800 px-2.5 py-1.5 text-[11px] text-zinc-400">
+          No mappings yet.
+        </p>
+      )}
       {rows.map((row, index) => (
-        <div key={`${label}-${index}`} className="grid grid-cols-[1fr_1fr_auto_auto] gap-1.5">
-          <input
-            type="text"
-            placeholder="source"
-            value={row.source}
-            onChange={(event) => {
-              const next = [...rows];
-              next[index] = { ...row, source: event.target.value };
-              onChange(next);
-            }}
-            className={cn(inputClass, "font-mono text-[11px]")}
-          />
-          <input
-            type="text"
-            placeholder="target"
-            value={row.target}
-            onChange={(event) => {
-              const next = [...rows];
-              next[index] = { ...row, target: event.target.value };
-              onChange(next);
-            }}
-            className={cn(inputClass, "font-mono text-[11px]")}
-          />
-          <label className="flex items-center gap-1 text-[10px] text-zinc-400">
+        <div
+          key={`${label}-${index}`}
+          className="space-y-2 rounded-lg border border-zinc-800/80 bg-zinc-950/50 p-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <label className="flex items-center gap-1.5 text-[10px] text-zinc-300 cursor-pointer">
+              <input
+                type="checkbox"
+                className={checkboxClass}
+                checked={row.required !== false}
+                onChange={(event) => {
+                  const next = [...rows];
+                  next[index] = { ...row, required: event.target.checked };
+                  onChange(next);
+                }}
+              />
+              Required
+            </label>
+            <button
+              type="button"
+              aria-label={`Remove ${label} row ${index + 1}`}
+              className="text-[10px] font-medium text-red-300 hover:text-red-200 cursor-pointer"
+              onClick={() => onChange(rows.filter((_, i) => i !== index))}
+            >
+              Remove
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
             <input
-              type="checkbox"
-              checked={row.required !== false}
+              type="text"
+              placeholder="source"
+              aria-label={`${label} row ${index + 1} source`}
+              value={row.source}
               onChange={(event) => {
                 const next = [...rows];
-                next[index] = { ...row, required: event.target.checked };
+                next[index] = { ...row, source: event.target.value };
                 onChange(next);
               }}
+              className={cn(inputClass, "font-mono text-[11px]")}
             />
-            req
-          </label>
-          <button
-            type="button"
-            className="text-[10px] text-red-300 hover:text-red-200"
-            onClick={() => onChange(rows.filter((_, i) => i !== index))}
-          >
-            Remove
-          </button>
+            <input
+              type="text"
+              placeholder="target"
+              aria-label={`${label} row ${index + 1} target`}
+              value={row.target}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, target: event.target.value };
+                onChange(next);
+              }}
+              className={cn(inputClass, "font-mono text-[11px]")}
+            />
+          </div>
         </div>
       ))}
     </div>
@@ -979,7 +1095,7 @@ export function SubgraphForm({ node }: { node: WorkflowNode }) {
     outputMappings?: SubgraphMappingRow[];
   };
   return (
-    <div className="space-y-3">
+    <PanelSection title="Subgraph Reference">
       <Field label="Referenced workflow id">
         <input
           type="text"
@@ -1012,6 +1128,6 @@ export function SubgraphForm({ node }: { node: WorkflowNode }) {
         rows={config.outputMappings ?? []}
         onChange={(outputMappings) => updateNodeConfig(node.id, { outputMappings })}
       />
-    </div>
+    </PanelSection>
   );
 }

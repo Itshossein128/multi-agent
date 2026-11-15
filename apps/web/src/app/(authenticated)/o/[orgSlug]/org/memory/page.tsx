@@ -4,6 +4,7 @@ import { useOrg, useOrgPath } from "@/components/organization/OrgProvider";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Memory, MemoryKind, MemoryNamespace } from "@multi-agent/types";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { memoryService, type MemoryAuthContext } from "@/services/memoryService";
 import { Button } from "@/components/ui/button";
 import { Field, fieldClass, Section } from "@/components/agents/AgentFields";
@@ -139,7 +140,7 @@ export default function MemoryExplorer() {
   };
 
   return (
-    <main className="min-h-screen space-y-6 bg-zinc-950 p-6 text-zinc-100">
+    <PageContainer>
       <Link className="text-indigo-300 underline" href={orgUrl("/org")}>
         Back to Graph Editor
       </Link>
@@ -283,6 +284,6 @@ export default function MemoryExplorer() {
           ))}
         </ul>
       </Section>
-    </main>
+    </PageContainer>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { useOrg } from "@/components/organization/OrgProvider";
 import { Button } from "@/components/ui/button";
 import type { OrganizationMembership } from "../../../../../../../../src/studio/contracts";
@@ -108,7 +109,7 @@ export default function OrganizationSettings() {
     }
   }
 
-  return <main className="mx-auto w-full max-w-5xl space-y-6 p-6">
+  return <PageContainer>
     <div><h1 className="text-2xl font-semibold">Organization settings</h1><p className="mt-2 text-sm text-zinc-400">Manage {org.name}. Your role: {org.role}.</p></div>
     {(error || loadError) && <p role="alert" className="text-sm text-red-400">{error || loadError?.message}</p>}
 
@@ -200,5 +201,5 @@ export default function OrganizationSettings() {
         </form>
       </div>
     )}
-  </main>;
+  </PageContainer>;
 }

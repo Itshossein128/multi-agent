@@ -7,9 +7,10 @@ export default auth((req) => {
   const { nextUrl } = req;
   const isAuthRoute = nextUrl.pathname.startsWith("/login") || nextUrl.pathname.startsWith("/register");
   const isApiAuthRoute = nextUrl.pathname.startsWith("/api/auth");
+  const isLogoutRoute = nextUrl.pathname === "/logout";
 
-  // Always allow NextAuth API routes
-  if (isApiAuthRoute) {
+  // Always allow NextAuth API routes and session-clearing logout
+  if (isApiAuthRoute || isLogoutRoute) {
     return;
   }
 

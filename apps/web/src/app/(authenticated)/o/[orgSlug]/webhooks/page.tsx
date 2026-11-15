@@ -16,6 +16,7 @@ import {
   X,
   Globe,
 } from "lucide-react";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/formatRelativeTime";
 import { useStudioLocale } from "@/lib/useStudioLocale";
@@ -291,7 +292,7 @@ export default function WebhookTriggersPage() {
   };
 
   return (
-    <div dir={direction} className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
+    <PageContainer dir={direction}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800 pb-5">
         <div>
@@ -661,6 +662,6 @@ export default function WebhookTriggersPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

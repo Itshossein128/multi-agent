@@ -117,7 +117,19 @@ export type AuthenticatedPrincipal = { userId: string; tenantId: string };
 /** Session user id only (may have no organization yet after registration). */
 export async function getSessionUserId(): Promise<string | null> {
   const user = (await auth())?.user as { id?: string } | undefined;
-  return user?.id ?? null;
+  const userId = user?.id ?? null;
+  if (!userId) return null;
+  // Reject stale JWTs whose account no longer exists (or is inactive).
+  try {
+    const result = await getDbPool().query(
+      `SELECT 1 FROM studio_users WHERE id = $1 AND status = 'active' LIMIT 1`,
+      [userId],
+    );
+    if (!result.rows[0]) return null;
+  } catch {
+    return null;
+  }
+  return userId;
 }
 
 export async function getAuthenticatedPrincipal(request?: Request): Promise<AuthenticatedPrincipal | null> {

@@ -29,7 +29,7 @@ export function CompletedAndCostSection() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       {/* Completed Tasks List (Spans 2 columns) */}
       <Card className="border-zinc-800/80 bg-zinc-900/40 lg:col-span-2">
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
           <div>
             <div className="flex items-center gap-2">
               <CardTitle className="text-base font-semibold text-zinc-100 flex items-center gap-2">

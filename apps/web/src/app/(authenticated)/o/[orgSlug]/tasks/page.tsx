@@ -7,6 +7,7 @@ import {
   AlertOctagon,
   RefreshCw,
 } from "lucide-react";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -243,18 +244,18 @@ export default function TaskBoardPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-400">
+      <PageContainer className="flex flex-1 items-center justify-center text-zinc-400">
         <div className="flex items-center gap-3 text-sm">
           <RefreshCw className="h-4 w-4 animate-spin" />
           Loading task board...
         </div>
-      </div>
+      </PageContainer>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
+      <PageContainer className="flex flex-1 items-center justify-center">
         <Card className="w-full max-w-md border-zinc-800 bg-zinc-900/40">
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <AlertOctagon className="h-8 w-8 text-red-400" />
@@ -267,14 +268,14 @@ export default function TaskBoardPage() {
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+    <PageContainer className="flex flex-1 flex-col gap-4 space-y-0">
       {/* Filter bar */}
-      <div className="mx-auto w-full max-w-[1800px] px-4 pt-4 lg:px-8">
+      <div>
         <TaskFilterBar
           filters={filters}
           onFilterChange={handleFilterChange}
@@ -309,7 +310,7 @@ export default function TaskBoardPage() {
       </div>
 
       {/* Board */}
-      <main className="mx-auto w-full max-w-[1800px] flex-1 px-4 py-4 lg:px-8">
+      <div className="flex-1">
         {tasks.length > 0 && filteredTasks.length === 0 ? (
           <TaskFilterEmptyState onResetFilters={handleResetFilters} />
         ) : (
@@ -344,7 +345,7 @@ export default function TaskBoardPage() {
             ))}
           </div>
         )}
-      </main>
+      </div>
 
       {/* Create Task Modal */}
       {modalOpen && (
@@ -398,6 +399,6 @@ export default function TaskBoardPage() {
           onDelete={handleDeleteTask}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { scopedApiPath } from "@/lib/orgRoute";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
@@ -42,7 +43,7 @@ export default function BudgetsPage() {
     finally { setBusy(false); }
   };
   const label = (budget: Pick<Budget, "scope" | "scopeId">) => budget.scope === "company" ? "Company" : budget.scope === "agent" ? agents.find(a => a.id === budget.scopeId)?.name ?? budget.scopeId : projects.find(p => p.id === budget.scopeId)?.name ?? budget.scopeId;
-  return <main className="mx-auto max-w-5xl space-y-8 p-6 text-zinc-100"><header><h1 className="text-2xl font-semibold">Cost budgets</h1><p className="text-sm text-zinc-400">Set monthly company, agent, and project caps. Each agent invocation reserves an estimated amount before execution.</p></header>
+  return <PageContainer className="space-y-8"><header><h1 className="text-2xl font-semibold">Cost budgets</h1><p className="text-sm text-zinc-400">Set monthly company, agent, and project caps. Each agent invocation reserves an estimated amount before execution.</p></header>
     {error && <p role="alert" className="rounded border border-rose-700 bg-rose-950 p-3 text-sm text-rose-200">{error}</p>}
     <form onSubmit={configure} className="grid gap-3 rounded-lg border border-zinc-800 p-4 md:grid-cols-5">
       <select aria-label="Budget scope" value={scope} onChange={event => { setScope(event.target.value as Budget["scope"]); setScopeId(""); }} className="rounded bg-zinc-900 p-2"><option value="company">Company</option><option value="agent">Agent</option><option value="project">Project</option></select>
@@ -53,5 +54,5 @@ export default function BudgetsPage() {
     </form>
     <section className="space-y-3"><h2 className="text-lg font-medium">Current period</h2>{data.budgets.length === 0 && <p className="text-sm text-zinc-400">No budgets configured.</p>}{data.budgets.map(budget => <article key={`${budget.scope}:${budget.scopeId}`} className="rounded border border-zinc-800 p-4"><div className="flex justify-between"><strong>{label(budget)}</strong><span>${budget.spentUsd.toFixed(2)} spent · ${budget.reservedUsd.toFixed(2)} reserved / ${budget.limitUsd.toFixed(2)}</span></div><div className="mt-2 h-2 rounded bg-zinc-800"><div className="h-2 rounded bg-indigo-500" style={{ width: `${Math.min(100, (budget.spentUsd + budget.reservedUsd) / budget.limitUsd * 100)}%` }} /></div><p className="mt-2 text-xs text-zinc-400">Alert at {budget.thresholdPercent}% · Renews {new Date(budget.periodEnd).toLocaleDateString()}</p></article>)}</section>
     <section><h2 className="mb-3 text-lg font-medium">Alerts</h2>{data.alerts.length === 0 && <p className="text-sm text-zinc-400">No alerts.</p>}{data.alerts.map((alert,index) => <p key={`${alert.scope}:${alert.scopeId}:${index}`} className="border-b border-zinc-800 py-2 text-sm">{label(alert)} reached {alert.level === "limit" ? "the limit" : "the alert threshold"} · ${alert.spentUsd.toFixed(2)} of ${alert.limitUsd.toFixed(2)} · {new Date(alert.createdAt).toLocaleString()}</p>)}</section>
-  </main>;
+  </PageContainer>;
 }

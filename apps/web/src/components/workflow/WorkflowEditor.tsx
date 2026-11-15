@@ -179,26 +179,28 @@ function WorkflowEditorContent() {
                 aria-label="Workflow editor panels"
                 className="flex items-center gap-1 border-b border-zinc-800/80 bg-zinc-950 px-3 py-1.5 lg:hidden"
               >
-                {MOBILE_PANELS.map((panel) => {
-                  const selected = mobilePanel === panel.id;
-                  return (
-                    <button
-                      key={panel.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={selected}
-                      onClick={() => setMobilePanel(panel.id)}
-                      className={cn(
-                        "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer",
-                        selected
-                          ? "bg-indigo-600 text-white"
-                          : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100",
-                      )}
-                    >
-                      {panel.label}
-                    </button>
-                  );
-                })}
+                <div className="flex w-full items-center gap-1 rounded-lg border border-zinc-800/80 bg-zinc-900/60 p-0.5">
+                  {MOBILE_PANELS.map((panel) => {
+                    const selected = mobilePanel === panel.id;
+                    return (
+                      <button
+                        key={panel.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        onClick={() => setMobilePanel(panel.id)}
+                        className={cn(
+                          "min-h-8 flex-1 rounded-md px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer",
+                          selected
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-100",
+                        )}
+                      >
+                        {panel.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
             <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -219,7 +221,7 @@ function WorkflowEditorContent() {
               </div>
               {!live && (
                 <PropertiesPanel
-                  className={mobilePanel === "properties" ? "block flex-1 lg:flex-initial" : "hidden lg:block"}
+                  className={mobilePanel === "properties" ? "flex flex-1 lg:flex-initial" : "hidden lg:flex"}
                 />
               )}
             </div>

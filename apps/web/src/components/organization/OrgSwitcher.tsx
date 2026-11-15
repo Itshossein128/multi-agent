@@ -3,6 +3,7 @@
 import Link from "next/link";
 import React from "react";
 import { useSession } from "next-auth/react";
+import { Mail } from "lucide-react";
 import { useOrg } from "@/components/organization/OrgProvider";
 import { orgPath } from "@/lib/orgRoute";
 
@@ -29,12 +30,14 @@ export function OrgSwitcher() {
   }
 
   return (
-    <div>
-      <label className="flex flex-col gap-1.5 text-xs text-zinc-400">
-        <span className="font-medium uppercase tracking-wider text-zinc-500">Organization</span>
+    <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-2.5">
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Organization
+        </span>
         <select
           aria-label="Switch organization"
-          className="w-full min-w-0 rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="studio-select h-8 w-full min-w-0 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-950/80 px-2.5 text-xs font-medium text-zinc-100 transition-colors hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           value={org.slug}
           onChange={(event) => void onChange(event.target.value)}
         >
@@ -46,10 +49,11 @@ export function OrgSwitcher() {
         </select>
       </label>
       <Link
-        className="mt-2 inline-flex items-center rounded py-1 text-xs text-indigo-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="mt-2 flex min-h-8 items-center gap-2 rounded-lg px-2 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800/70 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         href="/invitations"
       >
-        Invitations
+        <Mail className="h-3.5 w-3.5 shrink-0 text-indigo-400" aria-hidden="true" />
+        <span>Invitations</span>
       </Link>
     </div>
   );

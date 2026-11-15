@@ -7,6 +7,7 @@ import { scopedApiPath } from "@/lib/orgRoute";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/store/useToastStore";
 
@@ -208,22 +209,22 @@ export default function WorkspaceDashboardPage() {
 
   if (error && !data) {
     return (
-      <div className="container mx-auto max-w-4xl px-4 py-8 space-y-3">
+      <PageContainer className="space-y-3">
         <p role="alert" className="text-sm text-red-300">{error}</p>
         <Button onClick={() => void load()}>Retry</Button>
         <Link href={orgUrl("/workspaces")} className="text-sm text-indigo-300 hover:underline block">← Workspaces</Link>
-      </div>
+      </PageContainer>
     );
   }
 
-  if (!data) return <div className="container mx-auto px-4 py-8 text-sm text-zinc-400">Loading workspace…</div>;
+  if (!data) return <PageContainer className="text-sm text-zinc-400">Loading workspace…</PageContainer>;
 
   const projectId = data.workspace.projectId ?? data.project?.id;
   const projectName = data.project?.name ?? data.relatedProjects[0]?.name;
   const overriddenKeys = data.workspace.overriddenKeys ?? Object.keys(data.workspace.settingsOverrides ?? {});
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8 space-y-8">
+    <PageContainer className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href={orgUrl("/workspaces")} className="text-xs text-indigo-300 hover:underline">← Workspaces</Link>
@@ -381,6 +382,6 @@ export default function WorkspaceDashboardPage() {
           <Button type="submit" size="sm" disabled={busy || !name.trim()}>Save</Button>
         </form>
       </section>
-    </div>
+    </PageContainer>
   );
 }

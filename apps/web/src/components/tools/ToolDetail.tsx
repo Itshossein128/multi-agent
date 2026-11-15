@@ -5,6 +5,7 @@ import { useOrgPath } from "@/components/organization/OrgProvider";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { assertNoCredentials, TOOL_CATEGORIES, TOOL_IMPACTS, validateTool, type ToolRecord } from "@multi-agent/types";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { workflowService } from "@/services/workflowService";
 import { Button } from "@/components/ui/button";
 import { useToolDetail } from "@/hooks/useToolDetail";
@@ -61,8 +62,7 @@ export function ToolDetail({ toolId }: { toolId: string }) {
     } catch (error) { setErrors([error instanceof Error ? error.message : "Unable to save tool."]); }
   };
 
-  return <main className="min-h-screen bg-zinc-950 text-zinc-100">
-    <div className="mx-auto max-w-7xl space-y-5 p-4 lg:p-8">
+  return <PageContainer className="space-y-5">
       <Button variant="ghost" onClick={() => navigate("/org/tools")}>Tool registry</Button>
       <Button variant="ghost" onClick={() => navigate("/org")}>← Back to Graph Editor</Button>
       {detail.tool.isPending && <p role="status">Loading tool…</p>}
@@ -120,6 +120,5 @@ export function ToolDetail({ toolId }: { toolId: string }) {
         {section === "Agents" && detail.agents.data && <ToolAssignedAgents toolId={toolId} agents={detail.agents.data} />}
         {section === "Workflows" && detail.workflows.data && <ToolWorkflowUsage toolId={toolId} workflows={detail.workflows.data} navigate={navigate} />}
       </>}
-    </div>
-  </main>;
+  </PageContainer>;
 }

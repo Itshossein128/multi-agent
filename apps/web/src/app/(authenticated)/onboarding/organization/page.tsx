@@ -12,7 +12,6 @@ const DRAFT_KEY = "studio.org.wizard.draft";
 type Draft = {
   name: string;
   description: string;
-  defaultTimezone: string;
   allowMemberInvites: boolean;
 };
 
@@ -23,26 +22,22 @@ const DEFAULT_CONFIG = {
 
 function loadDraft(): Draft {
   if (typeof window === "undefined") {
-    return { name: "", description: "", ...DEFAULT_CONFIG };
+    return { name: "", description: "", allowMemberInvites: DEFAULT_CONFIG.allowMemberInvites };
   }
   try {
     const raw = sessionStorage.getItem(DRAFT_KEY);
-    if (!raw) return { name: "", description: "", ...DEFAULT_CONFIG };
+    if (!raw) return { name: "", description: "", allowMemberInvites: DEFAULT_CONFIG.allowMemberInvites };
     const parsed = JSON.parse(raw) as Partial<Draft>;
     return {
       name: typeof parsed.name === "string" ? parsed.name : "",
       description: typeof parsed.description === "string" ? parsed.description : "",
-      defaultTimezone:
-        typeof parsed.defaultTimezone === "string" && parsed.defaultTimezone.trim()
-          ? parsed.defaultTimezone
-          : DEFAULT_CONFIG.defaultTimezone,
       allowMemberInvites:
         typeof parsed.allowMemberInvites === "boolean"
           ? parsed.allowMemberInvites
           : DEFAULT_CONFIG.allowMemberInvites,
     };
   } catch {
-    return { name: "", description: "", ...DEFAULT_CONFIG };
+    return { name: "", description: "", allowMemberInvites: DEFAULT_CONFIG.allowMemberInvites };
   }
 }
 
@@ -50,7 +45,6 @@ export default function OrganizationOnboardingPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [defaultTimezone, setDefaultTimezone] = useState(DEFAULT_CONFIG.defaultTimezone);
   const [allowMemberInvites, setAllowMemberInvites] = useState(DEFAULT_CONFIG.allowMemberInvites);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,7 +55,6 @@ export default function OrganizationOnboardingPage() {
     const draft = loadDraft();
     setName(draft.name);
     setDescription(draft.description);
-    setDefaultTimezone(draft.defaultTimezone);
     setAllowMemberInvites(draft.allowMemberInvites);
     void (async () => {
       let leaving = false;
@@ -94,9 +87,9 @@ export default function OrganizationOnboardingPage() {
   useEffect(() => {
     sessionStorage.setItem(
       DRAFT_KEY,
-      JSON.stringify({ name, description, defaultTimezone, allowMemberInvites }),
+      JSON.stringify({ name, description, allowMemberInvites }),
     );
-  }, [name, description, defaultTimezone, allowMemberInvites]);
+  }, [name, description, allowMemberInvites]);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -119,7 +112,7 @@ export default function OrganizationOnboardingPage() {
           name: trimmed,
           description: description.trim(),
           config: {
-            defaultTimezone: defaultTimezone.trim() || DEFAULT_CONFIG.defaultTimezone,
+            defaultTimezone: DEFAULT_CONFIG.defaultTimezone,
             allowMemberInvites,
           },
         }),
@@ -138,7 +131,7 @@ export default function OrganizationOnboardingPage() {
 
   if (checking) {
     return (
-      <div className="container mx-auto max-w-lg px-4 py-16 text-sm text-zinc-400">
+      <div className="mx-auto w-full max-w-lg px-4 py-12 text-sm text-zinc-400 sm:px-6">
         Checking organization setup…
       </div>
     );
@@ -146,14 +139,14 @@ export default function OrganizationOnboardingPage() {
 
   if (unavailable) {
     return (
-      <div className="container mx-auto max-w-lg px-4 py-16 text-sm text-red-300" role="alert">
+      <div className="mx-auto w-full max-w-lg px-4 py-12 text-sm text-red-300 sm:px-6" role="alert">
         {error ?? "Unable to verify organization setup."}
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto max-w-lg px-4 py-12 space-y-6">
+    <div className="mx-auto w-full max-w-lg space-y-6 px-4 py-12 sm:px-6">
       <div className="space-y-2">
         <Link className="text-sm text-indigo-400" href="/invitations">View organization invitations</Link>
           <h1 className="text-2xl font-semibold text-white">Set up your organization</h1>
@@ -185,29 +178,15 @@ export default function OrganizationOnboardingPage() {
           />
         </label>
 
-        <fieldset className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-          <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-            Optional configuration
-          </legend>
-          <label className="block space-y-1 text-xs text-zinc-400">
-            Default timezone
-            <input
-              value={defaultTimezone}
-              onChange={(e) => setDefaultTimezone(e.target.value)}
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-              placeholder="UTC"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={allowMemberInvites}
-              onChange={(e) => setAllowMemberInvites(e.target.checked)}
-              className="h-3.5 w-3.5 accent-indigo-500"
-            />
-            Allow members to invite others
-          </label>
-        </fieldset>
+        <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={allowMemberInvites}
+            onChange={(e) => setAllowMemberInvites(e.target.checked)}
+            className="h-3.5 w-3.5 accent-indigo-500"
+          />
+          Allow members to invite others
+        </label>
 
         {error ? <p role="alert" className="text-sm text-red-300">{error}</p> : null}
         <Button type="submit" disabled={busy || !name.trim()} className="w-full">

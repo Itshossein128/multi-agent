@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { workflowService } from "@/services/workflowService";
 import { Button } from "@/components/ui/button";
 
@@ -17,7 +18,7 @@ export default function ToolRegistry() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const tools = useQuery({ queryKey: ["org", orgId, "tool-registry"], queryFn: () => workflowService.listTools(), refetchOnMount: "always" });
-  return <main className="min-h-screen space-y-6 bg-zinc-950 p-6 text-zinc-100">
+  return <PageContainer>
     <Link className="text-indigo-300 underline" href={orgUrl("/org")}>Back to Graph Editor</Link>
     <div className="flex items-center justify-between gap-4"><h1 className="text-2xl font-semibold">Tool registry</h1>
       <Button disabled={busy} onClick={async () => {
@@ -35,5 +36,5 @@ export default function ToolRegistry() {
       <p className="text-sm">{tool.enabled === false ? "Disabled" : "Enabled"}</p>
       <p className="break-words text-sm text-zinc-300">{tool.description || "No description."}</p>
     </li>)}</ul>
-  </main>;
+  </PageContainer>;
 }

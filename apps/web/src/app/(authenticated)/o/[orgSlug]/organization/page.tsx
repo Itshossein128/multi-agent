@@ -6,6 +6,7 @@ import { scopedApiPath } from "@/lib/orgRoute";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 interface Agent { id: string; name: string }
 interface Line { agentId: string; managerAgentId: string | null; role: "ceo" | "manager" | "member" }
@@ -50,7 +51,7 @@ export default function OrganizationPage() {
     const proposals = data.goalTasks.filter(task => task.goalId === goalId && task.strategyProposal);
     return proposals.length === 0 || proposals.some(task => ["completed", "done"].includes(task.status) && Boolean(task.output?.trim()));
   };
-  return <main className="mx-auto max-w-6xl space-y-8 p-6 text-zinc-100">
+  return <PageContainer className="space-y-8">
     <header><h1 className="text-2xl font-semibold">Organization and goals</h1><p className="text-sm text-zinc-400">Define reporting lines, review strategy proposals, and delegate goals as tasks.</p></header>
     {error && <p role="alert" className="rounded border border-rose-700 bg-rose-950 p-3 text-sm text-rose-200">{error}</p>}
     <section className="rounded-lg border border-zinc-800 p-4"><h2 className="mb-4 text-lg font-medium">Reporting lines</h2>
@@ -90,5 +91,5 @@ export default function OrganizationPage() {
         {data.goalTasks.filter(task => task.goalId === goal.id).map(task => <div key={task.id} className="mt-2 text-xs"><a href={orgUrl(`/tasks?taskId=${encodeURIComponent(task.id)}`)} className="text-indigo-300 underline">{task.title} · {task.status}</a>{task.output && <p className="mt-1 whitespace-pre-wrap text-zinc-300">{task.output.slice(0, 2000)}</p>}</div>)}
       </article>)}
     </section>
-  </main>;
+  </PageContainer>;
 }
