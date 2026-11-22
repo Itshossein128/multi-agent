@@ -25,6 +25,15 @@ export const INVALID_AGENT_NODE_SESSION_MODE = "INVALID_AGENT_NODE_SESSION_MODE"
 export const INVALID_AGENT_NODE_SESSION_KEY = "INVALID_AGENT_NODE_SESSION_KEY" as const;
 export const INVALID_AGENT_NODE_RESUME_PROMPT_MODE = "INVALID_AGENT_NODE_RESUME_PROMPT_MODE" as const;
 export const INVALID_AGENT_NODE_INPUT_MODE = "INVALID_AGENT_NODE_INPUT_MODE" as const;
+export const INVALID_AGENT_NODE_REINVOKE_ON_CLARIFICATION =
+  "INVALID_AGENT_NODE_REINVOKE_ON_CLARIFICATION" as const;
+export const INVALID_AGENT_NODE_SHORT_TERM_MEMORY_MAX_TOKENS =
+  "INVALID_AGENT_NODE_SHORT_TERM_MEMORY_MAX_TOKENS" as const;
+
+export const MIN_STEP_SHORT_TERM_MEMORY_MAX_TOKENS = 64 as const;
+export const MAX_STEP_SHORT_TERM_MEMORY_MAX_TOKENS = 65536 as const;
+export const MIN_SHORT_TERM_MEMORY_MAX_TOKENS = MIN_STEP_SHORT_TERM_MEMORY_MAX_TOKENS;
+export const MAX_SHORT_TERM_MEMORY_MAX_TOKENS = MAX_STEP_SHORT_TERM_MEMORY_MAX_TOKENS;
 
 export type StepConfigIssueCode =
   | typeof INVALID_AGENT_NODE_TASK_INSTRUCTION
@@ -37,6 +46,8 @@ export type StepConfigIssueCode =
   | typeof INVALID_AGENT_NODE_SESSION_KEY
   | typeof INVALID_AGENT_NODE_RESUME_PROMPT_MODE
   | typeof INVALID_AGENT_NODE_INPUT_MODE
+  | typeof INVALID_AGENT_NODE_REINVOKE_ON_CLARIFICATION
+  | typeof INVALID_AGENT_NODE_SHORT_TERM_MEMORY_MAX_TOKENS
   | "MISSING_AGENT_CONFIG"
   | "AGENT_DISABLED"
   | string;
@@ -59,6 +70,8 @@ export interface EffectiveAgentStepConfig {
   sessionKey?: string;
   resumePromptMode: AgentResumePromptMode;
   inputMode: AgentNodeInputMode;
+  reinvokeOnClarification: boolean;
+  shortTermMemoryMaxTokens?: number;
   incompatibilities: StepConfigIssue[];
 }
 
@@ -325,6 +338,8 @@ export function resolveEffectiveAgentStepConfig(
   });
 
   const sessionConfig = validateSessionAndInputConfig(nodeConfig, incompatibilities);
+  const effectiveShortTermMaxTokens =
+    sessionConfig.shortTermMemoryMaxTokens ?? agent.memory?.shortTerm?.maxTokens;
 
   return {
     agentId: agent.id,
@@ -338,6 +353,10 @@ export function resolveEffectiveAgentStepConfig(
     ...(sessionConfig.sessionKey ? { sessionKey: sessionConfig.sessionKey } : {}),
     resumePromptMode: sessionConfig.resumePromptMode,
     inputMode: sessionConfig.inputMode,
+    reinvokeOnClarification: sessionConfig.reinvokeOnClarification,
+    ...(effectiveShortTermMaxTokens !== undefined
+      ? { shortTermMemoryMaxTokens: effectiveShortTermMaxTokens }
+      : {}),
     incompatibilities,
   };
 }
@@ -352,6 +371,8 @@ function validateSessionAndInputConfig(
   sessionKey?: string;
   resumePromptMode: AgentResumePromptMode;
   inputMode: AgentNodeInputMode;
+  reinvokeOnClarification: boolean;
+  shortTermMemoryMaxTokens?: number;
 } {
   let sessionMode: AgentSessionMode = "stateless";
   if (nodeConfig.sessionMode !== undefined) {
@@ -416,7 +437,45 @@ function validateSessionAndInputConfig(
     }
   }
 
-  return { sessionMode, sessionKey, resumePromptMode, inputMode };
+  let reinvokeOnClarification = false;
+  if (nodeConfig.reinvokeOnClarification !== undefined) {
+    if (typeof nodeConfig.reinvokeOnClarification === "boolean") {
+      reinvokeOnClarification = nodeConfig.reinvokeOnClarification;
+    } else {
+      issues.push({
+        code: INVALID_AGENT_NODE_REINVOKE_ON_CLARIFICATION,
+        message: "Agent node reinvokeOnClarification must be a boolean.",
+        path: "reinvokeOnClarification",
+      });
+    }
+  }
+
+  let shortTermMemoryMaxTokens: number | undefined;
+  if (nodeConfig.shortTermMemoryMaxTokens !== undefined) {
+    if (
+      typeof nodeConfig.shortTermMemoryMaxTokens === "number" &&
+      Number.isInteger(nodeConfig.shortTermMemoryMaxTokens) &&
+      nodeConfig.shortTermMemoryMaxTokens >= MIN_STEP_SHORT_TERM_MEMORY_MAX_TOKENS &&
+      nodeConfig.shortTermMemoryMaxTokens <= MAX_STEP_SHORT_TERM_MEMORY_MAX_TOKENS
+    ) {
+      shortTermMemoryMaxTokens = nodeConfig.shortTermMemoryMaxTokens;
+    } else {
+      issues.push({
+        code: INVALID_AGENT_NODE_SHORT_TERM_MEMORY_MAX_TOKENS,
+        message: `Agent node shortTermMemoryMaxTokens must be an integer between ${MIN_STEP_SHORT_TERM_MEMORY_MAX_TOKENS} and ${MAX_STEP_SHORT_TERM_MEMORY_MAX_TOKENS}.`,
+        path: "shortTermMemoryMaxTokens",
+      });
+    }
+  }
+
+  return {
+    sessionMode,
+    sessionKey,
+    resumePromptMode,
+    inputMode,
+    reinvokeOnClarification,
+    shortTermMemoryMaxTokens,
+  };
 }
 
 /**

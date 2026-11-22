@@ -1,5 +1,5 @@
-import type { AgentNodeConfig, AgentRecord, ToolRecord, WorkflowDefinition, WorkflowNode, WorkflowNodeType } from "@multi-agent/types";
-import { agentHasConfiguredModel, validateAgent, validateAgentNodeStepConfig, validateTool } from "@multi-agent/types";
+import type { AgentNodeConfig, AgentRecord, ConditionNodeConfig, DynamicFanoutNodeConfig, ToolRecord, WorkflowDefinition, WorkflowNode, WorkflowNodeType } from "@multi-agent/types";
+import { agentHasConfiguredModel, validateAgent, validateAgentNodeStepConfig, validateDynamicFanoutNodeConfig, validateTool } from "@multi-agent/types";
 import type { WorkflowIssue, WorkflowValidationLimits } from "./validation";
 
 export interface ValidationContext {
@@ -93,6 +93,22 @@ function validateConditionNode(node: WorkflowNode, ctx: ValidationContext) {
   const rawBranches = (node.config as { branches?: unknown }).branches;
   const branches = Array.isArray(rawBranches) ? rawBranches.filter((branch): branch is { key: string } => Boolean(branch && typeof branch === "object")) : [];
   const keys = new Set(branches.map((branch) => branch.key));
+  const { workPackages } = node.config as ConditionNodeConfig;
+  if (workPackages !== undefined) {
+    const valid = Array.isArray(workPackages) && workPackages.length >= 1 && workPackages.length <= 25
+      && workPackages.every((item) => item && typeof item.id === "string" && /^[A-Z][A-Z0-9_-]{0,31}$/.test(item.id)
+        && typeof item.promptPath === "string" && item.promptPath.trim().length > 0 && item.promptPath.length <= 1024)
+      && new Set(workPackages.map((item) => item.id)).size === workPackages.length;
+    if (!valid) ctx.add("error", "INVALID_WORK_PACKAGE_SEQUENCE", "Work packages must have unique IDs and non-empty prompt paths.", node.id);
+    if (keys.size !== 2 || !["next_package", "packages_complete"].every((key) =>
+      keys.has(key) && ctx.definition.edges.filter((edge) =>
+        edge.source === node.id && edge.kind === "conditional" && edge.branchKey === key).length === 1
+    )) ctx.add("error", "INVALID_WORK_PACKAGE_ROUTES", "A work-package sequence needs exactly one edge for each sequence branch.", node.id);
+    if (ctx.definition.nodes.filter((candidate) => candidate.type === "condition" &&
+      (candidate.config as ConditionNodeConfig).workPackages !== undefined).length !== 1) {
+      ctx.add("error", "MULTIPLE_WORK_PACKAGE_SEQUENCES", "A workflow can have one work-package sequence.", node.id);
+    }
+  }
   if (!branches.length) ctx.add("error", "MISSING_CONDITION_BRANCHES", "Condition node requires at least one branch.", node.id);
   if (branches.length > ctx.maxBranches) ctx.add("error", "BRANCH_LIMIT_EXCEEDED", `Condition node exceeds the ${ctx.maxBranches}-branch limit.`, node.id);
   if (branches.some(branch => typeof branch.key !== "string" || !branch.key.trim())) ctx.add("error", "INVALID_BRANCH_KEY", "Condition node has an empty branch key.", node.id);
@@ -158,6 +174,12 @@ function validateSubgraphNode(node: WorkflowNode, ctx: ValidationContext) {
   }
 }
 
+function validateDynamicFanoutNode(node: WorkflowNode, ctx: ValidationContext) {
+  for (const issue of validateDynamicFanoutNodeConfig(node.config as DynamicFanoutNodeConfig)) {
+    ctx.add("error", issue.code, issue.message, node.id);
+  }
+}
+
 export const NODE_VALIDATORS: Record<WorkflowNodeType, NodeValidator> = {
   agent: validateAgentNode,
   tool: validateToolNode,
@@ -169,4 +191,5 @@ export const NODE_VALIDATORS: Record<WorkflowNodeType, NodeValidator> = {
   parallel_split: validateParallelSplitNode,
   parallel_join: validateParallelJoinNode,
   subgraph: validateSubgraphNode,
+  dynamic_fanout: validateDynamicFanoutNode,
 };

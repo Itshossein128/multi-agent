@@ -29,6 +29,7 @@ const DEFAULT_SANDBOX_ALLOWED_EXECUTABLES: readonly string[] = [
   "claude",
   "agy",
   "cursor",
+  "agent",
   "playwright",
   "google-chrome",
   "chromium",

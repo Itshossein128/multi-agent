@@ -4,7 +4,15 @@ import type { RuntimeMemoryDependencies } from "../../memory/contracts";
 import type { HistoryEntry } from "./shortTermMemory";
 import { validateAgent, nowIso } from "@multi-agent/types";
 import { RuntimeMemory } from "./runtimeMemory";
-import { boundHistory, boundedInteger, boundText, historyKey } from "./shortTermMemory";
+import {
+  boundHistory,
+  boundedInteger,
+  boundText,
+  DEFAULT_SHORT_TERM_MEMORY_MAX_TOKENS,
+  historyKey,
+  MAX_SHORT_TERM_MEMORY_MAX_TOKENS,
+  SHARED_SESSION_DEFAULT_SHORT_TERM_MEMORY_MAX_TOKENS,
+} from "./shortTermMemory";
 import { ExecutionTelemetry } from "../../observability/telemetry";
 import { assertExecutionPolicy, ExecutionPolicyError, withResolvedWorkspaceRoot } from "./executionPolicy";
 import type { WorkerRuntime } from "./workerRuntime";
@@ -19,6 +27,7 @@ import { emptyTokens } from "./runtimeMemory";
 import { configuredAgentTimeout } from "./agentTimeout";
 import { SandboxedWorkerRuntime } from "../../security/workerRuntimeBarrier";
 import type { MemoryTokenAccounting } from "../../memory/application/memoryEvaluation";
+import { sanitizeForTelemetry } from "./apiAgentExecutor";
 
 /** Shared executor boundary, with injected long-term services and caller-owned short-term state. */
 export class AgentRuntime {
@@ -80,11 +89,31 @@ export class AgentRuntime {
     const key = historyKey(input);
     const store = input.memoryStore ?? new Map<string, { input: unknown; output: unknown }[]>();
     const maxEntries = boundedInteger(memory?.maxEntries, 20, 100);
-    const maxTokens = boundedInteger(memory?.shortTerm?.maxTokens, 4096, 16384);
+    const priorHistoryMaxTokens =
+      input.sessionMode === "shared" ? input.shortTermHistories?.[key]?.maxTokens : undefined;
+    const defaultMaxTokens =
+      input.sessionMode === "shared"
+        ? SHARED_SESSION_DEFAULT_SHORT_TERM_MEMORY_MAX_TOKENS
+        : DEFAULT_SHORT_TERM_MEMORY_MAX_TOKENS;
+    const maxTokens = boundedInteger(
+      input.shortTermMemoryMaxTokens ??
+        (input.sessionMode === "shared"
+          ? (priorHistoryMaxTokens ?? memory?.shortTerm?.maxTokens)
+          : memory?.shortTerm?.maxTokens),
+      defaultMaxTokens,
+      MAX_SHORT_TERM_MEMORY_MAX_TOKENS,
+    );
     const checkpointEntries = input.shortTermHistories?.[key]?.entries ?? [];
-    const prior = input.shortTermHistories ? checkpointEntries : (store.get(key) ?? []).map((entry, i) => ({ ...entry, id: String(i) }));
+    const prior = input.shortTermHistories
+      ? checkpointEntries
+      : (store.get(key) ?? []).map((entry, i) => ({ ...(entry as { input: unknown; output: unknown; toolSummary?: string }), id: String(i) }));
     const history = shortEnabled && memory?.mode !== "write"
-      ? boundHistory({ entries: prior, maxEntries, maxTokens }).entries.map(({ input, output }) => ({ input, output })) : [];
+      ? boundHistory({ entries: prior, maxEntries, maxTokens }).entries.map(({ input, output, toolSummary }) => ({
+          input,
+          output,
+          ...(toolSummary ? { toolSummary } : {}),
+        }))
+      : [];
     if (memory?.enabled && memory.shortTerm?.enabled !== false && memory?.mode !== "write") {
       yield { type: "memory.read", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: history.length, scope: memory?.scope, tier: "short_term" } };
     }
@@ -152,7 +181,10 @@ export class AgentRuntime {
 
     const executor = this.executorFactory.create(input.agent.backend);
     let output: unknown;
+    let durableMemoryOutput: unknown;
     let completion: AgentExecutionEvent | undefined;
+    let observedToolSummary: string | undefined;
+    const fallbackToolCalls = new Map<string, { iteration: number; name: string; args: unknown; status?: string; detail?: string }>();
     let failed = false;
     let executorUpdatedSession = false;
     const wrappedSessionUpdate = input.onSessionUpdate
@@ -168,14 +200,64 @@ export class AgentRuntime {
       assembledContext: assembled,
     })) {
       input.signal?.throwIfAborted();
+      if (event.type === "tool.started" && fallbackToolCalls.size < 25) {
+        const p = event.payload as { toolCallId?: string; toolId?: string; name?: string; arguments?: unknown; iteration?: number } | undefined;
+        const callId = p?.toolCallId ?? `call_${fallbackToolCalls.size}`;
+        fallbackToolCalls.set(callId, {
+          iteration: typeof p?.iteration === "number" ? p.iteration : fallbackToolCalls.size + 1,
+          name: p?.name ?? p?.toolId ?? "tool",
+          args: sanitizeForTelemetry(p?.arguments),
+        });
+      } else if (event.type === "tool.completed") {
+        const p = event.payload as { toolCallId?: string; output?: unknown } | undefined;
+        const existing = p?.toolCallId ? fallbackToolCalls.get(p.toolCallId) : undefined;
+        if (existing) {
+          existing.status = "ok";
+          existing.detail = JSON.stringify(sanitizeForTelemetry(p?.output ?? {}));
+        }
+      } else if (event.type === "tool.failed") {
+        const p = event.payload as { toolCallId?: string; name?: string; toolId?: string; error?: unknown; iteration?: number } | undefined;
+        const callId = p?.toolCallId ?? `call_${fallbackToolCalls.size}`;
+        const existing = fallbackToolCalls.get(callId);
+        const sanitizedErr = sanitizeForTelemetry(p?.error ?? "failed");
+        const errText = typeof sanitizedErr === "string" ? sanitizedErr : JSON.stringify(sanitizedErr);
+        if (existing) {
+          existing.status = "error";
+          existing.detail = errText;
+        } else if (fallbackToolCalls.size < 25) {
+          fallbackToolCalls.set(callId, {
+            iteration: typeof p?.iteration === "number" ? p.iteration : fallbackToolCalls.size + 1,
+            name: p?.name ?? p?.toolId ?? "tool",
+            args: undefined,
+            status: "error",
+            detail: errText,
+          });
+        }
+      }
       if (event.type === "agent.completed") {
-        const eventPayload = event.payload as { content?: unknown } | undefined;
+        const eventPayload = event.payload as { content?: unknown; toolSummary?: unknown } | undefined;
+        if (typeof eventPayload?.toolSummary === "string" && eventPayload.toolSummary.trim()) {
+          const sanitizedSummary = sanitizeForTelemetry(eventPayload.toolSummary.trim());
+          observedToolSummary = typeof sanitizedSummary === "string" ? sanitizedSummary : String(sanitizedSummary);
+        } else if (fallbackToolCalls.size > 0) {
+          observedToolSummary = [...fallbackToolCalls.values()]
+            .map((c) => {
+              const sanitizedArgs = sanitizeForTelemetry(c.args ?? {});
+              const sanitizedDetail = c.detail !== undefined ? sanitizeForTelemetry(c.detail) : "";
+              const argsText = JSON.stringify(sanitizedArgs ?? {}).slice(0, 180);
+              const detailStr = typeof sanitizedDetail === "string" ? sanitizedDetail : JSON.stringify(sanitizedDetail ?? "");
+              const detailText = detailStr.slice(0, 240);
+              return `[${c.iteration}] ${c.name}(${argsText}) -> ${c.status ?? "done"}${detailText ? `: ${detailText}` : ""}`;
+            })
+            .join("\n");
+        }
         // Working memory is a runtime-consumed channel. It is removed exactly once,
         // at the executor boundary, so it can never reach conversation history,
         // long-term extraction, handoff or node values. The untrusted candidates
         // are delivered separately to the owner that validates them.
-        const { remainder, updates } = splitWorkingMemoryUpdates(eventPayload?.content ?? event.payload);
+        const { remainder, updates, memoryCandidates } = splitWorkingMemoryUpdates(eventPayload?.content ?? event.payload);
         if (updates.length) input.onWorkingMemoryUpdate?.(updates);
+        durableMemoryOutput = memoryCandidates ? boundJsonValue({ memoryCandidates }, this.maxOutputBytes) : undefined;
         output = boundJsonValue(remainder, this.maxOutputBytes);
         completion = {
           ...event,
@@ -190,7 +272,7 @@ export class AgentRuntime {
     input.signal?.throwIfAborted();
     if (!completion || failed) return;
     if (longTerm.enabled) {
-      const events = await longTerm.afterSuccess(output);
+      const events = await longTerm.afterSuccess(durableMemoryOutput ?? output);
       for (const event of events) yield event;
       longTerm.assertResult(events);
     }
@@ -238,6 +320,10 @@ export class AgentRuntime {
       });
     }
     if (shortEnabled && memory?.mode !== "read") {
+      const toolSummaryBudget = Math.min(8192, Math.floor(maxTokens / 6));
+      const clippedToolSummary = observedToolSummary && toolSummaryBudget > 0
+        ? boundText(observedToolSummary, toolSummaryBudget)
+        : undefined;
       if (input.shortTermHistories) {
         const prefix = `${input.nodeId}:`;
         const index = checkpointEntries.filter(e => e.id.startsWith(prefix)).reduce((n, e) => Math.max(n, Number(e.id.slice(prefix.length)) || 0), 0) + 1;
@@ -245,10 +331,26 @@ export class AgentRuntime {
           const serialized = JSON.stringify(value ?? null);
           return Buffer.byteLength(serialized) <= maxTokens / 4 ? value : boundText(serialized, Math.floor(maxTokens / 4));
         };
-        input.onShortTermUpdate?.({ [key]: { entries: [{ id: `${prefix}${index}`, input: clip(input.input), output: clip(output) }], maxEntries, maxTokens } });
+        input.onShortTermUpdate?.({
+          [key]: {
+            entries: [{
+              id: `${prefix}${index}`,
+              input: clip(input.input),
+              output: clip(output),
+              ...(clippedToolSummary ? { toolSummary: clippedToolSummary } : {}),
+            }],
+            maxEntries,
+            maxTokens,
+          },
+        });
       } else {
         // Preserve the public Phase 5 Map contract for standalone callers.
-        store.set(key, maxEntries ? [...(store.get(key) ?? []), { input: input.input, output }].slice(-maxEntries) : []);
+        const storeEntry: { input: unknown; output: unknown; toolSummary?: string } = {
+          input: input.input,
+          output,
+          ...(clippedToolSummary ? { toolSummary: clippedToolSummary } : {}),
+        };
+        store.set(key, maxEntries ? [...(store.get(key) ?? []), storeEntry].slice(-maxEntries) : []);
       }
       if (memory?.enabled && memory.shortTerm?.enabled !== false) {
         yield { type: "memory.write", timestamp: nowIso(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId, payload: { entries: Math.min(prior.length + 1, maxEntries), scope: memory?.scope, tier: "short_term" } };

@@ -5,6 +5,8 @@ import { scopedApiPath } from "@/lib/orgRoute";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertOctagon,
+  Columns3,
+  Plus,
   RefreshCw,
 } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -274,6 +276,56 @@ export default function TaskBoardPage() {
 
   return (
     <PageContainer className="flex flex-1 flex-col gap-4 space-y-0">
+      {/* Page Header */}
+      <div className="flex flex-col items-start justify-between gap-4 border-b border-zinc-800 pb-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-500/20 bg-indigo-500/10 text-indigo-400">
+            <Columns3 className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-zinc-100">
+                Tasks
+              </h1>
+              <span className="inline-flex items-center rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                {filteredTasks.length === tasks.length
+                  ? `${tasks.length}`
+                  : `${filteredTasks.length} of ${tasks.length}`}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-400">
+              Plan, dispatch, and monitor multi-agent tasks across board columns and workflow runs.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex w-full flex-wrap items-center gap-2.5 sm:w-auto">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isLoading || isMutating}
+            onClick={() => void refetch()}
+            className="gap-1.5 text-xs cursor-pointer"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 shrink-0 ${isLoading ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            Refresh
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => openModal("backlog")}
+            className="gap-1.5 bg-indigo-600 text-xs text-white hover:bg-indigo-500 cursor-pointer"
+          >
+            <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            New task
+          </Button>
+        </div>
+      </div>
+
       {/* Filter bar */}
       <div>
         <TaskFilterBar
@@ -293,9 +345,12 @@ export default function TaskBoardPage() {
 
         {/* Error banner */}
         {bannerError && (
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-red-900/60 bg-red-950/40 px-3.5 py-2.5">
+          <div
+            role="alert"
+            className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-red-900/60 bg-red-950/40 px-3.5 py-2.5"
+          >
             <p className="flex items-center gap-2 text-xs text-red-300">
-              <AlertOctagon className="h-3.5 w-3.5 flex-shrink-0" />
+              <AlertOctagon className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
               {bannerError}
             </p>
             <button

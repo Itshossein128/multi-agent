@@ -2,16 +2,29 @@
  * Nested subgraph execution helper (feature 014).
  * Resolves the latest saved child workflow and compiles/invokes it with mapped I/O.
  */
+import { Command, MemorySaver, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
 import {
   MAX_SUBGRAPH_DEPTH,
   type AgentRecord,
+  type AgentSessionState,
   type ToolRecord,
   type WorkflowDefinition,
 } from "@multi-agent/types";
+import type { ShortTermHistories } from "../../../../src/agents/runtime/shortTermMemory";
 import type { StudioPrincipal, StudioStore } from "../../../../src/studio/contracts";
 import { compileWorkflow, type CompileOptions } from "./workflowCompiler";
 
 export type SubgraphMapping = { source: string; target: string; required?: boolean };
+
+export interface SubgraphRunnerResult {
+  __subgraphResult: true;
+  output: unknown;
+  agentSessions?: Record<string, AgentSessionState>;
+  shortTermHistories?: ShortTermHistories;
+}
+
+const subgraphCheckpointers = new Map<string, BaseCheckpointSaver>();
+const subgraphPendingHumans = new Map<string, CompileOptions["pendingHuman"]>();
 
 export interface SubgraphRunnerDeps {
   studioStore: StudioStore;
@@ -115,32 +128,108 @@ export function createStudioSubgraphRunner(deps: SubgraphRunnerDeps): NonNullabl
       args.workflowId,
       args.nestingDepth,
     );
+    const childRunId = baseOptions?.runId ? `${baseOptions.runId}:sub:${args.parentNodeId}` : `sub:${args.parentNodeId}`;
+    let childCheckpointer = subgraphCheckpointers.get(childRunId);
+    if (!childCheckpointer) {
+      childCheckpointer = new MemorySaver();
+      subgraphCheckpointers.set(childRunId, childCheckpointer);
+    }
+    const savedChildPendingHuman = subgraphPendingHumans.get(childRunId) ?? baseOptions?.pendingHuman;
     const mappedInput = applyInputMappings(args.input, args.inputMappings);
-    const compiled = compileWorkflow(child, agents, {
+    const childCompileOptions: CompileOptions = {
       ...baseOptions,
       workflowId: child.id,
       tools: tools ?? baseOptions?.tools,
       nestingDepth: args.nestingDepth,
       signal: args.signal ?? baseOptions?.signal,
+      pendingHuman: savedChildPendingHuman,
       // Nested graphs may themselves contain subgraphs.
       subgraphRunner: createStudioSubgraphRunner({
         ...deps,
-        baseOptions: { ...baseOptions, workflowId: child.id },
+        baseOptions: { ...baseOptions, workflowId: child.id, runId: childRunId },
       }),
-      // Avoid sharing parent checkpointer thread identity into nested runs.
-      runId: baseOptions?.runId ? `${baseOptions.runId}:sub:${args.parentNodeId}` : undefined,
-      checkpointer: false,
-    });
-    const graph = compiled.graph as { invoke: (state: Record<string, unknown>, config?: unknown) => Promise<Record<string, unknown>> };
-    const result = await graph.invoke({
-      input: mappedInput,
-      output: {},
-      memory: {},
-      workingMemory: {},
-      lastValue: mappedInput,
-    });
-    const childOutput = result.output ?? result.lastValue ?? result;
-    return applyOutputMappings(childOutput, args.outputMappings);
+      // Isolated checkpointer thread identity for nested run while preserving checkpointing.
+      runId: childRunId,
+      checkpointer: childCheckpointer,
+    };
+    const compiled = compileWorkflow(child, agents, childCompileOptions);
+    const graph = compiled.graph as {
+      invoke: (state: unknown, config?: unknown) => Promise<Record<string, unknown>>;
+      getState: (config?: unknown) => Promise<{ next?: string[]; values?: Record<string, unknown>; tasks?: Array<{ interrupts?: Array<{ value?: unknown }> }> }>;
+    };
+    const invokePayload =
+      args.resumeDecision !== undefined
+        ? new Command({ resume: args.resumeDecision })
+        : {
+            input: mappedInput,
+            output: {},
+            memory: {},
+            workingMemory: {},
+            lastValue: mappedInput,
+            ...(args.agentSessions ? { agentSessions: args.agentSessions } : {}),
+            ...(args.shortTermHistories ? { shortTermHistories: args.shortTermHistories } : {}),
+          };
+    let result: Record<string, unknown>;
+    try {
+      result = await graph.invoke(invokePayload, { configurable: { thread_id: childRunId } });
+    } catch (err) {
+      if (childCompileOptions.pendingHuman) {
+        subgraphPendingHumans.set(childRunId, childCompileOptions.pendingHuman);
+      }
+      throw err;
+    }
+    const childState = await graph.getState({ configurable: { thread_id: childRunId } });
+    if (Array.isArray(childState?.next) && childState.next.length > 0 && childCompileOptions.pendingHuman) {
+      subgraphPendingHumans.set(childRunId, childCompileOptions.pendingHuman);
+      const childPh = childCompileOptions.pendingHuman;
+      if (baseOptions) {
+        baseOptions.pendingHuman = {
+          nodeId: args.parentNodeId,
+          envelope: childPh.envelope,
+          sessionState: childPh.sessionState,
+          shortTermHistories: childPh.shortTermHistories,
+          isSubgraph: true,
+        };
+      }
+      interrupt({
+        nodeId: args.parentNodeId,
+        message: childPh.envelope.needsHuman?.reason ?? "Human approval required",
+        approvalType: "manual",
+        timeoutSeconds: 0,
+        context: {
+          kind: "agent_needs_human",
+          purpose:
+            childPh.envelope.needsHuman?.purpose ??
+            (childPh.envelope.needsHuman?.questions?.length ? "clarification" : "approval"),
+          envelope: childPh.envelope,
+          sessionState: childPh.sessionState,
+          shortTermHistories: childPh.shortTermHistories,
+          isSubgraph: true,
+        },
+      });
+    }
+    subgraphPendingHumans.delete(childRunId);
+    subgraphCheckpointers.delete(childRunId);
+    const finalValues = childState?.values ?? result;
+    const mergedAgentSessions = {
+      ...(args.agentSessions ?? {}),
+      ...((result?.agentSessions as Record<string, AgentSessionState> | undefined) ?? {}),
+      ...((finalValues?.agentSessions as Record<string, AgentSessionState> | undefined) ?? {}),
+    };
+    const mergedShortTermHistories = {
+      ...(args.shortTermHistories ?? {}),
+      ...((result?.shortTermHistories as ShortTermHistories | undefined) ?? {}),
+      ...((finalValues?.shortTermHistories as ShortTermHistories | undefined) ?? {}),
+    };
+    const childOutput = finalValues.output ?? finalValues.lastValue ?? result.output ?? result.lastValue ?? result;
+    const mappedOutput = applyOutputMappings(childOutput, args.outputMappings);
+    const wrapped: SubgraphRunnerResult = {
+      __subgraphResult: true,
+      output: mappedOutput,
+      ...(Object.keys(mergedAgentSessions).length ? { agentSessions: mergedAgentSessions } : {}),
+      ...(Object.keys(mergedShortTermHistories).length ? { shortTermHistories: mergedShortTermHistories } : {}),
+    };
+    return wrapped;
   };
   return runner;
 }

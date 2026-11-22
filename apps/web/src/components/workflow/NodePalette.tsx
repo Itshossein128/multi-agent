@@ -40,6 +40,7 @@ const PALETTE_ICON: Record<WorkflowNodeType, React.ReactNode> = {
   parallel_split: <GitFork className="h-3.5 w-3.5" />,
   parallel_join: <GitMerge className="h-3.5 w-3.5" />,
   subgraph: <Boxes className="h-3.5 w-3.5" />,
+  dynamic_fanout: <GitFork className="h-3.5 w-3.5" />,
 };
 
 const PALETTE_ORDER: WorkflowNodeType[] = [
@@ -53,6 +54,7 @@ const PALETTE_ORDER: WorkflowNodeType[] = [
   "parallel_split",
   "parallel_join",
   "subgraph",
+  "dynamic_fanout",
 ];
 
 function PaletteItem({

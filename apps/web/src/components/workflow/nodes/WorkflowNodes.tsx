@@ -439,6 +439,33 @@ function SubgraphNodeComponent(props: NodeProps) {
   );
 }
 
+function DynamicFanoutNodeComponent(props: NodeProps) {
+  const data = useNodeData(props);
+  const cfg = data.node.config as {
+    label?: string;
+    targetAgentId?: string;
+    workflowId?: string;
+    itemsField?: string;
+    maxConcurrency?: number;
+  };
+  const title = cfg.label?.trim() || NODE_TYPE_META.dynamic_fanout.label;
+  const target = cfg.targetAgentId?.trim() || cfg.workflowId?.trim() || "unset";
+  const field = cfg.itemsField?.trim() ? ` · ${cfg.itemsField.trim()}` : "";
+  const concurrency = cfg.maxConcurrency ?? 4;
+  return (
+    <NodeShell
+      {...data}
+      selected={Boolean(props.selected)}
+      node={data.node}
+      issueCount={data.issueCount}
+      issueTitle={data.issueTitle}
+      icon={<GitFork className="h-4 w-4" />}
+      title={title}
+      subtitle={`${target}${field} (×${concurrency})`}
+    />
+  );
+}
+
 /** React Flow node-type registry — add new node types here. */
 export const workflowNodeTypes: NodeTypes = {
   agent: AgentNodeComponent,
@@ -451,4 +478,5 @@ export const workflowNodeTypes: NodeTypes = {
   parallel_split: ParallelSplitNodeComponent,
   parallel_join: ParallelJoinNodeComponent,
   subgraph: SubgraphNodeComponent,
+  dynamic_fanout: DynamicFanoutNodeComponent,
 };

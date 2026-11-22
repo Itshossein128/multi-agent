@@ -11,7 +11,7 @@ import type { MemoryAccessContext, MemoryNamespace } from "../src/memory/contrac
 import { InMemoryMemoryStore } from "../src/memory/infrastructure/in-memory-memory-store";
 import { RunExecutor } from "../apps/server/src/runtime/runExecutor";
 import { InMemoryRunStore } from "../apps/server/src/runtime/store/inMemoryRunStore";
-import { createEmptyDefinition, createNode, createEdge, type AgentRecord, type WorkflowDefinition } from "@multi-agent/types";
+import { createEmptyDefinition, createNode, createEdge, deserializeWorkflowDefinition, serializeWorkflowDefinition, type AgentRecord, type WorkflowDefinition } from "@multi-agent/types";
 import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
 
 // Setup test constants & helper fixtures
@@ -84,6 +84,36 @@ const mockAgent: AgentRecord = {
 };
 
 describe("Production Episodic Memory Wiring Tests", () => {
+  test.each([true, false])("organization episode policy honors the captured write grant (%s)", async (canPublish) => {
+    const organization: MemoryNamespace = { scope: "organization", id: tenantA };
+    const user: MemoryNamespace = { scope: "user", id: accessA.principalId };
+    const access = {
+      ...accessA,
+      readableNamespaces: [user, organization],
+      writableNamespaces: canPublish ? [user, organization] : [user],
+    };
+    const workflow = deserializeWorkflowDefinition(serializeWorkflowDefinition({
+      ...makeWorkflow("wf-shared-episodes", "Shared Episodes"),
+      episodicMemoryScope: "organization",
+    }));
+    const { service, episodeService } = createMemoryComponents();
+    const runtime = new AgentRuntime({ create: () => ({
+      async *execute(input) {
+        yield { type: "agent.failed", timestamp: new Date().toISOString(), agentId: input.agent.id, nodeId: input.nodeId, runId: input.runId,
+          payload: { error: "Verification failed: the test workspace has no approved migration manifest." } };
+      },
+    }) });
+    const store = new InMemoryRunStore();
+    const executor = new RunExecutor(store, runtime, undefined, undefined, undefined, undefined, episodeService);
+    const runId = executor.start({ workflow, agents: [mockAgent], input: { task: "Verify the migration manifest" } }, access);
+    for (let attempt = 0; store.get(runId)?.episodicMemoryStatus !== "processed" && attempt < 100; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    const records = await service.list({ namespaces: [user, organization], kinds: ["episodic"] }, access);
+    expect(records).toHaveLength(1);
+    expect(records[0].namespace).toEqual(canPublish ? organization : user);
+  });
+
   test("Scenario 0 — repeated production runs learn and later runtime context retrieves the procedure", async () => {
     const { service, episodeService, proceduralService, jobs } = createMemoryComponents();
     const workflow = makeWorkflow("wf-procedural", "Procedural Workflow");

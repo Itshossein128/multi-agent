@@ -67,6 +67,11 @@ export function createToolRecord(input?: {
   name?: string;
   category?: ToolCategory;
   description?: string;
+  impact?: ToolImpact;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
+  configuration?: Record<string, string | number | boolean>;
+  executionPolicy?: ToolExecutionPolicy;
 }): ToolRecord {
   const stamp = nowIso();
   return {
@@ -74,12 +79,12 @@ export function createToolRecord(input?: {
     name: input?.name ?? "New Tool",
     description: input?.description ?? "",
     category: input?.category ?? "function",
-    inputSchema: { type: "object", properties: {} },
-    outputSchema: { type: "object", properties: {} },
-    configuration: {},
+    inputSchema: input?.inputSchema ?? { type: "object", properties: {} },
+    outputSchema: input?.outputSchema ?? { type: "object", properties: {} },
+    configuration: input?.configuration ? { ...input.configuration } : {},
     enabled: true,
-    impact: "read-only",
-    executionPolicy: { requiresApproval: false, idempotency: "optional", retryable: true },
+    impact: input?.impact ?? "read-only",
+    executionPolicy: input?.executionPolicy ?? { requiresApproval: false, idempotency: "optional", retryable: true },
     metadata: {},
     createdAt: stamp,
     updatedAt: stamp,

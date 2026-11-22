@@ -136,6 +136,12 @@ export function projectThinkingAttempts(events: readonly RunEvent[], runStatus: 
   if (runStatus === "cancelled") {
     const last = attempts[attempts.length - 1];
     if (last && last.outcome !== "completed") last.outcome = "stopped";
+  } else if (runStatus === "failed") {
+    const last = attempts[attempts.length - 1];
+    if (last && last.outcome === "in_progress") last.outcome = "failed";
+  } else if (runStatus === "completed") {
+    const last = attempts[attempts.length - 1];
+    if (last && last.outcome === "in_progress") last.outcome = "completed";
   }
 
   return attempts.map((attempt) => {

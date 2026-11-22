@@ -51,7 +51,12 @@ export const runService = {
   },
   cancelRun(runId: string) { return request<{ runId: string; status: string }>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }); },
   cancelBranch(runId: string, branchKey: string) { return request<{ runId: string; branchKey: string; status: string }>(`/runs/${encodeURIComponent(runId)}/branches/${encodeURIComponent(branchKey)}/cancel`, { method: "POST" }); },
-  retryRun(runId: string) { return request<RunCreateResponse>(`/runs/${encodeURIComponent(runId)}/retry`, { method: "POST" }); },
+  retryRun(runId: string, mode?: "resume" | "restart") {
+    return request<RunCreateResponse>(
+      `/runs/${encodeURIComponent(runId)}/retry`,
+      mode ? { method: "POST", body: JSON.stringify({ mode }) } : { method: "POST" },
+    );
+  },
   eventsUrl(runId: string, afterSequence = 0) { return `${executionApiBase()}/runs/${encodeURIComponent(runId)}/events?sequence=${afterSequence}`; },
   getApprovals(runId: string) { return request<ApprovalRequest[]>(`/runs/${encodeURIComponent(runId)}/approvals`); },
   resolveApproval(runId: string, approvalId: string, decision: ApprovalDecision, response?: string) {

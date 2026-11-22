@@ -30,6 +30,7 @@ import {
 } from "../compiler/workflowCompiler";
 import { InMemoryRunStore, type RunStoreContract } from "./runStore";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
+import { canUseNamespace, runEpisodeNamespace, sameNamespace } from "../../../../src/memory/application/access";
 import { AgentRuntime, AgentExecutionFailedError, mapAgentExecutionEvent, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
 import { ToolPolicyError, ToolRuntime } from "../../../../src/tools";
 import { ExecutionTelemetry } from "../../../../src/observability/telemetry";
@@ -39,6 +40,7 @@ import { log } from "../logging";
 import type { RequestPrincipal } from "../auth/principal";
 import { ApprovalManager, type PausedContext } from "./approvalManager";
 import { GraphRunner } from "./graphRunner";
+import { cloneCheckpointForRetry } from "./checkpointResume";
 import type { DurableMemoryJob, EnqueueMemoryJob } from "../../../../src/memory/infrastructure";
 import { asyncLocalOrganizationScopeRunner, type OrganizationScopeRunner } from "../../../../src/studio/infrastructure/organizationJobScope";
 import type { StudioPrincipal, StudioStore } from "../../../../src/studio/contracts";
@@ -80,6 +82,7 @@ function configuredRunConcurrency(): number {
  */
 export class RunExecutor {
   public readonly instanceId: string;
+  private readonly fallbackCheckpointer = new MemorySaver();
   private checkpointers = new Map<string, BaseCheckpointSaver>();
   private pausedContext = new Map<string, PausedContext>();
   private branchControllers = new Map<string, Map<string, AbortController>>();
@@ -200,7 +203,8 @@ export class RunExecutor {
   private durableScope(job: DurableMemoryJob): MemoryAccessContext | undefined {
     const entry = job.runId ? this.store.get(job.runId) : undefined;
     const access = entry?.memoryAccess;
-    if (!entry || !access || access.tenantId !== job.tenantId || !access.writableNamespaces.some(n => n.scope === job.namespace.scope && n.id === job.namespace.id)) return undefined;
+    const namespace = runEpisodeNamespace(access);
+    if (!access || access.tenantId !== job.tenantId || !namespace || !sameNamespace(namespace, job.namespace)) return undefined;
     return { principalId: "memory-maintenance", tenantId: job.tenantId, readableNamespaces: [job.namespace], writableNamespaces: [job.namespace] };
   }
 
@@ -338,6 +342,12 @@ export class RunExecutor {
     const ownerId = principal?.userId;
     const tenantId = principal?.tenantId;
     assertMemoryAccessMatchesRun({ tenantId }, memoryAccess);
+    if (memoryAccess && request.workflow.episodicMemoryScope === "organization") {
+      const namespace = { scope: "organization" as const, id: memoryAccess.tenantId };
+      if (canUseNamespace(namespace, memoryAccess) && canUseNamespace(namespace, memoryAccess, true)) {
+        memoryAccess = { ...memoryAccess, episodicNamespace: namespace };
+      }
+    }
     const dispatch = runDispatchContext.getStore();
     const trustedDispatch = dispatch?.organizationId === tenantId ? dispatch : undefined;
     const metadata = { ...request.metadata };
@@ -399,7 +409,16 @@ export class RunExecutor {
   }
 
   /** Retry re-checks the initiator's organization access (D-5) before starting. */
-  async retry(runId: string, memoryAccess?: MemoryAccessContext) {
+  async retry(
+    runId: string,
+    memoryAccess?: MemoryAccessContext,
+    overrides?: {
+      workflow?: WorkflowDefinition;
+      agents?: AgentRecord[];
+      tools?: import("@multi-agent/types").ToolRecord[];
+      mode?: "resume" | "restart";
+    },
+  ) {
     const entry = this.store.get(runId);
     if (!entry) throw new Error("Run not found");
     if (entry.run.status !== "failed" && entry.run.status !== "cancelled") {
@@ -407,18 +426,25 @@ export class RunExecutor {
     }
     assertMemoryAccessMatchesRun(entry.run, memoryAccess);
     if (this.organizationAccess) await this.organizationAccess.assertRunActive(entry.run);
-    const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
-    const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
-    const tools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
+    const workflow = overrides?.workflow ?? this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+    const agents = overrides?.agents ?? this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
+    const tools = overrides?.tools ?? this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
     // Empty agent snapshots are valid for tool/approval-only workflows.
     // Missing snapshots still fail closed; start() validates required agent links.
     if (!workflow || !agents) throw new Error("Run definition snapshot is not available for retry");
+    const retryMode = overrides?.mode === "restart" ? "restart" : "resume";
+    const metadata: Record<string, unknown> = { ...entry.run.metadata, retriedFromRunId: runId };
+    delete metadata.resumedFromCheckpointId;
+    delete metadata.resumedAtNodes;
+    delete metadata.resumedFromStep;
+    if (retryMode === "restart") metadata.retryMode = "restart";
+    else delete metadata.retryMode;
     return this.start({
       workflow,
       agents,
       tools,
       input: entry.run.input ?? {},
-      metadata: { ...entry.run.metadata, retriedFromRunId: runId },
+      metadata,
       taskId: entry.run.taskId,
     }, memoryAccess, entry.run.ownerId && entry.run.tenantId ? { userId: entry.run.ownerId, tenantId: entry.run.tenantId } : undefined);
   }
@@ -458,7 +484,7 @@ export class RunExecutor {
   retryPendingProceduralMemory(runId: string) {
     const entry = this.store.get(runId);
     const access = entry?.memoryAccess;
-    const namespace = access?.writableNamespaces[0];
+    const namespace = runEpisodeNamespace(access);
     const agentId = (this.store.getAgentSnapshot?.(runId) ?? entry?.agentsSnapshot)?.[0]?.id;
     if (!entry || !access || !namespace || !agentId || !this.proceduralService || !["completed", "failed", "cancelled"].includes(entry.run.status)) return false;
     this.scheduleProceduralLearning(runId, {
@@ -930,9 +956,16 @@ export class RunExecutor {
 
     this.store.update(runId, { status: "running" });
     const timeout = setTimeout(() => this.store.cancel(runId), this.guardrails.maxRunDurationMs);
-    const checkpointer = typeof this.checkpointer === "object" ? this.checkpointer : new MemorySaver();
+    const checkpointer: CompileOptions["checkpointer"] =
+      this.checkpointer === false
+        ? false
+        : typeof this.checkpointer === "object"
+          ? this.checkpointer
+          : this.fallbackCheckpointer;
     const stepBudget = { count: 0 };
-    this.checkpointers.set(runId, checkpointer);
+    if (checkpointer && typeof checkpointer === "object") {
+      this.checkpointers.set(runId, checkpointer);
+    }
     if (!this.branchControllers.has(runId)) this.branchControllers.set(runId, new Map());
     try {
       const compileOptionsBase = {
@@ -966,9 +999,114 @@ export class RunExecutor {
             }
           : {}),
       });
+
+      const retriedFromRunId =
+        typeof request.metadata?.retriedFromRunId === "string"
+          ? request.metadata.retriedFromRunId
+          : undefined;
+      const retryMode = request.metadata?.retryMode === "restart" ? "restart" : "resume";
+      let graphInput: unknown = { input: request.input ?? {}, output: {}, memory: {}, workingMemory: {} };
+
+      if (retriedFromRunId && retryMode !== "restart" && checkpointer && typeof checkpointer === "object") {
+        const resume = await cloneCheckpointForRetry({
+          checkpointer,
+          sourceRunId: retriedFromRunId,
+          targetRunId: runId,
+          workflow: request.workflow,
+          compiledGraph: compiled.graph,
+          sourceErrorCode: this.store.get(retriedFromRunId)?.run.result?.error?.code,
+        });
+        if (resume.resumed) {
+          stepBudget.count = resume.priorStepCount;
+          graphInput = null;
+          const stamp = nowIso();
+          const currentMeta = this.store.get(runId)?.run.metadata ?? request.metadata ?? {};
+          this.store.update(runId, {
+            metadata: {
+              ...currentMeta,
+              resumedFromCheckpointId: resume.checkpointId,
+              resumedAtNodes: resume.nextNodes,
+              resumedFromStep: resume.priorStepCount,
+            },
+          });
+          this.store.append(runId, {
+            id: uid("event"),
+            runId,
+            type: "run.resumed",
+            nodeId: resume.nextNodes[0],
+            timestamp: stamp,
+            sequence: 0,
+            payload: {
+              retriedFromRunId,
+              checkpointId: resume.checkpointId,
+              resumedAtNodes: resume.nextNodes,
+              preservedNodeCount: Object.keys(resume.completedNodeOutcomes).length,
+            },
+          });
+          // Replay lightweight completion markers & traversed edges from the checkpoint so the
+          // live canvas immediately shows prior completed stages before resuming at the failed node.
+          const completedSet = new Set(Object.keys(resume.completedNodeOutcomes));
+          const nextSet = new Set(resume.nextNodes);
+          for (const [nodeId, outcome] of Object.entries(resume.completedNodeOutcomes)) {
+            this.store.append(runId, {
+              id: uid("event"),
+              runId,
+              type: "node.completed",
+              nodeId,
+              timestamp: stamp,
+              sequence: 0,
+              payload: {
+                resumedFromCheckpoint: true,
+                retriedFromRunId,
+                outcome,
+              },
+            });
+          }
+          const seenEdges = new Set<string>();
+          const sourceEvents = this.store.events(retriedFromRunId);
+          for (const event of sourceEvents) {
+            if (event.type !== "edge.traversed") continue;
+            const edgeId = typeof event.payload.edgeId === "string" ? event.payload.edgeId : undefined;
+            const source = typeof event.payload.source === "string" ? event.payload.source : event.nodeId;
+            const target = typeof event.payload.target === "string" ? event.payload.target : undefined;
+            if (!edgeId || !source || !target || seenEdges.has(edgeId)) continue;
+            if (completedSet.has(source) && (completedSet.has(target) || nextSet.has(target))) {
+              seenEdges.add(edgeId);
+              this.store.append(runId, {
+                id: uid("event"),
+                runId,
+                type: "edge.traversed",
+                nodeId: source,
+                timestamp: stamp,
+                sequence: 0,
+                payload: {
+                  ...event.payload,
+                  resumedFromCheckpoint: true,
+                },
+              });
+            }
+          }
+          log.info("run.resumed_from_checkpoint", {
+            runId,
+            retriedFromRunId,
+            checkpointId: resume.checkpointId,
+            nextNodes: resume.nextNodes.join(","),
+            preservedNodes: completedSet.size,
+          });
+        } else {
+          log.info("run.retry_checkpoint_fallback", {
+            runId,
+            retriedFromRunId,
+            reason: resume.reason,
+            ...(resume.error ? { error: resume.error } : {}),
+          });
+        }
+      }
+
       // `memory` is workflow/shared execution state; `workingMemory` is the
-      // separate run-scoped knowledge channel. Both start empty for a new run.
-      await this.graphRunner.runGraph(runId, compiled, { input: request.input ?? {}, output: {}, memory: {}, workingMemory: {} }, request.workflow, request.agents, this.approvalManager, memoryAccess, request.tools, stepBudget, this.store.signal(runId), this.branchControllers.get(runId), this.guardrails.recursionLimit);
+      // separate run-scoped knowledge channel. Both start empty for a fresh run
+      // or are hydrated from the cloned checkpoint when resuming a retry (`graphInput === null`).
+      await this.graphRunner.runGraph(runId, compiled, graphInput, request.workflow, request.agents, this.approvalManager, memoryAccess, request.tools, stepBudget, this.store.signal(runId), this.branchControllers.get(runId), this.guardrails.recursionLimit);
     } catch (error) { this.fail(runId, error); } finally { clearTimeout(timeout); }
   }
 
@@ -1020,7 +1158,8 @@ export class RunExecutor {
       const entry = this.store.get(runId);
       if (!entry) return;
       const memoryAccess = entry.memoryAccess;
-      if (!memoryAccess || !memoryAccess.writableNamespaces.length) return;
+      const namespace = runEpisodeNamespace(memoryAccess);
+      if (!memoryAccess || !namespace) return;
       const workflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
       const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot;
       const outputNodeId = workflow?.nodes.find((node) => node.type === "output")?.id ?? "unknown";
@@ -1054,7 +1193,7 @@ export class RunExecutor {
         startedAt: entry.run.startedAt,
         completedAt: entry.run.completedAt,
         approvals: entry.approvals?.map(a => ({ decision: a.status })),
-        namespace: memoryAccess.writableNamespaces[0],
+        namespace,
       };
 
       if (this.durableMemoryJobs && !executionOpts?.skipDurableEnqueue) {

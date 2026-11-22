@@ -77,12 +77,12 @@ export function TaskFilterBar({
   return (
     <div className="flex flex-col gap-2.5">
       {/* Primary filter controls row */}
-      <div className="flex flex-wrap items-center gap-2">
+      <search aria-label="Filter tasks" className="flex flex-wrap items-center gap-2">
         {/* Search input */}
         <div className="relative min-w-[200px] flex-1 sm:flex-initial">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
           <input
-            type="text"
+            type="search"
             aria-label="Search tasks"
             value={filters.search}
             onChange={(e) => onFilterChange("search", e.target.value)}
@@ -107,7 +107,7 @@ export function TaskFilterBar({
           aria-label="Filter by workspace"
           value={filters.workspaceId ?? "all"}
           onChange={(e) => onFilterChange("workspaceId", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          className={`studio-select h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.workspaceId && filters.workspaceId !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -128,7 +128,7 @@ export function TaskFilterBar({
           aria-label="Filter by project"
           value={filters.projectId ?? "all"}
           onChange={(e) => onFilterChange("projectId", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          className={`studio-select h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.projectId && filters.projectId !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -149,7 +149,7 @@ export function TaskFilterBar({
           aria-label="Filter by status"
           value={filters.status ?? "all"}
           onChange={(e) => onFilterChange("status", e.target.value as TaskStatus | "all")}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          className={`studio-select h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.status && filters.status !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -179,7 +179,7 @@ export function TaskFilterBar({
           aria-label="Filter by priority"
           value={filters.priority}
           onChange={(e) => onFilterChange("priority", e.target.value as TaskPriority | "all")}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          className={`studio-select h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.priority !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -199,7 +199,7 @@ export function TaskFilterBar({
           aria-label="Filter by agent"
           value={filters.agent}
           onChange={(e) => onFilterChange("agent", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          className={`studio-select h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.agent !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -220,7 +220,7 @@ export function TaskFilterBar({
           aria-label="Filter by workflow"
           value={filters.workflow}
           onChange={(e) => onFilterChange("workflow", e.target.value)}
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          className={`studio-select h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.workflow !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -243,7 +243,7 @@ export function TaskFilterBar({
           onChange={(e) =>
             onFilterChange("operationalState", e.target.value as TaskFilterOperationalState)
           }
-          className={`h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+          className={`studio-select h-8 rounded-lg border bg-zinc-900 px-2.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
             filters.operationalState && filters.operationalState !== "all"
               ? "border-indigo-500/70 text-indigo-200"
               : "border-zinc-800"
@@ -282,7 +282,7 @@ export function TaskFilterBar({
             </Button>
           )}
         </div>
-      </div>
+      </search>
 
       {/* Active filter chips row */}
       {chips.length > 0 && (

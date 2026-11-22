@@ -12,11 +12,14 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-zinc-800 text-zinc-100 hover:bg-zinc-700",
         destructive:
-          "border-transparent bg-red-950/80 text-red-400 border border-red-800",
+          "bg-red-950/80 text-red-300 border border-red-800 [html[data-appearance='light']_&]:bg-red-50 [html[data-appearance='light']_&]:text-red-700 [html[data-appearance='light']_&]:border-red-300",
         outline: "text-zinc-300 border-zinc-700",
-        success: "border-transparent bg-emerald-950/80 text-emerald-400 border border-emerald-800",
-        warning: "border-transparent bg-amber-950/80 text-amber-400 border border-amber-800",
-        info: "border-transparent bg-blue-950/80 text-blue-400 border border-blue-800",
+        success:
+          "bg-emerald-950/80 text-emerald-300 border border-emerald-800 [html[data-appearance='light']_&]:bg-emerald-50 [html[data-appearance='light']_&]:text-emerald-700 [html[data-appearance='light']_&]:border-emerald-300",
+        warning:
+          "bg-amber-950/80 text-amber-300 border border-amber-800 [html[data-appearance='light']_&]:bg-amber-50 [html[data-appearance='light']_&]:text-amber-800 [html[data-appearance='light']_&]:border-amber-300",
+        info:
+          "bg-blue-950/80 text-blue-300 border border-blue-800 [html[data-appearance='light']_&]:bg-blue-50 [html[data-appearance='light']_&]:text-blue-700 [html[data-appearance='light']_&]:border-blue-300",
       },
     },
     defaultVariants: {

@@ -27,7 +27,7 @@ export class ToolExecutorFactory {
     if (category === "studio_task_tool" || toolName === "studio_task_tool") {
       return this.createStudioTaskToolExecutor();
     }
-    if (category === "function") return new FunctionToolExecutor();
+    if (category === "function") return new FunctionToolExecutor(undefined, this.studioStore);
     if (category === "http") return new HttpToolExecutor();
     if (category === "database") return new DatabaseToolExecutor(this.gateway);
     if (category === "search") return new SearchToolExecutor(this.gateway);

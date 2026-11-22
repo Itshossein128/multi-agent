@@ -184,6 +184,20 @@ export default function WebhookTriggersPage() {
     fetchTriggers();
   }, []);
 
+  useEffect(() => {
+    if (!modalOpen && !revealedSecret && !activeTrigger) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !creating) {
+        event.preventDefault();
+        setModalOpen(false);
+        setRevealedSecret(null);
+        setActiveTrigger(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalOpen, revealedSecret, activeTrigger, creating]);
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !targetId.trim()) return;
@@ -400,27 +414,30 @@ export default function WebhookTriggersPage() {
                     size="sm"
                     onClick={() => handleRotateSecret(trigger)}
                     className="h-7 w-7 p-0 text-zinc-400 hover:text-amber-400 cursor-pointer"
+                    aria-label={t.rotateTitle}
                     title={t.rotateTitle}
                   >
-                    <Key className="h-3.5 w-3.5" />
+                    <Key className="h-3.5 w-3.5" aria-hidden="true" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => openDeliveries(trigger)}
                     className="h-7 w-7 p-0 text-zinc-400 hover:text-indigo-300 cursor-pointer"
+                    aria-label={t.deliveriesTitle}
                     title={t.deliveriesTitle}
                   >
-                    <Activity className="h-3.5 w-3.5" />
+                    <Activity className="h-3.5 w-3.5" aria-hidden="true" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDelete(trigger.id)}
                     className="h-7 w-7 p-0 text-zinc-500 hover:text-red-400 cursor-pointer"
+                    aria-label={t.deleteTitle}
                     title={t.deleteTitle}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </Button>
                 </div>
               </div>
@@ -451,16 +468,27 @@ export default function WebhookTriggersPage() {
 
       {/* Create Webhook Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !creating) setModalOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-webhook-modal-title"
+            className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <h3 className="text-sm font-semibold text-zinc-100">{t.createModalTitle}</h3>
+              <h3 id="create-webhook-modal-title" className="text-sm font-semibold text-zinc-100">{t.createModalTitle}</h3>
               <button
                 type="button"
+                aria-label="Close dialog"
                 onClick={() => setModalOpen(false)}
-                className="text-zinc-500 hover:text-zinc-300 p-1 cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -555,10 +583,15 @@ export default function WebhookTriggersPage() {
       {/* Secret Reveal Modal */}
       {revealedSecret && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="webhook-secret-modal-title"
+            className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl"
+          >
             <div className="flex items-center gap-2.5 text-amber-400">
-              <Key className="h-5 w-5" />
-              <h3 className="text-sm font-semibold text-zinc-100">
+              <Key className="h-5 w-5" aria-hidden="true" />
+              <h3 id="webhook-secret-modal-title" className="text-sm font-semibold text-zinc-100">
                 {t.secretModalTitle} {revealedTriggerName}
               </h3>
             </div>
@@ -569,6 +602,7 @@ export default function WebhookTriggersPage() {
               <input
                 type="text"
                 readOnly
+                aria-label="Webhook signing secret"
                 value={revealedSecret}
                 className="w-full rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 font-mono text-xs text-amber-200 select-all pr-10 focus:outline-hidden"
                 dir="ltr"
@@ -577,9 +611,10 @@ export default function WebhookTriggersPage() {
                 type="button"
                 onClick={copySecret}
                 className="absolute right-2 top-2 text-zinc-400 hover:text-zinc-100 p-1 cursor-pointer"
+                aria-label="Copy to clipboard"
                 title="Copy to clipboard"
               >
-                {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+                {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-400" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
               </button>
             </div>
 
@@ -599,21 +634,32 @@ export default function WebhookTriggersPage() {
 
       {/* Deliveries Modal */}
       {activeTrigger && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[80vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setActiveTrigger(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="webhook-deliveries-modal-title"
+            className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[80vh] overflow-y-auto"
+          >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div>
-                <h3 className="text-sm font-semibold text-zinc-100">
+                <h3 id="webhook-deliveries-modal-title" className="text-sm font-semibold text-zinc-100">
                   {t.deliveryHeading} {activeTrigger.name}
                 </h3>
                 <p className="text-xs text-zinc-400">{t.deliverySubtitle}</p>
               </div>
               <button
                 type="button"
+                aria-label="Close dialog"
                 onClick={() => setActiveTrigger(null)}
-                className="text-zinc-500 hover:text-zinc-300 p-1 cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 

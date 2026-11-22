@@ -473,6 +473,16 @@ describe("structured agent result extraction", () => {
     expect(extractWorkingMemoryUpdates(raw)).toHaveLength(1);
   });
 
+  test("unwraps working-memory updates only from the final JSON response", () => {
+    const fenced = (value: unknown) => ["```json", JSON.stringify(value), "```"].join("\n");
+    const example = fenced({ example: true });
+    const output = { status: "complete", output: { count: 2 } };
+    const updates = [{ scope: "workflow", kind: "finding", content: "Verified two delivery artifacts." }];
+    const raw = [example, "Delivery checks finished.", fenced({ output, workingMemoryUpdates: updates })].join("\n");
+    expect(splitWorkingMemoryUpdates(raw)).toEqual({ remainder: output, updates });
+    expect(splitWorkingMemoryUpdates(example)).toEqual({ remainder: example, updates: [] });
+  });
+
   test("strips malformed channels too, so they can be rejected without leaking into output", () => {
     const { remainder, updates } = splitWorkingMemoryUpdates({
       output: "The normal agent answer.",
@@ -481,6 +491,15 @@ describe("structured agent result extraction", () => {
     expect(remainder).toBe("The normal agent answer.");
     expect(updates).toEqual(["not-an-array"]);
     expect(JSON.stringify(remainder)).not.toContain("workingMemoryUpdates");
+  });
+
+  test("retains the routing decision when a CLI response nests its memory channel inside output", () => {
+    const decision = { next: "proceed", status: "approved", notes: "B02 plan approved for tasks." };
+    const updates = [{ op: "add", scope: "workflow", kind: "finding", content: "Plan reviewed." }];
+    const nested = { output: { ...decision, workingMemoryUpdates: updates } };
+    const raw = ["`".repeat(3) + "json", JSON.stringify(nested), "`".repeat(3)].join("\n");
+    expect(splitWorkingMemoryUpdates(raw)).toEqual({ remainder: decision, updates });
+    expect(splitWorkingMemoryUpdates({ output: decision })).toEqual({ remainder: { output: decision }, updates: [] });
   });
 
   test("keeps other result keys and leaves non-structured output untouched", () => {

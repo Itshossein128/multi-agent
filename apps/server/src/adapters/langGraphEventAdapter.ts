@@ -17,15 +17,20 @@ export class LangGraphEventAdapter {
   }
 }
 
+const MAX_REDACT_DEPTH = 12;
+
 export function redact(value: unknown, depth = 0): unknown {
-  if (depth > 4) return "[truncated]";
-  if (Array.isArray(value)) return value.slice(0, 50).map((item) => redact(item, depth + 1));
+  if (value === null || value === undefined || typeof value === "boolean" || typeof value === "number") {
+    return value;
+  }
   if (typeof value === "string") return redactUrls(value)
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
     .replace(/\bsk-[a-zA-Z0-9_-]+/g, "[redacted]")
     .replace(/((?:api[_-]?key|password|token|secret|session|cookie|private[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]")
     .slice(0, 12000);
-  if (!value || typeof value !== "object") return value;
+  if (typeof value !== "object") return value;
+  if (depth > MAX_REDACT_DEPTH) return "[truncated]";
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => redact(item, depth + 1));
   const output: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
     output[key] = isSensitiveKey(key)
@@ -72,9 +77,14 @@ function summarizeWorkingMemoryEntry(id: string, entry: unknown, depth: number):
 }
 
 function isSensitiveKey(key: string): boolean {
-  // Usage counters are operational metrics, not credentials. Keep these while
-  // treating every other token-shaped field conservatively as a secret.
-  if (/^(?:total|input|output|prompt|completion|cached)[_-]?tokens?$/i.test(key) || /^token[_-]?(?:count|usage)$/i.test(key)) return false;
+  // Usage counters and workflow agent session tracking fields are operational metadata, not credentials.
+  if (
+    /^(?:total|input|output|prompt|completion|cached)[_-]?tokens?$/i.test(key) ||
+    /^token[_-]?(?:count|usage)$/i.test(key) ||
+    /^(?:agent[_-]?sessions?|session[_-]?(?:id|key|turn|mode|state|supported)|resumed[_-]?session[_-]?id)$/i.test(key)
+  ) {
+    return false;
+  }
   return /secret|token|password|api[-_]?key|authorization|credential|stack|cookie|session|private[-_]?key/i.test(key);
 }
 

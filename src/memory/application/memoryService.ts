@@ -139,7 +139,7 @@ export class DefaultMemoryService implements MemoryService {
       // These intents share the exact PostgreSQL transaction with the source
       // memory mutation. A committed memory can therefore not silently miss
       // consolidation, and a committed episode cannot silently miss learning.
-      await store.scheduleLifecycleJob?.({ kind: "consolidation", idempotencyKey: `namespace:${access.tenantId}:${memory.namespace.scope}:${memory.namespace.id}:v1`, tenantId: access.tenantId, namespace: memory.namespace, memoryId: memory.id });
+      await this.enqueueConsolidation(store, memory);
       if (memory.kind === "episodic" && memory.source.runId) {
         await store.scheduleLifecycleJob?.({ kind: "procedural_learning", idempotencyKey: `procedural:${access.tenantId}:${memory.namespace.scope}:${memory.namespace.id}:${memory.source.runId}:v1`, tenantId: access.tenantId, namespace: memory.namespace, runId: memory.source.runId, memoryId: memory.id });
       }
@@ -153,6 +153,15 @@ export class DefaultMemoryService implements MemoryService {
     return result;
   }
   async recall(query: MemoryRetrievalQuery, access: MemoryAccessContext) { requireNamespaces(query.namespaces, access); return this.retriever.retrieve(query, access); }
+  private async enqueueConsolidation(store: MemoryStore, memory: Memory): Promise<void> {
+    await store.scheduleLifecycleJob?.({
+      kind: "consolidation",
+      idempotencyKey: `memory:${memory.id}:${memory.version}:v1`,
+      tenantId: memory.tenantId,
+      namespace: memory.namespace,
+      memoryId: memory.id,
+    });
+  }
   async get(id: string, access: MemoryAccessContext): Promise<Memory | null> {
     requireAccess(access);
     const memory = await this.store.get(access.tenantId, id);
@@ -180,9 +189,10 @@ export class DefaultMemoryService implements MemoryService {
       if (memory.contentHash !== old.contentHash) for (const other of await this.identityMatches(store, memory)) {
         if (other.id !== memory.id && canAccessMemory(other, access, true) && isLive(other, this.now()) && other.kind === memory.kind && other.visibility === memory.visibility && other.contentHash === memory.contentHash) throw new MemoryConflictError("An active memory already has this content");
       }
-      if (memory.content !== old.content || memory.subject !== old.subject || memory.trigger !== old.trigger || memory.title !== old.title) Object.assign(memory, await this.embedding(memory));
+      if (!old.embedding || memory.content !== old.content || memory.subject !== old.subject || memory.trigger !== old.trigger || memory.title !== old.title) Object.assign(memory, await this.embedding(memory));
       memory.version = old.version + 1; memory.updatedAt = new Date(this.now()).toISOString();
       await store.update(memory, old.version);
+      await this.enqueueConsolidation(store, memory);
       return publicMemory(memory);
     });
     try { this.options.consolidationScheduler?.schedule(access, result.namespace); } catch { /* maintenance is optional */ }

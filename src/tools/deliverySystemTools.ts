@@ -140,15 +140,89 @@ function discoverSubphaseDirectories(projectRoot: string, phaseId: string): {
   };
 }
 
+interface LivePhaseStatusInfo {
+  status: "implemented" | "remaining";
+  implementedTasksCount: number;
+  remainingTasksCount: number;
+  remainingTaskIds: string[];
+}
+
+function parseLiveDeliveryPlanStatuses(projectRoot: string): Map<string, LivePhaseStatusInfo> {
+  const statusMap = new Map<string, LivePhaseStatusInfo>();
+  const livePlanPath = path.join(projectRoot, "apps", "web", "src", "app", "data", "delivery-plan.ts");
+  if (!fs.existsSync(livePlanPath) || !fs.statSync(livePlanPath).isFile()) {
+    return statusMap;
+  }
+
+  const content = fs.readFileSync(livePlanPath, "utf8");
+
+  // 1. Try parsing the full JSON object after `export const deliveryPlan ... = {`
+  const assignIdx = content.indexOf("export const deliveryPlan");
+  if (assignIdx >= 0) {
+    const eqIdx = content.indexOf("=", assignIdx);
+    const firstBrace = eqIdx >= 0 ? content.indexOf("{", eqIdx) : -1;
+    const lastBrace = content.lastIndexOf("}");
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      try {
+        const jsonText = content.slice(firstBrace, lastBrace + 1);
+        const parsed = JSON.parse(jsonText) as {
+          phases?: Array<{
+            id?: string;
+            tasks?: Array<{ id?: string; status?: string }>;
+          }>;
+        };
+        if (Array.isArray(parsed.phases)) {
+          for (const phase of parsed.phases) {
+            const phaseId = typeof phase.id === "string" ? phase.id.trim() : "";
+            if (!phaseId) continue;
+            const tasks = Array.isArray(phase.tasks) ? phase.tasks : [];
+            const remaining = tasks.filter((t) => t.status === "remaining");
+            const implemented = tasks.filter((t) => t.status === "implemented");
+            const status: "implemented" | "remaining" =
+              remaining.length === 0 && implemented.length > 0 ? "implemented" : "remaining";
+            statusMap.set(phaseId, {
+              status,
+              implementedTasksCount: implemented.length,
+              remainingTasksCount: remaining.length,
+              remainingTaskIds: remaining.map((t) => String(t.id ?? "")).filter(Boolean),
+            });
+          }
+          if (statusMap.size > 0) return statusMap;
+        }
+      } catch {
+        /* fallback to regex extraction below */
+      }
+    }
+  }
+
+  // 2. Fallback regex parser for compact `deliveryPhases = [{ wbs: "R.0", ..., status: "implemented" }]`
+  const entryRegex = /\{\s*(?:wbs|id)\s*:\s*["']([^"']+)["'][\s\S]*?status\s*:\s*["'](implemented|remaining)["'][\s\S]*?\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = entryRegex.exec(content)) !== null) {
+    const phaseId = match[1].trim();
+    const status = match[2] === "implemented" ? "implemented" : "remaining";
+    statusMap.set(phaseId, {
+      status,
+      implementedTasksCount: status === "implemented" ? 1 : 0,
+      remainingTasksCount: status === "remaining" ? 1 : 0,
+      remainingTaskIds: [],
+    });
+  }
+
+  return statusMap;
+}
+
 /**
  * Reads `/output/delivery-plan-2026-11-03` (`schedule.json`, `delivery-plan.md`, `work-packages.csv`)
- * and returns structured WBS phases, work packages, dependencies, and discovered subphase prompts.
+ * and `apps/web/src/app/data/delivery-plan.ts`, returning structured WBS phases, live implementation
+ * status, work packages, dependencies, and discovered subphase prompts.
  */
 export function executeDeliveryPlanReader(
   configuration: Record<string, string | number | boolean>,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
   const projectRoot = resolveProjectRoot(configuration, input);
+  const liveStatuses = parseLiveDeliveryPlanStatuses(projectRoot);
   const planRel = String(input.planDir ?? configuration.planDir ?? "output/delivery-plan-2026-11-03").trim();
   const planDir = safeResolveWithinRoot(projectRoot, planRel);
   const schedulePath = path.join(planDir, "schedule.json");
@@ -170,8 +244,14 @@ export function executeDeliveryPlanReader(
   const completedPhases = new Set(
     Array.isArray(input.completedPhaseIds)
       ? input.completedPhaseIds.filter((x): x is string => typeof x === "string").map((x) => x.trim())
-      : [],
+      : [...liveStatuses.entries()].filter(([, info]) => info.status === "implemented").map(([wbs]) => wbs),
   );
+  const nextRemainingPhase =
+    phases.find((phase) => {
+      const live = liveStatuses.get(phase.wbs);
+      if (live) return live.status === "remaining";
+      return !completedPhases.has(phase.wbs);
+    })?.wbs ?? null;
 
   if (mode === "phase" && requestedPhaseId) {
     const matched = phases.find((p) => p.wbs.toLowerCase() === requestedPhaseId.toLowerCase());
@@ -258,12 +338,22 @@ export function executeDeliveryPlanReader(
     totalPhases: phases.length,
     totalWorkPackages,
     totalLikelyHours,
+    nextRemainingPhase,
     phases: phases.map((phase, index) => {
       const decomposition = discoverSubphaseDirectories(projectRoot, phase.wbs);
+      const live = liveStatuses.get(phase.wbs);
+      const liveStatus: "implemented" | "remaining" =
+        live?.status ?? (completedPhases.has(phase.wbs) ? "implemented" : "remaining");
       return {
         order: index + 1,
         wbs: phase.wbs,
         name: phase.name,
+        liveStatus,
+        ...(live ? {
+          implementedTasksCount: live.implementedTasksCount,
+          remainingTasksCount: live.remainingTasksCount,
+          remainingTaskIds: live.remainingTaskIds,
+        } : {}),
         likelyHours: phase.likely ?? 0,
         workPackagesCount: (phase.subtasks ?? []).length,
         technicalDependencies: phase.technical_dependencies ?? [],
@@ -385,7 +475,7 @@ export function executeSpecKitWorkspaceInspector(
   if (fs.existsSync(featureJsonPath)) {
     try {
       const parsed = JSON.parse(fs.readFileSync(featureJsonPath, "utf8")) as Record<string, unknown>;
-      const rawDir = parsed.feature_dir ?? parsed.featureDir ?? parsed.active_feature;
+      const rawDir = parsed.feature_directory ?? parsed.feature_dir ?? parsed.featureDir ?? parsed.active_feature;
       if (typeof rawDir === "string" && rawDir.trim()) {
         activeFeatureFromConfig = rawDir.trim();
       }

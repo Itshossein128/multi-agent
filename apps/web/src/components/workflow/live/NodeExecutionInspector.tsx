@@ -6,6 +6,7 @@ import type { WorkflowNode } from "@multi-agent/types";
 import { X } from "lucide-react";
 import { useRunStore } from "@/store/useRunStore";
 import { buildNodeExecutionView, projectRunCanvas, selectNodeEvents } from "@/lib/runCanvasProjection";
+import { formatAnyValueForReading } from "@/lib/readableAgentText";
 import { ReadableContent } from "@/components/runs/ReadableContent";
 import { ThinkingTranscript } from "@/components/workflow/live/ThinkingTranscript";
 
@@ -16,7 +17,8 @@ function showThinking(nodeType: string | undefined, events: { type: string; payl
 
 function Evidence({ value }: { value: unknown }) {
   if (value === undefined) return <p className="text-xs text-zinc-400">Not available in recorded events.</p>;
-  return <ReadableContent text={typeof value === "string" ? value : JSON.stringify(value, null, 2)} />;
+  const text = typeof value === "string" ? value : formatAnyValueForReading(value) || JSON.stringify(value, null, 2);
+  return <ReadableContent text={text} />;
 }
 
 export function NodeExecutionInspector({ nodeId, node, onClose }: { nodeId: string; node?: WorkflowNode; onClose: () => void }) {

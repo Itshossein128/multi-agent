@@ -21,6 +21,8 @@ export interface MemoryAccessContext {
   principalId: string; tenantId: string;
   agentId?: string; workflowId?: string;
   readableNamespaces: MemoryNamespace[]; writableNamespaces: MemoryNamespace[];
+  /** Server-selected destination captured before execution for durable run learning. */
+  episodicNamespace?: MemoryNamespace;
 }
 export interface MemoryStoreQuery {
   tenantId: string; namespaces: MemoryNamespace[]; kinds?: MemoryKind[];

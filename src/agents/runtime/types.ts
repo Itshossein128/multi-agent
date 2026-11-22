@@ -113,6 +113,8 @@ export interface AgentExecutionInput {
   resumeSession?: AgentSessionState;
   /** Callback invoked when a provider/CLI session starts or continues. */
   onSessionUpdate?: (session: AgentSessionState) => void;
+  /** Node-level short-term history byte/token ceiling override (64-65536). */
+  shortTermMemoryMaxTokens?: number;
 }
 
 /**

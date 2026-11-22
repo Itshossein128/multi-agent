@@ -1,8 +1,13 @@
 import type { AgentExecutionInput } from "./types";
 
-export interface HistoryEntry { id: string; input: unknown; output: unknown }
+export interface HistoryEntry { id: string; input: unknown; output: unknown; toolSummary?: string }
 export interface ShortTermHistory { entries: HistoryEntry[]; maxEntries: number; maxTokens: number }
 export type ShortTermHistories = Record<string, ShortTermHistory>;
+
+export const DEFAULT_SHORT_TERM_MEMORY_MAX_TOKENS = 4096;
+export const SHARED_SESSION_DEFAULT_SHORT_TERM_MEMORY_MAX_TOKENS = 16384;
+export const MAX_SHORT_TERM_MEMORY_MAX_TOKENS = 65536;
+export const MAX_STEP_SHORT_TERM_MEMORY_MAX_TOKENS = MAX_SHORT_TERM_MEMORY_MAX_TOKENS;
 
 export function historyKey(input: AgentExecutionInput): string {
   if (input.sessionMode === "shared" && input.sessionKey?.trim()) {
@@ -25,7 +30,11 @@ export function boundText(text: string, budget: number): string {
 
 export function boundHistory(history: ShortTermHistory): ShortTermHistory {
   const maxEntries = boundedInteger(history.maxEntries, 20, 100);
-  const maxTokens = boundedInteger(history.maxTokens, 4096, 16384);
+  const maxTokens = boundedInteger(
+    history.maxTokens,
+    DEFAULT_SHORT_TERM_MEMORY_MAX_TOKENS,
+    MAX_SHORT_TERM_MEMORY_MAX_TOKENS,
+  );
   if (!maxEntries || !maxTokens) return { entries: [], maxEntries, maxTokens };
   let size = 2;
   const entries: HistoryEntry[] = [];

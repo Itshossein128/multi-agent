@@ -6,6 +6,7 @@ import { scopedApiPath } from "@/lib/orgRoute";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Boxes, Plus, RefreshCw } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
 
@@ -143,20 +144,52 @@ export default function WorkspacesPage() {
 
   return (
     <PageContainer>
-      <div>
-        <h1 className="text-xl font-semibold text-zinc-100">Project workspaces</h1>
-        <p className="text-sm text-zinc-400">
-          Workspaces belong to a project. Browse by project or open a dashboard for tasks and repo branches.
-        </p>
+      <div className="flex flex-col items-start justify-between gap-4 border-b border-zinc-800 pb-5 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-indigo-500/20 bg-indigo-500/10 text-indigo-400">
+            <Boxes className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-zinc-100">Project workspaces</h1>
+              {loaded ? (
+                <span className="inline-flex items-center rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                  {items.length}
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-zinc-400">
+              Workspaces belong to a project. Browse by project or open a dashboard for tasks and repo branches.
+            </p>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={loading || busy}
+          onClick={() => void load()}
+          className="gap-1.5 text-xs cursor-pointer"
+        >
+          <RefreshCw
+            className={`h-3.5 w-3.5 shrink-0 ${loading ? "animate-spin" : ""}`}
+            aria-hidden="true"
+          />
+          Refresh
+        </Button>
       </div>
 
-      <form onSubmit={createWorkspace} className="flex flex-wrap gap-2 items-end">
-        <label className="min-w-[10rem] space-y-1 text-xs text-zinc-400">
-          Project
+      <form
+        onSubmit={createWorkspace}
+        className="flex flex-wrap items-end gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4"
+      >
+        <label className="min-w-[12rem] space-y-1.5 text-xs font-medium text-zinc-400">
+          <span>Project</span>
           <select
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+            className="studio-select h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             required
           >
             <option value="">Select project</option>
@@ -165,16 +198,24 @@ export default function WorkspacesPage() {
             ))}
           </select>
         </label>
-        <label className="flex-1 min-w-[12rem] space-y-1 text-xs text-zinc-400">
-          Workspace name (optional)
+        <label className="flex-1 min-w-[14rem] space-y-1.5 text-xs font-medium text-zinc-400">
+          <span>Workspace name (optional)</span>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+            className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             placeholder="e.g. Lab environment"
           />
         </label>
-        <Button type="submit" disabled={busy || !projectId} size="sm">Create</Button>
+        <Button
+          type="submit"
+          disabled={busy || !projectId}
+          size="sm"
+          className="h-9 gap-1.5 bg-indigo-600 px-4 text-xs text-white hover:bg-indigo-500 cursor-pointer"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          Create
+        </Button>
       </form>
 
       {error && (

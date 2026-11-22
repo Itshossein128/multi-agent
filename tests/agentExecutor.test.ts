@@ -12,7 +12,7 @@ import { mapAgentExecutionEvent } from "../src/agents/runtime/mapAgentExecutionE
 import { UnsupportedBackendError } from "../src/agents/runtime/errors";
 import { ExecutionPolicyError, assertExecutionPolicy } from "../src/agents/runtime/executionPolicy";
 import { defaultCliExecutable } from "../src/agents/runtime/cliProviderDefaults";
-import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, cursorArgs, agyArgs, agyStreamInput, parseAgyStreamOutput, resolveCliSpawnExecutable, cliExecutableAvailable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
+import { CliAgentExecutor, cliRuntimePolicyFromEnvironment, codexArgs, cursorArgs, cursorSessionArgs, parseCursorOutput, agyArgs, agyStreamInput, parseAgyStreamOutput, resolveCliSpawnExecutable, cliExecutableAvailable, type CliWorkerMode } from "../src/agents/runtime/cliAgentExecutor";
 import { ContainerWorkerRuntime } from "../src/agents/runtime/workerRuntime";
 import { LocalAgentExecutor } from "../src/agents/runtime/localAgentExecutor";
 import type { AgentExecutionEvent, AgentExecutor } from "../src/agents/runtime/types";
@@ -617,6 +617,202 @@ describe("CLI and local executors", () => {
       expect.any(String),
       undefined,
     );
+  });
+
+  test("cursorArgs skips --force in read-only modes and avoids duplicating -f", () => {
+    expect(cursorArgs(["--mode", "plan"], true)).toEqual(["-p", "--mode", "plan", "--output-format", "text", "--trust"]);
+    expect(cursorArgs(["--plan"], true)).toEqual(["-p", "--plan", "--output-format", "text", "--trust"]);
+    expect(cursorArgs(["-f"], true)).toEqual(["-p", "-f", "--output-format", "text", "--trust"]);
+  });
+
+  test("cursorSessionArgs constructs stream-json Turn 1 and --resume Turn 2 args cleanly", () => {
+    expect(cursorSessionArgs(["--output-format", "text", "--continue", "--force"], "local", undefined, "composer-2.5")).toEqual([
+      "-p",
+      "--force",
+      "--output-format",
+      "stream-json",
+      "--trust",
+      "--model",
+      "composer-2.5",
+    ]);
+    expect(cursorSessionArgs(["--output-format", "json", "--mode", "plan"], "container", undefined, "sonnet-4")).toEqual([
+      "-p",
+      "--mode",
+      "plan",
+      "--output-format",
+      "json",
+      "--trust",
+      "--model",
+      "sonnet-4",
+    ]);
+    expect(cursorSessionArgs(["--resume", "old-id", "--new-session-id", "drop-id", "--force"], "local", "cur-sess-2", "composer-2.5")).toEqual([
+      "-p",
+      "--force",
+      "--output-format",
+      "stream-json",
+      "--trust",
+      "--model",
+      "composer-2.5",
+      "--resume",
+      "cur-sess-2",
+    ]);
+  });
+
+  test("commandArgs avoids duplicating --model when --model= is already set in backend.args", async () => {
+    const start = jest.fn(async (..._args: any[]) => ({ workerId: "w1", runId: "r" }));
+    const wait = jest.fn(async () => ({ code: 0, stdout: "Cursor answer", stderr: "", reason: "completed" }));
+    const workerRuntime = { start, wait, cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({
+      backend: { type: "cli", provider: "cursor", model: "composer-2.5", args: ["--model=sonnet-4"] },
+    });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+    for await (const _event of new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "local", allowedExecutables: ["agent"], workspaceRoots: ["/workspace"], maxOutputBytes: 4096,
+    }).execute({ agent, input: "edit", runId: "r", nodeId: "n" })) { /* drain */ }
+
+    const args = (start.mock.calls[0][0] as { args: string[] }).args;
+    expect(args).toContain("--model=sonnet-4");
+    expect(args).not.toContain("--model");
+    expect(args).not.toContain("composer-2.5");
+  });
+
+  test("parseCursorOutput handles stream-json NDJSON, single json, error events, leading non-JSON lines, reasoning, and plain-text fallback", () => {
+    const ndjson = [
+      JSON.stringify({ type: "system", subtype: "init", session_id: "cur-123" }),
+      JSON.stringify({ type: "thinking", subtype: "delta", text: "analyzing" }),
+      JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "draft" }] }, session_id: "cur-123" }),
+      JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "final output", session_id: "cur-123" }),
+    ].join("\n");
+    expect(parseCursorOutput(ndjson)).toEqual({ content: "final output", sessionId: "cur-123" });
+
+    // Leading non-JSON banner / malformed JSON before Cursor events must not short-circuit
+    const withBanner = [
+      "[warn] telemetry notice before JSONL stream",
+      "{truncated-first-line",
+      JSON.stringify({ type: "system", subtype: "init", session_id: "cur-banner" }),
+      JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "clean", session_id: "cur-banner" }),
+    ].join("\n");
+    expect(parseCursorOutput(withBanner)).toEqual({ content: "clean", sessionId: "cur-banner" });
+
+    // Reasoning blocks must be filtered alongside thinking, and empty result must not clobber assistantTexts
+    const reasoningAndEmptyResult = [
+      JSON.stringify({ type: "system", subtype: "init", session_id: "cur-reason" }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "reasoning", text: "HIDDEN_REASONING" },
+            { type: "redacted_thinking", text: "HIDDEN_REDACTED" },
+            { type: "text", text: "Answer" },
+          ],
+        },
+        session_id: "cur-reason",
+      }),
+      JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "", session_id: "cur-reason" }),
+    ].join("\n");
+    expect(parseCursorOutput(reasoningAndEmptyResult)).toEqual({ content: "Answer", sessionId: "cur-reason" });
+
+    expect(parseCursorOutput(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "single json", session_id: "cur-456" }))).toEqual({
+      content: "single json",
+      sessionId: "cur-456",
+    });
+
+    expect(() => parseCursorOutput(JSON.stringify({ type: "result", subtype: "error", is_error: true, result: "Cursor auth error" }))).toThrow("Cursor auth error");
+    expect(() => parseCursorOutput(JSON.stringify({ type: "error", is_error: true, error: "Invalid CURSOR_API_KEY" }))).toThrow("Invalid CURSOR_API_KEY");
+
+    expect(parseCursorOutput("plain text output")).toEqual({ content: "plain text output" });
+  });
+
+  test("CliAgentExecutor continues Cursor shared session with --resume and live thinking deltas", async () => {
+    const turn1Ndjson = [
+      JSON.stringify({ type: "system", subtype: "init", session_id: "cur-session-99" }),
+      JSON.stringify({ type: "thinking", subtype: "delta", text: "the " }),
+      JSON.stringify({ type: "thinking", subtype: "delta", text: "the" }),
+      JSON.stringify({ type: "thinking", subtype: "completed" }),
+      JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Turn 1 spec ready", session_id: "cur-session-99" }),
+    ].join("\n") + "\n";
+    const turn2Ndjson = [
+      JSON.stringify({ type: "system", subtype: "init", session_id: "cur-session-99" }),
+      JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Turn 2 plan ready", session_id: "cur-session-99" }),
+    ].join("\n") + "\n";
+
+    let call = 0;
+    const capturedPrompts: string[] = [];
+    const start = jest.fn(async (_spec: unknown, _sig: unknown, stdinPrompt: string) => {
+      capturedPrompts.push(stdinPrompt);
+      call += 1;
+      return { workerId: `w-${call}`, runId: "r-cur" };
+    });
+    const stream = jest.fn(async function* (workerId: string) {
+      if (workerId === "w-1") {
+        yield { type: "stdout" as const, data: turn1Ndjson };
+      } else {
+        yield { type: "stdout" as const, data: turn2Ndjson };
+      }
+    });
+    const wait = jest.fn(async (workerId: string) => ({
+      code: 0,
+      stdout: workerId === "w-1" ? turn1Ndjson : turn2Ndjson,
+      stderr: "",
+      reason: "completed" as const,
+    }));
+    const workerRuntime = { start, stream, wait, cleanup: jest.fn() } as any;
+    const agent = createAgentRecord({ backend: { type: "cli", provider: "cursor", args: ["--force"] } });
+    agent.executionPolicy = { shell: "restricted", filesystem: "read-write", workspaceRoot: "/workspace", allowedCommands: ["agent"] };
+
+    const executor = new CliAgentExecutor(workerRuntime, {
+      enabled: true, workerMode: "local", allowedExecutables: ["agent"], workspaceRoots: ["/workspace"], maxOutputBytes: 65536,
+    });
+
+    let savedSession: any;
+    const turn1Events: AgentExecutionEvent[] = [];
+    for await (const ev of executor.execute({
+      agent,
+      input: "Run speckit-specify",
+      runId: "r-cur",
+      nodeId: "n-specify",
+      sessionMode: "shared",
+      sessionKey: "speckit",
+      onSessionUpdate: (s) => { savedSession = s; },
+    })) {
+      turn1Events.push(ev);
+    }
+
+    expect(savedSession?.sessionId).toBe("cur-session-99");
+    expect(savedSession?.turnCount).toBe(1);
+    const thinkingChunks = turn1Events
+      .filter((e) => e.type === "log" && (e.payload as { channel?: string })?.channel === "thinking")
+      .map((e) => (e.payload as { thoughts?: string }).thoughts);
+    expect(thinkingChunks.join("")).toBe("the the");
+    expect((turn1Events.find((e) => e.type === "agent.output")?.payload as { content?: string })?.content).toBe("Turn 1 spec ready");
+
+    const turn2Events: AgentExecutionEvent[] = [];
+    for await (const ev of executor.execute({
+      agent,
+      input: "Approved. Now run speckit-plan",
+      runId: "r-cur",
+      nodeId: "n-plan",
+      sessionMode: "shared",
+      sessionKey: "speckit",
+      resumeSession: savedSession,
+      onSessionUpdate: (s) => { savedSession = s; },
+    })) {
+      turn2Events.push(ev);
+    }
+
+    expect(start).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        args: expect.arrayContaining(["--resume", "cur-session-99", "--output-format", "stream-json"]),
+      }),
+      undefined,
+      expect.stringContaining("CONTINUATION INPUT:"),
+      undefined,
+    );
+    expect(savedSession?.sessionId).toBe("cur-session-99");
+    expect(savedSession?.turnCount).toBe(2);
+    expect((turn2Events.find((e) => e.type === "agent.completed")?.payload as { content?: string })?.content).toBe("Turn 2 plan ready");
   });
 
   test("resolves provider default executables from one shared mapping", () => {

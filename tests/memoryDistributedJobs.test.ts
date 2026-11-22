@@ -49,19 +49,23 @@ describePg("durable PostgreSQL memory jobs", () => {
     const [reclaimed] = await jobs.claim("recovery-worker", 1, 10_000); expect(reclaimed.id).toBe(claimed.id); expect(reclaimed.attempts).toBe(2);
     expect(await jobs.fail(reclaimed.id, "recovery-worker", "permanent_error", false)).toBe("dead");
     expect(await jobs.retryDead(job.id)).toBe(true);
+    const [retried] = await jobs.claim("retry-worker", 1, 10_000);
+    expect(retried.id).toBe(job.id);
+    expect(await jobs.complete(job.id, "retry-worker")).toBe(true);
   }, 30000);
   test("worker completes job after lease expiration if no other worker claimed it", async () => {
     const jobs = new PostgresMemoryJobStore(pool);
     const { job } = await jobs.enqueue({ kind: "consolidation", idempotencyKey: "overdue-complete:v1", tenantId: "tenant-overdue", namespace });
     const [claimed] = await jobs.claim("worker-slow", 1, 500);
     expect(claimed.id).toBe(job.id);
-    await new Promise(resolve => setTimeout(resolve, 600));
+    await pool.query("UPDATE studio_memory_jobs SET lease_expires_at = now() - interval '1 second' WHERE id = $1", [claimed.id]);
     const completed = await jobs.complete(claimed.id, "worker-slow");
     expect(completed).toBe(true);
 
     const { job: stolenJob } = await jobs.enqueue({ kind: "consolidation", idempotencyKey: "stolen-complete:v1", tenantId: "tenant-overdue", namespace });
-    await jobs.claim("worker-original", 1, 500);
-    await new Promise(resolve => setTimeout(resolve, 600));
+    const [original] = await jobs.claim("worker-original", 1, 500);
+    expect(original.id).toBe(stolenJob.id);
+    await pool.query("UPDATE studio_memory_jobs SET lease_expires_at = now() - interval '1 second' WHERE id = $1", [stolenJob.id]);
     const [stolenReclaimed] = await jobs.claim("worker-stealer", 1, 10_000);
     expect(stolenReclaimed.id).toBe(stolenJob.id);
     expect(stolenReclaimed.leasedBy).toBe("worker-stealer");
@@ -83,6 +87,12 @@ describePg("durable PostgreSQL memory jobs", () => {
     const access = JSON.stringify({ tenantId: "tenant-reconcile", writableNamespaces: [{ scope: "project", id: "reconcile" }] });
     await pool.query(`INSERT INTO studio_runs (id, tenant_id, status, memory_access)
       SELECT 'reconcile-' || n, 'tenant-reconcile', 'completed', $1::jsonb FROM generate_series(1, 100) n`, [access]);
+    const organization = { scope: "organization", id: "tenant-reconcile" };
+    await pool.query(`UPDATE studio_runs SET memory_access = $1::jsonb WHERE id='reconcile-1'`, [JSON.stringify({
+      tenantId: "tenant-reconcile",
+      writableNamespaces: [{ scope: "project", id: "reconcile" }, organization],
+      episodicNamespace: organization,
+    })]);
     const jobs = new PostgresMemoryJobStore(pool);
     // Multiple instances repeatedly run a bounded repair loop; uniqueness is
     // enforced in PostgreSQL rather than by an application-side pre-check.
@@ -94,6 +104,8 @@ describePg("durable PostgreSQL memory jobs", () => {
       SELECT 1 FROM studio_memory_jobs j WHERE j.tenant_id=r.tenant_id AND j.job_kind='episodic_extraction' AND j.idempotency_key=('episodic:'||r.id||':v1'))`);
     expect(count.rows[0].count).toBe(100);
     expect(missing.rows[0].count).toBe(0);
+    const selected = await pool.query("SELECT namespace_scope, namespace_id FROM studio_memory_jobs WHERE run_id='reconcile-1'");
+    expect(selected.rows).toEqual([{ namespace_scope: "organization", namespace_id: "tenant-reconcile" }]);
   }, 30000);
   test("injected episodic job insertion failure rolls back the terminal run, then retry commits both", async () => {
     await pool.query('CREATE TABLE studio_run_events (run_id text, sequence bigint, event jsonb); CREATE TABLE studio_approvals (run_id text, requested_at timestamptz)');
@@ -155,9 +167,16 @@ describePg("durable PostgreSQL memory jobs", () => {
     await expect(service.remember(input, memoryAccess)).rejects.toThrow("phase_12_injected_consolidation_failure");
     expect((await pool.query("SELECT count(*)::int count FROM studio_memories WHERE tenant_id=$1 AND namespace_id=$2", [memoryAccess.tenantId, memoryAccess.writableNamespaces[0].id])).rows[0].count).toBe(0);
     await clearLifecycleJobRejection();
-    await service.remember(input, memoryAccess);
+    const { memory } = await service.remember(input, memoryAccess);
     expect((await pool.query("SELECT count(*)::int count FROM studio_memories WHERE tenant_id=$1 AND namespace_id=$2", [memoryAccess.tenantId, memoryAccess.writableNamespaces[0].id])).rows[0].count).toBe(1);
     expect((await pool.query("SELECT count(*)::int count FROM studio_memory_jobs WHERE tenant_id=$1 AND namespace_id=$2 AND job_kind='consolidation'", [memoryAccess.tenantId, memoryAccess.writableNamespaces[0].id])).rows[0].count).toBe(1);
+    await pool.query("UPDATE studio_memory_jobs SET status='completed', completed_at=now() WHERE memory_id=$1 AND job_kind='consolidation'", [memory.id]);
+    await service.update(memory.id, { importance: 0.85, expectedVersion: memory.version }, memoryAccess);
+    const revisions = await pool.query("SELECT status, idempotency_key FROM studio_memory_jobs WHERE memory_id=$1 AND job_kind='consolidation' ORDER BY created_at", [memory.id]);
+    expect(revisions.rows).toEqual([
+      { status: "completed", idempotency_key: `memory:${memory.id}:1:v1` },
+      { status: "pending", idempotency_key: `memory:${memory.id}:2:v1` },
+    ]);
   }, 30000);
   test("four PostgreSQL-backed instances serialize ordered temporal transitions without duplicate effective writes", async () => {
     const temporalAccess = access(`temporal-${randomUUID()}`), temporalNamespace = temporalAccess.writableNamespaces[0];

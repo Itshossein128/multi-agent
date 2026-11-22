@@ -112,14 +112,16 @@ export function createMemoryComposition(): MemoryComposition {
     poll();
     poller = setInterval(poll, pollMs);
   };
-  const consolidationScheduler = new BoundedMemoryConsolidationScheduler(store, consolidator, jobs, {
+  // PostgreSQL records maintenance intent within each memory mutation.
+  const consolidationScheduler = durableJobs ? undefined : new BoundedMemoryConsolidationScheduler(store, consolidator, jobs, {
     onDiagnostic: (event) => log.info("memory.consolidation", event),
-    durableEnqueue: durableJobs ? async (access, namespace) => {
-      const result = await durableJobs.enqueue({ kind: "consolidation", idempotencyKey: `namespace:${access.tenantId}:${namespace.scope}:${namespace.id}:v1`, tenantId: access.tenantId, namespace });
-      if (result.duplicate) log.info("memory.job.idempotent_replay", { jobId: result.job.id, jobKind: result.job.kind, tenantId: access.tenantId, namespace: namespace.id });
-    } : undefined,
   });
-  const service = new DefaultMemoryService(store, { embeddingProvider, defaultTtlMs: ttlDays === 0 ? undefined : ttlDays * 86400000, consolidationScheduler });
+  const service = new DefaultMemoryService(store, {
+    embeddingProvider,
+    embeddingTimeoutMs: Number(process.env.MEMORY_EMBEDDING_TIMEOUT_MS) || undefined,
+    defaultTtlMs: ttlDays === 0 ? undefined : ttlDays * 86400000,
+    consolidationScheduler,
+  });
   const proceduralService = new DefaultProceduralService(service, {
     onDiagnostic: (diagnostic) => log.info("memory.procedural.evidence", {
       namespaceScope: diagnostic.namespace.scope,
@@ -156,6 +158,6 @@ export function createMemoryComposition(): MemoryComposition {
     recover: async () => {
       const reconciled = durableJobs ? await durableJobs.reconcileTerminalRuns(Number(process.env.MEMORY_JOB_RECONCILE_LIMIT ?? 100)) : 0;
       if (reconciled) log.info("memory.work_intent.reconciled", { recovered: reconciled });
-      return reconciled + await consolidationScheduler.recover();
+      return reconciled + (await consolidationScheduler?.recover() ?? 0);
     }, close: async () => { if (poller) clearInterval(poller); durableWorker?.stop(); try { await jobs.drain(); } finally { await pool?.end(); } } };
 }

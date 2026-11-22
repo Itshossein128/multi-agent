@@ -288,5 +288,9 @@ describe("SandboxExecutionBarrier Security & Boundary Tests (T020 - T024)", () =
         else process.env.SANDBOX_CANONICAL_ROOT = previousRoot;
       }
     });
+    test("default allowedExecutables includes Cursor CLI agent binary", () => {
+      const defaultBarrier = new SandboxExecutionBarrier(sandboxRoot, [hostRepoPath]);
+      expect(defaultBarrier.allowedExecutables).toContain("agent");
+    });
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { Ban, Save, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BoardAgent, BoardWorkflow, Task, TaskStatus, toCanonicalStatus } from "@/lib/taskStatus";
@@ -58,6 +58,17 @@ export function TaskDetailPanel({
   const canonical = toCanonicalStatus(task.status);
   const isTerminal = canonical === "completed" || canonical === "failed" || canonical === "cancelled";
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isMutating) {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMutating, onClose]);
+
   const handleSave = async () => {
     if (!draft.associationsValid) return;
     await onUpdate(draft.savePayload());
@@ -67,17 +78,23 @@ export function TaskDetailPanel({
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
 
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl">
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Task details: ${task.title}`}
+        className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl"
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-zinc-800 px-5 py-4">
           <div className="min-w-0 flex-1 space-y-1">
-            <label className={labelClass}>Title</label>
+            <label htmlFor="task-detail-title" className={labelClass}>Title</label>
             <input
+              id="task-detail-title"
               type="text"
               value={draft.title}
               onChange={(e) => draft.setTitle(e.target.value)}
               disabled={isMutating}
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm font-medium text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             />
             <div className="pt-1 flex items-center gap-2 flex-wrap font-mono text-[10px] text-zinc-500">
               <span>{task.id}</span>
@@ -89,10 +106,11 @@ export function TaskDetailPanel({
           </div>
           <button
             type="button"
+            aria-label="Close task details"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

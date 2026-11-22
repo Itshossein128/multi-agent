@@ -1,6 +1,7 @@
 import type { EpisodeService, EpisodeExtractionInput, EpisodeExtractionResult } from "../../../../src/memory/application";
+import { runEpisodeNamespace } from "../../../../src/memory/application/access";
 import { log } from "../logging";
-import type { AgentRecord, WorkflowDefinition } from "@multi-agent/types";
+import type { AgentRecord, ConditionNodeConfig, WorkflowDefinition } from "@multi-agent/types";
 import { createResultEnvelope, nowIso, uid, type NodeResultEnvelope } from "@multi-agent/types";
 import { LangGraphEventAdapter } from "../adapters/langGraphEventAdapter";
 import type { RunStoreContract } from "./store/contracts";
@@ -47,7 +48,12 @@ export class GraphRunner {
     recursionLimit?: number,
   ) {
     const adapter = new LangGraphEventAdapter();
-    const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal, recursionLimit: recursionLimit ?? 100, configurable: { thread_id: runId } } as never);
+    const packageCount = workflow.nodes.find((node) => node.type === "condition" &&
+      (node.config as ConditionNodeConfig).workPackages)?.config as ConditionNodeConfig | undefined;
+    // Repeating the lifecycle consumes supersteps for each package. The
+    // compiler's run-wide step budget and the individual route guards still apply.
+    const runRecursionLimit = Math.min(10_000, (recursionLimit ?? 100) * (packageCount?.workPackages?.length ?? 1));
+    const stream = await compiled.graph.streamEvents(input as never, { version: "v3", streamMode: ["tasks", "updates", "values", "messages"], signal, recursionLimit: runRecursionLimit, configurable: { thread_id: runId } } as never);
     let output: Record<string, unknown> | undefined;
     let nodeOutcomes: Record<string, NodeResultEnvelope> | undefined;
     let streamHandoffs: Record<string, unknown> | undefined;
@@ -59,9 +65,24 @@ export class GraphRunner {
         const values = (rawRecord.params.data as { values?: { id: string; value: unknown }[] } | undefined)?.values ?? [];
         for (const item of values) {
           approvalManager.handleApprovalRequested(runId, item);
-          const payload = item.value as { nodeId?: string; context?: { kind?: string; envelope?: NodeResultEnvelope } };
+          const payload = item.value as {
+            nodeId?: string;
+            context?: {
+              kind?: string;
+              envelope?: NodeResultEnvelope;
+              sessionState?: import("@multi-agent/types").AgentSessionState;
+              shortTermHistories?: import("../../../../src/agents/runtime/shortTermMemory").ShortTermHistories;
+              isSubgraph?: boolean;
+            };
+          };
           if (payload.context?.kind === "agent_needs_human" && payload.nodeId && payload.context.envelope) {
-            pendingHuman = { nodeId: payload.nodeId, envelope: payload.context.envelope };
+            pendingHuman = {
+              nodeId: payload.nodeId,
+              envelope: payload.context.envelope,
+              ...(payload.context.sessionState ? { sessionState: payload.context.sessionState } : {}),
+              ...(payload.context.shortTermHistories ? { shortTermHistories: payload.context.shortTermHistories } : {}),
+              ...(payload.context.isSubgraph ? { isSubgraph: true } : {}),
+            };
           }
         }
         continue;
@@ -114,7 +135,8 @@ export class GraphRunner {
     // Episodic memory extraction on successful completion
     const entry = this.store.get(runId);
     const effectiveAccess = memoryAccess ?? entry?.memoryAccess;
-    if (this.episodeService && effectiveAccess && effectiveAccess.writableNamespaces.length > 0) {
+    const namespace = runEpisodeNamespace(effectiveAccess);
+    if (this.episodeService && effectiveAccess && namespace) {
       this.store.markEpisodicMemoryPending?.(runId);
       try {
         const stateValues = (state as any)?.values;
@@ -173,7 +195,7 @@ export class GraphRunner {
           startedAt: entry?.run.startedAt,
           completedAt: entry?.run.completedAt,
           approvals: entry?.approvals?.map(a => ({ decision: a.status })),
-          namespace: effectiveAccess.writableNamespaces[0],
+          namespace,
         };
 
         // PostgreSQL deployments persist work intent before executing it.  The

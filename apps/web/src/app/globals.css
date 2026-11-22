@@ -3,6 +3,7 @@
 @layer base {
   :root {
     color-scheme: dark;
+    accent-color: #6366f1;
     --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
     --card: 240 10% 6%;
@@ -24,6 +25,19 @@
     --ring: 240 4.9% 83.9%;
     --radius: 0.75rem;
   }
+}
+
+/* Visually hidden until focused: canonical skip-link utility */
+.skip-link:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
 }
 
 body {
@@ -90,13 +104,115 @@ html[data-appearance="light"] .appearance-locked {
   color: #f4f4f5;
 }
 
+html[data-appearance="light"] .text-indigo-100,
+html[data-appearance="light"] .text-indigo-200,
 html[data-appearance="light"] .text-indigo-300,
 html[data-appearance="light"] .text-indigo-400 {
   color: var(--color-indigo-700);
 }
 
+html[data-appearance="light"] .text-emerald-100,
+html[data-appearance="light"] .text-emerald-200,
+html[data-appearance="light"] .text-emerald-300,
+html[data-appearance="light"] .text-emerald-300\/90,
 html[data-appearance="light"] .text-emerald-400 {
   color: var(--color-emerald-700);
+}
+
+html[data-appearance="light"] .text-purple-300,
+html[data-appearance="light"] .text-purple-400 {
+  color: var(--color-purple-700);
+}
+
+html[data-appearance="light"] .text-blue-200,
+html[data-appearance="light"] .text-blue-300,
+html[data-appearance="light"] .text-blue-400 {
+  color: var(--color-blue-700);
+}
+
+html[data-appearance="light"] .text-rose-100,
+html[data-appearance="light"] .text-rose-200,
+html[data-appearance="light"] .text-rose-300,
+html[data-appearance="light"] .text-rose-400 {
+  color: var(--color-rose-700);
+}
+
+html[data-appearance="light"] .text-red-100,
+html[data-appearance="light"] .text-red-200,
+html[data-appearance="light"] .text-red-300,
+html[data-appearance="light"] .text-red-400 {
+  color: var(--color-red-700);
+}
+
+html[data-appearance="light"] .text-amber-100,
+html[data-appearance="light"] .text-amber-200,
+html[data-appearance="light"] .text-amber-200\/90,
+html[data-appearance="light"] .text-amber-300,
+html[data-appearance="light"] .text-amber-400 {
+  color: var(--color-amber-700);
+}
+
+html[data-appearance="light"] .text-cyan-300,
+html[data-appearance="light"] .text-cyan-400 {
+  color: var(--color-cyan-700);
+}
+
+html[data-appearance="light"] .bg-indigo-950\/10,
+html[data-appearance="light"] .bg-indigo-950\/15,
+html[data-appearance="light"] .bg-indigo-950\/20,
+html[data-appearance="light"] .bg-indigo-950\/25,
+html[data-appearance="light"] .bg-indigo-950\/30,
+html[data-appearance="light"] .bg-indigo-950\/40,
+html[data-appearance="light"] .bg-indigo-950\/60 {
+  background-color: var(--color-indigo-50);
+  border-color: var(--color-indigo-300);
+}
+
+html[data-appearance="light"] .bg-emerald-950\/10,
+html[data-appearance="light"] .bg-emerald-950\/15,
+html[data-appearance="light"] .bg-emerald-950\/20,
+html[data-appearance="light"] .bg-emerald-950\/30,
+html[data-appearance="light"] .bg-emerald-950\/60,
+html[data-appearance="light"] .bg-emerald-950\/80 {
+  background-color: var(--color-emerald-50);
+  border-color: var(--color-emerald-300);
+}
+
+html[data-appearance="light"] .bg-blue-950\/20,
+html[data-appearance="light"] .bg-blue-950\/30,
+html[data-appearance="light"] .bg-blue-950\/80 {
+  background-color: var(--color-blue-50);
+  border-color: var(--color-blue-300);
+}
+
+html[data-appearance="light"] .bg-purple-950\/30 {
+  background-color: var(--color-purple-50);
+  border-color: var(--color-purple-300);
+}
+
+html[data-appearance="light"] .bg-amber-950\/10,
+html[data-appearance="light"] .bg-amber-950\/15,
+html[data-appearance="light"] .bg-amber-950\/20,
+html[data-appearance="light"] .bg-amber-950\/25,
+html[data-appearance="light"] .bg-amber-950\/30,
+html[data-appearance="light"] .bg-amber-950\/40,
+html[data-appearance="light"] .bg-amber-950\/70,
+html[data-appearance="light"] .bg-amber-950\/80 {
+  background-color: var(--color-amber-50);
+  border-color: var(--color-amber-300);
+}
+
+html[data-appearance="light"] .bg-red-950\/10,
+html[data-appearance="light"] .bg-red-950\/15,
+html[data-appearance="light"] .bg-red-950\/20,
+html[data-appearance="light"] .bg-red-950\/25,
+html[data-appearance="light"] .bg-red-950\/30,
+html[data-appearance="light"] .bg-red-950\/40,
+html[data-appearance="light"] .bg-red-950\/60,
+html[data-appearance="light"] .bg-red-950\/80,
+html[data-appearance="light"] .bg-rose-950 {
+  background-color: var(--color-red-50);
+  border-color: var(--color-red-300);
 }
 
 @keyframes workflow-live-dash {

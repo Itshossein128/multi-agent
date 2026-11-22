@@ -59,8 +59,10 @@ export class RunApiService {
     const authoritativeAgent = await this.authoritativeAgent(body.agent.id, principal) ?? migrateAgentRecord(body.agent);
     const needsMemory = this.hasLongTermMemory([authoritativeAgent]);
     let access = needsMemory ? await this.resolveMemoryAccess(request) : null;
-    if (needsMemory && !access && principal) {
-      access = deriveMemoryAccessFromPrincipal(principal, { agentId: authoritativeAgent.id });
+    const isBearerMemoryToken = Boolean(request.headers.get("Authorization")?.startsWith("Bearer "));
+    if (needsMemory && principal && !isBearerMemoryToken) {
+      const derived = deriveMemoryAccessFromPrincipal(principal, { agentId: authoritativeAgent.id });
+      access = access ? this.mergeDerivedNamespaces(access, derived, { keepAgentId: true }) : derived;
     }
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required for this agent.");
     const runId = this.executor.startAgentTest({ agent: authoritativeAgent, input: body.input }, access ?? undefined, principal);
@@ -75,10 +77,16 @@ export class RunApiService {
     }
     const workflow = await this.authoritativeWorkflow(body.workflow.id, principal) ?? body.workflow;
     const requestedAgents = this.studioStore
-      ? [...new Set(workflow.nodes
-          .filter((node) => node.type === "agent")
-          .map((node) => (node.config as { agentId?: string | null }).agentId)
-          .filter((id): id is string => Boolean(id)))]
+      ? [...new Set([
+          ...workflow.nodes
+            .filter((node) => node.type === "agent" || node.type === "dynamic_fanout")
+            .map((node) => {
+              const cfg = node.config as { agentId?: string | null; targetAgentId?: string | null };
+              return cfg.agentId ?? cfg.targetAgentId;
+            })
+            .filter((id): id is string => Boolean(id)),
+          ...body.agents.map((agent) => agent.id),
+        ])]
       : body.agents.map((agent) => agent.id);
     const agents = this.studioStore
       ? await Promise.all(requestedAgents.map(async (id) => (await this.authoritativeAgent(id, principal))!))
@@ -86,8 +94,17 @@ export class RunApiService {
     assertNoCredentials({ workflow: body.workflow, agents: body.agents, tools: body.tools ?? [] });
     const needsMemory = this.hasLongTermMemory(agents);
     let access = needsMemory ? await this.resolveMemoryAccess(request) : null;
-    if (needsMemory && !access && principal) {
-      access = deriveMemoryAccessFromPrincipal(principal, { workflowId: workflow.id });
+    const isBearerMemoryToken = Boolean(request.headers.get("Authorization")?.startsWith("Bearer "));
+    if (needsMemory && principal && !isBearerMemoryToken) {
+      let merged = access
+        ? this.mergeDerivedNamespaces(access, deriveMemoryAccessFromPrincipal(principal, { workflowId: workflow.id }))
+        : deriveMemoryAccessFromPrincipal(principal, { workflowId: workflow.id });
+      for (const agent of agents) {
+        if (agent?.id) {
+          merged = this.mergeDerivedNamespaces(merged, deriveMemoryAccessFromPrincipal(principal, { agentId: agent.id }));
+        }
+      }
+      access = merged;
     }
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required for this workflow.");
     const tools = this.studioStore ? await this.studioStore.listTools(principal) : (body.tools ?? []);
@@ -209,18 +226,80 @@ export class RunApiService {
     return { runId, branchKey, status: "cancelling" };
   }
 
-  async retry(runId: string, request: Request, principal?: RequestPrincipal) {
+  async retry(
+    runId: string,
+    request: Request,
+    principal?: RequestPrincipal,
+    options?: { mode?: "resume" | "restart" },
+  ) {
     if (!principal) throw new ApiError(401, "Authentication required.");
     const entry = this.requireRun(runId);
     if (entry.run.status !== "failed" && entry.run.status !== "cancelled") {
       throw new ApiError(409, "Only failed or cancelled runs can be retried.");
     }
-    const agents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot ?? [];
+    const snapshotWorkflow = this.store.getWorkflowSnapshot?.(runId) ?? entry.workflowSnapshot;
+    const snapshotAgents = this.store.getAgentSnapshot?.(runId) ?? entry.agentsSnapshot ?? [];
+    const snapshotTools = this.store.getToolSnapshot?.(runId) ?? entry.toolsSnapshot;
+
+    // Refresh workflow, agents, and tools from the authoritative Studio store when present
+    // so retries pick up saved prompt, sandbox, model, and memory fixes rather than replaying stale broken snapshots.
+    let workflow = snapshotWorkflow;
+    let agents = snapshotAgents;
+    let tools = snapshotTools;
+    if (this.studioStore && entry.run.workflowId) {
+      const liveWorkflow = await this.studioStore.getWorkflow(entry.run.workflowId, principal);
+      if (liveWorkflow) {
+        workflow = liveWorkflow;
+        const referencedIds = [
+          ...new Set(
+            liveWorkflow.nodes
+              .filter((node) => node.type === "agent" || node.type === "dynamic_fanout")
+              .map((node) => {
+                const cfg = node.config as { agentId?: string | null; targetAgentId?: string | null };
+                return cfg.agentId ?? cfg.targetAgentId;
+              })
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        const snapshotById = new Map(snapshotAgents.map((a) => [a.id, a]));
+        const refreshedAgents: AgentRecord[] = [];
+        for (const id of referencedIds) {
+          const liveAgent = await this.studioStore.getAgent(id, principal);
+          if (liveAgent) refreshedAgents.push(liveAgent);
+          else if (snapshotById.has(id)) refreshedAgents.push(snapshotById.get(id)!);
+        }
+        if (refreshedAgents.length > 0 || referencedIds.length === 0) {
+          agents = refreshedAgents;
+        }
+        tools = await this.studioStore.listTools(principal);
+      }
+    }
+
     const needsMemory = this.hasLongTermMemory(agents);
-    const access = needsMemory ? await this.resolveMemoryAccess(request) : null;
+    let access = needsMemory ? await this.resolveMemoryAccess(request) : null;
+    const isBearerMemoryToken = Boolean(request.headers.get("Authorization")?.startsWith("Bearer "));
+    if (needsMemory && principal && !isBearerMemoryToken) {
+      const targetWorkflowId = workflow?.id ?? entry.run.workflowId;
+      let merged = access
+        ? this.mergeDerivedNamespaces(access, deriveMemoryAccessFromPrincipal(principal, { workflowId: targetWorkflowId }))
+        : deriveMemoryAccessFromPrincipal(principal, { workflowId: targetWorkflowId });
+      for (const agent of agents) {
+        if (agent?.id) {
+          merged = this.mergeDerivedNamespaces(merged, deriveMemoryAccessFromPrincipal(principal, { agentId: agent.id }));
+        }
+      }
+      access = merged;
+    }
     if (needsMemory && !access) throw new ApiError(401, "Authenticated memory access is required to retry this run.");
     try {
-      const retriedRunId = await this.executor.retry(runId, access ?? undefined);
+      const retriedRunId = await this.executor.retry(
+        runId,
+        access ?? undefined,
+        {
+          ...(workflow ? { workflow, agents, tools } : {}),
+          ...(options?.mode ? { mode: options.mode } : {}),
+        },
+      );
       try {
         if (this.studioStore && entry.run.taskId) {
           const task = await this.studioStore.getTask(entry.run.taskId, principal);
@@ -410,6 +489,31 @@ export class RunApiService {
 
   private hasLongTermMemory(agents: RunCreateRequest["agents"]) {
     return agents.some((agent) => agent.memory?.enabled && agent.memory.longTerm?.enabled);
+  }
+
+  private mergeDerivedNamespaces(
+    base: import("../../../../../src/memory/contracts").MemoryAccessContext,
+    extra: import("../../../../../src/memory/contracts").MemoryAccessContext,
+    options?: { keepAgentId?: boolean },
+  ): import("../../../../../src/memory/contracts").MemoryAccessContext {
+    const dedupe = (list: typeof base.readableNamespaces) => {
+      const seen = new Set<string>();
+      const out: typeof base.readableNamespaces = [];
+      for (const ns of list) {
+        const key = `${ns.scope}:${ns.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(ns);
+      }
+      return out;
+    };
+    return {
+      ...base,
+      workflowId: base.workflowId ?? extra.workflowId,
+      agentId: options?.keepAgentId ? (base.agentId ?? extra.agentId) : undefined,
+      readableNamespaces: dedupe([...base.readableNamespaces, ...extra.readableNamespaces]),
+      writableNamespaces: dedupe([...base.writableNamespaces, ...extra.writableNamespaces]),
+    };
   }
 
   private async authoritativeAgent(id: string | undefined, principal: RequestPrincipal): Promise<AgentRecord | undefined> {

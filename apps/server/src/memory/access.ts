@@ -3,7 +3,7 @@ import { isMemoryNamespace, type MemoryNamespace } from "@multi-agent/types";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
 import type { RequestPrincipal } from "../auth/principal";
 
-export type MemoryAccessResolver = (request: Request) => Promise<MemoryAccessContext | null>;
+export type MemoryAccessResolver = (request: Request, principal?: RequestPrincipal) => Promise<MemoryAccessContext | null>;
 export interface MemoryPrincipal extends MemoryAccessContext { token: string }
 const digest = (value: string) => createHash("sha256").update(value).digest();
 
@@ -86,20 +86,15 @@ export function createMemoryAccessResolver(
     }
     return { tokenHash: digest(token), access: structuredClone(access) };
   });
-  return async (request) => {
+  return async (request, verifiedPrincipal) => {
     const authorization = request.headers.get("Authorization");
     if (authorization?.startsWith("Bearer ")) {
       const hash = digest(authorization.slice(7));
       const match = configured.find((principal) => timingSafeEqual(principal.tokenHash, hash));
       return match ? structuredClone(match.access) : null;
     }
-    if (resolvePrincipal) {
-      const principal = resolvePrincipal(request);
-      if (principal) {
-        return deriveMemoryAccessFromPrincipal(principal);
-      }
-    }
-    return null;
+    const principal = verifiedPrincipal ?? resolvePrincipal?.(request);
+    return principal ? deriveMemoryAccessFromPrincipal(principal) : null;
   };
 }
 
@@ -107,15 +102,7 @@ export function memoryAccessResolverFromEnvironment(
   resolvePrincipal?: (request: Request) => RequestPrincipal | null,
 ): MemoryAccessResolver {
   const raw = process.env.MEMORY_PRINCIPALS;
-  if (!raw) {
-    if (resolvePrincipal) {
-      return async (request) => {
-        const principal = resolvePrincipal(request);
-        return principal ? deriveMemoryAccessFromPrincipal(principal) : null;
-      };
-    }
-    return async () => null;
-  }
+  if (!raw) return createMemoryAccessResolver([], resolvePrincipal);
   try {
     const principals: unknown = JSON.parse(raw);
     if (!Array.isArray(principals) || principals.length > 100) throw new Error();

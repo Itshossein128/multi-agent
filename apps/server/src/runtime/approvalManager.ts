@@ -43,7 +43,13 @@ export interface PausedContext {
   tools?: import("@multi-agent/types").ToolRecord[];
   memoryAccess?: import("../../../../src/memory/contracts").MemoryAccessContext;
   stepBudget?: { count: number };
-  pendingHuman?: { nodeId: string; envelope: import("@multi-agent/types").NodeResultEnvelope };
+  pendingHuman?: {
+    nodeId: string;
+    envelope: import("@multi-agent/types").NodeResultEnvelope;
+    sessionState?: import("@multi-agent/types").AgentSessionState;
+    shortTermHistories?: import("../../../../src/agents/runtime/shortTermMemory").ShortTermHistories;
+    isSubgraph?: boolean;
+  };
 }
 
 /**

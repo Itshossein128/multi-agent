@@ -189,7 +189,7 @@ export class EnvironmentWorkerCredentialResolver implements WorkerCredentialReso
     if (!PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES[context.provider]?.has(environmentName)) {
       throw new Error(`Unsupported server credential environment selection for provider "${context.provider}".`);
     }
-    const value = this.serverEnvironment[environmentName];
+    const value = this.serverEnvironment[environmentName]?.trim();
     if (!value) throw new Error(`Configured server credential for provider "${context.provider}" is unavailable.`);
     return { environment: { [environmentName]: value } };
   }

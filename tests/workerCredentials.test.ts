@@ -269,4 +269,23 @@ describe("worker credential foundation", () => {
     expect(execution.credentialPrincipal).toEqual({ tenantId: "tenant-workflow", principalId: "user-workflow" });
     await waitFor(() => store.get(runId)?.run.status === "completed");
   });
+
+  test("EnvironmentWorkerCredentialResolver rejects whitespace-only CURSOR_API_KEY and trims valid key", async () => {
+    const emptyResolver = environmentWorkerCredentialResolverFromEnvironment({
+      CLI_CREDENTIAL_ENVIRONMENT_ENABLED: "true",
+      CURSOR_API_KEY: "   ",
+    });
+    await expect(emptyResolver.resolve({
+      tenantId: "t", principalId: "u", runId: "r", agentId: "a", provider: "cursor",
+    })).rejects.toThrow(/unavailable/i);
+
+    const validResolver = environmentWorkerCredentialResolverFromEnvironment({
+      CLI_CREDENTIAL_ENVIRONMENT_ENABLED: "true",
+      CURSOR_API_KEY: "  dummy-cursor-key  ",
+    });
+    const resolved = await validResolver.resolve({
+      tenantId: "t", principalId: "u", runId: "r", agentId: "a", provider: "cursor",
+    });
+    expect(resolved).toEqual({ environment: { CURSOR_API_KEY: "dummy-cursor-key" } });
+  });
 });

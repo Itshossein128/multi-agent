@@ -73,12 +73,21 @@ export function TaskCard({
 
   return (
     <div
+      tabIndex={0}
+      aria-label={`Task: ${task.title}`}
       draggable={!isMutating && !task.paused && !isTerminal}
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       onClick={() => onOpen(task)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(task);
+        }
+      }}
       className={cn(
-        "group cursor-pointer rounded-lg border border-zinc-800 bg-zinc-950/90 p-3 space-y-2 transition-colors hover:border-zinc-600",
+        "group cursor-pointer rounded-lg border border-zinc-800 bg-zinc-950/90 p-3 space-y-2 transition-colors hover:border-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
         isDragging && "opacity-40",
         task.paused && "opacity-75",
         task.priority === "high" && "border-l-2 border-l-red-500/70",
@@ -247,7 +256,7 @@ export function TaskCard({
         </div>
 
         <div
-          className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+          className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
           {canStart && (
@@ -256,7 +265,7 @@ export function TaskCard({
               disabled={isMutating}
               onClick={() => onStart(task)}
             >
-              <Play className="h-3.5 w-3.5 text-emerald-400" />
+              <Play className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />
             </CardActionButton>
           )}
           {(canonical === "running" || task.paused) && (
@@ -265,7 +274,7 @@ export function TaskCard({
               disabled={isMutating}
               onClick={() => onPauseToggle(task)}
             >
-              {task.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+              {task.paused ? <Play className="h-3.5 w-3.5" aria-hidden="true" /> : <Pause className="h-3.5 w-3.5" aria-hidden="true" />}
             </CardActionButton>
           )}
           {canonical === "failed" && (
@@ -274,7 +283,7 @@ export function TaskCard({
               disabled={isMutating}
               onClick={() => onRetry(task)}
             >
-              <RotateCcw className="h-3.5 w-3.5" />
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             </CardActionButton>
           )}
           {!isTerminal && (
@@ -284,7 +293,7 @@ export function TaskCard({
               danger
               onClick={() => onCancel(task)}
             >
-              <XCircle className="h-3.5 w-3.5" />
+              <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
             </CardActionButton>
           )}
         </div>
@@ -310,10 +319,11 @@ function CardActionButton({
     <button
       type="button"
       title={title}
+      aria-label={title}
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex h-6 w-6 items-center justify-center rounded text-zinc-400 transition-colors cursor-pointer disabled:opacity-40",
+        "flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors cursor-pointer disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
         danger ? "hover:bg-red-950/60 hover:text-red-400" : "hover:bg-zinc-800 hover:text-zinc-100",
       )}
     >

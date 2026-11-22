@@ -5,10 +5,26 @@ import { boundJsonValue, boundedBytesFromEnvironment } from "../../../../../src/
 import type { RunEntry, RunListFilters } from "./contracts";
 
 export function redactApproval(approval: ApprovalRequest): ApprovalRequest {
+  const redactedContext = redact(approval.context) as Record<string, unknown> | undefined;
+  const rawEnvelope =
+    approval.context &&
+    typeof approval.context === "object" &&
+    !Array.isArray(approval.context) &&
+    approval.context.envelope &&
+    typeof approval.context.envelope === "object" &&
+    !Array.isArray(approval.context.envelope)
+      ? (approval.context.envelope as NodeResultEnvelope)
+      : undefined;
+  if (redactedContext && rawEnvelope && typeof rawEnvelope.status === "string") {
+    redactedContext.envelope = boundRunResult(
+      rawEnvelope,
+      boundedBytesFromEnvironment("RUN_MAX_PAYLOAD_BYTES", 256 * 1024),
+    );
+  }
   return {
     ...approval,
     message: redact(approval.message) as string,
-    context: redact(approval.context) as Record<string, unknown> | undefined,
+    context: redactedContext,
     response: approval.response !== undefined ? (redact(approval.response) as string) : undefined,
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,18 @@ export function StatusBar() {
   const lastSavedAt = useWorkflowStore((s) => s.lastSavedAt);
   const focusIssue = useWorkflowStore((s) => s.focusIssue);
   const [showIssues, setShowIssues] = useState(false);
+
+  useEffect(() => {
+    if (!showIssues) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowIssues(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showIssues]);
 
   const errors = useMemo(() => issues.filter((i) => i.severity === "error"), [issues]);
   const warnings = useMemo(() => issues.filter((i) => i.severity === "warning"), [issues]);
@@ -37,28 +49,30 @@ export function StatusBar() {
       <div className="flex min-w-0 items-center gap-2">
         {errors.length === 0 && warnings.length === 0 ? (
           <span className="flex items-center gap-1 text-emerald-400">
-            <CircleCheck className="h-3.5 w-3.5" />
+            <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
             {infos.length > 0 ? infos[0].message : "Workflow is valid"}
           </span>
         ) : (
           <button
             type="button"
+            aria-expanded={showIssues}
+            aria-controls="workflow-validation-issues"
             onClick={() => setShowIssues((v) => !v)}
-            className="flex min-h-6 items-center gap-2 rounded px-1.5 hover:bg-zinc-900 cursor-pointer"
+            className="flex min-h-6 items-center gap-2 rounded px-1.5 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
           >
             {errors.length > 0 && (
               <span className="flex items-center gap-1 text-red-400 hover:text-red-300">
-                <CircleAlert className="h-3.5 w-3.5" />
+                <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
                 {errors.length} error{errors.length === 1 ? "" : "s"}
               </span>
             )}
             {warnings.length > 0 && (
               <span className="flex items-center gap-1 text-amber-400 hover:text-amber-300">
-                <TriangleAlert className="h-3.5 w-3.5" />
+                <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
                 {warnings.length} warning{warnings.length === 1 ? "" : "s"}
               </span>
             )}
-            <span className="text-zinc-600">{showIssues ? "▲" : "▼"}</span>
+            <span className="text-zinc-600" aria-hidden="true">{showIssues ? "▲" : "▼"}</span>
           </button>
         )}
         <span className="text-zinc-700">|</span>
@@ -87,7 +101,12 @@ export function StatusBar() {
 
       {/* Issues list */}
       {showIssues && (
-        <div className="absolute bottom-9 left-0 right-0 max-h-48 overflow-y-auto border-t border-zinc-800 bg-zinc-950/95 p-2 shadow-2xl backdrop-blur">
+        <div
+          id="workflow-validation-issues"
+          role="region"
+          aria-label="Validation issues"
+          className="absolute bottom-9 left-0 right-0 max-h-48 overflow-y-auto border-t border-zinc-800 bg-zinc-950/95 p-2 shadow-2xl backdrop-blur"
+        >
           {issues.length === 0 && (
             <p className="flex items-center gap-1.5 px-1 py-1 text-emerald-400">
               <CircleCheck className="h-3.5 w-3.5" />

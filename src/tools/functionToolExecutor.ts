@@ -10,6 +10,7 @@ import {
   type WorkerResult,
 } from "../agents/runtime/workerRuntime";
 import type { CliRuntimePolicy, CliWorkerMode } from "../agents/runtime/cliAgentExecutor";
+import type { StudioStore } from "../studio/contracts";
 import type { ToolExecutionInput, ToolExecutor } from "./types";
 import {
   executeBrowserQaProbe,
@@ -17,6 +18,10 @@ import {
   executeEmployerRequirementsExtractor,
   executeSpecKitWorkspaceInspector,
 } from "./deliverySystemTools";
+import { executeSubagentDelegation } from "./subagentDelegationTool";
+import { executeVeloraGraphifyTool } from "./veloraGraphifyTool";
+import { executeVeloraKnowledgeTool } from "./veloraKnowledgeTool";
+import { executeVeloraOutputReportTool } from "./veloraOutputReportTool";
 
 /**
  * Function-category executor. The default behavior is a local data-only echo.
@@ -24,10 +29,14 @@ import {
  * always goes through the WorkerRuntime boundary.
  */
 export class FunctionToolExecutor implements ToolExecutor {
-  constructor(private readonly workerRuntime?: WorkerRuntime) {}
+  constructor(
+    private readonly workerRuntime?: WorkerRuntime,
+    private readonly studioStore?: StudioStore,
+  ) {}
 
-  async execute({ tool, input, signal }: ToolExecutionInput): Promise<Record<string, unknown>> {
+  async execute({ tool, input, signal, runId, credentialPrincipal, agentId }: ToolExecutionInput): Promise<Record<string, unknown>> {
     const kind = String(tool.configuration.kind ?? "");
+    const name = String(tool.name ?? "");
     if (kind === "reject-run") {
       throw new Error(String(tool.configuration.message || "Workflow rejected"));
     }
@@ -37,17 +46,35 @@ export class FunctionToolExecutor implements ToolExecutor {
     if (kind === "repo-checks") {
       return runRepoChecks(tool.configuration, signal, this.workerRuntime);
     }
-    if (kind === "delivery-plan-reader") {
+    if (kind === "delivery-plan-reader" || name === "delivery_plan_reader_tool") {
       return executeDeliveryPlanReader(tool.configuration, input);
     }
-    if (kind === "employer-requirements-extractor") {
+    if (kind === "employer-requirements-extractor" || name === "employer_requirements_extractor_tool") {
       return executeEmployerRequirementsExtractor(tool.configuration, input);
     }
-    if (kind === "speckit-workspace-inspector") {
+    if (kind === "speckit-workspace-inspector" || name === "speckit_workspace_tool") {
       return executeSpecKitWorkspaceInspector(tool.configuration, input);
     }
-    if (kind === "browser-qa-probe") {
+    if (kind === "browser-qa-probe" || name === "browser_qa_probe_tool") {
       return executeBrowserQaProbe(tool.configuration, input, signal);
+    }
+    if (kind === "velora-knowledge" || name === "velora_knowledge_tool") {
+      return executeVeloraKnowledgeTool(tool.configuration, input);
+    }
+    if (kind === "velora-graphify" || name === "velora_graphify_tool") {
+      return executeVeloraGraphifyTool(tool.configuration, input);
+    }
+    if (kind === "velora-output-report" || name === "velora_output_report_tool") {
+      return executeVeloraOutputReportTool(tool.configuration, input);
+    }
+    if (kind === "delegate-subagents" || name === "delegate_subagents") {
+      return executeSubagentDelegation({
+        configuration: tool.configuration,
+        input,
+        signal,
+        context: { runId, credentialPrincipal, agentId },
+        studioStore: this.studioStore,
+      });
     }
     if (kind === "pisa-normalize-intake") return normalizePisaIntake(tool.configuration, input);
     if (kind === "pisa-package-evidence") return packagePisaEvidence(tool.configuration, input);

@@ -19,5 +19,6 @@ module.exports = {
     // explicitly so root-level integration tests can resolve the web auth code.
     "^next-auth$": "<rootDir>/apps/web/node_modules/next-auth",
     "^next-auth/(.*)$": "<rootDir>/apps/web/node_modules/next-auth/$1",
+    "^react-markdown$": "<rootDir>/tests/helpers/reactMarkdownStub.tsx",
   },
 };

@@ -250,7 +250,13 @@ export function FlowCanvas({ live = false, liveDefinition, onInspectNode }: { li
         edges={rfEdges}
         nodeTypes={workflowNodeTypes}
         edgeTypes={workflowEdgeTypes}
-        onNodeClick={live ? (_event, node) => onInspectNode?.(node.id) : undefined}
+        onNodeClick={(_event, node) => {
+          if (live) {
+            onInspectNode?.(node.id);
+          } else {
+            useWorkflowStore.getState().setSelection([node.id], []);
+          }
+        }}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}

@@ -30,7 +30,7 @@ test("workspace sync checks out long paths through Git on Windows", async () => 
     process.env.GIT_CONFIG_GLOBAL = config;
     process.env.GIT_CONFIG_NOSYSTEM = "1";
     process.env.STUDIO_WORKSPACE_STORAGE_ROOT = path.join(root, "workspaces");
-    process.env.NODE_ENV = "development";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "development";
     delete process.env.JEST_WORKER_ID;
     const result = await syncWorkspaceRepoWorkingCopy(store, {
       tenantId: "tenant", projectId: "project", workspaceId: "workspace", branch: "fixture",

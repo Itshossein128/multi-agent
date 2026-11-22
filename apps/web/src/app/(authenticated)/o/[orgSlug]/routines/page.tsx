@@ -211,6 +211,19 @@ export default function RoutinesPage() {
     fetchRoutines();
   }, []);
 
+  useEffect(() => {
+    if (!modalOpen && !historyRoutine) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !creating) {
+        event.preventDefault();
+        setModalOpen(false);
+        setHistoryRoutine(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalOpen, historyRoutine, creating]);
+
   const handlePreview = async () => {
     try {
       setFormError(null);
@@ -444,27 +457,30 @@ export default function RoutinesPage() {
                     size="sm"
                     onClick={() => handleTogglePause(routine)}
                     className="h-7 w-7 p-0 text-zinc-400 hover:text-zinc-200 cursor-pointer"
+                    aria-label={routine.enabled ? t.pauseTitle : t.resumeTitle}
                     title={routine.enabled ? t.pauseTitle : t.resumeTitle}
                   >
-                    {routine.enabled ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 text-emerald-400" />}
+                    {routine.enabled ? <Pause className="h-3.5 w-3.5" aria-hidden="true" /> : <Play className="h-3.5 w-3.5 text-emerald-400" aria-hidden="true" />}
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => openHistory(routine)}
                     className="h-7 w-7 p-0 text-zinc-400 hover:text-indigo-300 cursor-pointer"
+                    aria-label={t.historyTitle}
                     title={t.historyTitle}
                   >
-                    <History className="h-3.5 w-3.5" />
+                    <History className="h-3.5 w-3.5" aria-hidden="true" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDelete(routine.id)}
                     className="h-7 w-7 p-0 text-zinc-500 hover:text-red-400 cursor-pointer"
+                    aria-label={t.deleteTitle}
                     title={t.deleteTitle}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </Button>
                 </div>
               </div>
@@ -506,21 +522,30 @@ export default function RoutinesPage() {
 
       {/* Create Routine Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !creating) setModalOpen(false);
+          }}
+        >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-routine-modal-title"
             dir={direction}
             className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-              <h3 className="text-sm font-semibold text-zinc-100">
+              <h3 id="create-routine-modal-title" className="text-sm font-semibold text-zinc-100">
                 {t.createModalTitle}
               </h3>
               <button
                 type="button"
+                aria-label="Close dialog"
                 onClick={() => setModalOpen(false)}
-                className="text-zinc-500 hover:text-zinc-300 p-1 cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -676,24 +701,33 @@ export default function RoutinesPage() {
 
       {/* Execution History Modal */}
       {historyRoutine && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setHistoryRoutine(null);
+          }}
+        >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="routine-history-modal-title"
             dir={direction}
             className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 space-y-4 shadow-2xl max-h-[80vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
               <div>
-                <h3 className="text-sm font-semibold text-zinc-100">
+                <h3 id="routine-history-modal-title" className="text-sm font-semibold text-zinc-100">
                   {t.historyHeading} {historyRoutine.name}
                 </h3>
                 <p className="text-xs text-zinc-400">{t.historySubtitle}</p>
               </div>
               <button
                 type="button"
+                aria-label="Close dialog"
                 onClick={() => setHistoryRoutine(null)}
-                className="text-zinc-500 hover:text-zinc-300 p-1 cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 

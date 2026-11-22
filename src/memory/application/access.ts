@@ -18,6 +18,11 @@ export function requireNamespaces(namespaces: MemoryNamespace[], access: MemoryA
   requireAccess(access);
   if (!Array.isArray(namespaces) || namespaces.some(n => !canUseNamespace(n, access, write))) throw new MemoryAccessDeniedError();
 }
+export function runEpisodeNamespace(access?: Pick<MemoryAccessContext, "episodicNamespace" | "writableNamespaces">): MemoryNamespace | undefined {
+  const namespace = access?.episodicNamespace ?? access?.writableNamespaces?.[0];
+  return access && isMemoryNamespace(namespace) && access.writableNamespaces?.some(grant => isMemoryNamespace(grant) && sameNamespace(grant, namespace))
+    ? namespace : undefined;
+}
 export function canAccessMemory(memory: Memory, access: MemoryAccessContext, write = false): boolean {
   return memory.tenantId === access.tenantId && canUseNamespace(memory.namespace, access, write)
     && !(memory.visibility === "private" && access.agentId !== undefined && (memory.namespace.scope === "agent" ? memory.namespace.id : memory.source.agentId) !== access.agentId)

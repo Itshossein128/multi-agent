@@ -30,7 +30,8 @@ export type WorkflowNodeType =
   | "output"
   | "parallel_split"
   | "parallel_join"
-  | "subgraph";
+  | "subgraph"
+  | "dynamic_fanout";
 
 export type WorkflowPosition = { x: number; y: number };
 
@@ -175,12 +176,23 @@ export interface AgentRecord {
 
 export type AgentDiagnosticStatus = "ready" | "unavailable" | "not_authenticated" | "misconfigured" | "unsupported" | "unknown";
 
+export interface AgentDiagnosticDetails {
+  workerMode?: "local" | "container";
+  executable?: string;
+  executableAllowlisted?: boolean;
+  executableAvailable?: boolean;
+  credentialMode?: "broker" | "environment" | "file" | "cli_login" | "unconfigured";
+  credentialReady?: boolean;
+  sessionSupported?: boolean;
+}
+
 /** Safe server-side capability status; never contains credentials or credential paths. */
 export interface AgentDiagnostics {
   status: AgentDiagnosticStatus;
   checkedAt: string;
   backend: { type: AgentBackendType; provider?: string; model?: string; command?: string; url?: string };
   message: string;
+  details?: AgentDiagnosticDetails;
 }
 
 /** Legacy persisted agent shape (pre-backend abstraction). */
@@ -340,6 +352,17 @@ export interface AgentNodeConfig {
   resumePromptMode?: AgentResumePromptMode;
   /** Select incoming value resolution when multiple edges target this agent node. */
   inputMode?: AgentNodeInputMode;
+  /**
+   * When true and this node pauses with `needs_human` (purpose `"clarification"`),
+   * resuming with `clarificationAnswers` re-invokes the same agent session with those
+   * answers instead of exiting the node immediately. Default: false.
+   */
+  reinvokeOnClarification?: boolean;
+  /**
+   * Optional node-level short-term memory / shared-session history byte/token budget
+   * (integer 64..65536). Overrides `agent.memory.shortTerm.maxTokens` for this step.
+   */
+  shortTermMemoryMaxTokens?: number;
 }
 
 export interface ToolNodeConfig {
@@ -359,6 +382,8 @@ export interface ApprovalNodeConfig {
   message: string;
   approvalType: "manual" | "timeout" | "required";
   timeoutSeconds: number;
+  /** Request a new decision if execution returns to this approval node. */
+  requireFreshApproval?: boolean;
   gateId?: string;
   requiredRoles?: HumanApprovalRole[];
   onTimeout?: "fail_closed";
@@ -378,8 +403,15 @@ export interface ConditionBranch {
   label: string;
 }
 
+export interface WorkflowWorkPackage {
+  id: string;
+  promptPath: string;
+}
+
 export interface ConditionNodeConfig {
   branches: ConditionBranch[];
+  /** Ordered packages. The "next_package" branch runs one complete package; "packages_complete" exits. */
+  workPackages?: WorkflowWorkPackage[];
   /** Optional source for machine gates; the default preserves input-based routing. */
   valueSource?: "input" | "last_value";
   /** Optional field to read from the selected value, e.g. `status`. */
@@ -445,6 +477,178 @@ export interface SubgraphNodeConfig {
   outputMappings: SubgraphFieldMapping[];
 }
 
+export const DEFAULT_DYNAMIC_FANOUT_CONCURRENCY = 4;
+export const MIN_DYNAMIC_FANOUT_CONCURRENCY = 1;
+export const MAX_DYNAMIC_FANOUT_CONCURRENCY = 16;
+export const DEFAULT_DYNAMIC_FANOUT_MAX_ITEMS = 50;
+export const MIN_DYNAMIC_FANOUT_MAX_ITEMS = 1;
+export const MAX_DYNAMIC_FANOUT_MAX_ITEMS = 200;
+
+export type DynamicFanoutSessionMode = Extract<AgentSessionMode, "stateless" | "node">;
+
+export interface DynamicFanoutNodeConfig {
+  /** Optional canvas display label. */
+  label?: string;
+  /** Agent record id to invoke once per item (mutually exclusive with workflowId). */
+  targetAgentId?: string;
+  /** Saved workflow id to invoke once per item (mutually exclusive with targetAgentId). */
+  workflowId?: string;
+  /** Optional field/dot-path in state.lastValue containing the item array; omit to read state.lastValue directly. */
+  itemsField?: string;
+  /** Optional per-item prompt template (e.g. `Verify item {{index}}: {{item}}`). */
+  itemPromptTemplate?: string;
+  /** Bounded worker pool concurrency (default 4, integer 1..16). Arbitrary N items queue through this pool. */
+  maxConcurrency?: number;
+  /** Maximum number of items accepted per fan-out execution (default 50, integer 1..200). */
+  maxItems?: number;
+  /** Optional output key under which aggregated results are stored. */
+  aggregateField?: string;
+  /** Abort remaining pending items on first worker failure when true; default false (collect all verdicts). */
+  failFast?: boolean;
+  /** Additive step task instruction passed to every fanned-out worker invocation. */
+  taskInstruction?: string;
+  /**
+   * Worker session isolation mode ("stateless" default; "node" isolates per item as `${node.id}:${index}`).
+   * "shared" is intentionally excluded to prevent concurrent CLI/session race conditions.
+   */
+  sessionMode?: DynamicFanoutSessionMode;
+}
+
+export const DYNAMIC_FANOUT_TARGET_MISSING = "DYNAMIC_FANOUT_TARGET_MISSING" as const;
+export const DYNAMIC_FANOUT_TARGET_AMBIGUOUS = "DYNAMIC_FANOUT_TARGET_AMBIGUOUS" as const;
+export const INVALID_DYNAMIC_FANOUT_CONCURRENCY = "INVALID_DYNAMIC_FANOUT_CONCURRENCY" as const;
+export const INVALID_DYNAMIC_FANOUT_MAX_ITEMS = "INVALID_DYNAMIC_FANOUT_MAX_ITEMS" as const;
+export const INVALID_DYNAMIC_FANOUT_ITEMS_FIELD = "INVALID_DYNAMIC_FANOUT_ITEMS_FIELD" as const;
+export const INVALID_DYNAMIC_FANOUT_AGGREGATE_FIELD = "INVALID_DYNAMIC_FANOUT_AGGREGATE_FIELD" as const;
+export const INVALID_DYNAMIC_FANOUT_PROMPT_TEMPLATE = "INVALID_DYNAMIC_FANOUT_PROMPT_TEMPLATE" as const;
+export const INVALID_DYNAMIC_FANOUT_TASK_INSTRUCTION = "INVALID_DYNAMIC_FANOUT_TASK_INSTRUCTION" as const;
+export const INVALID_DYNAMIC_FANOUT_FAIL_FAST = "INVALID_DYNAMIC_FANOUT_FAIL_FAST" as const;
+export const INVALID_DYNAMIC_FANOUT_SESSION_MODE = "INVALID_DYNAMIC_FANOUT_SESSION_MODE" as const;
+
+export interface DynamicFanoutConfigIssue {
+  code: string;
+  message: string;
+  path?: string;
+}
+
+const FANOUT_FIELD_PATH = /^[A-Za-z0-9_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_][A-Za-z0-9_-]*)*$/;
+const FORBIDDEN_FANOUT_PATH_SEGMENTS = new Set(["__proto__", "constructor", "prototype"]);
+
+export function isValidFanoutFieldPath(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 128 || !FANOUT_FIELD_PATH.test(trimmed)) {
+    return false;
+  }
+  return !trimmed.split(".").some((segment) => FORBIDDEN_FANOUT_PATH_SEGMENTS.has(segment));
+}
+
+export function validateDynamicFanoutNodeConfig(
+  config: DynamicFanoutNodeConfig | Record<string, unknown> | undefined
+): DynamicFanoutConfigIssue[] {
+  const issues: DynamicFanoutConfigIssue[] = [];
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    issues.push({
+      code: DYNAMIC_FANOUT_TARGET_MISSING,
+      message: "Dynamic fan-out node requires either targetAgentId or workflowId.",
+    });
+    return issues;
+  }
+  const c = config as Record<string, unknown>;
+  const hasAgent = typeof c.targetAgentId === "string" && c.targetAgentId.trim().length > 0;
+  const hasWorkflow = typeof c.workflowId === "string" && c.workflowId.trim().length > 0;
+  if (!hasAgent && !hasWorkflow) {
+    issues.push({
+      code: DYNAMIC_FANOUT_TARGET_MISSING,
+      message: "Dynamic fan-out node requires either targetAgentId or workflowId.",
+      path: "targetAgentId",
+    });
+  } else if (hasAgent && hasWorkflow) {
+    issues.push({
+      code: DYNAMIC_FANOUT_TARGET_AMBIGUOUS,
+      message: "Dynamic fan-out node cannot specify both targetAgentId and workflowId.",
+      path: "workflowId",
+    });
+  }
+  if (c.maxConcurrency !== undefined) {
+    if (
+      typeof c.maxConcurrency !== "number" ||
+      !Number.isInteger(c.maxConcurrency) ||
+      c.maxConcurrency < MIN_DYNAMIC_FANOUT_CONCURRENCY ||
+      c.maxConcurrency > MAX_DYNAMIC_FANOUT_CONCURRENCY
+    ) {
+      issues.push({
+        code: INVALID_DYNAMIC_FANOUT_CONCURRENCY,
+        message: `maxConcurrency must be an integer between ${MIN_DYNAMIC_FANOUT_CONCURRENCY} and ${MAX_DYNAMIC_FANOUT_CONCURRENCY}.`,
+        path: "maxConcurrency",
+      });
+    }
+  }
+  if (c.maxItems !== undefined) {
+    if (
+      typeof c.maxItems !== "number" ||
+      !Number.isInteger(c.maxItems) ||
+      c.maxItems < MIN_DYNAMIC_FANOUT_MAX_ITEMS ||
+      c.maxItems > MAX_DYNAMIC_FANOUT_MAX_ITEMS
+    ) {
+      issues.push({
+        code: INVALID_DYNAMIC_FANOUT_MAX_ITEMS,
+        message: `maxItems must be an integer between ${MIN_DYNAMIC_FANOUT_MAX_ITEMS} and ${MAX_DYNAMIC_FANOUT_MAX_ITEMS}.`,
+        path: "maxItems",
+      });
+    }
+  }
+  if (c.itemsField !== undefined) {
+    if (!isValidFanoutFieldPath(c.itemsField)) {
+      issues.push({
+        code: INVALID_DYNAMIC_FANOUT_ITEMS_FIELD,
+        message: "itemsField must be 1-128 safe identifier/path characters without empty or prototype segments.",
+        path: "itemsField",
+      });
+    }
+  }
+  if (c.aggregateField !== undefined) {
+    if (!isValidFanoutFieldPath(c.aggregateField)) {
+      issues.push({
+        code: INVALID_DYNAMIC_FANOUT_AGGREGATE_FIELD,
+        message: "aggregateField must be 1-128 safe identifier/path characters without empty or prototype segments.",
+        path: "aggregateField",
+      });
+    }
+  }
+  if (c.itemPromptTemplate !== undefined) {
+    if (typeof c.itemPromptTemplate !== "string" || c.itemPromptTemplate.length > 8000) {
+      issues.push({
+        code: INVALID_DYNAMIC_FANOUT_PROMPT_TEMPLATE,
+        message: "itemPromptTemplate must be a string of at most 8000 characters.",
+        path: "itemPromptTemplate",
+      });
+    }
+  }
+  if (c.taskInstruction !== undefined && typeof c.taskInstruction !== "string") {
+    issues.push({
+      code: INVALID_DYNAMIC_FANOUT_TASK_INSTRUCTION,
+      message: "taskInstruction must be a string.",
+      path: "taskInstruction",
+    });
+  }
+  if (c.failFast !== undefined && typeof c.failFast !== "boolean") {
+    issues.push({
+      code: INVALID_DYNAMIC_FANOUT_FAIL_FAST,
+      message: "failFast must be a boolean.",
+      path: "failFast",
+    });
+  }
+  if (c.sessionMode !== undefined && c.sessionMode !== "stateless" && c.sessionMode !== "node") {
+    issues.push({
+      code: INVALID_DYNAMIC_FANOUT_SESSION_MODE,
+      message: 'Dynamic fan-out sessionMode must be "stateless" or "node" ("shared" is unsupported for concurrent workers).',
+      path: "sessionMode",
+    });
+  }
+  return issues;
+}
+
 export type WorkflowNodeConfig =
   | AgentNodeConfig
   | ToolNodeConfig
@@ -455,7 +659,8 @@ export type WorkflowNodeConfig =
   | OutputNodeConfig
   | ParallelSplitNodeConfig
   | ParallelJoinNodeConfig
-  | SubgraphNodeConfig;
+  | SubgraphNodeConfig
+  | DynamicFanoutNodeConfig;
 
 /** Optional node-scoped retry request. The server clamps every value to its own limits. */
 export interface NodeRetryPolicy {
@@ -505,6 +710,8 @@ export interface WorkflowDefinition {
   tenantId?: string;
   archetype?: WorkflowArchetypeCategory;
   archetypeConfig?: WorkflowArchetypeConfig;
+  /** Publish curated run episodes to the organization when the initiator can write there. */
+  episodicMemoryScope?: "organization";
 }
 
 export interface WorkflowNodeMeta {
@@ -608,6 +815,15 @@ export const NODE_TYPE_META: Record<WorkflowNodeType, WorkflowNodeMeta> = {
     borderSelected: "border-fuchsia-400",
     chipBg: "bg-fuchsia-950/50",
   },
+  dynamic_fanout: {
+    label: "Dynamic Fan-Out",
+    description: "Fan out per-item sub-agents concurrently and aggregate results",
+    iconBg: "bg-teal-500/15",
+    iconText: "text-teal-300",
+    border: "border-teal-500/30",
+    borderSelected: "border-teal-400",
+    chipBg: "bg-teal-950/50",
+  },
 };
 
 export const WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [
@@ -621,6 +837,7 @@ export const WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [
   "parallel_split",
   "parallel_join",
   "subgraph",
+  "dynamic_fanout",
 ];
 
 export function isWorkflowNodeType(value: string): value is WorkflowNodeType {
@@ -640,6 +857,13 @@ export function createAgentRecord(input?: {
   model?: string;
   provider?: string;
   backend?: AgentBackend;
+  description?: string;
+  systemPrompt?: string;
+  tools?: string[];
+  executionPolicy?: AgentExecutionPolicy;
+  executionMode?: AgentExecutionMode;
+  maxToolSteps?: number;
+  memory?: AgentMemoryConfig;
 }): AgentRecord {
   const stamp = nowIso();
   const backend =
@@ -648,10 +872,14 @@ export function createAgentRecord(input?: {
   return {
     id: uid("agent"),
     name: input?.name ?? "New Agent",
-    description: "",
+    description: input?.description ?? "",
     backend,
-    systemPrompt: "",
-    tools: [],
+    systemPrompt: input?.systemPrompt ?? "",
+    tools: input?.tools ? [...input.tools] : [],
+    ...(input?.executionPolicy ? { executionPolicy: { ...input.executionPolicy } } : {}),
+    ...(input?.executionMode ? { executionMode: input.executionMode } : {}),
+    ...(typeof input?.maxToolSteps === "number" ? { maxToolSteps: input.maxToolSteps } : {}),
+    ...(input?.memory ? { memory: { ...input.memory } } : {}),
     enabled: true,
     metadata: {},
     createdAt: stamp,
@@ -659,10 +887,24 @@ export function createAgentRecord(input?: {
   };
 }
 
+export type CreateNodeOptions = Partial<AgentNodeConfig> &
+  Partial<Omit<DynamicFanoutNodeConfig, "sessionMode">> &
+  Partial<ToolNodeConfig> &
+  Partial<ApprovalNodeConfig> &
+  Partial<MemoryNodeConfig> &
+  Partial<ConditionNodeConfig> &
+  Partial<Omit<InputNodeConfig, "description">> &
+  Partial<Omit<OutputNodeConfig, "description" | "inputMode">> &
+  Partial<ParallelSplitNodeConfig> &
+  Partial<ParallelJoinNodeConfig> &
+  Partial<SubgraphNodeConfig> & {
+    description?: string;
+  };
+
 export function createNode(
   type: WorkflowNodeType,
   position: WorkflowPosition,
-  options?: Partial<AgentNodeConfig> & { toolId?: string }
+  options?: CreateNodeOptions
 ): WorkflowNode {
   let config: WorkflowNodeConfig;
   switch (type) {
@@ -695,41 +937,143 @@ export function createNode(
         ...(agentOpts.inputMode === "auto" || agentOpts.inputMode === "last_value"
           ? { inputMode: agentOpts.inputMode }
           : {}),
+        ...(typeof agentOpts.reinvokeOnClarification === "boolean"
+          ? { reinvokeOnClarification: agentOpts.reinvokeOnClarification }
+          : {}),
+        ...(typeof agentOpts.shortTermMemoryMaxTokens === "number"
+          ? { shortTermMemoryMaxTokens: agentOpts.shortTermMemoryMaxTokens }
+          : {}),
       };
       break;
     }
     case "tool":
       config = { toolId: options?.toolId ?? null };
       break;
-    case "approval":
-      config = { message: "Approve to continue?", approvalType: "manual", timeoutSeconds: 300 };
-      break;
-    case "memory":
-      config = { memoryType: "short_term", mode: "read_write", key: "" };
-      break;
-    case "condition":
+    case "approval": {
+      const appOpts = (options ?? {}) as Partial<ApprovalNodeConfig>;
       config = {
-        branches: [
-          { key: "yes", label: "Yes" },
-          { key: "no", label: "No" },
-        ],
+        message: typeof appOpts.message === "string" ? appOpts.message : "Approve to continue?",
+        approvalType: appOpts.approvalType ?? "manual",
+        timeoutSeconds: typeof appOpts.timeoutSeconds === "number" ? appOpts.timeoutSeconds : 300,
+        ...(appOpts.requireFreshApproval === true ? { requireFreshApproval: true } : {}),
+        ...(appOpts.gateId ? { gateId: appOpts.gateId } : {}),
+        ...(appOpts.requiredRoles ? { requiredRoles: [...appOpts.requiredRoles] } : {}),
+        ...(appOpts.onTimeout ? { onTimeout: appOpts.onTimeout } : {}),
+        ...(appOpts.allowedDecisions ? { allowedDecisions: [...appOpts.allowedDecisions] } : {}),
       };
       break;
-    case "input":
-      config = { inputKey: "input", description: "" };
+    }
+    case "memory": {
+      const memOpts = (options ?? {}) as Partial<MemoryNodeConfig>;
+      config = {
+        memoryType: memOpts.memoryType ?? "short_term",
+        mode: memOpts.mode ?? "read_write",
+        key: typeof memOpts.key === "string" ? memOpts.key : "",
+        ...(memOpts.writeSource ? { writeSource: memOpts.writeSource } : {}),
+      };
       break;
-    case "output":
-      config = { outputKey: "output", description: "" };
+    }
+    case "condition": {
+      const condOpts = (options ?? {}) as Partial<ConditionNodeConfig>;
+      config = {
+        branches: Array.isArray(condOpts.branches)
+          ? condOpts.branches.map((b) => ({ ...b }))
+          : [
+              { key: "yes", label: "Yes" },
+              { key: "no", label: "No" },
+            ],
+        ...(condOpts.valueSource ? { valueSource: condOpts.valueSource } : {}),
+        ...(typeof condOpts.valueField === "string" ? { valueField: condOpts.valueField } : {}),
+        ...(typeof condOpts.unknownRoute === "string" ? { unknownRoute: condOpts.unknownRoute } : {}),
+        ...(typeof condOpts.errorRoute === "string" ? { errorRoute: condOpts.errorRoute } : {}),
+        ...(condOpts.workPackages ? { workPackages: condOpts.workPackages.map((item) => ({ ...item })) } : {}),
+      };
       break;
-    case "parallel_split":
-      config = {};
+    }
+    case "input": {
+      const inOpts = (options ?? {}) as Partial<InputNodeConfig>;
+      config = {
+        inputKey: typeof inOpts.inputKey === "string" ? inOpts.inputKey : "input",
+        description: typeof inOpts.description === "string" ? inOpts.description : "",
+      };
       break;
-    case "parallel_join":
-      config = { joinPolicy: "all_success" };
+    }
+    case "output": {
+      const outOpts = (options ?? {}) as Partial<OutputNodeConfig>;
+      config = {
+        outputKey: typeof outOpts.outputKey === "string" ? outOpts.outputKey : "output",
+        description: typeof outOpts.description === "string" ? outOpts.description : "",
+        ...(outOpts.inputMode === "last_value" || outOpts.inputMode === "join"
+          ? { inputMode: outOpts.inputMode }
+          : {}),
+      };
       break;
-    case "subgraph":
-      config = { workflowId: "", inputMappings: [], outputMappings: [] };
+    }
+    case "parallel_split": {
+      const splitOpts = (options ?? {}) as Partial<ParallelSplitNodeConfig>;
+      config = {
+        ...(typeof splitOpts.label === "string" ? { label: splitOpts.label } : {}),
+        ...(Array.isArray(splitOpts.branchKeys) ? { branchKeys: [...splitOpts.branchKeys] } : {}),
+      };
       break;
+    }
+    case "parallel_join": {
+      const joinOpts = (options ?? {}) as Partial<ParallelJoinNodeConfig>;
+      config = {
+        joinPolicy: joinOpts.joinPolicy ?? "all_success",
+        ...(Array.isArray(joinOpts.requiredBranchKeys) ? { requiredBranchKeys: [...joinOpts.requiredBranchKeys] } : {}),
+        ...(typeof joinOpts.branchTimeoutMs === "number" ? { branchTimeoutMs: joinOpts.branchTimeoutMs } : {}),
+      };
+      break;
+    }
+    case "subgraph": {
+      const subOpts = (options ?? {}) as Partial<SubgraphNodeConfig>;
+      config = {
+        workflowId: typeof subOpts.workflowId === "string" ? subOpts.workflowId : "",
+        inputMappings: Array.isArray(subOpts.inputMappings) ? subOpts.inputMappings.map((m) => ({ ...m })) : [],
+        outputMappings: Array.isArray(subOpts.outputMappings) ? subOpts.outputMappings.map((m) => ({ ...m })) : [],
+      };
+      break;
+    }
+    case "dynamic_fanout": {
+      const fanoutOpts = (options ?? {}) as Partial<DynamicFanoutNodeConfig>;
+      config = {
+        ...(typeof fanoutOpts.label === "string" && fanoutOpts.label.trim()
+          ? { label: fanoutOpts.label.trim() }
+          : {}),
+        ...(typeof fanoutOpts.targetAgentId === "string" && fanoutOpts.targetAgentId.trim()
+          ? { targetAgentId: fanoutOpts.targetAgentId.trim() }
+          : {}),
+        ...(typeof fanoutOpts.workflowId === "string" && fanoutOpts.workflowId.trim()
+          ? { workflowId: fanoutOpts.workflowId.trim() }
+          : {}),
+        ...(typeof fanoutOpts.itemsField === "string" && fanoutOpts.itemsField.trim()
+          ? { itemsField: fanoutOpts.itemsField.trim() }
+          : {}),
+        ...(typeof fanoutOpts.itemPromptTemplate === "string" && fanoutOpts.itemPromptTemplate.trim()
+          ? { itemPromptTemplate: fanoutOpts.itemPromptTemplate }
+          : {}),
+        maxConcurrency:
+          typeof fanoutOpts.maxConcurrency === "number" && Number.isInteger(fanoutOpts.maxConcurrency)
+            ? fanoutOpts.maxConcurrency
+            : DEFAULT_DYNAMIC_FANOUT_CONCURRENCY,
+        maxItems:
+          typeof fanoutOpts.maxItems === "number" && Number.isInteger(fanoutOpts.maxItems)
+            ? fanoutOpts.maxItems
+            : DEFAULT_DYNAMIC_FANOUT_MAX_ITEMS,
+        ...(typeof fanoutOpts.aggregateField === "string" && fanoutOpts.aggregateField.trim()
+          ? { aggregateField: fanoutOpts.aggregateField.trim() }
+          : {}),
+        failFast: fanoutOpts.failFast ?? false,
+        ...(typeof fanoutOpts.taskInstruction === "string" && fanoutOpts.taskInstruction.trim()
+          ? { taskInstruction: fanoutOpts.taskInstruction.trim() }
+          : {}),
+        ...(fanoutOpts.sessionMode === "stateless" || fanoutOpts.sessionMode === "node"
+          ? { sessionMode: fanoutOpts.sessionMode }
+          : {}),
+      };
+      break;
+    }
   }
 
   return {
@@ -797,6 +1141,7 @@ export function serializeWorkflowDefinition(definition: WorkflowDefinition): Wor
     ...(definition.tenantId ? { tenantId: definition.tenantId } : {}),
     ...(definition.archetype ? { archetype: definition.archetype } : {}),
     ...(definition.archetypeConfig ? { archetypeConfig: definition.archetypeConfig } : {}),
+    ...(definition.episodicMemoryScope === "organization" ? { episodicMemoryScope: definition.episodicMemoryScope } : {}),
   });
 }
 
@@ -976,6 +1321,11 @@ export type RunEventType =
   | "subgraph.entered"
   | "subgraph.exited"
   | "subgraph.failed"
+  | "fanout.started"
+  | "fanout.item_started"
+  | "fanout.item_completed"
+  | "fanout.item_failed"
+  | "fanout.completed"
   | "state.updated"
   | "memory.read"
   | "memory.write"
@@ -1042,6 +1392,12 @@ export {
   INVALID_AGENT_NODE_SESSION_KEY,
   INVALID_AGENT_NODE_RESUME_PROMPT_MODE,
   INVALID_AGENT_NODE_INPUT_MODE,
+  INVALID_AGENT_NODE_REINVOKE_ON_CLARIFICATION,
+  INVALID_AGENT_NODE_SHORT_TERM_MEMORY_MAX_TOKENS,
+  MIN_STEP_SHORT_TERM_MEMORY_MAX_TOKENS,
+  MAX_STEP_SHORT_TERM_MEMORY_MAX_TOKENS,
+  MIN_SHORT_TERM_MEMORY_MAX_TOKENS,
+  MAX_SHORT_TERM_MEMORY_MAX_TOKENS,
 } from "./agentStepConfig";
 export type {
   StepConfigIssue,

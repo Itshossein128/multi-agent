@@ -25,6 +25,8 @@ import {
   resolveWorkflowArchetype,
   validateAgent,
   validateAgentNodeStepConfig,
+  validateDynamicFanoutNodeConfig,
+  type DynamicFanoutNodeConfig,
   type ParallelJoinNodeConfig,
   type SubgraphNodeConfig,
   type WorkflowNode,
@@ -304,6 +306,13 @@ export function validateWorkflow(def: WorkflowDefinition, agents: AgentRecord[],
               })
             );
           }
+        }
+        break;
+      }
+      case "dynamic_fanout": {
+        const config = node.config as DynamicFanoutNodeConfig;
+        for (const fanoutIssue of validateDynamicFanoutNodeConfig(config)) {
+          issues.push(error(fanoutIssue.message, { nodeId: node.id }, fanoutIssue.code));
         }
         break;
       }

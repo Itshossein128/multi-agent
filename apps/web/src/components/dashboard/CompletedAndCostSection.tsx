@@ -46,19 +46,29 @@ export function CompletedAndCostSection() {
           </div>
 
           {/* Time Filter Buttons */}
-          <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-950/80 p-0.5 text-xs">
-            {(["today", "week", "month"] as TimeFilter[]).map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setTimeFilter(filter)}
-                className={`px-3 py-1 text-xs font-medium rounded capitalize transition-all cursor-pointer ${timeFilter === filter
-                  ? "bg-purple-600 text-white shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200"
+          <div
+            role="group"
+            aria-label="Filter completed executions by time period"
+            className="flex items-center rounded-lg border border-zinc-800 bg-zinc-950/80 p-0.5 text-xs"
+          >
+            {(["today", "week", "month"] as TimeFilter[]).map((filter) => {
+              const active = timeFilter === filter;
+              return (
+                <button
+                  key={filter}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTimeFilter(filter)}
+                  className={`px-3 py-1 text-xs font-medium rounded capitalize transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
+                    active
+                      ? "bg-purple-600 text-white shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-200"
                   }`}
-              >
-                {filter}
-              </button>
-            ))}
+                >
+                  {filter}
+                </button>
+              );
+            })}
           </div>
         </CardHeader>
 
@@ -149,9 +159,16 @@ export function CompletedAndCostSection() {
                 ${tokenMetrics.totalCostUsd.toFixed(4)} / ${tokenMetrics.budgetUsd.toFixed(0)}
               </span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+            <div
+              role="progressbar"
+              aria-label="Monthly budget burn"
+              aria-valuenow={Math.min(100, Math.round((tokenMetrics.totalCostUsd / tokenMetrics.budgetUsd) * 100))}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="h-2 w-full overflow-hidden rounded-full bg-zinc-800"
+            >
               <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400"
+                className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all"
                 style={{
                   width: `${Math.min(
                     100,
@@ -164,7 +181,7 @@ export function CompletedAndCostSection() {
               <span>{((tokenMetrics.totalCostUsd / tokenMetrics.budgetUsd) * 100).toFixed(2)}% used</span>
               <span>${(tokenMetrics.budgetUsd - tokenMetrics.totalCostUsd).toFixed(2)} remaining</span>
             </div>
-          </div> : <a href={orgUrl("/budgets")} className="block rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 text-xs text-indigo-300 underline">Set a company budget</a>}
+          </div> : <Link href={orgUrl("/budgets")} className="block rounded-lg border border-zinc-800 bg-zinc-950/70 p-3.5 text-xs font-medium text-indigo-300 transition-colors hover:border-indigo-500/40 hover:underline">Set a company budget →</Link>}
 
           {/* Provider & Model Distribution */}
           <div className="space-y-2.5">
@@ -177,25 +194,34 @@ export function CompletedAndCostSection() {
               </div>
             ) : (
               tokenMetrics.providerBreakdown.map((item) => {
-                const pct = tokenMetrics.totalTokens > 0 ? ((item.tokens / tokenMetrics.totalTokens) * 100).toFixed(0) : "0";
+                const pctNum = tokenMetrics.totalTokens > 0 ? Math.min(100, (item.tokens / tokenMetrics.totalTokens) * 100) : 0;
+                const pct = pctNum.toFixed(0);
                 return (
                   <div
                     key={item.model}
-                    className="flex items-center justify-between rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-2.5"
+                    className="space-y-1.5 rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-2.5"
                   >
-                    <div>
-                      <div className="text-xs font-semibold text-zinc-200">
-                        {item.model}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-semibold text-zinc-200">
+                          {item.model}
+                        </div>
+                        <div className="text-[11px] text-zinc-500">{item.provider}</div>
                       </div>
-                      <div className="text-[11px] text-zinc-500">{item.provider}</div>
+                      <div className="text-right">
+                        <div className="text-xs font-medium text-zinc-200">
+                          ${item.cost.toFixed(4)}
+                        </div>
+                        <div className="text-[11px] text-zinc-500">
+                          {(item.tokens / 1000).toFixed(1)}k ({pct}%)
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs font-medium text-zinc-200">
-                        ${item.cost.toFixed(4)}
-                      </div>
-                      <div className="text-[11px] text-zinc-500">
-                        {(item.tokens / 1000).toFixed(1)}k ({pct}%)
-                      </div>
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-800/80">
+                      <div
+                        className="h-full rounded-full bg-indigo-500/80"
+                        style={{ width: `${pctNum}%` }}
+                      />
                     </div>
                   </div>
                 );

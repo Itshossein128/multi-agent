@@ -79,6 +79,17 @@ export function CreateTaskModal({
     !pendingInlineProject && Boolean(projectId) && !loadingWorkspaces && !usesDefaultWorkspace;
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isMutating) {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMutating, onClose]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -191,28 +202,34 @@ export function CreateTaskModal({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-task-modal-title"
         className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-            <Sparkles className="h-4 w-4 text-indigo-400" />
+          <h3 id="create-task-modal-title" className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+            <Sparkles className="h-4 w-4 text-indigo-400" aria-hidden="true" />
             Create Task
           </h3>
           <button
             type="button"
+            aria-label="Close dialog"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 cursor-pointer"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-4 overflow-y-auto flex-1">
           <div className="space-y-1.5">
-            <label className={labelClass}>Title *</label>
+            <label htmlFor="create-task-title" className={labelClass}>Title *</label>
             <input
+              id="create-task-title"
               type="text"
+              required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="E.g., Implement JWT auth middleware"
@@ -222,8 +239,9 @@ export function CreateTaskModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className={labelClass}>Description</label>
+            <label htmlFor="create-task-description" className={labelClass}>Description</label>
             <textarea
+              id="create-task-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Acceptance criteria, context, links..."
@@ -233,10 +251,11 @@ export function CreateTaskModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className={labelClass}>Project *</label>
+            <label htmlFor="create-task-project" className={labelClass}>Project *</label>
             {pendingInlineProject ? (
               <div className="space-y-2">
                 <input
+                  id="create-task-project"
                   type="text"
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
@@ -259,6 +278,7 @@ export function CreateTaskModal({
             ) : (
               <>
                 <select
+                  id="create-task-project"
                   value={projectId}
                   onChange={(e) => {
                     setProjectId(e.target.value);
@@ -289,8 +309,9 @@ export function CreateTaskModal({
 
           {workspaceRequired && (
             <div className="space-y-1.5">
-              <label className={labelClass}>Workspace *</label>
+              <label htmlFor="create-task-workspace" className={labelClass}>Workspace *</label>
               <select
+                id="create-task-workspace"
                 value={workspaceId}
                 onChange={(e) => setWorkspaceId(e.target.value)}
                 className={selectClass}
@@ -310,8 +331,9 @@ export function CreateTaskModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className={labelClass}>Priority</label>
+              <label htmlFor="create-task-priority" className={labelClass}>Priority</label>
               <select
+                id="create-task-priority"
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as TaskPriority)}
                 className={selectClass}
@@ -324,8 +346,9 @@ export function CreateTaskModal({
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className={labelClass}>Initial Column</label>
+              <label htmlFor="create-task-status" className={labelClass}>Initial Column</label>
               <select
+                id="create-task-status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as TaskStatus)}
                 className={selectClass}
@@ -343,8 +366,9 @@ export function CreateTaskModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className={labelClass}>Assign Agent</label>
+              <label htmlFor="create-task-agent" className={labelClass}>Assign Agent</label>
               <select
+                id="create-task-agent"
                 value={assignedAgent}
                 onChange={(e) => setAssignedAgent(e.target.value)}
                 className={selectClass}
@@ -358,8 +382,9 @@ export function CreateTaskModal({
               </select>
             </div>
             <div className="space-y-1.5">
-              <label className={labelClass}>Workflow (Optional)</label>
+              <label htmlFor="create-task-workflow" className={labelClass}>Workflow (Optional)</label>
               <select
+                id="create-task-workflow"
                 value={workflowId}
                 onChange={(e) => setWorkflowId(e.target.value)}
                 className={selectClass}
@@ -375,8 +400,9 @@ export function CreateTaskModal({
           </div>
 
           <div className="space-y-1.5">
-            <label className={labelClass}>Parent Task (Optional)</label>
+            <label htmlFor="create-task-parent" className={labelClass}>Parent Task (Optional)</label>
             <select
+              id="create-task-parent"
               value={parentTaskId}
               onChange={(e) => setParentTaskId(e.target.value)}
               className={selectClass}
@@ -392,7 +418,7 @@ export function CreateTaskModal({
 
           <div className="space-y-1.5">
             <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              <Link2 className="h-3 w-3" />
+              <Link2 className="h-3 w-3" aria-hidden="true" />
               Dependencies ({dependencies.length})
             </label>
             <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
@@ -420,7 +446,7 @@ export function CreateTaskModal({
           </div>
 
           {(errorMessage || optionsError) && (
-            <p className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+            <p role="alert" className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
               {errorMessage ?? optionsError}
             </p>
           )}

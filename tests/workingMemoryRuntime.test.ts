@@ -195,6 +195,36 @@ async function waitFor(predicate: () => boolean, timeoutMs = 4000) {
 // Graph runtime
 
 describe("working memory in the compiled graph", () => {
+  test("dynamic fan-out gives downstream agents the shared findings from each item", async () => {
+    const built = linearWorkflow(["reviewer"]);
+    const fanout = createNode("dynamic_fanout", { x: 0, y: 1 }, {
+      targetAgentId: "qa", itemsField: "checks", maxItems: 3, maxConcurrency: 2,
+    });
+    const workflow = {
+      ...built.workflow,
+      nodes: [...built.workflow.nodes, fanout],
+      edges: [
+        createEdge({ source: built.input.id, target: fanout.id }),
+        createEdge({ source: fanout.id, target: built.agentNodes[0].id }),
+        built.workflow.edges[1],
+      ],
+    };
+    const seen: AgentExecutionInput[] = [];
+    const cliResponse = (content: string, scope: "agent" | "workflow") =>
+      ["```json", JSON.stringify({ output: { status: "passed" }, workingMemoryUpdates: [{ kind: "finding", scope, content }] }), "```"].join("\n");
+    const behaviour = {
+      [`${fanout.id}:item:0`]: { output: cliResponse("Verified delivery role access.", "workflow") },
+      [`${fanout.id}:item:1`]: { output: cliResponse("Agent-private draft notes.", "agent") },
+    };
+    const runId = "run-qa-fanout";
+    const compiled = compileWorkflow(workflow, [agent("qa"), agent("reviewer")], { runId, runtime: realRuntime(behaviour, seen), checkpointer: new MemorySaver() });
+    await compiled.graph.invoke({ input: { checks: ["role access", "layout"] } });
+    const next = seen.find(input => input.agent.id === "reviewer")!;
+    expect(workingMemoryText(next)).toContain("Verified delivery role access.");
+    expect(workingMemoryText(next)).not.toContain("Agent-private draft notes.");
+    expect(entriesOf((await runStateOf(compiled, runId)).workingMemory)).toHaveLength(2);
+  });
+
   test("a write is checkpointed, survives runtime destruction, and reaches the downstream agent", async () => {
     const built = linearWorkflow(["agent-a", "agent-b"]);
     const marker = "FINDING_A: authentication uses signed internal principals.";

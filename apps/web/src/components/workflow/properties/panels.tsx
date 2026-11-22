@@ -45,6 +45,7 @@ import {
   ApprovalForm,
   ConditionForm,
   ContractForm,
+  DynamicFanoutForm,
   IOPortalForm,
   MemoryForm,
   ParallelJoinForm,
@@ -149,6 +150,7 @@ export function NodeProperties({ node }: { node: WorkflowNode }) {
       {node.type === "condition" && <ConditionForm node={node} />}
       {node.type === "parallel_join" && <ParallelJoinForm node={node} />}
       {node.type === "subgraph" && <SubgraphForm node={node} />}
+      {node.type === "dynamic_fanout" && <DynamicFanoutForm node={node} />}
       {(node.type === "input" || node.type === "output") && (
         <IOPortalForm node={node as WorkflowNode & { type: "input" | "output" }} />
       )}

@@ -127,7 +127,7 @@ export function WorkflowSwitcher() {
           </span>
           <select
             aria-label="Saved workflow"
-            className="h-8 max-w-52 cursor-pointer truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-medium text-zinc-100 transition-colors hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:max-w-60"
+            className="studio-select h-8 max-w-52 cursor-pointer truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 text-xs font-medium text-zinc-100 transition-colors hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:max-w-60"
             value={definition.id}
             disabled={busy}
             onChange={(event) => {

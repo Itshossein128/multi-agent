@@ -1,4 +1,5 @@
 import { DefaultMemoryContextFormatter } from "../src/memory/application/memoryContextFormatter";
+import { DefaultMemoryExtractor } from "../src/memory/application/memoryExtractor";
 import { MemorySaver } from "@langchain/langgraph";
 import { createAgentRecord, createEmptyDefinition, createNode, createEdge, type AgentRecord, type Memory, type MemoryNamespace } from "@multi-agent/types";
 import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
@@ -53,6 +54,22 @@ test("retrieves once, bounds untrusted data, applies policy and stable retry ide
   (f.deps.writePolicy.shouldRemember as jest.Mock).mockResolvedValue({ remember: false, reason: "trivial" });
   await collect(f.runtime.execute(f.input));
   expect(f.remember).toHaveBeenCalledTimes(2);
+});
+
+test("a fenced CLI response writes its durable candidates without changing the step result", async () => {
+  const f = fixture();
+  f.deps.extractor = new DefaultMemoryExtractor();
+  const output = { status: "passed", findings: ["Migration verified"] };
+  const content = ["```json", JSON.stringify({
+    output,
+    workingMemoryUpdates: [],
+    memoryCandidates: [{ kind: "semantic", subject: "Persistence", content: "The verified migration creates PostgreSQL checkpoints." }],
+  }), "```"].join("\n");
+  f.factory.create = jest.fn(() => ({ async *execute(input: AgentExecutionInput) { yield { ...done(input), payload: { content } }; } }));
+  const events = await collect(new AgentRuntime(f.factory, f.deps).execute(f.input));
+  expect(f.remember).toHaveBeenCalledWith(expect.objectContaining({ kind: "semantic", subject: "Persistence" }), expect.anything());
+  expect(events.find(event => event.type === "agent.completed")?.payload).toEqual({ content: output });
+  expect(JSON.stringify(events.filter(event => event.type === "memory.write"))).not.toContain("verified migration");
 });
 
 test("API executor puts memory in a separate user message and keeps system prompt intact", async () => {

@@ -110,19 +110,29 @@ export function StatCards() {
             {completedTasksCount} board · {completedRunsCount} runs
           </div>
 
-          <div className="mt-3 inline-flex rounded-lg border border-zinc-800 bg-zinc-950/80 p-0.5 text-xs">
-            {(["today", "week", "month"] as TimeFilter[]).map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setTimeFilter(filter)}
-                className={`px-2 py-0.5 text-[11px] font-medium rounded capitalize transition-all cursor-pointer ${timeFilter === filter
-                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
-                    : "text-zinc-400 hover:text-zinc-200"
+          <div
+            role="group"
+            aria-label="Filter metrics by time period"
+            className="mt-3 inline-flex rounded-lg border border-zinc-800 bg-zinc-950/80 p-0.5 text-xs"
+          >
+            {(["today", "week", "month"] as TimeFilter[]).map((filter) => {
+              const active = timeFilter === filter;
+              return (
+                <button
+                  key={filter}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTimeFilter(filter)}
+                  className={`px-2.5 py-0.5 text-[11px] font-medium rounded capitalize transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
+                    active
+                      ? "bg-purple-600 text-white shadow-xs"
+                      : "text-zinc-400 hover:text-zinc-200"
                   }`}
-              >
-                {filter}
-              </button>
-            ))}
+                >
+                  {filter}
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

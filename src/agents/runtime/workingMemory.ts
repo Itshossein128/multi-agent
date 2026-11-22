@@ -520,6 +520,8 @@ export interface SplitAgentResult {
   remainder: unknown;
   /** Untrusted, unvalidated candidate updates. */
   updates: unknown[];
+  /** In a memory envelope, durable candidates are handled by the long-term write policy. */
+  memoryCandidates?: unknown[];
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | undefined {
@@ -538,12 +540,23 @@ function splitFromRecord(record: Record<string, unknown>, original: unknown): Sp
   // still untrusted control data: preserve it only as a candidate so the
   // compiler can report a validation rejection, never in raw output/history.
   if (!Object.prototype.hasOwnProperty.call(record, "workingMemoryUpdates")) {
+    // Some CLI agents wrap the response first and put the memory channel
+    // beside the decision fields inside output.
+    const nested = record.output;
+    if (isPlainRecord(nested) && Object.prototype.hasOwnProperty.call(nested, "workingMemoryUpdates")) {
+      const { workingMemoryUpdates, memoryCandidates, ...output } = nested;
+      return splitFromRecord({ output, workingMemoryUpdates, memoryCandidates }, original);
+    }
     return { remainder: original, updates: [] };
   }
   const channel = record.workingMemoryUpdates;
   const updates = Array.isArray(channel) ? channel : [channel];
   if (Object.prototype.hasOwnProperty.call(record, "output")) {
-    return { remainder: record.output, updates };
+    return {
+      remainder: record.output,
+      updates,
+      ...(Array.isArray(record.memoryCandidates) ? { memoryCandidates: record.memoryCandidates.slice(0, 20) } : {}),
+    };
   }
   const remainder: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
@@ -554,12 +567,18 @@ function splitFromRecord(record: Record<string, unknown>, original: unknown): Sp
 
 /**
  * Read the structured `workingMemoryUpdates` channel from an agent result.
- * Accepts an object result or a JSON-object string result. Everything else is
+ * Accepts an object, JSON-object string, or a final fenced JSON object. Everything else is
  * left untouched so existing workflows keep their exact behavior.
  */
 export function splitWorkingMemoryUpdates(rawOutput: unknown): SplitAgentResult {
   if (typeof rawOutput === "string") {
-    const parsed = parseJsonObject(rawOutput);
+    const direct = parseJsonObject(rawOutput);
+    if (direct) return splitFromRecord(direct, rawOutput);
+    const text = rawOutput.trimEnd();
+    const fenced = Array.from(text.matchAll(/(?:^|\r?\n)```json[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*/gi)).at(-1);
+    const parsed = fenced && fenced.index + fenced[0].length === text.length
+      ? parseJsonObject(fenced[1])
+      : undefined;
     if (!parsed) return { remainder: rawOutput, updates: [] };
     return splitFromRecord(parsed, rawOutput);
   }

@@ -91,10 +91,11 @@ export function QueueAndFailedSection() {
           <Button
             variant="outline"
             size="sm"
+            aria-expanded={showAddForm}
             onClick={() => setShowAddForm(!showAddForm)}
             className="h-8 text-xs gap-1.5 cursor-pointer"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             Enqueue Task
           </Button>
         </CardHeader>
@@ -105,16 +106,18 @@ export function QueueAndFailedSection() {
               <div className="text-xs font-semibold text-zinc-200">Dispatch New Task</div>
               <input
                 type="text"
+                aria-label="New task title"
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
                 placeholder="E.g., Implement auth middleware validation endpoint"
-                className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               />
               <div className="flex items-center justify-between gap-2">
                 <select
+                  aria-label="Target agent role"
                   value={targetRole}
                   onChange={(e) => setTargetRole(e.target.value)}
-                  className="rounded border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-200 focus:outline-none"
+                  className="studio-select rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 >
                   <option value="Developer Agent">Developer Agent</option>
                   <option value="Doc Generator Agent">Doc Generator Agent</option>
@@ -193,10 +196,11 @@ export function QueueAndFailedSection() {
                       size="sm"
                       onClick={() => cancelTask(task.id)}
                       disabled={isMutating}
-                      className="h-8 text-xs text-zinc-400 hover:text-red-400 cursor-pointer"
+                      className="h-8 w-8 p-0 text-xs text-zinc-400 hover:text-red-400 cursor-pointer"
+                      aria-label={`Cancel task ${task.title}`}
                       title="Cancel Task"
                     >
-                      <XCircle className="h-4 w-4" />
+                      <XCircle className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>

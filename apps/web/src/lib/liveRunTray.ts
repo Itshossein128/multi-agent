@@ -35,7 +35,7 @@ export function buildLiveRunTrayModel(input: LiveRunTrayInput): LiveRunTrayModel
     collapsed: input.collapsed ?? false,
     eventFilter,
     canCancel: active,
-    canRetry: run?.status === "failed",
+    canRetry: run?.status === "failed" || run?.status === "cancelled",
     events: filterTrayEvents(events, eventFilter),
   };
 }

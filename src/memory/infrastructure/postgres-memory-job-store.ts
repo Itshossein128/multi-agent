@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { MemoryNamespace } from "../contracts";
+import type { MemoryAccessContext, MemoryNamespace } from "../contracts";
+import { runEpisodeNamespace } from "../application/access";
 import type { PgPool } from "./postgres-memory-store";
 import { scopedDbClient } from "../../studio/infrastructure/withOrganization";
 
@@ -48,7 +49,14 @@ export class PostgresMemoryJobStore {
   async reconcileTerminalRuns(limit=100):Promise<number>{
     const rows=await this.query(`SELECT r.id,r.tenant_id,r.memory_access FROM studio_runs r WHERE r.status IN ('completed','failed','cancelled') AND r.memory_access IS NOT NULL AND NOT EXISTS (SELECT 1 FROM studio_memory_jobs j WHERE j.tenant_id=r.tenant_id AND j.job_kind='episodic_extraction' AND j.handler_version=1 AND j.idempotency_key=('episodic:' || r.id || ':v1')) ORDER BY r.updated_at ASC LIMIT $1`,[Math.max(1,Math.min(1000,limit))]);
     let recovered=0;
-    for(const row of rows.rows){const access=row.memory_access as { writableNamespaces?: MemoryNamespace[] };const namespace=access?.writableNamespaces?.[0];if(!namespace)continue;const result=await this.enqueue({kind:"episodic_extraction",idempotencyKey:`episodic:${row.id}:v1`,tenantId:String(row.tenant_id),namespace,runId:String(row.id)});if(!result.duplicate)recovered++;}
+    for (const row of rows.rows) {
+      const access = row.memory_access as Partial<MemoryAccessContext> & Pick<MemoryAccessContext, "writableNamespaces">;
+      const namespace = runEpisodeNamespace(access);
+      const tenantId = String(row.tenant_id);
+      if (!namespace || (access.tenantId && access.tenantId !== tenantId)) continue;
+      const result = await this.enqueue({ kind: "episodic_extraction", idempotencyKey: `episodic:${row.id}:v1`, tenantId, namespace, runId: String(row.id) });
+      if (!result.duplicate) recovered++;
+    }
     return recovered;
   }
 }

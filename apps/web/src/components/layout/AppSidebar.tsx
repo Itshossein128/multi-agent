@@ -4,17 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Boxes,
+  Building2,
   CalendarClock,
   ChevronsLeft,
   ChevronsRight,
   Columns3,
   FolderKanban,
   LayoutDashboard,
+  Mail,
   Network,
   Wallet,
   Settings,
   Webhook,
   Workflow,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -101,15 +104,47 @@ export function AppSidebar({
           collapsed ? "w-60 lg:w-14" : "w-60 lg:w-56",
         )}
       >
-        <div className="flex h-16 shrink-0 items-center border-b border-zinc-800/80 px-4 lg:hidden">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-800/80 px-4 lg:hidden">
           <span className="text-sm font-semibold tracking-tight text-zinc-100">Navigation</span>
+          <button
+            type="button"
+            onClick={onNavigate}
+            aria-label="Close navigation drawer"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2.5 py-3">
-          {org && !collapsed ? (
-            <div className="mb-4">
-              <OrgSwitcher />
-            </div>
+        <nav aria-label="Main navigation" className="flex-1 overflow-y-auto px-2.5 py-3">
+          {org ? (
+            <>
+              <div className={cn("mb-4", collapsed && "lg:hidden")}>
+                <OrgSwitcher />
+              </div>
+              {collapsed ? (
+                <div className="mb-3 hidden flex-col items-center gap-1 border-b border-zinc-800/80 pb-3 lg:flex">
+                  <button
+                    type="button"
+                    onClick={() => onCollapsedChange?.(false)}
+                    title={`Organization: ${org.org.name} (expand to switch)`}
+                    aria-label={`Organization: ${org.org.name}, expand sidebar to switch`}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800/80 bg-zinc-900/50 text-indigo-400 transition-colors hover:border-zinc-700 hover:bg-zinc-900 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
+                  >
+                    <Building2 className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                  <Link
+                    href="/invitations"
+                    onClick={onNavigate}
+                    title="Organization invitations"
+                    aria-label="Organization invitations"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-900/80 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  >
+                    <Mail className="h-4 w-4 text-indigo-400" aria-hidden="true" />
+                  </Link>
+                </div>
+              ) : null}
+            </>
           ) : null}
           <div className={cn("space-y-4", collapsed && "lg:space-y-2")}>
             {NAV_GROUPS.map((group) => (

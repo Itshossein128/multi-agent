@@ -72,11 +72,11 @@ export interface WorkflowValidationLimits {
 
 const NODE_TYPES = new Set<WorkflowNodeType>([
   "agent", "tool", "approval", "memory", "condition", "input", "output",
-  "parallel_split", "parallel_join", "subgraph",
+  "parallel_split", "parallel_join", "subgraph", "dynamic_fanout",
 ]);
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const ALL_TARGETS = new Set<WorkflowNodeType>([
-  "agent", "tool", "approval", "memory", "condition", "output", "parallel_split", "parallel_join", "subgraph",
+  "agent", "tool", "approval", "memory", "condition", "output", "parallel_split", "parallel_join", "subgraph", "dynamic_fanout",
 ]);
 const CONNECTION_TARGETS: Record<WorkflowNodeType, ReadonlySet<WorkflowNodeType>> = {
   input: ALL_TARGETS,
@@ -88,6 +88,7 @@ const CONNECTION_TARGETS: Record<WorkflowNodeType, ReadonlySet<WorkflowNodeType>
   parallel_split: ALL_TARGETS,
   parallel_join: ALL_TARGETS,
   subgraph: ALL_TARGETS,
+  dynamic_fanout: ALL_TARGETS,
   output: new Set(),
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
+import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useToastStore } from "@/store/useToastStore";
 import { cn } from "@/lib/utils";
 
@@ -26,20 +27,25 @@ function ToastItem({
     <div
       role={variant === "error" ? "alert" : "status"}
       className={cn(
-        "pointer-events-auto flex min-w-55 max-w-sm items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg",
+        "pointer-events-auto flex min-w-60 max-w-sm items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs font-medium shadow-xl backdrop-blur-md",
         variant === "success"
-          ? "border-emerald-800/80 bg-emerald-950/95 text-emerald-100"
-          : "border-red-800/80 bg-red-950/95 text-red-100",
+          ? "border-emerald-800/80 bg-emerald-950/95 text-emerald-100 [html[data-appearance='light']_&]:border-emerald-300 [html[data-appearance='light']_&]:bg-emerald-50 [html[data-appearance='light']_&]:text-emerald-900"
+          : "border-red-800/80 bg-red-950/95 text-red-100 [html[data-appearance='light']_&]:border-red-300 [html[data-appearance='light']_&]:bg-red-50 [html[data-appearance='light']_&]:text-red-900",
       )}
     >
-      <span className="flex-1">{message}</span>
+      {variant === "success" ? (
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
+      ) : (
+        <AlertCircle className="h-4 w-4 shrink-0 text-red-400" aria-hidden="true" />
+      )}
+      <span className="flex-1 leading-snug">{message}</span>
       <button
         type="button"
-        aria-label="Dismiss"
-        className="shrink-0 text-xs opacity-60 hover:opacity-100"
+        aria-label="Dismiss notification"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
         onClick={() => dismiss(id)}
       >
-        ✕
+        <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
     </div>
   );

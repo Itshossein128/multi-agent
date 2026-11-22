@@ -34,3 +34,30 @@ test("an updated reasoning item is not emitted twice when the completed item rep
   const completed = JSON.stringify({ type: "item.completed", item: { id: "r1", type: "reasoning", text: "plan" } });
   expect(parser.push(`${updated}\n${completed}\n`)).toEqual(["plan"]);
 });
+
+test("Cursor delta thinking preserves repeated short tokens and spaces without dropping duplicates", () => {
+  const parser = new CliThinkingParser("cursor");
+  const lines = [
+    JSON.stringify({ type: "thinking", subtype: "delta", text: "the " }),
+    JSON.stringify({ type: "thinking", subtype: "delta", text: "file" }),
+    JSON.stringify({ type: "thinking", subtype: "delta", text: " " }),
+    JSON.stringify({ type: "thinking", subtype: "delta", text: "in " }),
+    JSON.stringify({ type: "thinking", subtype: "delta", text: "the" }),
+    JSON.stringify({ type: "thinking", subtype: "completed" }),
+    JSON.stringify({ type: "tool_call", subtype: "started", call_id: "c1" }),
+  ].join("\n") + "\n";
+
+  const emitted = parser.push(lines).concat(parser.finish());
+  expect(emitted.join("")).toBe("the file in the");
+});
+
+test("Cursor result thinking_blocks fallback extracts thinking when present", () => {
+  const parser = new CliThinkingParser("cursor");
+  const resultLine = JSON.stringify({
+    type: "result",
+    subtype: "success",
+    result: "final answer",
+    thinking_blocks: [{ text: "step 1; " }, { text: "step 2" }],
+  });
+  expect(parser.push(`${resultLine}\n`)).toEqual(["step 1; step 2"]);
+});

@@ -26,6 +26,7 @@ const SHARED_EVENT_TYPES = new Set<RunEventType>([
   "human_approval.rejected", "human_approval.resolved", "node.loop_limit_reached", "node.loop_iteration",
   "parallel.branch_started", "parallel.branch_completed", "parallel.branch_failed",
   "subgraph.entered", "subgraph.exited", "subgraph.failed",
+  "fanout.started", "fanout.item_started", "fanout.item_completed", "fanout.item_failed", "fanout.completed",
   "state.updated", "memory.read", "memory.write", "log",
 ]);
 

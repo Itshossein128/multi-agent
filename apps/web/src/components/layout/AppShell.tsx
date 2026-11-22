@@ -74,6 +74,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-zinc-950 text-zinc-100">
+      <a
+        href="#main-content"
+        className="skip-link fixed left-3 top-3 z-100 rounded-lg border border-indigo-500 bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white shadow-lg focus:outline-none focus:ring-2 focus:ring-white"
+      >
+        Skip to main content
+      </a>
+
       <AppSidebar
         open={sidebarOpen}
         collapsed={sidebarCollapsed}
@@ -88,7 +95,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onCollapseClick={() => handleCollapsedChange(!sidebarCollapsed)}
           collapsed={sidebarCollapsed}
         />
-        <main className="flex flex-1 flex-col bg-zinc-950 text-zinc-100">{children}</main>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex flex-1 flex-col bg-zinc-950 text-zinc-100 focus:outline-none"
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

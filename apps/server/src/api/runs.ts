@@ -74,7 +74,13 @@ export function createRunsRouter(
   app.get("/:runId", (c) => c.json(service.get(c.req.param("runId"))));
   app.post("/:runId/cancel", (c) => c.json(service.cancel(c.req.param("runId")), 202));
   app.post("/:runId/branches/:branchKey/cancel", (c) => c.json(service.cancelBranch(c.req.param("runId"), c.req.param("branchKey")), 202));
-  app.post("/:runId/retry", async (c) => c.json(await service.retry(c.req.param("runId"), c.req.raw, c.get("principal")), 202));
+  app.post("/:runId/retry", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { mode?: unknown };
+    const queryMode = c.req.query("mode");
+    const rawMode = body?.mode ?? queryMode;
+    const mode = rawMode === "restart" ? "restart" : "resume";
+    return c.json(await service.retry(c.req.param("runId"), c.req.raw, c.get("principal"), { mode }), 202);
+  });
   app.get("/:runId/events", (c) => streamRunEvents(c, service.store, c.req.param("runId"), Number(c.req.query("sequence") ?? c.req.header("Last-Event-ID") ?? 0) || 0));
   return { app, executor };
 }

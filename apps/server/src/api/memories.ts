@@ -5,6 +5,7 @@ import { MemoryAccessDeniedError, MemoryConflictError, MemoryValidationError, ty
 import { MemoryFeedbackLedger, type MemoryFeedbackRecord, type MemoryFeedbackSummary, type MemoryUsefulnessLabel } from "../../../../src/memory/contracts";
 import type { MemoryAccessResolver } from "../memory/access";
 import { MemoryApiService } from "./memories/memoryApiService";
+import type { PrincipalVariables } from "./shared/http";
 
 /**
  * Phase 8: usefulness feedback ledger. Shared per router instance; labels are
@@ -13,11 +14,13 @@ import { MemoryApiService } from "./memories/memoryApiService";
 const feedbackLedger = new MemoryFeedbackLedger();
 
 export function createMemoriesRouter(service: MemoryService | undefined, resolveAccess: MemoryAccessResolver) {
-  const app = new Hono<{ Variables: { memoryAccess: MemoryAccessContext } }>();
+  const app = new Hono<{ Variables: PrincipalVariables & { memoryAccess: MemoryAccessContext } }>();
   const api = service ? new MemoryApiService(service) : undefined;
   app.use("*", bodyLimit({ maxSize: 128 * 1024, onError: (c) => c.json({ error: "Memory request is too large." }, 413) }));
   app.use("*", async (c, next) => {
-    const access = await resolveAccess(c.req.raw);
+    // The body limit may replace Request when buffering a stream. Reuse the
+    // identity and permissions verified by the outer organization middleware.
+    const access = await resolveAccess(c.req.raw, c.get("principal"));
     if (!access) return c.json({ error: "Memory authentication required." }, 401);
     if (!api) return c.json({ error: "Long-term memory persistence is not configured." }, 503);
     c.set("memoryAccess", access);

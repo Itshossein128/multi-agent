@@ -1,4 +1,4 @@
-import { Annotation, END, START, StateGraph, MemorySaver, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
+import { Annotation, END, START, StateGraph, MemorySaver, Overwrite, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
 import {
   nowIso,
   validateAgent,
@@ -18,6 +18,7 @@ import {
   type ApprovalNodeConfig,
   type BranchRouteReason,
   type ConsolidatedGapReport,
+  type ConditionNodeConfig,
   type HumanApprovalInterruptContext,
   type NodeContract,
   type NodeResultEnvelope,
@@ -25,6 +26,7 @@ import {
   type ToolRecord,
   type WorkflowDefinition,
   type WorkflowNode,
+  type WorkflowWorkPackage,
 } from "@multi-agent/types";
 import { AgentRuntime, AgentExecutionFailedError, type TrustedCredentialPrincipal } from "../../../../src/agents/runtime";
 import type { MemoryAccessContext } from "../../../../src/memory/contracts";
@@ -40,7 +42,7 @@ import {
 import { validateWorkflow } from "./validation";
 import { ToolRuntime } from "../../../../src/tools";
 import { AbortableSemaphore } from "../runtime/semaphore";
-import { abortableDelay, abortError, coerceBranchCarrier, combineSignals, isGraphInterrupt, retryDelay, asToolInput } from "../runtime/execUtils";
+import { abortableDelay, abortError, coerceBranchCarrier, combineSignals, extractStructuredResultEnvelope, isGraphInterrupt, retryDelay, asToolInput } from "../runtime/execUtils";
 
 export class UnsupportedPhase4NodeError extends Error {
   constructor(public readonly nodeId: string, node: WorkflowNode) {
@@ -68,8 +70,15 @@ export interface RuntimeState {
   /** Active CLI/API session continuation state keyed by effective sessionKey. */
   agentSessions?: Record<string, AgentSessionState>;
   /** Sticky once a human approval gate records `approved` for this run. */
-  humanApproval?: "approved" | "needs_clarification";
+  humanApproval?: "approved" | "needs_clarification" | null;
   approvedGateNodeId?: string;
+  workPackageProgress?: WorkPackageProgress;
+}
+
+interface WorkPackageProgress {
+  current: WorkflowWorkPackage;
+  endIndex: number;
+  completed: Array<{ id: string; result: unknown }>;
 }
 
 const State = Annotation.Root({
@@ -110,7 +119,8 @@ const State = Annotation.Root({
     default: () => ({}),
   }),
   approvedGateNodeId: Annotation<string>(),
-  humanApproval: Annotation<"approved" | "needs_clarification" | undefined>({
+  workPackageProgress: Annotation<WorkPackageProgress>(),
+  humanApproval: Annotation<"approved" | "needs_clarification" | null | undefined>({
     reducer: (current, next) => next ?? current,
     default: () => undefined,
   }),
@@ -162,7 +172,13 @@ export interface CompileOptions {
    */
   workingMemoryScopePolicy?: WorkingMemoryScopePolicy;
   /** Durable proposal retained while a structured agent result awaits approval. */
-  pendingHuman?: { nodeId: string; envelope: NodeResultEnvelope };
+  pendingHuman?: {
+    nodeId: string;
+    envelope: NodeResultEnvelope;
+    sessionState?: AgentSessionState;
+    shortTermHistories?: ShortTermHistories;
+    isSubgraph?: boolean;
+  };
   /** Current subgraph nesting depth (0 = top-level workflow). */
   nestingDepth?: number;
   /**
@@ -177,6 +193,9 @@ export interface CompileOptions {
     outputMappings: Array<{ source: string; target: string; required?: boolean }>;
     nestingDepth: number;
     signal?: AbortSignal;
+    agentSessions?: Record<string, AgentSessionState>;
+    shortTermHistories?: ShortTermHistories;
+    resumeDecision?: unknown;
   }) => Promise<unknown>;
 }
 
@@ -311,10 +330,10 @@ export function compileWorkflow(
               throw error;
             }
           } else if (node.type === "approval") {
-            if (state.approvedGateNodeId === node.id && state.humanApproval === "approved") {
+            const config = node.config as ApprovalNodeConfig;
+            if (!config.requireFreshApproval && state.approvedGateNodeId === node.id && state.humanApproval === "approved") {
               result = { branch: "approved", lastValue: state.lastValue };
             } else {
-              const config = node.config as ApprovalNodeConfig;
               const effectiveRunId = options.runId ?? (state.input as Record<string, unknown>)?.runId as string ?? runId ?? "run-unknown";
               const gateId = (config as { gateId?: string })?.gateId ?? `gate-${node.id}`;
               const timeoutSeconds = config.timeoutSeconds ?? 86400;
@@ -416,10 +435,18 @@ export function compileWorkflow(
               result = { memory: { [config.key]: value }, lastValue: value };
             }
             emit(config.mode === "read" ? "memory.read" : "memory.write", { key: config.key, mode: config.mode });
+          } else if (node.type === "condition" && (node.config as ConditionNodeConfig).workPackages) {
+            const packages = (node.config as ConditionNodeConfig).workPackages!;
+            result = advanceWorkPackages(state, packages, node.id);
+            emit("state.updated", {
+              branch: result.branch,
+              workPackage: result.workPackageProgress?.current.id,
+              completedPackages: result.workPackageProgress?.completed.map((item) => item.id),
+            });
           } else if (node.type === "condition") {
             const config = node.config as { branches: { key: string }[]; valueSource?: "input" | "last_value"; valueField?: string; unknownRoute?: string; errorRoute?: string };
             // CLI agents often return JSON text; coerce so branch keys transfer through workflow state.
-            const routedValue = coerceBranchCarrier(state.lastValue);
+            const routedValue = coerceBranchCarrier(state.lastValue, config.valueField);
             const carrier = routedValue && typeof routedValue === "object" && !Array.isArray(routedValue)
               ? routedValue as Record<string, unknown>
               : undefined;
@@ -488,17 +515,31 @@ export function compileWorkflow(
             const swarmContinuing =
               archetype === "autonomous-swarm" &&
               targetBranch !== (swarmCfg?.terminationBranch ?? "done");
+            const conditionNodeIds = new Set(
+              definition.nodes.filter((candidate) => candidate.type === "condition").map((candidate) => candidate.id),
+            );
             const matchedGuard =
               archetype === "hierarchical-supervisor" || archetype === "evaluator-optimizer" || archetype === "autonomous-swarm"
-                ? recursionGuards.find((guard) => {
+                ? (recursionGuards.find((guard) => {
+                    if (archetype !== "hierarchical-supervisor" || !guard.routeKey.includes("->")) return false;
+                    const parts = guard.routeKey.split("->").map((s) => s.trim());
+                    return parts[0] === node.id && parts[parts.length - 1] === targetBranch;
+                  }) ??
+                  recursionGuards.find((guard) => {
                     if (archetype === "evaluator-optimizer" && eo) {
                       return targetBranch === eo.failBranch || guard.routeKey.split("->").pop()?.trim() === targetBranch;
                     }
                     if (archetype === "autonomous-swarm") {
                       return swarmContinuing && guard.routeKey === "swarm-hop";
                     }
-                    return guard.routeKey.split("->").pop()?.trim() === targetBranch;
-                  })
+                    const parts = guard.routeKey.split("->").map((s) => s.trim());
+                    const prefix = parts.length > 1 ? parts[0] : "";
+                    const dest = parts[parts.length - 1];
+                    if (prefix && conditionNodeIds.has(prefix) && prefix !== node.id) {
+                      return false;
+                    }
+                    return dest === targetBranch;
+                  }))
                 : undefined;
 
             if (archetype === "evaluator-optimizer" && eo) {
@@ -516,6 +557,11 @@ export function compileWorkflow(
             let limitExceeded = false;
             let swarmCeiling: "hop" | "depth" | undefined;
             let swarmDepthIteration = 0;
+            const matchedGuardPrefix =
+              matchedGuard && matchedGuard.routeKey.includes("->")
+                ? matchedGuard.routeKey.split("->")[0]?.trim() ?? ""
+                : "";
+            const isNodeScopedGuard = Boolean(matchedGuardPrefix && conditionNodeIds.has(matchedGuardPrefix));
             if (matchedGuard) {
               const explicitIteration =
                 typeof effectiveCarrier?.iterationCount === "number"
@@ -524,7 +570,9 @@ export function compileWorkflow(
                     ? ((effectiveCarrier.qaResult as Record<string, unknown>).iterationCount as number)
                     : undefined;
 
-              const currentTracked = state.loopIterations?.[matchedGuard.routeKey] ?? state.loopIterations?.[targetBranch] ?? 0;
+              const currentTracked = isNodeScopedGuard
+                ? (state.loopIterations?.[matchedGuard.routeKey] ?? 0)
+                : (state.loopIterations?.[matchedGuard.routeKey] ?? state.loopIterations?.[targetBranch] ?? 0);
               const reportedIteration = Number.isSafeInteger(explicitIteration) ? explicitIteration ?? 0 : 0;
               iteration = Math.max(currentTracked + 1, reportedIteration);
               const maxIterations = matchedGuard.maxIterations ?? 3;
@@ -549,7 +597,7 @@ export function compileWorkflow(
                 ...(state.loopIterations ?? {}),
                 [matchedGuard.routeKey]: iteration,
                 ...(swarmContinuing ? { "swarm-depth": swarmDepthIteration } : {}),
-                [targetBranch]: iteration,
+                ...(!isNodeScopedGuard ? { [targetBranch]: iteration } : {}),
               };
               const effectiveTaskId = (effectiveCarrier?.taskId as string | undefined) ??
                 (inputRecord?.taskId as string | undefined);
@@ -612,7 +660,7 @@ export function compileWorkflow(
                     ...(state.loopIterations ?? {}),
                     [matchedGuard.routeKey]: iteration,
                     ...(swarmContinuing ? { "swarm-depth": swarmDepthIteration || (state.loopIterations?.["swarm-depth"] ?? 0) + 1 } : {}),
-                    [targetBranch]: iteration,
+                    ...(!isNodeScopedGuard ? { [targetBranch]: iteration } : {}),
                   }
                 : state.loopIterations;
 
@@ -670,26 +718,63 @@ export function compileWorkflow(
             const depth = (options as { nestingDepth?: number }).nestingDepth ?? 0;
             emit("subgraph.entered", { parentNodeId: node.id, workflowId, depth: depth + 1 });
             try {
-              // v1: nested definition resolution is injected by the run executor when available.
               const nestedRunner = options.subgraphRunner;
               if (nestedRunner) {
-                const nestedOutput = await nestedRunner({
+                let resumeDecision: unknown;
+                if (options.pendingHuman?.nodeId === node.id && options.pendingHuman?.isSubgraph) {
+                  const subPh = options.pendingHuman;
+                  resumeDecision = interrupt({
+                    nodeId: node.id,
+                    message: subPh.envelope.needsHuman?.reason ?? "Human approval required",
+                    approvalType: "manual",
+                    timeoutSeconds: 0,
+                    context: {
+                      kind: "agent_needs_human",
+                      purpose:
+                        subPh.envelope.needsHuman?.purpose ??
+                        (subPh.envelope.needsHuman?.questions?.length ? "clarification" : "approval"),
+                      envelope: subPh.envelope,
+                      sessionState: subPh.sessionState,
+                      shortTermHistories: subPh.shortTermHistories,
+                      isSubgraph: true,
+                    },
+                  });
+                  options.pendingHuman = undefined;
+                }
+                const nestedRaw = await nestedRunner({
                   workflowId,
                   parentNodeId: node.id,
-                  input: state.lastValue,
+                  input: state.lastValue ?? state.input,
                   inputMappings: subConfig.inputMappings ?? [],
                   outputMappings: subConfig.outputMappings ?? [],
                   nestingDepth: depth + 1,
                   signal,
+                  agentSessions: state.agentSessions,
+                  shortTermHistories: state.shortTermHistories,
+                  resumeDecision,
                 });
                 emit("subgraph.exited", { parentNodeId: node.id, workflowId, depth: depth + 1 });
-                result = { lastValue: nestedOutput };
+                if (nestedRaw && typeof nestedRaw === "object" && (nestedRaw as { __subgraphResult?: boolean }).__subgraphResult === true) {
+                  const wrapped = nestedRaw as {
+                    output: unknown;
+                    agentSessions?: Record<string, AgentSessionState>;
+                    shortTermHistories?: ShortTermHistories;
+                  };
+                  result = {
+                    lastValue: wrapped.output,
+                    ...(wrapped.agentSessions ? { agentSessions: wrapped.agentSessions } : {}),
+                    ...(wrapped.shortTermHistories ? { shortTermHistories: wrapped.shortTermHistories } : {}),
+                  };
+                } else {
+                  result = { lastValue: nestedRaw };
+                }
               } else {
                 // Fail closed without a resolver: do not silently skip nested work.
                 emit("subgraph.failed", { parentNodeId: node.id, workflowId, depth: depth + 1, reason: "SUBGRAPH_RUNNER_UNAVAILABLE" });
                 throw new Error(`Subgraph node "${node.id}" cannot run: nested workflow resolver is not configured`);
               }
             } catch (error) {
+              if (isGraphInterrupt(error)) throw error;
               emit("subgraph.failed", {
                 parentNodeId: node.id,
                 workflowId,
@@ -697,6 +782,309 @@ export function compileWorkflow(
                 reason: error instanceof Error ? error.message : String(error),
               });
               throw error;
+            }
+          } else if (node.type === "dynamic_fanout") {
+            const fanoutConfig = node.config as import("@multi-agent/types").DynamicFanoutNodeConfig;
+            const maxConcurrency =
+              typeof fanoutConfig.maxConcurrency === "number" && Number.isInteger(fanoutConfig.maxConcurrency)
+                ? Math.max(1, Math.min(16, fanoutConfig.maxConcurrency))
+                : 4;
+            const maxItems =
+              typeof fanoutConfig.maxItems === "number" && Number.isInteger(fanoutConfig.maxItems)
+                ? Math.max(1, Math.min(200, fanoutConfig.maxItems))
+                : 50;
+            const failFast = fanoutConfig.failFast === true;
+
+            const unwrapJsonValue = (val: unknown): unknown => {
+              if (typeof val === "string") {
+                const trimmed = val.trim();
+                if (
+                  (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+                  (trimmed.startsWith("{") && trimmed.endsWith("}"))
+                ) {
+                  try {
+                    return JSON.parse(trimmed);
+                  } catch {
+                    /* fall through to fenced/embedded JSON extraction */
+                  }
+                }
+                const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+                const fencedCandidates: string[] = [];
+                let match: RegExpExecArray | null;
+                while ((match = fenceRegex.exec(trimmed)) !== null) {
+                  const inner = match[1]?.trim();
+                  if (inner && ((inner.startsWith("{") && inner.endsWith("}")) || (inner.startsWith("[") && inner.endsWith("]")))) {
+                    fencedCandidates.unshift(inner);
+                  }
+                }
+                for (const candidate of fencedCandidates) {
+                  try {
+                    return JSON.parse(candidate);
+                  } catch {
+                    /* try next fenced block */
+                  }
+                }
+              }
+              return val;
+            };
+
+            const rawCarrier = nodeInput ?? state.lastValue ?? state.input;
+            const carrier = unwrapJsonValue(rawCarrier);
+            const readFieldPath = (source: unknown, pathStr: string): unknown => {
+              const parts = pathStr.trim().split(".").filter(Boolean);
+              let cursor: unknown = unwrapJsonValue(source);
+              for (const part of parts) {
+                cursor = unwrapJsonValue(cursor);
+                if (cursor == null || typeof cursor !== "object") return undefined;
+                cursor = unwrapJsonValue((cursor as Record<string, unknown>)[part]);
+              }
+              return cursor;
+            };
+
+            let rawItems: unknown;
+            if (typeof fanoutConfig.itemsField === "string" && fanoutConfig.itemsField.trim()) {
+              rawItems = readFieldPath(carrier, fanoutConfig.itemsField);
+              if (rawItems === undefined && carrier && typeof carrier === "object") {
+                const obj = carrier as Record<string, unknown>;
+                if (obj.value !== undefined) rawItems = readFieldPath(obj.value, fanoutConfig.itemsField);
+                if (rawItems === undefined && obj.input !== undefined) {
+                  rawItems = readFieldPath(obj.input, fanoutConfig.itemsField);
+                }
+              }
+              if (rawItems === undefined && rawCarrier !== state.input) {
+                rawItems = readFieldPath(state.input, fanoutConfig.itemsField);
+              }
+            } else if (Array.isArray(carrier)) {
+              rawItems = carrier;
+            } else if (carrier && typeof carrier === "object") {
+              const obj = carrier as Record<string, unknown>;
+              const unwrappedInput = unwrapJsonValue(obj.input);
+              const unwrappedValue = unwrapJsonValue(obj.value);
+              if (Array.isArray(unwrappedInput)) rawItems = unwrappedInput;
+              else if (Array.isArray(unwrappedValue)) rawItems = unwrappedValue;
+              else if (Array.isArray(obj.items)) rawItems = obj.items;
+              else if (Array.isArray(obj.requirements)) rawItems = obj.requirements;
+              else if (Object.keys(obj).length > 0 && Object.keys(obj).every((k) => /^\d+$/.test(k))) {
+                rawItems = Object.keys(obj)
+                  .sort((a, b) => Number(a) - Number(b))
+                  .map((k) => obj[k]);
+              } else {
+                rawItems = carrier;
+              }
+            } else {
+              rawItems = carrier;
+            }
+
+            if (!Array.isArray(rawItems)) {
+              throw new ContractViolationError(
+                "DYNAMIC_FANOUT_ITEMS_INVALID",
+                `Dynamic fan-out node "${node.id}" expected an array at "${fanoutConfig.itemsField ?? "$"}", received ${typeof rawItems}.`,
+                { nodeId: node.id },
+              );
+            }
+            if (rawItems.length > maxItems) {
+              throw new ContractViolationError(
+                "INVALID_DYNAMIC_FANOUT_MAX_ITEMS",
+                `Dynamic fan-out node "${node.id}" received ${rawItems.length} items, exceeding maxItems (${maxItems}).`,
+                { nodeId: node.id },
+              );
+            }
+
+            const items = rawItems as unknown[];
+            emit("fanout.started", {
+              totalItems: items.length,
+              maxConcurrency,
+              ...(fanoutConfig.targetAgentId ? { targetAgentId: fanoutConfig.targetAgentId } : {}),
+              ...(fanoutConfig.workflowId ? { workflowId: fanoutConfig.workflowId } : {}),
+            });
+
+            if (items.length === 0) {
+              emit("fanout.completed", { totalItems: 0, succeeded: 0, failed: 0 });
+              const emptyOut = {
+                ...(fanoutConfig.aggregateField ? { [fanoutConfig.aggregateField]: [] } : {}),
+                results: [],
+                items: [],
+                totalItems: 0,
+                succeeded: 0,
+                failed: 0,
+              };
+              result = { lastValue: emptyOut };
+            } else {
+              const fanoutSemaphore = new AbortableSemaphore(maxConcurrency);
+              const failFastController = new AbortController();
+              const orderedResults: unknown[] = new Array(items.length);
+              const workingUpdates: Array<{ agentId: string; nodeId: string; updates: unknown[] } | undefined> = new Array(items.length);
+              const failures: Array<{ index: number; error: string }> = [];
+              const updatedFanoutSessions: Record<string, AgentSessionState> = {};
+              let mergedFanoutHistories: ShortTermHistories = {};
+              let succeeded = 0;
+              let failed = 0;
+              const depth = options.nestingDepth ?? 0;
+
+              await Promise.all(
+                items.map(async (item, index) => {
+                  const itemSignal = failFast ? combineSignals(signal, failFastController.signal) : signal;
+                  let releaseItem: (() => void) | undefined;
+                  try {
+                    releaseItem = await fanoutSemaphore.acquire(itemSignal);
+                  } catch (err) {
+                    if (failFast && failFastController.signal.aborted) return;
+                    throw err;
+                  }
+                  try {
+                    if (itemSignal?.aborted) {
+                      if (failFast && failFastController.signal.aborted) return;
+                      throw abortError();
+                    }
+                    emit("fanout.item_started", { index, totalItems: items.length, item });
+                    const renderedPrompt =
+                      typeof fanoutConfig.itemPromptTemplate === "string" && fanoutConfig.itemPromptTemplate.trim()
+                        ? fanoutConfig.itemPromptTemplate
+                            .replace(/\{\{\s*index\s*\}\}/g, String(index))
+                            .replace(/\{\{\s*item\s*\}\}/g, typeof item === "string" ? item : JSON.stringify(item))
+                        : undefined;
+                    const itemCarrier = {
+                      item,
+                      index,
+                      totalItems: items.length,
+                      ...(renderedPrompt ? { prompt: renderedPrompt } : {}),
+                    };
+
+                    let itemOutput: unknown;
+                    if (typeof fanoutConfig.targetAgentId === "string" && fanoutConfig.targetAgentId.trim()) {
+                      const targetAgent = agentById.get(fanoutConfig.targetAgentId.trim());
+                      if (!targetAgent) {
+                        throw new Error(`Dynamic fan-out node "${node.id}" references missing agent "${fanoutConfig.targetAgentId}"`);
+                      }
+                      if (targetAgent.enabled === false) {
+                        throw new Error(`Agent "${targetAgent.name}" is disabled`);
+                      }
+                      const itemNodeId = `${node.id}:item:${index}`;
+                      const itemSessionMode = fanoutConfig.sessionMode === "node" ? "node" : "stateless";
+                      const itemSessionKey = itemSessionMode === "node" ? itemNodeId : undefined;
+                      const priorItemSession = itemSessionKey ? state.agentSessions?.[itemSessionKey] : undefined;
+                      const itemState: RuntimeState = { ...state, lastValue: itemCarrier };
+                      let itemUpdates: unknown[] = [];
+                      itemOutput = options.agentRunner
+                        ? await options.agentRunner(targetAgent, itemState, { runId, nodeId: itemNodeId, signal: itemSignal })
+                        : await runAgentThroughRuntime(targetAgent, itemState, {
+                            runId,
+                            nodeId: itemNodeId,
+                            workflowId: options.workflowId ?? definition.id,
+                            onAgentEvent: options.onAgentEvent,
+                            runtime,
+                            memoryAccess: options.memoryAccess,
+                            credentialPrincipal: options.credentialPrincipal,
+                            onShortTermUpdate: (update) => {
+                              mergedFanoutHistories = mergeHistories(mergedFanoutHistories, update);
+                            },
+                            onWorkingMemoryUpdate: (updates) => { itemUpdates = updates; },
+                            onSessionUpdate: (sess) => {
+                              if (itemSessionKey) updatedFanoutSessions[itemSessionKey] = sess;
+                            },
+                            signal: itemSignal,
+                            toolRuntime,
+                            resolvedTools: resolveAgentToolsForRuntime(targetAgent, options.tools),
+                            taskInstruction:
+                              typeof fanoutConfig.taskInstruction === "string" && fanoutConfig.taskInstruction.trim()
+                                ? fanoutConfig.taskInstruction.trim()
+                                : renderedPrompt,
+                            sessionMode: itemSessionMode,
+                            sessionKey: itemSessionKey,
+                            resumeSession: priorItemSession,
+                          });
+                      if (itemUpdates.length) workingUpdates[index] = { agentId: targetAgent.id, nodeId: itemNodeId, updates: itemUpdates };
+                    } else if (typeof fanoutConfig.workflowId === "string" && fanoutConfig.workflowId.trim()) {
+                      const nestedRunner = options.subgraphRunner;
+                      if (!nestedRunner) {
+                        throw new Error(`Dynamic fan-out node "${node.id}" cannot run workflow "${fanoutConfig.workflowId}": subgraphRunner is not configured`);
+                      }
+                      const rawNested = await nestedRunner({
+                        workflowId: fanoutConfig.workflowId.trim(),
+                        parentNodeId: `${node.id}:item:${index}`,
+                        input: itemCarrier,
+                        inputMappings: [],
+                        outputMappings: [],
+                        nestingDepth: depth + 1,
+                        signal: itemSignal,
+                      });
+                      if (rawNested && typeof rawNested === "object" && (rawNested as { __subgraphResult?: boolean }).__subgraphResult === true) {
+                        const wrapped = rawNested as {
+                          output: unknown;
+                          agentSessions?: Record<string, AgentSessionState>;
+                          shortTermHistories?: ShortTermHistories;
+                        };
+                        itemOutput = wrapped.output;
+                        if (wrapped.agentSessions) {
+                          for (const [k, v] of Object.entries(wrapped.agentSessions)) {
+                            updatedFanoutSessions[`${node.id}:item:${index}:${k}`] = v;
+                          }
+                        }
+                        if (wrapped.shortTermHistories) {
+                          mergedFanoutHistories = mergeHistories(mergedFanoutHistories, wrapped.shortTermHistories);
+                        }
+                      } else {
+                        itemOutput = rawNested;
+                      }
+                    } else {
+                      throw new Error(`Dynamic fan-out node "${node.id}" requires targetAgentId or workflowId`);
+                    }
+
+                    orderedResults[index] = itemOutput;
+                    succeeded += 1;
+                    emit("fanout.item_completed", { index, output: itemOutput });
+                  } catch (err) {
+                    if (failFast && failFastController.signal.aborted && (err as { name?: string })?.name === "AbortError") {
+                      return;
+                    }
+                    failed += 1;
+                    const errMsg = err instanceof Error ? err.message : String(err);
+                    failures.push({ index, error: errMsg });
+                    emit("fanout.item_failed", { index, error: errMsg });
+                    if (failFast) {
+                      failFastController.abort(err);
+                      throw err;
+                    }
+                    orderedResults[index] = { index, item, status: "failed", error: errMsg };
+                  } finally {
+                    releaseItem?.();
+                  }
+                }),
+              );
+
+              emit("fanout.completed", { totalItems: items.length, succeeded, failed });
+              const fanoutPayload = {
+                ...(fanoutConfig.aggregateField ? { [fanoutConfig.aggregateField]: orderedResults } : {}),
+                results: orderedResults,
+                items: orderedResults,
+                totalItems: items.length,
+                succeeded,
+                failed,
+                ...(failures.length ? { failures } : {}),
+              };
+              let workingMemory: WorkingMemoryEntries = {};
+              for (const batch of workingUpdates) {
+                if (!batch) continue;
+                const { entries, diagnostics } = applyWorkingMemoryUpdates(
+                  mergeWorkingMemory(state.workingMemory ?? {}, workingMemory),
+                  batch.updates,
+                  {
+                    runId,
+                    workflowId: options.workflowId ?? definition.id,
+                    nodeId: batch.nodeId,
+                    agentId: batch.agentId,
+                    scopePolicy: options.workingMemoryScopePolicy ?? ALLOW_WORKFLOW_SCOPE,
+                  },
+                );
+                workingMemory = mergeWorkingMemory(workingMemory, entries);
+                emit("log", { kind: "working_memory.updated", agentId: batch.agentId, itemNodeId: batch.nodeId, ...diagnostics });
+              }
+              result = {
+                lastValue: fanoutPayload,
+                ...(Object.keys(updatedFanoutSessions).length ? { agentSessions: updatedFanoutSessions } : {}),
+                ...(Object.keys(mergedFanoutHistories).length ? { shortTermHistories: mergedFanoutHistories } : {}),
+                ...(Object.keys(workingMemory).length ? { workingMemory } : {}),
+              };
             }
           } else {
             const config = node.config as { agentId?: string | null };
@@ -720,14 +1108,14 @@ export function compileWorkflow(
                 : sessionMode === "node"
                   ? node.id
                   : undefined;
-            const priorSession = effectiveSessionKey
+            let priorSession = effectiveSessionKey
               ? state.agentSessions?.[effectiveSessionKey]
               : undefined;
             const pendingHuman = options.pendingHuman?.nodeId === node.id ? options.pendingHuman : undefined;
             if (pendingHuman) {
               // LangGraph re-enters the node after resume. Replaying the provider
-              // call would duplicate an external side effect, so replay the same
-              // interrupt and consume only the human decision.
+              // call would duplicate an external side effect unless reinvokeOnClarification
+              // is explicitly opted in for clarification answers.
               const decision = interrupt({
                 nodeId: node.id,
                 message: pendingHuman.envelope.needsHuman?.reason ?? "Human approval required",
@@ -738,6 +1126,8 @@ export function compileWorkflow(
                   purpose: pendingHuman.envelope.needsHuman?.purpose
                     ?? (pendingHuman.envelope.needsHuman?.questions?.length ? "clarification" : "approval"),
                   envelope: pendingHuman.envelope,
+                  sessionState: pendingHuman.sessionState,
+                  shortTermHistories: pendingHuman.shortTermHistories,
                 },
               }) as { decision?: string; clarificationAnswers?: Array<{ questionId: string; value: string }> } | string;
               const approved = typeof decision === "string" ? decision === "approved" : decision?.decision === "approved";
@@ -750,19 +1140,92 @@ export function compileWorkflow(
                 ? decision.clarificationAnswers
                 : undefined;
               const priorValue = "value" in pendingHuman.envelope ? pendingHuman.envelope.value : undefined;
-              value = clarificationAnswers?.length
-                ? { clarificationAnswers, ...(priorValue !== undefined ? { priorValue } : {}) }
-                : priorValue !== undefined
-                  ? priorValue
-                  : pendingHuman.envelope;
-              outcome = createResultEnvelope("success", {
-                value,
-                ...(pendingHuman.envelope.branch ? { branch: pendingHuman.envelope.branch } : {}),
-                ...(contract?.captureEvidence && !pendingHuman.envelope.evidence
-                  ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } }
-                  : pendingHuman.envelope.evidence ? { evidence: pendingHuman.envelope.evidence } : {}),
-              });
               options.pendingHuman = undefined;
+
+              if (agentNodeConfig.reinvokeOnClarification === true && clarificationAnswers?.length) {
+                priorSession = pendingHuman.sessionState ?? priorSession;
+                if (pendingHuman.shortTermHistories) {
+                  shortTermHistories = mergeHistories(shortTermHistories, pendingHuman.shortTermHistories);
+                }
+                const clarificationCarrier = {
+                  ...(nodeInput && typeof nodeInput === "object" && !Array.isArray(nodeInput)
+                    ? (nodeInput as Record<string, unknown>)
+                    : { input: nodeInput }),
+                  clarificationAnswers,
+                  ...(priorValue !== undefined ? { priorValue } : {}),
+                };
+                const reinvokeState: RuntimeState = {
+                  ...executionState,
+                  lastValue: clarificationCarrier,
+                  shortTermHistories: mergeHistories(state.shortTermHistories ?? {}, shortTermHistories),
+                  ...(effectiveSessionKey && priorSession
+                    ? { agentSessions: { ...(state.agentSessions ?? {}), [effectiveSessionKey]: priorSession } }
+                    : {}),
+                };
+                const stepTaskInstruction =
+                  typeof agentNodeConfig.taskInstruction === "string" && agentNodeConfig.taskInstruction.trim()
+                    ? agentNodeConfig.taskInstruction.trim()
+                    : undefined;
+                if (effectiveSessionKey && priorSession) {
+                  emit("log", {
+                    kind: "agent.session_resumed",
+                    sessionKey: effectiveSessionKey,
+                    sessionId: priorSession.sessionId,
+                    turnCount: priorSession.turnCount + 1,
+                    agentId: agent.id,
+                  });
+                }
+                value = options.agentRunner
+                  ? await options.agentRunner(agent, reinvokeState, { runId, nodeId: node.id, signal })
+                  : await runAgentThroughRuntime(agent, reinvokeState, {
+                      runId,
+                      nodeId: node.id,
+                      workflowId: options.workflowId ?? definition.id,
+                      onAgentEvent: options.onAgentEvent,
+                      runtime,
+                      memoryAccess: options.memoryAccess,
+                      credentialPrincipal: options.credentialPrincipal,
+                      onShortTermUpdate: (update) => {
+                        shortTermHistories = mergeHistories(shortTermHistories, update);
+                      },
+                      onWorkingMemoryUpdate: (updates) => {
+                        workingMemoryCandidates = updates;
+                      },
+                      onSessionUpdate: (session) => {
+                        updatedSessionState = session;
+                      },
+                      signal,
+                      onError: (err) => {
+                        agentFailed = true;
+                        agentError = err;
+                      },
+                      toolRuntime,
+                      resolvedTools: resolveAgentToolsForRuntime(agent, options.tools, agentNodeConfig.activeTools),
+                      nodeExecutionMode: agentNodeConfig.executionMode,
+                      nodeMaxToolSteps: agentNodeConfig.maxToolSteps,
+                      taskInstruction: workPackageInstruction(state.workPackageProgress, stepTaskInstruction),
+                      modelSettingsOverride: agentNodeConfig.modelSettingsOverride,
+                      activeTools: agentNodeConfig.activeTools,
+                      sessionMode,
+                      sessionKey: effectiveSessionKey,
+                      resumePromptMode: agentNodeConfig.resumePromptMode,
+                      resumeSession: priorSession,
+                      shortTermMemoryMaxTokens: agentNodeConfig.shortTermMemoryMaxTokens,
+                    });
+              } else {
+                value = clarificationAnswers?.length
+                  ? { clarificationAnswers, ...(priorValue !== undefined ? { priorValue } : {}) }
+                  : priorValue !== undefined
+                    ? priorValue
+                    : pendingHuman.envelope;
+                outcome = createResultEnvelope("success", {
+                  value,
+                  ...(pendingHuman.envelope.branch ? { branch: pendingHuman.envelope.branch } : {}),
+                  ...(contract?.captureEvidence && !pendingHuman.envelope.evidence
+                    ? { evidence: { source: "agent", producedAt: nowIso(), detail: agent.id, runId, nodeId: node.id, producerId: agent.id } }
+                    : pendingHuman.envelope.evidence ? { evidence: pendingHuman.envelope.evidence } : {}),
+                });
+              }
             } else {
               const stepTaskInstruction =
                 typeof agentNodeConfig.taskInstruction === "string" && agentNodeConfig.taskInstruction.trim()
@@ -796,19 +1259,21 @@ export function compileWorkflow(
                   resolvedTools: resolveAgentToolsForRuntime(agent, options.tools, agentNodeConfig.activeTools),
                   nodeExecutionMode: agentNodeConfig.executionMode,
                   nodeMaxToolSteps: agentNodeConfig.maxToolSteps,
-                  taskInstruction: stepTaskInstruction,
+                  taskInstruction: workPackageInstruction(state.workPackageProgress, stepTaskInstruction),
                   modelSettingsOverride: agentNodeConfig.modelSettingsOverride,
                   activeTools: agentNodeConfig.activeTools,
                   sessionMode,
                   sessionKey: effectiveSessionKey,
                   resumePromptMode: agentNodeConfig.resumePromptMode,
                   resumeSession: priorSession,
+                  shortTermMemoryMaxTokens: agentNodeConfig.shortTermMemoryMaxTokens,
                 });
             }
 
             // Deterministic result model: parse a structured result envelope
-            // instead of inferring decisions from free-form model text.
-            const parsedResult = parseResultEnvelope(value);
+            // (including fenced JSON envelopes emitted by CLI agents) instead of
+            // inferring decisions from free-form model text.
+            const parsedResult = parseResultEnvelope(extractStructuredResultEnvelope(value));
             const gapAuditor = isGapAuditorNode(node);
             if (parsedResult.kind === "malformed" || (gapAuditor && auditorOutcomeLacksEvidence(value))) {
               if (gapAuditor) {
@@ -840,7 +1305,13 @@ export function compileWorkflow(
               // terminal. A needs-human result pauses here and resumes with
               // the exact bounded proposal, without replaying the agent call.
               if (envelope.status === "needs_human") {
-                options.pendingHuman = { nodeId: node.id, envelope };
+                const sessionToPersist = updatedSessionState ?? priorSession;
+                options.pendingHuman = {
+                  nodeId: node.id,
+                  envelope,
+                  sessionState: sessionToPersist,
+                  shortTermHistories,
+                };
                 interrupt({
                   nodeId: node.id,
                   message: envelope.needsHuman?.reason ?? "Human approval required",
@@ -851,6 +1322,8 @@ export function compileWorkflow(
                     purpose: envelope.needsHuman?.purpose
                       ?? (envelope.needsHuman?.questions?.length ? "clarification" : "approval"),
                     envelope,
+                    sessionState: sessionToPersist,
+                    shortTermHistories,
                   },
                 });
                 throw new NodeOutcomeError(envelope, node.id);
@@ -957,6 +1430,23 @@ export function compileWorkflow(
             if (edge.kind === "conditional" && edge.branchKey !== branch) continue;
             emit("edge.traversed", { edgeId: edge.id, source: edge.source, target: edge.target, branchKey: edge.branchKey });
           }
+          if (result.branch === "next_package" && result.workPackageProgress && state.workPackageProgress) {
+            // The next package starts with a clean set of stage-local results and sessions.
+            // The original input, package receipts, and run-wide execution budget are retained.
+            return {
+              ...result,
+              memory: new Overwrite({}),
+              loopIterations: new Overwrite({}),
+              handoffs: new Overwrite({}),
+              workingMemory: new Overwrite({}),
+              agentSessions: new Overwrite({}),
+              shortTermHistories: new Overwrite({}),
+              humanApproval: new Overwrite(null),
+              approvedGateNodeId: "",
+              nodeResults: new Overwrite(result.nodeResults ?? {}),
+              nodeOutcomes: new Overwrite(result.nodeOutcomes ?? {}),
+            };
+          }
           return result;
         } catch (error) {
           if (isGraphInterrupt(error)) throw error;
@@ -1025,6 +1515,78 @@ export function compileWorkflow(
     ),
     issues,
   };
+}
+
+function advanceWorkPackages(state: RuntimeState, packages: WorkflowWorkPackage[], nodeId: string): Partial<RuntimeState> {
+  const progress = state.workPackageProgress;
+  if (!progress) {
+    const startIndex = packages.findIndex((item) => item.id === (state.input.startPackage ?? packages[0].id));
+    const endIndex = packages.findIndex((item) => item.id === (state.input.endPackage ?? packages[packages.length - 1].id));
+    if (startIndex < 0 || endIndex < startIndex) {
+      throw new NodeOutcomeError(createResultEnvelope("blocked", { error: {
+        code: "INVALID_WORK_PACKAGE_RANGE",
+        message: "startPackage and endPackage must select an ordered range from the configured work packages.",
+        retryable: false,
+      } }), nodeId);
+    }
+    return {
+      branch: "next_package",
+      lastValue: { workPackage: packages[startIndex] },
+      workPackageProgress: { current: packages[startIndex], endIndex, completed: [] },
+    };
+  }
+
+  const receipt = coerceBranchCarrier(state.lastValue, "status") as {
+    status?: unknown;
+    workPackage?: unknown;
+    blockers?: unknown;
+    reason?: unknown;
+    summary?: unknown;
+  } | undefined;
+  if (receipt?.status !== "completed" || receipt.workPackage !== progress.current.id) {
+    const details: string[] = [];
+    if (typeof receipt?.status === "string" && receipt.status.trim()) {
+      details.push(`reported status: ${receipt.status.trim()}`);
+    }
+    if (Array.isArray(receipt?.blockers)) {
+      const blockerText = receipt.blockers
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, 3)
+        .join("; ");
+      if (blockerText) details.push(`blockers: ${blockerText}`);
+    }
+    if (typeof receipt?.reason === "string" && receipt.reason.trim()) {
+      details.push(`reason: ${receipt.reason.trim()}`);
+    } else if (typeof receipt?.summary === "string" && receipt.summary.trim() && details.length <= 1) {
+      details.push(receipt.summary.trim().slice(0, 280));
+    }
+    const suffix = details.length > 0 ? ` (${details.join(" — ")})` : "";
+    throw new NodeOutcomeError(createResultEnvelope("blocked", { error: {
+      code: "WORK_PACKAGE_COMPLETION_UNVERIFIED",
+      message: `Work package ${progress.current.id} did not return its completion receipt. The next package was not started.${suffix}`,
+      retryable: true,
+    } }), nodeId);
+  }
+  const completed = [...progress.completed, { id: progress.current.id, result: receipt }];
+  const nextIndex = packages.findIndex((item) => item.id === progress.current.id) + 1;
+  if (nextIndex > progress.endIndex) {
+    return {
+      branch: "packages_complete",
+      lastValue: { status: "completed", workPackages: completed },
+      workPackageProgress: { ...progress, completed },
+    };
+  }
+  return {
+    branch: "next_package",
+    lastValue: { workPackage: packages[nextIndex], previousPackage: completed.at(-1) },
+    workPackageProgress: { ...progress, current: packages[nextIndex], completed },
+  };
+}
+
+function workPackageInstruction(progress?: WorkPackageProgress, instruction?: string): string | undefined {
+  if (!progress) return instruction;
+  const { id, promptPath } = progress.current;
+  return `CURRENT WORK PACKAGE: ${id}. Its source prompt is ${promptPath}. Apply this stage only to ${id}, using the feature artifacts created for that package. Use prior packages as dependencies. The workflow itself schedules the next package.\n\n${instruction ?? ""}`;
 }
 
 export class WorkflowStepLimitError extends Error {
@@ -1115,7 +1677,7 @@ export { coerceBranchCarrier } from "../runtime/execUtils";
 function valueForNode(node: WorkflowNode, state: RuntimeState, definition: WorkflowDefinition): unknown {
   // Routers in a loop must observe the immediately preceding value. Join nodes,
   // however, receive every completed predecessor keyed by stable node id.
-  if (node.type === "condition" || node.type === "input" || node.type === "parallel_split") return state.lastValue;
+  if (node.type === "condition" || node.type === "input" || node.type === "parallel_split" || node.type === "dynamic_fanout") return state.lastValue;
   const incomingEdges = definition.edges.filter((edge) => edge.target === node.id);
   // Output nodes can explicitly select the active route. This is needed for
   // workflows where gate nodes also point to the output, while ordinary output
@@ -1268,6 +1830,7 @@ async function runAgentThroughRuntime(
     sessionKey?: string;
     resumePromptMode?: import("@multi-agent/types").AgentResumePromptMode;
     resumeSession?: AgentSessionState;
+    shortTermMemoryMaxTokens?: number;
   }
 ): Promise<unknown> {
   let lastContent: unknown;
@@ -1313,6 +1876,7 @@ async function runAgentThroughRuntime(
     sessionKey: meta.sessionKey,
     resumePromptMode: meta.resumePromptMode,
     resumeSession: meta.resumeSession,
+    shortTermMemoryMaxTokens: meta.shortTermMemoryMaxTokens,
   })) {
     meta.onAgentEvent?.(event);
     if (event.type === "agent.completed" || event.type === "agent.output") {

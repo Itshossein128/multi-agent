@@ -460,7 +460,9 @@ export class DefaultContextAssembler implements ContextAssembler {
     // Short-term history — bounded entries
     if (request.history && request.history.length > 0) {
       const historyText = request.history.map(h =>
-        `USER: ${typeof h.input === "string" ? h.input : JSON.stringify(h.input)}\nASSISTANT: ${typeof h.output === "string" ? h.output : JSON.stringify(h.output)}`
+        `USER: ${typeof h.input === "string" ? h.input : JSON.stringify(h.input)}` +
+        `${h.toolSummary ? `\nTOOLS:\n${h.toolSummary}` : ""}` +
+        `\nASSISTANT: ${typeof h.output === "string" ? h.output : JSON.stringify(h.output)}`
       ).join("\n\n");
       items.push({
         id: `history:${request.agentId}:${request.runId}`,

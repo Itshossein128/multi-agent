@@ -356,4 +356,49 @@ describe("base-agent switch / legacy / registry default change", () => {
     expect(first.toolIds).toEqual(["tool_a"]);
     expect(second.toolIds).toEqual(["tool_a"]);
   });
+
+  test("validates and resolves reinvokeOnClarification and shortTermMemoryMaxTokens (64..65536)", () => {
+    const agent = apiAgent({
+      memory: { enabled: true, type: "run", scope: "agent", mode: "read_write", maxEntries: 10, shortTerm: { enabled: true, maxTokens: 2048 } },
+    });
+    const effective = resolveEffectiveAgentStepConfig({
+      agent,
+      nodeConfig: {
+        agentId: agent.id,
+        reinvokeOnClarification: true,
+        shortTermMemoryMaxTokens: 65536,
+      },
+      registryTools,
+    });
+    expect(effective.incompatibilities).toEqual([]);
+    expect(effective.reinvokeOnClarification).toBe(true);
+    expect(effective.shortTermMemoryMaxTokens).toBe(65536);
+
+    const inherited = resolveEffectiveAgentStepConfig({
+      agent,
+      nodeConfig: { agentId: agent.id },
+      registryTools,
+    });
+    expect(inherited.reinvokeOnClarification).toBe(false);
+    expect(inherited.shortTermMemoryMaxTokens).toBe(2048);
+
+    const invalid = validateAgentNodeStepConfig({
+      agent,
+      nodeConfig: {
+        agentId: agent.id,
+        reinvokeOnClarification: "yes" as unknown as boolean,
+        shortTermMemoryMaxTokens: 65537,
+      },
+      registryTools,
+    });
+    expect(invalid.map((i) => i.code)).toContain("INVALID_AGENT_NODE_REINVOKE_ON_CLARIFICATION");
+    expect(invalid.map((i) => i.code)).toContain("INVALID_AGENT_NODE_SHORT_TERM_MEMORY_MAX_TOKENS");
+
+    const tooSmall = validateAgentNodeStepConfig({
+      agent,
+      nodeConfig: { agentId: agent.id, shortTermMemoryMaxTokens: 32 },
+      registryTools,
+    });
+    expect(tooSmall.map((i) => i.code)).toContain("INVALID_AGENT_NODE_SHORT_TERM_MEMORY_MAX_TOKENS");
+  });
 });

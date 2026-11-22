@@ -367,8 +367,8 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
                 id={`${fieldIdPrefix}-session-mode-help`}
                 className="text-[11px] leading-snug text-zinc-400"
               >
-                Resumes native CLI threads (Codex, Claude Code, Antigravity) or API history across
-                Converge/QA loops.
+                Resumes native CLI threads (Codex, Claude Code, Antigravity, Cursor) or API history
+                across Converge/QA loops.
               </p>
             </div>
 
@@ -470,6 +470,25 @@ export function AgentForm({ node }: { node: WorkflowNode }) {
                 <option value="last_value">Latest upstream value only (recommended for loops)</option>
               </select>
             </div>
+
+            <label
+              htmlFor={`${fieldIdPrefix}-reinvoke-on-clarification`}
+              className="flex items-center gap-2 rounded-lg border border-zinc-800/70 bg-zinc-950/50 px-2.5 py-2 text-xs text-zinc-200 cursor-pointer"
+            >
+              <input
+                id={`${fieldIdPrefix}-reinvoke-on-clarification`}
+                type="checkbox"
+                data-testid="node-reinvoke-on-clarification"
+                className={checkboxClass}
+                checked={config.reinvokeOnClarification === true}
+                onChange={(event) =>
+                  updateNodeConfig(node.id, {
+                    reinvokeOnClarification: event.target.checked ? true : undefined,
+                  })
+                }
+              />
+              <span>Re-invoke agent in same session after clarification</span>
+            </label>
           </fieldset>
         </>
       )}
@@ -1128,6 +1147,160 @@ export function SubgraphForm({ node }: { node: WorkflowNode }) {
         rows={config.outputMappings ?? []}
         onChange={(outputMappings) => updateNodeConfig(node.id, { outputMappings })}
       />
+    </PanelSection>
+  );
+}
+
+export function DynamicFanoutForm({ node }: { node: WorkflowNode }) {
+  const updateNodeConfig = useWorkflowStore((s) => s.updateNodeConfig);
+  const agents = useWorkflowStore((s) => s.agents);
+  const config = node.config as {
+    label?: string;
+    targetAgentId?: string;
+    workflowId?: string;
+    itemsField?: string;
+    itemPromptTemplate?: string;
+    maxConcurrency?: number;
+    maxItems?: number;
+    aggregateField?: string;
+    failFast?: boolean;
+    taskInstruction?: string;
+    sessionMode?: "stateless" | "node";
+  };
+  const prefix = `dynamic-fanout-${node.id}`;
+
+  return (
+    <PanelSection title="Dynamic Fan-Out">
+      <div className="space-y-1.5">
+        <label htmlFor={`${prefix}-target-agent`} className={labelClass}>
+          Target Agent
+        </label>
+        <select
+          id={`${prefix}-target-agent`}
+          value={config.targetAgentId ?? ""}
+          style={selectChevronStyle()}
+          onChange={(event) =>
+            updateNodeConfig(node.id, {
+              targetAgentId: event.target.value || undefined,
+              ...(event.target.value ? { workflowId: undefined } : {}),
+            })
+          }
+          className={selectClass}
+        >
+          <option value="">— select target agent (or specify workflow below) —</option>
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-1.5">
+        <label htmlFor={`${prefix}-workflow-id`} className={labelClass}>
+          Target Workflow ID (alternative)
+        </label>
+        <input
+          id={`${prefix}-workflow-id`}
+          type="text"
+          value={config.workflowId ?? ""}
+          onChange={(event) =>
+            updateNodeConfig(node.id, {
+              workflowId: event.target.value.trim() || undefined,
+              ...(event.target.value.trim() ? { targetAgentId: undefined } : {}),
+            })
+          }
+          placeholder="wf-…"
+          className={cn(inputClass, "font-mono text-[11px]")}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label htmlFor={`${prefix}-items-field`} className={labelClass}>
+          Items Field
+        </label>
+        <input
+          id={`${prefix}-items-field`}
+          type="text"
+          value={config.itemsField ?? ""}
+          onChange={(event) =>
+            updateNodeConfig(node.id, { itemsField: event.target.value || undefined })
+          }
+          placeholder="e.g. requirements"
+          className={cn(inputClass, "font-mono text-[11px]")}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <label htmlFor={`${prefix}-max-concurrency`} className={labelClass}>
+            Max Concurrency
+          </label>
+          <input
+            id={`${prefix}-max-concurrency`}
+            type="number"
+            min={1}
+            max={16}
+            value={config.maxConcurrency ?? 4}
+            onChange={(event) =>
+              updateNodeConfig(node.id, {
+                maxConcurrency: event.target.value ? Number(event.target.value) : undefined,
+              })
+            }
+            className={inputClass}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor={`${prefix}-max-items`} className={labelClass}>
+            Max Items
+          </label>
+          <input
+            id={`${prefix}-max-items`}
+            type="number"
+            min={1}
+            max={200}
+            value={config.maxItems ?? 50}
+            onChange={(event) =>
+              updateNodeConfig(node.id, {
+                maxItems: event.target.value ? Number(event.target.value) : undefined,
+              })
+            }
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label htmlFor={`${prefix}-prompt-template`} className={labelClass}>
+          Item Prompt Template
+        </label>
+        <textarea
+          id={`${prefix}-prompt-template`}
+          rows={2}
+          value={config.itemPromptTemplate ?? ""}
+          onChange={(event) =>
+            updateNodeConfig(node.id, { itemPromptTemplate: event.target.value || undefined })
+          }
+          placeholder="Verify item {{index}}: {{item}}"
+          className={inputClass}
+        />
+      </div>
+
+      <label
+        htmlFor={`${prefix}-fail-fast`}
+        className="flex items-center gap-2 rounded-lg border border-zinc-800/70 bg-zinc-950/50 px-2.5 py-2 text-xs text-zinc-200 cursor-pointer"
+      >
+        <input
+          id={`${prefix}-fail-fast`}
+          type="checkbox"
+          className={checkboxClass}
+          checked={config.failFast === true}
+          onChange={(event) =>
+            updateNodeConfig(node.id, { failFast: event.target.checked })
+          }
+        />
+        <span>Fail fast on first item error</span>
+      </label>
     </PanelSection>
   );
 }

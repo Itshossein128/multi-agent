@@ -17,6 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased font-sans" suppressHydrationWarning>
       <head>
+        <meta name="color-scheme" content="dark light" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var v=localStorage.getItem("agent-studio.appearance.v1");document.documentElement.setAttribute("data-appearance",v==="light"||v==="dark"?v:"dark");}catch(e){document.documentElement.setAttribute("data-appearance","dark");}})();`,

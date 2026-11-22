@@ -9,6 +9,10 @@ import { DefaultMemoryExtractor, DefaultMemoryWritePolicy, DefaultMemoryContextF
 import { AgentRuntime } from "../src/agents/runtime/agentRuntime";
 import { InMemoryMemoryStore } from "../src/memory/infrastructure/in-memory-memory-store";
 import type { AgentExecutionInput } from "../src/agents/runtime/types";
+import { Hono } from "hono";
+import { requirePrincipal, type PrincipalVariables } from "../apps/server/src/api/shared/http";
+import { resolveRequestPrincipal } from "../apps/server/src/auth/principal";
+import { createInternalPrincipalAssertion } from "../src/auth/internalPrincipal";
 
 const ns: MemoryNamespace = { scope: "agent", id: "agent-a" };
 const foreign: MemoryNamespace = { scope: "agent", id: "agent-b" };
@@ -59,6 +63,33 @@ describe("server-owned memory authority", () => {
 });
 
 describe("memory HTTP integration with real service and shared store", () => {
+  test("a streamed search body retains the verified organization session", async () => {
+    const secret = "test-session-assertion-secret";
+    const resolveSession = (req: Request) => resolveRequestPrincipal(req, secret);
+    const service = new DefaultMemoryService(new InMemoryMemoryStore());
+    const organization: MemoryNamespace = { scope: "organization", id: "tenant-a" };
+    await service.remember({ namespace: organization, kind: "semantic", content: "Velora uses PostgreSQL for workflow persistence.", source: { type: "system" } }, {
+      tenantId: organization.id, principalId: "alice", readableNamespaces: [organization], writableNamespaces: [organization],
+    });
+    const app = new Hono<{ Variables: PrincipalVariables }>();
+    app.use("*", requirePrincipal(resolveSession));
+    app.use("*", async (c, next) => {
+      c.set("principal", { ...c.get("principal"), permissions: ["memory.org.read"] });
+      await next();
+    });
+    app.route("/memories", createMemoriesRouter(service, createMemoryAccessResolver([], resolveSession)));
+    const assertion = createInternalPrincipalAssertion({ userId: "alice", tenantId: organization.id }, secret);
+    const search = () => new Request("http://localhost/memories/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Multi-Agent-Principal": assertion },
+      body: JSON.stringify({ text: "PostgreSQL workflow persistence", namespaces: [organization] }),
+    });
+    const response = await app.fetch(search());
+    expect(response.status).toBe(200);
+    expect((await response.json()).results).toHaveLength(1);
+    expect((await app.fetch(search())).status).toBe(401);
+  });
+
   test.each([["/", "POST"], ["/?scope=agent&namespaceId=agent-a", "GET"], ["/id", "GET"], ["/id", "PATCH"], ["/id", "DELETE"], ["/search", "POST"]])("%s %s denies unauthenticated access", async (path, method) => {
     const f = fixture();
     for (const token of [undefined, "invalid"]) expect((await f.app.fetch(request(path, method, method === "POST" || method === "PATCH" ? input() : undefined, token))).status).toBe(401);

@@ -2,6 +2,7 @@ import type { AgentRecord, ApprovalRequest, Run, RunEvent, RunStatus, WorkflowDe
 import type { PgPool } from "../../../../../src/memory/infrastructure";
 import type { RequestPrincipal } from "../../auth/principal";
 import type { MemoryAccessContext } from "../../../../../src/memory/contracts";
+import { runEpisodeNamespace } from "../../../../../src/memory/application/access";
 import type { MemoryOwner, RunEntry, RunListFilters, RunStoreContract } from "./contracts";
 import { InMemoryRunStore } from "./inMemoryRunStore";
 import { asIso } from "./helpers";
@@ -607,7 +608,7 @@ export class PostgresRunStore implements RunStoreContract {
           if (res.duplicate) return;
         }
         const entry = this.memory.get(runId);
-        const namespace = entry?.memoryAccess?.writableNamespaces[0];
+        const namespace = runEpisodeNamespace(entry?.memoryAccess);
         const isTerminal = ["completed", "failed", "cancelled"].includes(run.status);
         // The server's studio and memory persistence use the same configured
         // PostgreSQL database. Terminal state and its episodic work intent are
