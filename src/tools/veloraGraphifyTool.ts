@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const DEFAULT_VELORA_ROOT = "/home/hossein/Desktop/projects/building-management";
+const LABEL_REFRESH_HINT_RE = /community set changed since labeling|run [`']graphify label[`']/i;
 
 function resolveProjectRoot(
   configuration: Record<string, string | number | boolean>,
@@ -18,6 +19,46 @@ function resolveProjectRoot(
     throw new Error(`velora_graphify_tool projectRoot "${candidate}" does not exist or is not a directory.`);
   }
   return fs.realpathSync(candidate);
+}
+
+function graphifyEnv(): NodeJS.ProcessEnv {
+  const configuredNoProxy = (process.env.no_proxy ?? process.env.NO_PROXY ?? "").trim();
+  const noProxy =
+    configuredNoProxy === "*"
+      ? configuredNoProxy
+      : [
+          ...new Set([
+            ...configuredNoProxy
+              .split(",")
+              .map((host) => host.trim())
+              .filter(Boolean),
+            "127.0.0.1",
+            "localhost",
+            "::1",
+          ]),
+        ].join(",");
+  return { ...process.env, NO_PROXY: noProxy, no_proxy: noProxy };
+}
+
+function buildLabelArgs(
+  projectRoot: string,
+  configuration: Record<string, string | number | boolean>,
+  input: Record<string, unknown>,
+): string[] {
+  const args = ["label", projectRoot];
+  const missingOnly = input.missingOnly !== false && input.force !== true;
+  if (missingOnly) {
+    args.push("--missing-only");
+  }
+  const backend = String(input.backend ?? configuration.backend ?? "").trim();
+  if (backend) {
+    args.push(`--backend=${backend}`);
+  }
+  const model = String(input.model ?? configuration.model ?? "").trim();
+  if (model) {
+    args.push(`--model=${model}`);
+  }
+  return args;
 }
 
 export function executeVeloraGraphifyTool(
@@ -47,18 +88,24 @@ export function executeVeloraGraphifyTool(
     args = ["path", from, to];
   } else if (action === "update") {
     args = ["update", projectRoot];
+  } else if (action === "label") {
+    args = buildLabelArgs(projectRoot, configuration, input);
   } else if (action === "extract") {
     const backend = String(input.backend ?? configuration.backend ?? "gemini").trim();
     args = ["extract", projectRoot, "--backend", backend];
   } else {
-    throw new Error(`Unsupported velora_graphify_tool action "${action}". Expected query, explain, path, update, or extract.`);
+    throw new Error(
+      `Unsupported velora_graphify_tool action "${action}". Expected query, explain, path, update, label, or extract.`,
+    );
   }
 
+  const env = graphifyEnv();
+  const timeoutMs = action === "label" || action === "extract" ? 300_000 : 120_000;
   const proc = spawnSync("graphify", args, {
     cwd: projectRoot,
     encoding: "utf8",
-    timeout: 120_000,
-    env: process.env,
+    timeout: timeoutMs,
+    env,
   });
 
   if (proc.error) {
@@ -72,6 +119,36 @@ export function executeVeloraGraphifyTool(
   }
 
   const stdout = (proc.stdout ?? "").trim();
+  const stderr = (proc.stderr ?? "").trim();
+  const labelsNeedRefresh = action === "update" && LABEL_REFRESH_HINT_RE.test(stderr);
+
+  let labelsRefreshed = false;
+  let labelRefreshOutput: string | undefined;
+  const shouldRefreshLabels =
+    action === "update" &&
+    (input.refreshLabels === true || configuration.refreshLabels === true);
+
+  if (shouldRefreshLabels && labelsNeedRefresh) {
+    const labelArgs = buildLabelArgs(projectRoot, configuration, input);
+    const labelProc = spawnSync("graphify", labelArgs, {
+      cwd: projectRoot,
+      encoding: "utf8",
+      timeout: 300_000,
+      env,
+    });
+    if (labelProc.error) {
+      throw new Error(`velora_graphify_tool failed to spawn graphify label: ${labelProc.error.message}`);
+    }
+    if (labelProc.status !== 0) {
+      const detail = (labelProc.stderr || labelProc.stdout || "").trim().slice(0, 1_500);
+      throw new Error(
+        `velora_graphify_tool "label" exited with code ${String(labelProc.status)}${detail ? `: ${detail}` : ""}`,
+      );
+    }
+    labelsRefreshed = true;
+    labelRefreshOutput = (labelProc.stdout ?? "").trim();
+  }
+
   let parsedOutput: unknown = stdout;
   if (stdout.startsWith("{") || stdout.startsWith("[")) {
     try {
@@ -86,6 +163,8 @@ export function executeVeloraGraphifyTool(
     action,
     projectRoot,
     ...(input.semantic === true ? { semantic: true } : {}),
+    ...(labelsNeedRefresh && !labelsRefreshed ? { labelsNeedRefresh: true, labelWarning: stderr } : {}),
+    ...(labelsRefreshed ? { labelsRefreshed: true, labelRefreshOutput } : {}),
     output: parsedOutput,
     ...(parsedOutput && typeof parsedOutput === "object" && !Array.isArray(parsedOutput)
       ? (parsedOutput as Record<string, unknown>)

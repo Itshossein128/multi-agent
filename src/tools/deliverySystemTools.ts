@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import { cliExecutableAvailable } from "../agents/runtime/cliAgentExecutor";
 
@@ -590,9 +592,68 @@ function assertLoopbackUrl(rawUrl: string): URL {
   return parsed;
 }
 
+function loopbackHttpRequest(
+  url: URL,
+  options: { method: "GET" | "POST"; headers?: Record<string, string>; body?: string; timeoutMs?: number },
+  signal?: AbortSignal,
+): Promise<{ status: number; location?: string; body: string }> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error("Probe aborted"));
+      return;
+    }
+    const transport = url.protocol === "https:" ? https : http;
+    const req = transport.request(
+      {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === "https:" ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        method: options.method,
+        agent: false,
+        headers: options.headers,
+        timeout: options.timeoutMs ?? 4_000,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        res.on("data", (chunk: Buffer) => {
+          if (bytes < 64 * 1024) {
+            chunks.push(chunk);
+            bytes += chunk.length;
+          }
+        });
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            location: typeof res.headers.location === "string" ? res.headers.location : undefined,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+      },
+    );
+    const onAbort = () => {
+      req.destroy(new Error("Probe aborted"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    req.on("timeout", () => {
+      req.destroy(new Error("Probe timed out"));
+    });
+    req.on("error", (err) => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(err);
+    });
+    req.on("close", () => {
+      signal?.removeEventListener("abort", onAbort);
+    });
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
+
 /**
- * Probes local frontend/backend endpoints safely on loopback, checks installed browser
- * automation capabilities (Chrome, Playwright, npx), and discovers prior browser audit reports.
+ * Probes local frontend/backend endpoints safely on loopback, verifies seeded dev
+ * authentication when the backend is reachable, checks installed browser automation
+ * capabilities (Chrome, Playwright, npx), and discovers prior browser audit reports.
  */
 export async function executeBrowserQaProbe(
   configuration: Record<string, string | number | boolean>,
@@ -607,19 +668,13 @@ export async function executeBrowserQaProbe(
   const backendUrl = assertLoopbackUrl(backendUrlRaw);
 
   const probeEndpoint = async (url: URL) => {
-    const probeSignal = signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(4_000)])
-      : AbortSignal.timeout(4_000);
     try {
-      const response = await fetch(url.toString(), {
-        method: "GET",
-        redirect: "manual",
-        signal: probeSignal,
-      });
+      const response = await loopbackHttpRequest(url, { method: "GET", timeoutMs: 4_000 }, signal);
       return {
         reachable: true,
         status: response.status,
         url: url.toString(),
+        ...(response.location ? { location: response.location } : {}),
       };
     } catch (error) {
       return {
@@ -635,6 +690,63 @@ export async function executeBrowserQaProbe(
     probeEndpoint(frontendUrl),
     probeEndpoint(backendUrl),
   ]);
+
+  const loginPath = String(input.loginPath ?? configuration.loginPath ?? "/api/auth/login/").trim() || "/api/auth/login/";
+  const loginUrl = assertLoopbackUrl(new URL(loginPath, backendUrl).toString());
+  const verifyAuth = input.verifyAuth !== false;
+  let authProbe: Record<string, unknown> = {
+    checked: false,
+    authenticated: false,
+    loginEndpoint: loginUrl.toString(),
+    uiLoginPath: "/login",
+    playwrightAuthHelper: "apps/web/e2e/helpers/auth.ts",
+  };
+
+  if (verifyAuth && backendProbe.reachable) {
+    const phoneNumber = String(input.phoneNumber ?? configuration.qaPhoneNumber ?? "+10000000001").trim();
+    const password = String(input.password ?? configuration.qaPassword ?? "devpass123");
+    const payload = JSON.stringify({ phone_number: phoneNumber, password });
+    try {
+      const res = await loopbackHttpRequest(
+        loginUrl,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "content-length": String(Buffer.byteLength(payload, "utf8")),
+          },
+          body: payload,
+          timeoutMs: 4_000,
+        },
+        signal,
+      );
+      let hasAccessToken = false;
+      try {
+        const parsed = JSON.parse(res.body) as Record<string, unknown>;
+        hasAccessToken = typeof parsed.access === "string" && parsed.access.length > 0;
+      } catch {
+        hasAccessToken = false;
+      }
+      authProbe = {
+        checked: true,
+        authenticated: res.status >= 200 && res.status < 300 && hasAccessToken,
+        status: res.status,
+        loginEndpoint: loginUrl.toString(),
+        uiLoginPath: "/login",
+        playwrightAuthHelper: "apps/web/e2e/helpers/auth.ts",
+      };
+    } catch (error) {
+      authProbe = {
+        checked: true,
+        authenticated: false,
+        status: 0,
+        loginEndpoint: loginUrl.toString(),
+        uiLoginPath: "/login",
+        playwrightAuthHelper: "apps/web/e2e/helpers/auth.ts",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 
   const outputDir = path.join(projectRoot, "output");
   const priorBrowserAudits: string[] = [];
@@ -653,6 +765,9 @@ export async function executeBrowserQaProbe(
   return {
     frontend: frontendProbe,
     backend: backendProbe,
+    auth: authProbe,
+    authGuidance:
+      "Velora routes including /delivery-plan require authentication (PROTECTED_LAYOUT redirects unauthenticated browsers to /login). Authenticate first via Playwright helper apps/web/e2e/helpers/auth.ts (loginAs/loginViaUI) or /login using the seeded dev accounts from AGENTS.md (+10000000001 admin, +10000000003 visitor, password devpass123).",
     browserCapabilities: {
       googleChromeAvailable: cliExecutableAvailable("google-chrome"),
       playwrightCliAvailable: cliExecutableAvailable("playwright") || cliExecutableAvailable("npx"),

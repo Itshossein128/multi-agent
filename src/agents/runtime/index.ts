@@ -91,6 +91,17 @@ export {
   parseAgyStreamOutputWithSession,
   continuationPrompt,
 } from "./cliAgentExecutor";
+export {
+  STUDIO_MCP_BRIDGE_URL_ENV,
+  STUDIO_MCP_BRIDGE_TOKEN_ENV,
+  STUDIO_MCP_SERVER_NAME,
+  resolveCliMcpStdioBridgeScriptPath,
+  buildCodexMcpBridgeArgs,
+  appendCodexMcpConfigArgs,
+  formatCliMcpToolsPromptSection,
+  startCliMcpBridge,
+} from "./cliMcpBridge";
+export type { CliMcpBridgeOptions, CliMcpBridgeHandle } from "./cliMcpBridge";
 export { LocalAgentExecutor } from "./localAgentExecutor";
 export { ProcessAgentExecutor } from "./processAgentExecutor";
 export { WebhookAgentExecutor } from "./webhookAgentExecutor";

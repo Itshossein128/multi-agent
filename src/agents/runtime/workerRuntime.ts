@@ -423,7 +423,11 @@ export class LocalProcessWorkerRuntime implements WorkerRuntime {
   }
 }
 
-const TRUSTED_LAUNCH_SECRET_ENV_NAMES = new Set(Object.values(PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES).flatMap((names) => [...names]));
+const TRUSTED_LAUNCH_SECRET_ENV_NAMES = new Set([
+  ...Object.values(PROVIDER_CREDENTIAL_ENVIRONMENT_NAMES).flatMap((names) => [...names]),
+  "STUDIO_MCP_BRIDGE_URL",
+  "STUDIO_MCP_BRIDGE_TOKEN",
+]);
 
 function isSupportedLaunchSecretName(key: string): boolean {
   return TRUSTED_LAUNCH_SECRET_ENV_NAMES.has(key) && !INJECTION_ENV_NAMES.has(key.toUpperCase());

@@ -1788,9 +1788,9 @@
     "semantic_hash": ""
   },
   "apps/web/src/components/runs/ReadableContent.tsx": {
-    "mtime": 1795291720.6417208,
-    "seen": 1795292229.1198416,
-    "ast_hash": "ed90db7ae2c0004b6b3639713471e8e2",
+    "mtime": 1795317279.4369473,
+    "seen": 1795317387.641508,
+    "ast_hash": "324a29d2ea0c3eff5a99ea3e47a6b244",
     "semantic_hash": ""
   },
   "apps/web/src/components/tasks/CreateTaskModal.tsx": {
@@ -2892,9 +2892,9 @@
     "semantic_hash": ""
   },
   "src/agents/runtime/cliAgentExecutor.ts": {
-    "mtime": 1795099366.1674037,
-    "seen": 1795100193.5537047,
-    "ast_hash": "203d93c539c40632afa1c05ea3466e1b",
+    "mtime": 1795363752.4784555,
+    "seen": 1795367489.3149612,
+    "ast_hash": "edcee516531bbb03d65094264f54f592",
     "semantic_hash": ""
   },
   "src/agents/runtime/cliProviderDefaults.ts": {
@@ -2934,9 +2934,9 @@
     "semantic_hash": ""
   },
   "src/agents/runtime/index.ts": {
-    "mtime": 1793974618.515289,
-    "seen": 1794592690.3448813,
-    "ast_hash": "f395e6567e7cd2e7e93c90a902e763fd",
+    "mtime": 1795363791.6951458,
+    "seen": 1795367489.3153243,
+    "ast_hash": "98d85ee74c82024f6bb9841386218b22",
     "semantic_hash": ""
   },
   "src/agents/runtime/localAgentExecutor.ts": {
@@ -3018,9 +3018,9 @@
     "semantic_hash": ""
   },
   "src/agents/runtime/workerRuntime.ts": {
-    "mtime": 1793391382.4789193,
-    "seen": 1794592690.3449247,
-    "ast_hash": "cd5a5fca5154098d36e7fe35b7619ce2",
+    "mtime": 1795363622.2124412,
+    "seen": 1795367489.316351,
+    "ast_hash": "2a715d997587a71359a6fc9cc60c48ed",
     "semantic_hash": ""
   },
   "src/agents/runtime/workingMemory.ts": {
@@ -3528,9 +3528,9 @@
     "semantic_hash": ""
   },
   "src/tools/deliverySystemTools.ts": {
-    "mtime": 1795032270.0587442,
-    "seen": 1795036159.9886093,
-    "ast_hash": "e4d0e21305bc660e014ca1314ba4bc29",
+    "mtime": 1795368186.3959768,
+    "seen": 1795368367.203,
+    "ast_hash": "77bf69ca2e5300594a8f49cc930ddfbd",
     "semantic_hash": ""
   },
   "src/tools/errors.ts": {
@@ -7452,9 +7452,9 @@
     "semantic_hash": ""
   },
   "apps/web/src/components/workflow/live/ThinkingTranscript.tsx": {
-    "mtime": 1795277612.7353675,
-    "seen": 1795279940.2149773,
-    "ast_hash": "c0662f8c2d4e27482572fd77e54f8cbd",
+    "mtime": 1795317285.4005203,
+    "seen": 1795317387.6433704,
+    "ast_hash": "a742d8aca781b38faa05f372a11db0c0",
     "semantic_hash": ""
   },
   "apps/web/src/lib/thinkingPresentation.ts": {
@@ -7590,9 +7590,9 @@
     "semantic_hash": ""
   },
   "src/studio/seeds/agenticVeloraOrgSeed.ts": {
-    "mtime": 1795158464.2001872,
-    "seen": 1795276900.7805734,
-    "ast_hash": "cede37fe4c7c76493e30113f551043c8",
+    "mtime": 1795368210.7352922,
+    "seen": 1795368367.2028608,
+    "ast_hash": "de4de88cca9d0af938eecd64eabdcf95",
     "semantic_hash": ""
   },
   "src/tools/subagentDelegationTool.ts": {
@@ -7602,9 +7602,9 @@
     "semantic_hash": ""
   },
   "src/tools/veloraGraphifyTool.ts": {
-    "mtime": 1795032193.9533544,
-    "seen": 1795036159.9890485,
-    "ast_hash": "87d494dbd564b21b26e9e5803afc756e",
+    "mtime": 1795363816.0799527,
+    "seen": 1795367489.3221335,
+    "ast_hash": "dde6fe6f0ab6066bc08fca6f7d348183",
     "semantic_hash": ""
   },
   "src/tools/veloraKnowledgeTool.ts": {
@@ -7674,9 +7674,27 @@
     "semantic_hash": ""
   },
   "tests/runThinkingSection.test.tsx": {
-    "mtime": 1795279362.8604093,
-    "seen": 1795279940.2387888,
-    "ast_hash": "6cb7f66e936165e864736a907182950b",
+    "mtime": 1795317305.6086843,
+    "seen": 1795317387.6649184,
+    "ast_hash": "6d09c59f4f0daa10787eec603d635c4d",
+    "semantic_hash": ""
+  },
+  "src/agents/runtime/cliMcpBridge.ts": {
+    "mtime": 1795363612.4222252,
+    "seen": 1795367489.3149645,
+    "ast_hash": "50cb3be19db6d35a61380bd6ee9f19ad",
+    "semantic_hash": ""
+  },
+  "src/agents/runtime/cliMcpStdioBridge.cjs": {
+    "mtime": 1795367194.9556696,
+    "seen": 1795367489.3149664,
+    "ast_hash": "886a96b3cc747bc66ba8ad8a1a115d83",
+    "semantic_hash": ""
+  },
+  "tests/cliMcpBridge.test.ts": {
+    "mtime": 1795368237.3235595,
+    "seen": 1795368367.2051158,
+    "ast_hash": "48c37af48e706d043f57186e09eb5629",
     "semantic_hash": ""
   },
   "pnpm-lock.yaml": {

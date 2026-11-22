@@ -10,6 +10,12 @@ import { NO_WORKER_CREDENTIALS, type WorkerCredentialResolver, type WorkerLaunch
 import { defaultCliExecutable } from "./cliProviderDefaults";
 import { configuredAgentTimeout } from "./agentTimeout";
 import { CliThinkingParser, chunkThinkingText, noneThinkingLog, type ThinkingLogPayload } from "./thinkingText";
+import {
+  appendCodexMcpConfigArgs,
+  formatCliMcpToolsPromptSection,
+  startCliMcpBridge,
+  type CliMcpBridgeHandle,
+} from "./cliMcpBridge";
 
 export interface CliRuntimePolicy {
   enabled: boolean;
@@ -144,25 +150,62 @@ export class CliAgentExecutor implements AgentExecutor {
       && (!input.resumeSession.provider || input.resumeSession.provider === backend.provider)
       ? input.resumeSession
       : undefined;
-    const { args, provisionalSessionId } = sessionEnabled
+    const { args: baseArgs, provisionalSessionId } = sessionEnabled
       ? sessionCommandArgs(backend, this.runtimePolicy.workerMode, resumingSession?.sessionId)
       : { args: commandArgs(backend, this.runtimePolicy.workerMode), provisionalSessionId: undefined };
 
-    yield event("agent.started", input, {
-      provider: backend.provider,
-      executable: spawnExecutable,
-      args,
-      ...(sessionEnabled
-        ? {
-            sessionMode: input.sessionMode,
-            sessionKey: effectiveSessionKey,
-            ...(resumingSession ? { sessionId: resumingSession.sessionId, sessionResumed: true, sessionTurn: resumingSession.turnCount + 1 } : { sessionResumed: false, sessionTurn: 1 }),
-          }
-        : {}),
-    });
+    const resolvedTools = (input.resolvedTools ?? []).filter((tool) => tool.enabled !== false);
+    const enableCodexMcpBridge =
+      this.runtimePolicy.workerMode === "local"
+      && backend.provider === "codex"
+      && Boolean(input.toolRuntime)
+      && resolvedTools.length > 0;
+
+    const queue: AgentExecutionEvent[] = [];
+    let wake: (() => void) | undefined;
+    let signalled = false;
+    const notify = () => {
+      signalled = true;
+      const resolve = wake;
+      wake = undefined;
+      resolve?.();
+    };
+
+    let mcpBridge: CliMcpBridgeHandle | undefined;
+    let args = baseArgs;
+    if (enableCodexMcpBridge) {
+      mcpBridge = await startCliMcpBridge({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        agentId: input.agent.id,
+        resolvedTools,
+        toolRuntime: input.toolRuntime!,
+        credentialPrincipal: input.credentialPrincipal,
+        signal: input.signal,
+        onEvent: (toolEvent) => {
+          queue.push(toolEvent);
+          notify();
+        },
+      });
+      args = appendCodexMcpConfigArgs(baseArgs, mcpBridge.codexConfigArgs(process.execPath));
+    }
 
     let sharedThinking = false;
     try {
+      yield event("agent.started", input, {
+        provider: backend.provider,
+        executable: spawnExecutable,
+        args,
+        ...(mcpBridge ? { mcpTools: resolvedTools.map((tool) => tool.name || tool.id) } : {}),
+        ...(sessionEnabled
+          ? {
+              sessionMode: input.sessionMode,
+              sessionKey: effectiveSessionKey,
+              ...(resumingSession ? { sessionId: resumingSession.sessionId, sessionResumed: true, sessionTurn: resumingSession.turnCount + 1 } : { sessionResumed: false, sessionTurn: 1 }),
+            }
+          : {}),
+      });
+
       let launchSecrets: WorkerLaunchSecrets | undefined;
       if (input.credentialPrincipal) {
         try {
@@ -177,6 +220,15 @@ export class CliAgentExecutor implements AgentExecutor {
           throw new Error("CLI credential resolution failed.");
         }
       }
+      if (mcpBridge) {
+        launchSecrets = {
+          ...launchSecrets,
+          environment: {
+            ...(launchSecrets?.environment ?? {}),
+            ...mcpBridge.env,
+          },
+        };
+      }
       const spec: WorkerSpec = {
         runId: input.runId,
         nodeId: input.nodeId,
@@ -190,24 +242,16 @@ export class CliAgentExecutor implements AgentExecutor {
         network: policy.network === true,
       };
 
+      const mcpToolsSection = mcpBridge ? formatCliMcpToolsPromptSection(resolvedTools) : "";
       const composedPrompt = resumingSession && input.resumePromptMode !== "full"
         ? continuationPrompt(input, resumingSession)
-        : prompt(input);
+        : prompt(input, mcpToolsSection);
       const workerInput = backend.provider === "agy" ? agyStreamInput(composedPrompt) : composedPrompt;
       const handle = await this.workerRuntime.start(spec, input.signal, workerInput, launchSecrets);
 
       try {
         let part = 0;
         const pendingFinal: { log?: ThinkingLogPayload } = {};
-        const queue: AgentExecutionEvent[] = [];
-        let wake: (() => void) | undefined;
-        let signalled = false;
-        const notify = () => {
-          signalled = true;
-          const resolve = wake;
-          wake = undefined;
-          resolve?.();
-        };
         const parser = new CliThinkingParser(backend.provider);
         const consider = (pieces: string[]) => {
           for (const piece of pieces) {
@@ -341,13 +385,18 @@ export class CliAgentExecutor implements AgentExecutor {
       if (!sharedThinking) yield event("log", input, noneThinkingLog());
       yield event("agent.failed", input, { error: message, thinkingStatus: sharedThinking ? "shared" : "none" });
       throw new AgentExecutionFailedError(message);
+    } finally {
+      if (mcpBridge) {
+        await mcpBridge.close().catch(() => {});
+      }
     }
   }
 }
 
-function prompt(input: AgentExecutionInput): string {
+function prompt(input: AgentExecutionInput, mcpToolsSection = ""): string {
   if (input.assembledContext) {
-    return assembledContextToPrompt(input.assembledContext, input.agent);
+    const base = assembledContextToPrompt(input.assembledContext, input.agent);
+    return mcpToolsSection ? `${base}\n\n${mcpToolsSection}` : base;
   }
   // Legacy path
   const serialize = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value ?? {});
@@ -357,6 +406,7 @@ function prompt(input: AgentExecutionInput): string {
   return [
     input.agent.systemPrompt ? `SYSTEM INSTRUCTIONS:\n${input.agent.systemPrompt}` : "",
     stepInstruction ? `STEP INSTRUCTIONS:\n${stepInstruction}` : "",
+    mcpToolsSection,
     ...history.map((entry) => `PREVIOUS USER INPUT:\n${serialize(entry.input)}\nPREVIOUS ASSISTANT OUTPUT:\n${serialize(entry.output)}`),
     typeof input.context?.memoryContext === "string" && input.context.memoryContext ? `MEMORY CONTEXT:\n${input.context.memoryContext}` : "",
     `USER INPUT:\n${serialize(input.input)}`,

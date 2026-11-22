@@ -45,6 +45,7 @@ export function createAgenticVeloraTools(): ToolRecord[] {
     description: string;
     impact: "read-only" | "write";
     kind: string;
+    inputSchema?: Record<string, unknown>;
     configuration?: Record<string, string | number | boolean>;
   }): ToolRecord => ({
     ...createToolRecord({
@@ -52,7 +53,7 @@ export function createAgenticVeloraTools(): ToolRecord[] {
       category: "function",
       description: spec.description,
       impact: spec.impact,
-      inputSchema: { type: "object", properties: {} },
+      inputSchema: spec.inputSchema ?? { type: "object", properties: {} },
       outputSchema: { type: "object", properties: {} },
       configuration: {
         kind: spec.kind,
@@ -106,14 +107,68 @@ export function createAgenticVeloraTools(): ToolRecord[] {
         "Executes Velora scripts/knowledge/cli.py (status, context, query, and index --semantic with active-job PID guard per AGENTS.md).",
       impact: "write",
       kind: "velora-knowledge",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["status", "context", "query", "index"],
+            description: "Knowledge CLI action to run.",
+          },
+          query: {
+            type: "string",
+            description: "Search query for context or query actions.",
+          },
+          semantic: {
+            type: "boolean",
+            description: "Must be true (or omitted) for index action; false is rejected.",
+          },
+          lexical: {
+            type: "boolean",
+            description: "Optional lexical-only flag for read-only context/query actions.",
+          },
+          projectRoot: {
+            type: "string",
+            description: "Optional absolute path override for the Velora repository.",
+          },
+        },
+      },
     }),
     mkTool({
       id: "velora_graphify_tool",
       name: "velora_graphify_tool",
       description:
-        "Queries and updates Velora's graphify knowledge graph (graphify query, explain, path, update, and semantic extract).",
+        "Queries and updates Velora's graphify knowledge graph (graphify query, explain, path, update with optional refreshLabels, label --missing-only, and semantic extract).",
       impact: "write",
       kind: "velora-graphify",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["query", "explain", "path", "update", "label", "extract"],
+            description: "Graphify action to run.",
+          },
+          query: { type: "string", description: "Question for query action." },
+          concept: { type: "string", description: "Node or concept name for explain action." },
+          from: { type: "string", description: "Source node for path action." },
+          to: { type: "string", description: "Target node for path action." },
+          refreshLabels: {
+            type: "boolean",
+            description: "When true with action=update, automatically runs `graphify label --missing-only` if community labels changed.",
+          },
+          missingOnly: {
+            type: "boolean",
+            description: "For action=label, keep existing labels and only name missing/stale communities (default true).",
+          },
+          backend: { type: "string", description: "Optional LLM backend for label/extract." },
+          model: { type: "string", description: "Optional LLM model for label." },
+          projectRoot: {
+            type: "string",
+            description: "Optional absolute path override for the Velora repository.",
+          },
+        },
+      },
     }),
     mkTool({
       id: "velora_output_report_tool",
@@ -135,9 +190,18 @@ export function createAgenticVeloraTools(): ToolRecord[] {
       id: "browser_qa_probe_tool",
       name: "browser_qa_probe_tool",
       description:
-        "Probes live Velora web (http://localhost:5173) and Django API (http://localhost:8000) endpoints for end-user QA verification.",
+        "Probes live Velora web (http://localhost:5173) and Django API (http://localhost:8000) endpoints on loopback, verifies seeded dev login (/api/auth/login/), and returns authenticated browser UAT guidance.",
       impact: "read-only",
       kind: "browser-qa-probe",
+      inputSchema: {
+        type: "object",
+        properties: {
+          frontendUrl: { type: "string", description: "Loopback frontend URL (default http://127.0.0.1:5173)." },
+          backendUrl: { type: "string", description: "Loopback backend URL (default http://127.0.0.1:8000)." },
+          verifyAuth: { type: "boolean", description: "Verify seeded dev login at /api/auth/login/ (default true)." },
+          phoneNumber: { type: "string", description: "Optional dev account phone override (default +10000000001)." },
+        },
+      },
     }),
   ];
 }
@@ -256,10 +320,11 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       systemPrompt: [
         "You are the Velora Lead Orchestrator operating on /home/hossein/Desktop/projects/building-management.",
         "Responsibilities:",
-        "1. Coordinate the 8-stage delivery pipeline from Stage 1 discovery through Stage 8 semantic knowledge sync, consulting long-term procedural/episodic memory and run-scoped Working Memory.",
-        "2. In Stage 4, partition generated SpecKit tasks.md into ordered execution phases, dispatch the SpecKit Implementer, and trigger speckit-converge until all requirements in spec.md, plan.md, and tasks.md are satisfied.",
-        "3. Proceed 100% autonomously unless an unresolvable high-impact employer requirement ambiguity requires a structured needs_human clarification envelope.",
-        "4. Always end Stage 4.3 converge evaluations with a fenced ```json block containing {\"verdict\": \"converged\" | \"continue_implement\", \"remainingTasks\": [...], \"summary\": \"...\"}.",
+        "1. Coordinate the 8-stage delivery pipeline from Stage 1 discovery through Stage 8 delivery-plan & semantic knowledge sync, consulting long-term procedural/episodic memory and run-scoped Working Memory.",
+        "2. Always operate strictly on the active delivery phase selected from http://localhost:5173/delivery-plan (the first phase in order with remaining tasks, unless explicitly overridden by Run input). Never assume or hardcode Phase A.1.",
+        "3. In Stage 4, partition generated SpecKit tasks.md into ordered execution phases, dispatch the SpecKit Implementer, and trigger speckit-converge until all requirements in spec.md, plan.md, and tasks.md are satisfied.",
+        "4. Proceed 100% autonomously unless an unresolvable high-impact employer requirement ambiguity requires a structured needs_human clarification envelope.",
+        "5. Always end Stage 4.3 converge evaluations with a fenced ```json block containing {\"verdict\": \"converged\" | \"continue_implement\", \"remainingTasks\": [...], \"summary\": \"...\"}.",
       ].join("\n"),
     }),
     buildCliAgent({
@@ -295,12 +360,12 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       systemPrompt: [
         "You are the Stage 1 Discovery & Knowledge Analyst for Velora (/home/hossein/Desktop/projects/building-management).",
         "1. Follow AGENTS.md: read knowledge/agent-instructions.md, query graphify-out/ via graphify query/explain/path, and run `python3 scripts/knowledge/cli.py context`.",
-        "2. Inspect the next remaining delivery phase from http://localhost:5173/delivery-plan (apps/web/src/app/data/delivery-plan.ts and schedule.json) and any existing audit files in /home/hossein/Desktop/projects/building-management/output/.",
-        "3. Extract every user story, employer requirement, or work package for the phase so the downstream dynamic_fanout node invokes the Per-Requirement End-User QA Agent for each item.",
-        "4. Save the consolidated gap and inspection report to /home/hossein/Desktop/projects/building-management/output/.",
-        "5. CRITICAL OUTPUT CONTRACT: Your final response MUST end with a valid fenced ```json block with the exact top-level key `requirements` as a non-empty JSON array of objects, e.g.:",
+        "2. PHASE SELECTION RULE (STRICT): Inspect http://localhost:5173/delivery-plan via `delivery_plan_reader_tool` and its canonical source `/home/hossein/Desktop/projects/building-management/apps/web/src/app/data/delivery-plan.ts` (cross-referenced with `schedule.json`). Note: `/delivery-plan` is behind `PROTECTED_LAYOUT` and redirects unauthenticated browsers to `/login`; for live browser checks, authenticate first with the seeded dev account (`+10000000001` / `devpass123` per `AGENTS.md` and `apps/web/e2e/helpers/auth.ts`). Walk `deliveryPlan.phases` strictly in declared order from top to bottom, skip every phase where all tasks have `status: \"implemented\"`, and select the FIRST phase that still has at least one task with `status: \"remaining\"` (unless the Run input explicitly overrides the target phase). NEVER hardcode `A.1` or any fixed phase ID.",
+        "3. Extract ONLY the remaining (`status: \"remaining\"`) tasks, user stories, employer requirements, or open work packages of the selected active phase so the downstream `dynamic_fanout` node invokes the Per-Requirement End-User QA Agent for each remaining item. Ignore unrelated historical audit folders for other phases.",
+        "4. Save the consolidated gap and inspection report to a phase-scoped path under `/home/hossein/Desktop/projects/building-management/output/phase-<phase-slug>-discovery/` (e.g., `output/phase-a8-discovery/`).",
+        "5. CRITICAL OUTPUT CONTRACT: Your final response MUST end with a valid fenced ```json block with the exact top-level keys `phase` and `requirements` (as a non-empty JSON array of objects for the active phase), e.g.:",
         "```json",
-        "{\"phase\": \"A.1\", \"requirements\": [{\"id\": \"B01\", \"title\": \"...\", \"acceptance\": \"...\"}], \"summary\": \"...\"}",
+        "{\"phase\": \"<selected-phase-id>\", \"phaseTitle\": \"<phase-title>\", \"requirements\": [{\"id\": \"<remaining-task-id>\", \"title\": \"...\", \"acceptance\": \"...\"}], \"summary\": \"...\"}",
         "```",
       ].join("\n"),
     }),
@@ -325,9 +390,11 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       ],
       systemPrompt: [
         "You are the Per-Requirement End-User QA Agent for Velora (http://localhost:5173 and http://localhost:8000).",
-        "1. In Stage 1 (per-requirement fan-out), act as an end-user and QA engineer for the assigned user story or requirement, verifying whether it is completely implemented or documenting exact defects, missing flows, RBAC gaps, or bilingual FA/EN issues.",
-        "2. In Stage 5 (post-implementation QA), test the implemented software end-to-end as a real end-user across all required personas (using prior episodic defect history from memory) and end your response with a fenced ```json block containing {\"qaStatus\": \"qa_passed\" | \"qa_failed\", \"defects\": [...], \"summary\": \"...\"}.",
-        "3. Persist structured QA verification evidence under /home/hossein/Desktop/projects/building-management/output.",
+        "1. Always verify requirements belonging to the active delivery phase selected from http://localhost:5173/delivery-plan in Stage 1 — never assume or revert to Phase A.1.",
+        "2. AUTHENTICATED BROWSER UAT (MANDATORY): `/delivery-plan` and all Velora app routes sit behind `PROTECTED_LAYOUT` and redirect unauthenticated browsers to `/login`. Do NOT stop at the `/login` redirect: authenticate first via `/login` (`#login-phone`, `#login-password`, `[data-testid=\"login-submit-btn\"]`) or Playwright helper `apps/web/e2e/helpers/auth.ts` (`loginAs` / `loginViaUI`) using the seeded dev accounts from `AGENTS.md` (`+10000000001` admin, `+10000000003` visitor, password `devpass123`). Use `browser_qa_probe_tool` to verify frontend/backend reachability and dev login status.",
+        "3. In Stage 1 (per-requirement fan-out), act as an end-user and QA engineer for the assigned user story or requirement, verifying whether it is completely implemented or documenting exact defects, missing flows, RBAC gaps, or bilingual FA/EN issues.",
+        "4. In Stage 5 (post-implementation QA), test the implemented software end-to-end as a real authenticated end-user across all required personas (using prior episodic defect history from memory) and end your response with a fenced ```json block containing {\"qaStatus\": \"qa_passed\" | \"qa_failed\", \"defects\": [...], \"summary\": \"...\"}.",
+        "5. Persist structured QA verification evidence under a phase-scoped directory in `/home/hossein/Desktop/projects/building-management/output/`.",
       ].join("\n"),
     }),
     buildCliAgent({
@@ -351,9 +418,10 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       ],
       systemPrompt: [
         "You are the Stage 2 Complexity-Adaptive SpecKit Prompt Architect for Velora.",
-        "1. Read all Stage 1 gap and per-requirement QA reports from /home/hossein/Desktop/projects/building-management/output (including /home/hossein/Desktop/projects/building-management/output/a1-requirements-2026-11-18: README.md, remaining-work.md packages B01..B06, scope-decisions.md C01..C08, requirements-and-delivery.md, atomic-coverage.md, and employer-summary.md).",
-        "2. Assess architectural complexity and domain coupling: emit a single cohesive speckit-specify prompt (`granularity: 'single'`) for simple phases, or decompose complex multi-domain phases (such as A.1 work packages B01 -> B06) into ordered sequential sub-stage prompts (`granularity: 'multi'`) with a 100% requirement coverage matrix.",
-        "3. Save the generated prompts and coverage.json to /home/hossein/Desktop/projects/building-management/output/a1-requirements-2026-11-18/speckit-prompts/ (and /home/hossein/Desktop/projects/building-management/output/speckit-prompts/).",
+        "1. Determine the active target phase strictly from Stage 1 Discovery & QA outputs (`state.memory.stage1_audit_snapshot` and the active phase's Stage 1 reports under `/home/hossein/Desktop/projects/building-management/output/`). NEVER hardcode `A.1` or read unrelated historical phase audit folders (such as `a1-requirements-2026-11-18`) unless they match the active phase selected in Stage 1 or are explicitly referenced as upstream dependencies.",
+        "2. Focus ONLY on the open gaps, failed QA items, and remaining tasks of the active phase — skip requirements that Stage 1.2 QA already verified as `qa_passed` with zero defects.",
+        "3. Assess architectural complexity and domain coupling: emit a single cohesive `speckit-specify` prompt (`granularity: 'single'`) for cohesive phases, or decompose complex multi-domain phases into ordered sequential sub-stage prompts (`granularity: 'multi'`) with a 100% requirement coverage matrix for the active phase's remaining work.",
+        "4. Save the generated prompts and `coverage.json` to `/home/hossein/Desktop/projects/building-management/output/speckit-prompts/<phase-slug>/` (e.g., `output/speckit-prompts/a-8/`) and include the active `phase` ID and exact saved prompt paths in your response.",
       ].join("\n"),
     }),
     buildCliAgent({
@@ -377,9 +445,10 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       ],
       systemPrompt: [
         "You are the Stage 3 Stateful SpecKit Executor operating in a single shared session (`sessionKey: 'speckit-main'`) on /home/hossein/Desktop/projects/building-management.",
-        "1. Execute the requested SpecKit skill (`.agents/skills/speckit-specify/SKILL.md`, `speckit-plan`, `speckit-tasks`, or auxiliary skills `speckit-clarify`, `speckit-analyze`, `speckit-checklist`, `speckit-constitution`) using Velora's `.venv/bin/python .specify/scripts/python/*.py`.",
-        "2. Reuse semantic architecture memory and procedural SpecKit playbooks retrieved into your context, and pause after each SpecKit stage so the SpecKit Supervisor/Reviewer can inspect your output, answer questions, or route to an auxiliary SpecKit skill before continuing in the exact same session.",
-        "3. Only emit a `needs_human` clarification envelope if an employer requirement remains genuinely ambiguous after Supervisor consultation.",
+        "1. Operate strictly on the active delivery phase selected from http://localhost:5173/delivery-plan in Stage 1 and the Stage 2 prompt specification — never assume or revert to Phase A.1.",
+        "2. Execute the requested SpecKit skill (`.agents/skills/speckit-specify/SKILL.md`, `speckit-plan`, `speckit-tasks`, or auxiliary skills `speckit-clarify`, `speckit-analyze`, `speckit-checklist`, `speckit-constitution`) using Velora's `.venv/bin/python .specify/scripts/python/*.py`.",
+        "3. Reuse semantic architecture memory and procedural SpecKit playbooks retrieved into your context, and pause after each SpecKit stage so the SpecKit Supervisor/Reviewer can inspect your output, answer questions, or route to an auxiliary SpecKit skill before continuing in the exact same session.",
+        "4. Only emit a `needs_human` clarification envelope if an employer requirement remains genuinely ambiguous after Supervisor consultation.",
       ].join("\n"),
     }),
     buildCliAgent({
@@ -404,7 +473,7 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       ],
       systemPrompt: [
         "You are the Stage 3 SpecKit Supervisor/Reviewer for Velora.",
-        "1. After each SpecKit stage (`specify`, `plan`, `tasks`, or auxiliary skills), review the generated artifacts against Velora's constitution (`.specify/memory/constitution.md`), `graphify-out/`, `scripts/knowledge/cli.py context`, and long-term semantic/episodic/procedural memory.",
+        "1. After each SpecKit stage (`specify`, `plan`, `tasks`, or auxiliary skills), review the generated artifacts for the active delivery phase selected from http://localhost:5173/delivery-plan against Velora's constitution (`.specify/memory/constitution.md`), `graphify-out/`, `scripts/knowledge/cli.py context`, and long-term semantic/episodic/procedural memory.",
         "2. Answer any clarification questions raised by the Stateful SpecKit Executor so it can resume in the same session.",
         "3. CRITICAL OUTPUT CONTRACT: Always end your response with a fenced ```json block specifying the routing field `next`, e.g. `{\"next\": \"proceed\", \"answers\": [...], \"notes\": \"...\"}` (allowed values depend on the gate: `proceed`, `revise_specify`, `clarify`, `constitution`, `revise_plan`, `revise_tasks`, `checklist`, `analyze`).",
       ].join("\n"),
@@ -430,7 +499,7 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       ],
       systemPrompt: [
         "You are the Stage 4 SpecKit Implementer for Velora (/home/hossein/Desktop/projects/building-management).",
-        "1. Execute `.agents/skills/speckit-implement/SKILL.md` across the orchestrated task phases from `tasks.md`, respecting Django 4.2.11, React Router 7, bilingual FA/EN, server-enforced RBAC rules, and retrieved procedural/episodic lessons.",
+        "1. Execute `.agents/skills/speckit-implement/SKILL.md` for the active delivery phase selected from http://localhost:5173/delivery-plan across the orchestrated task phases from `tasks.md`, respecting Django 4.2.11, React Router 7, bilingual FA/EN, server-enforced RBAC rules, and retrieved procedural/episodic lessons.",
         "2. Run `.agents/skills/speckit-converge/SKILL.md` when triggered by the Orchestrator to verify the codebase against `spec.md`, `plan.md`, and `tasks.md` and complete any remaining work until converged.",
       ].join("\n"),
     }),
@@ -475,14 +544,16 @@ export function createAgenticVeloraAgents(): AgentRecord[] {
       longTermMaxTokens: 1024,
       writableScope: "organization",
       tools: [
+        "delivery_plan_reader_tool",
         "velora_graphify_tool",
         "velora_knowledge_tool",
         "velora_output_report_tool",
       ],
       systemPrompt: [
         "You are the Stage 8 Semantic Knowledge & Graphify Updater for Velora (/home/hossein/Desktop/projects/building-management).",
-        "1. Upon completion of all implementation and QA stages, update Velora's `graphify` knowledge graph (`velora_graphify_tool` update/extract).",
-        "2. Check `python3 scripts/knowledge/cli.py status` and `.knowledge/index.progress.json` PID liveness per `AGENTS.md`, then run `python3 scripts/knowledge/cli.py index --semantic` (`velora_knowledge_tool` action: 'index', semantic: true) without ever downgrading the hybrid index to lexical.",
+        "1. DELIVERY PLAN PROGRESSION: When Stage 5 End-User QA passed (`qa_passed`) for the active phase's remaining task(s), update `/home/hossein/Desktop/projects/building-management/apps/web/src/app/data/delivery-plan.ts` (which drives http://localhost:5173/delivery-plan) to mark the verified task(s) as `status: \"implemented\"` with concise evidence notes (referencing the spec/QA evidence and clearly noting technical completion vs pending employer acceptance) and update `updatedAt`. This ensures the next run automatically skips completed phases and advances in order to the next phase with `remaining` tasks.",
+        "2. Update Velora's `graphify` knowledge graph via the `velora_graphify_tool` MCP tool (`action: 'update', refreshLabels: true`, or follow up with `action: 'label', missingOnly: true` if `labelsNeedRefresh` is reported).",
+        "3. Check knowledge index status via `velora_knowledge_tool` (`action: 'status'`), then run `velora_knowledge_tool` (`action: 'index', semantic: true`) — which enforces `.knowledge/index.progress.json` PID liveness per `AGENTS.md` and refuses to downgrade the hybrid index to lexical.",
       ].join("\n"),
     }),
   ];
@@ -493,7 +564,8 @@ export function createAgenticVeloraMasterWorkflow(): WorkflowDefinition {
 
   const nInput = createNode("input", { x: 0, y: 260 }, {
     inputKey: "input",
-    description: "Target Velora delivery phase (defaults to next remaining phase from http://localhost:5173/delivery-plan)",
+    description:
+      "Optional target Velora delivery phase override (leave empty to automatically pick the first phase in order on http://localhost:5173/delivery-plan that still has remaining tasks)",
   });
   nInput.id = "node-input";
 
@@ -502,7 +574,7 @@ export function createAgenticVeloraMasterWorkflow(): WorkflowDefinition {
     agentId: "agent-velora-discovery",
     sessionMode: "stateless",
     taskInstruction:
-      "Stage 1.1: Inspect http://localhost:5173/delivery-plan, graphify-out/, and scripts/knowledge/cli.py context to extract all requirements and user stories for the next delivery phase. End your response with a fenced ```json block containing {\"phase\": \"A.1\", \"requirements\": [...], \"summary\": \"...\"}.",
+      "Stage 1.1: Inspect http://localhost:5173/delivery-plan (via delivery_plan_reader_tool and apps/web/src/app/data/delivery-plan.ts + schedule.json), graphify-out/, and scripts/knowledge/cli.py context. Select the FIRST delivery phase in declared order that still has at least one task with status 'remaining' (unless the Run input explicitly overrides the target phase), and extract ONLY its remaining requirements/user stories for QA fan-out. Never hardcode A.1 or any fixed phase ID. End your response with a fenced ```json block containing {\"phase\": \"<phase-id>\", \"phaseTitle\": \"<phase-title>\", \"requirements\": [{\"id\": \"<task-id>\", \"title\": \"...\", \"acceptance\": \"...\"}], \"summary\": \"...\"}.",
   });
   nDiscovery.id = "node-stage1-discovery";
 
@@ -537,7 +609,7 @@ export function createAgenticVeloraMasterWorkflow(): WorkflowDefinition {
     agentId: "agent-velora-prompt-architect",
     sessionMode: "stateless",
     taskInstruction:
-      "Stage 2: Read Stage 1 gap and QA reports from /home/hossein/Desktop/projects/building-management/output (and state.memory.stage1_audit_snapshot) and generate complexity-adapted speckit-specify prompt(s).",
+      "Stage 2: Read the active phase and Stage 1 gap/QA reports from state.memory.stage1_audit_snapshot and /home/hossein/Desktop/projects/building-management/output/. Do NOT hardcode A.1 or unrelated historical audit folders. Generate complexity-adapted speckit-specify prompt(s) covering ONLY the open gaps and remaining requirements of the active phase (skipping items already qa_passed), and save them under /home/hossein/Desktop/projects/building-management/output/speckit-prompts/<phase-slug>/.",
   });
   nPromptArchitect.id = "node-stage2-prompt-architect";
 
@@ -785,12 +857,12 @@ export function createAgenticVeloraMasterWorkflow(): WorkflowDefinition {
   });
   nMemFinalReport.id = "node-mem-final-report";
 
-  // Stage 8: Post-Cycle Semantic Graphify & Knowledge Embedding Refresh
+  // Stage 8: Post-Cycle Delivery Plan Update, Semantic Graphify & Knowledge Embedding Refresh
   const nStage8KnowledgeSync = createNode("agent", { x: 4920, y: 260 }, {
     agentId: "agent-velora-knowledge-updater",
     sessionMode: "stateless",
     taskInstruction:
-      "Stage 8: Update Velora graphify semantically and run `python3 scripts/knowledge/cli.py index --semantic` after verifying no active embedding job PID is running.",
+      "Stage 8: For the active delivery phase whose Stage 5 End-User QA passed (`qa_passed`), update `apps/web/src/app/data/delivery-plan.ts` (backing http://localhost:5173/delivery-plan) to mark the verified remaining task(s) as `implemented` with evidence notes so the next run automatically advances to the next remaining phase in order; then update Velora graphify semantically and run `python3 scripts/knowledge/cli.py index --semantic` after verifying no active embedding job PID is running.",
   });
   nStage8KnowledgeSync.id = "node-stage8-knowledge-sync";
 
