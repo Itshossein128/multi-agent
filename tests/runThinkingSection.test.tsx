@@ -56,11 +56,12 @@ test("renders nothing for completed runs when no agent shared thinking", async (
 test("renders Agent reasoning section when a step actually shared thinking", async () => {
   const events: RunEvent[] = [
     { id: "e1", runId: "run-1", nodeId: "node-speckit-specify", type: "agent.started", sequence: 1, timestamp: "2026-11-21T16:00:00Z", payload: {} },
-    { id: "e2", runId: "run-1", nodeId: "node-speckit-specify", type: "log", sequence: 2, timestamp: "2026-11-21T16:00:10Z", payload: { channel: "thinking", thoughts: "Checking B04 dependencies.", thinkingStatus: "shared", final: true, part: 0 } },
+    { id: "e2", runId: "run-1", nodeId: "node-speckit-specify", type: "log", sequence: 2, timestamp: "2026-11-21T16:00:10Z", payload: { channel: "thinking", thoughts: "## Plan\n\n- Checking **B04** dependencies.", thinkingStatus: "shared", final: true, part: 0 } },
     { id: "e3", runId: "run-1", nodeId: "node-speckit-specify", type: "node.completed", sequence: 3, timestamp: "2026-11-21T16:01:00Z", payload: {} },
   ];
   const view = await renderUi(<RunThinkingSection events={events} run={{ ...baseRun, status: "completed" }} />);
   expect(view.container.textContent).toContain("Agent reasoning");
-  expect(view.container.textContent).toContain("Checking B04 dependencies.");
+  expect(view.container.textContent).toContain("Checking **B04** dependencies.");
+  expect(view.container.querySelector('[data-testid="markdown-content"]')).not.toBeNull();
   await view.unmount();
 });

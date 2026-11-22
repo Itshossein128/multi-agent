@@ -5,20 +5,31 @@ import ReactMarkdown from "react-markdown";
 import { formatAgentTextForReading } from "@/lib/readableAgentText";
 
 /** Render agent/log text as readable prose — markdown and structured agent JSON become formatted content, not raw syntax. */
-export function ReadableContent({ text }: { text: string }) {
+export function ReadableContent({
+  text,
+  variant = "box",
+}: {
+  text: string;
+  variant?: "box" | "inline";
+}) {
   const rendered = useMemo(() => formatAgentTextForReading(text).markdown || text, [text]);
+  const isInline = variant === "inline";
+  const textSize = isInline ? "text-xs" : "text-sm";
+  const containerClass = isInline
+    ? "readable-md mt-1 break-words text-xs leading-relaxed text-zinc-200"
+    : "readable-md max-h-80 overflow-auto rounded-md bg-zinc-950/80 p-3 text-sm leading-relaxed text-zinc-200";
   return (
-    <div dir="auto" className="readable-md max-h-80 overflow-auto rounded-md bg-zinc-950/80 p-3 text-sm leading-relaxed text-zinc-200">
+    <div dir="auto" className={containerClass}>
       <ReactMarkdown
         components={{
-          h1: ({ children }) => <h1 dir="auto" className="mb-2 text-base font-semibold text-zinc-50">{children}</h1>,
-          h2: ({ children }) => <h2 dir="auto" className="mb-2 text-sm font-semibold text-zinc-50">{children}</h2>,
-          h3: ({ children }) => <h3 dir="auto" className="mb-1.5 text-sm font-medium text-zinc-100">{children}</h3>,
-          h4: ({ children }) => <h4 dir="auto" className="mb-1 text-sm font-medium text-zinc-100">{children}</h4>,
-          p: ({ children }) => <p dir="auto" className="mb-2 last:mb-0 text-sm text-zinc-200">{children}</p>,
+          h1: ({ children }) => <h1 dir="auto" className={isInline ? "mb-1.5 text-sm font-semibold text-zinc-50" : "mb-2 text-base font-semibold text-zinc-50"}>{children}</h1>,
+          h2: ({ children }) => <h2 dir="auto" className={isInline ? "mb-1.5 text-xs font-semibold text-zinc-50" : "mb-2 text-sm font-semibold text-zinc-50"}>{children}</h2>,
+          h3: ({ children }) => <h3 dir="auto" className={isInline ? "mb-1 text-xs font-medium text-zinc-100" : "mb-1.5 text-sm font-medium text-zinc-100"}>{children}</h3>,
+          h4: ({ children }) => <h4 dir="auto" className={`mb-1 font-medium text-zinc-100 ${textSize}`}>{children}</h4>,
+          p: ({ children }) => <p dir="auto" className={`mb-2 last:mb-0 text-zinc-200 ${textSize}`}>{children}</p>,
           ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
           ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
-          li: ({ children }) => <li dir="auto" className="pl-1 text-sm text-zinc-200">{children}</li>,
+          li: ({ children }) => <li dir="auto" className={`pl-1 text-zinc-200 ${textSize}`}>{children}</li>,
           strong: ({ children }) => <strong className="font-semibold text-zinc-50">{children}</strong>,
           em: ({ children }) => <em className="italic text-zinc-100">{children}</em>,
           a: ({ href, children }) => (
@@ -43,7 +54,7 @@ export function ReadableContent({ text }: { text: string }) {
             </pre>
           ),
           blockquote: ({ children }) => (
-            <blockquote dir="auto" className="mb-2 border-l-2 border-zinc-600 pl-3 text-sm text-zinc-400 last:mb-0">
+            <blockquote dir="auto" className={`mb-2 border-l-2 border-zinc-600 pl-3 text-zinc-400 last:mb-0 ${textSize}`}>
               {children}
             </blockquote>
           ),

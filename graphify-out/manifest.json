@@ -1788,9 +1788,9 @@
     "semantic_hash": ""
   },
   "apps/web/src/components/runs/ReadableContent.tsx": {
-    "mtime": 1795291720.6417208,
-    "seen": 1795292229.1198416,
-    "ast_hash": "ed90db7ae2c0004b6b3639713471e8e2",
+    "mtime": 1795317279.4369473,
+    "seen": 1795317387.641508,
+    "ast_hash": "324a29d2ea0c3eff5a99ea3e47a6b244",
     "semantic_hash": ""
   },
   "apps/web/src/components/tasks/CreateTaskModal.tsx": {
@@ -7452,9 +7452,9 @@
     "semantic_hash": ""
   },
   "apps/web/src/components/workflow/live/ThinkingTranscript.tsx": {
-    "mtime": 1795277612.7353675,
-    "seen": 1795279940.2149773,
-    "ast_hash": "c0662f8c2d4e27482572fd77e54f8cbd",
+    "mtime": 1795317285.4005203,
+    "seen": 1795317387.6433704,
+    "ast_hash": "a742d8aca781b38faa05f372a11db0c0",
     "semantic_hash": ""
   },
   "apps/web/src/lib/thinkingPresentation.ts": {
@@ -7674,9 +7674,9 @@
     "semantic_hash": ""
   },
   "tests/runThinkingSection.test.tsx": {
-    "mtime": 1795279362.8604093,
-    "seen": 1795279940.2387888,
-    "ast_hash": "6cb7f66e936165e864736a907182950b",
+    "mtime": 1795317305.6086843,
+    "seen": 1795317387.6649184,
+    "ast_hash": "6d09c59f4f0daa10787eec603d635c4d",
     "semantic_hash": ""
   },
   "pnpm-lock.yaml": {
