@@ -212,6 +212,29 @@ async function main() {
 
   const port = Number(process.env.PORT ?? 4000);
   const server = serve({ fetch: app.fetch, port }, (info) => console.log(`Execution server listening on http://localhost:${info.port}`));
+  server.on("error", (err) => {
+    log.error("server.http_error", { error: err instanceof Error ? err.message : String(err) });
+  });
+  server.on("clientError", (_err, socket) => {
+    try { socket.destroy(); } catch { /* ignore */ }
+  });
+  process.on("unhandledRejection", (reason) => {
+    const message = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+    log.error("process.unhandled_rejection", { error: message });
+    console.error("Unhandled promise rejection (kept server alive):", message);
+  });
+  process.on("uncaughtException", (err) => {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    const message = err instanceof Error ? err.stack ?? err.message : String(err);
+    log.error("process.uncaught_exception", { code, error: message });
+    console.error("Uncaught exception in execution server:", message);
+    // Transient socket disconnect errors (EPIPE/ECONNRESET/ERR_STREAM_WRITE_AFTER_END)
+    // must never take down the entire execution server and kill active runs.
+    if (code === "EPIPE" || code === "ECONNRESET" || code === "ERR_STREAM_WRITE_AFTER_END" || code === "ERR_HTTP_HEADERS_SENT") {
+      return;
+    }
+    process.exit(1);
+  });
   const shutdown = () => {
     outboxProcessor?.stop();
     heartbeatScheduler?.stop();

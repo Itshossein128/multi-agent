@@ -181,12 +181,17 @@ function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown
 }
 
 function sendJson(res: http.ServerResponse, statusCode: number, payload: unknown): void {
-  const body = JSON.stringify(payload);
-  res.writeHead(statusCode, {
-    "content-type": "application/json",
-    "content-length": Buffer.byteLength(body, "utf8"),
-  });
-  res.end(body);
+  if (res.writableEnded || res.destroyed || res.headersSent) return;
+  try {
+    const body = JSON.stringify(payload);
+    res.writeHead(statusCode, {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(body, "utf8"),
+    });
+    res.end(body);
+  } catch {
+    // Client disconnected mid-request; never crash the Studio server process.
+  }
 }
 
 export async function startCliMcpBridge(options: CliMcpBridgeOptions): Promise<CliMcpBridgeHandle> {
@@ -208,6 +213,8 @@ export async function startCliMcpBridge(options: CliMcpBridgeOptions): Promise<C
   };
 
   const server = http.createServer(async (req, res) => {
+    req.on("error", () => {});
+    res.on("error", () => {});
     try {
       const authHeader = String(req.headers.authorization ?? "");
       const providedToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
@@ -339,10 +346,21 @@ export async function startCliMcpBridge(options: CliMcpBridgeOptions): Promise<C
     }
   });
 
+  server.on("clientError", (_err, socket) => {
+    try {
+      socket.destroy();
+    } catch {
+      // ignore already-closed sockets
+    }
+  });
+
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       server.removeListener("error", reject);
+      // Keep an active error listener post-listen so transient loopback socket
+      // errors never become uncaught EventEmitter crashes on the Studio server.
+      server.on("error", () => {});
       resolve();
     });
   });

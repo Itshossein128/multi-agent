@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnToolProcess } from "./spawnToolProcess";
 
 const DEFAULT_VELORA_ROOT = "/home/hossein/Desktop/projects/building-management";
 
@@ -123,7 +124,15 @@ export function executeVeloraKnowledgeTool(
     );
   }
 
-  const stdout = (proc.stdout ?? "").trim();
+  return formatVeloraKnowledgeResult(action, projectRoot, proc.stdout ?? "");
+}
+
+function formatVeloraKnowledgeResult(
+  action: string,
+  projectRoot: string,
+  rawStdout: string,
+): Record<string, unknown> {
+  const stdout = rawStdout.trim();
   let parsedOutput: unknown = stdout;
   if (stdout.startsWith("{") || stdout.startsWith("[")) {
     try {
@@ -143,4 +152,79 @@ export function executeVeloraKnowledgeTool(
       ? (parsedOutput as Record<string, unknown>)
       : {}),
   };
+}
+
+/**
+ * Non-blocking async variant used by FunctionToolExecutor so knowledge CLI calls
+ * (especially `index --semantic` and `context`) never block the server event loop
+ * or starve Postgres execution-lease heartbeats.
+ */
+export async function executeVeloraKnowledgeToolAsync(
+  configuration: Record<string, string | number | boolean>,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const projectRoot = resolveProjectRoot(configuration, input);
+  const action = String(
+    input.action ?? configuration.action ?? (typeof input.query === "string" ? "context" : "status"),
+  )
+    .trim()
+    .toLowerCase();
+
+  if (action === "index") {
+    if (input.semantic === false || input.lexical === true) {
+      throw new Error(
+        "Refusing to run knowledge index without --semantic: Velora AGENTS.md forbids downgrading a hybrid semantic index to lexical.",
+      );
+    }
+    assertNoActiveEmbeddingJob(projectRoot);
+  }
+
+  const scriptPath = path.join(projectRoot, "scripts", "knowledge", "cli.py");
+  if (!fs.existsSync(scriptPath)) {
+    throw new Error(`Velora knowledge CLI script not found at "${scriptPath}".`);
+  }
+
+  let args: string[];
+  if (action === "index") {
+    args = [scriptPath, "index", "--semantic"];
+  } else if (action === "context" || action === "query") {
+    const query = String(input.query ?? input.request ?? "").trim();
+    if (!query) {
+      throw new Error(`velora_knowledge_tool "${action}" requires a non-empty query.`);
+    }
+    args = [scriptPath, action, query];
+    if (input.lexical === true) {
+      args.push("--lexical");
+    }
+  } else if (action === "status") {
+    args = [scriptPath, "status"];
+  } else {
+    throw new Error(`Unsupported velora_knowledge_tool action "${action}". Expected status, context, query, or index.`);
+  }
+
+  const configuredNoProxy = (process.env.no_proxy ?? process.env.NO_PROXY ?? "").trim();
+  const noProxy = configuredNoProxy === "*" ? configuredNoProxy : [...new Set([
+    ...configuredNoProxy.split(",").map(host => host.trim()).filter(Boolean),
+    "127.0.0.1", "localhost", "::1",
+  ])].join(",");
+
+  const proc = await spawnToolProcess("python3", args, {
+    cwd: projectRoot,
+    timeoutMs: action === "index" ? 300_000 : 120_000,
+    signal,
+    env: { ...process.env, NO_PROXY: noProxy, no_proxy: noProxy },
+  });
+
+  if (proc.error) {
+    throw new Error(`velora_knowledge_tool failed to spawn python3: ${proc.error.message}`);
+  }
+  if (proc.status !== 0) {
+    const detail = (proc.stderr || proc.stdout || "").trim().slice(0, 1_500);
+    throw new Error(
+      `velora_knowledge_tool "${action}" exited with code ${String(proc.status)}${detail ? `: ${detail}` : ""}`,
+    );
+  }
+
+  return formatVeloraKnowledgeResult(action, projectRoot, proc.stdout);
 }

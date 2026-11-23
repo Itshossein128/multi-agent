@@ -894,9 +894,9 @@
     "semantic_hash": ""
   },
   "apps/server/src/index.ts": {
-    "mtime": 1795099218.3343756,
-    "seen": 1795099281.6349492,
-    "ast_hash": "dd70744298d4e153bb8e6253ea3171c1",
+    "mtime": 1795405556.0307078,
+    "seen": 1795405701.7491674,
+    "ast_hash": "e143b433346b91e11e000e95fcab4685",
     "semantic_hash": ""
   },
   "apps/server/src/infrastructure/postgresPool.ts": {
@@ -3024,9 +3024,9 @@
     "semantic_hash": ""
   },
   "src/agents/runtime/workingMemory.ts": {
-    "mtime": 1795114881.1510353,
-    "seen": 1795276900.7761986,
-    "ast_hash": "ce1615d48a18dd4bf3417f47df16ee52",
+    "mtime": 1795405554.2027323,
+    "seen": 1795405701.766972,
+    "ast_hash": "360b489b337d3f4469f2cc73f5a46ee0",
     "semantic_hash": ""
   },
   "src/auth/internalPrincipal.ts": {
@@ -3540,9 +3540,9 @@
     "semantic_hash": ""
   },
   "src/tools/functionToolExecutor.ts": {
-    "mtime": 1795032577.6349595,
-    "seen": 1795036159.9886494,
-    "ast_hash": "76ff4494d234a44d54001a681645a43a",
+    "mtime": 1795405525.4241166,
+    "seen": 1795405701.7704477,
+    "ast_hash": "fdfb69966afaedb4d466af9f3c26dc44",
     "semantic_hash": ""
   },
   "src/tools/httpDestination.ts": {
@@ -4992,9 +4992,9 @@
     "semantic_hash": ""
   },
   "tests/workingMemory.test.ts": {
-    "mtime": 1795114881.1520352,
-    "seen": 1795276900.7913983,
-    "ast_hash": "4778d5c990836392aff791bdf5b29955",
+    "mtime": 1795405594.649192,
+    "seen": 1795405701.779604,
+    "ast_hash": "79ac962eaa91518a5b981c47cc487435",
     "semantic_hash": ""
   },
   "tests/workingMemoryRuntime.test.ts": {
@@ -7602,15 +7602,15 @@
     "semantic_hash": ""
   },
   "src/tools/veloraGraphifyTool.ts": {
-    "mtime": 1795363816.0799527,
-    "seen": 1795367489.3221335,
-    "ast_hash": "dde6fe6f0ab6066bc08fca6f7d348183",
+    "mtime": 1795405521.868164,
+    "seen": 1795405701.7709043,
+    "ast_hash": "40037c0042495fa4795115536f25fffe",
     "semantic_hash": ""
   },
   "src/tools/veloraKnowledgeTool.ts": {
-    "mtime": 1795099766.8306317,
-    "seen": 1795100193.5686781,
-    "ast_hash": "e40d3d7796b374d71317f686fab835bc",
+    "mtime": 1795405518.7462058,
+    "seen": 1795405701.7709062,
+    "ast_hash": "a74e34dd6815a87b0993fecd1e7fb7d0",
     "semantic_hash": ""
   },
   "src/tools/veloraOutputReportTool.ts": {
@@ -7680,21 +7680,27 @@
     "semantic_hash": ""
   },
   "src/agents/runtime/cliMcpBridge.ts": {
-    "mtime": 1795363612.4222252,
-    "seen": 1795367489.3149645,
-    "ast_hash": "50cb3be19db6d35a61380bd6ee9f19ad",
+    "mtime": 1795405551.4797685,
+    "seen": 1795405701.766054,
+    "ast_hash": "c1bad878ffaf75731fd5d2d449999667",
     "semantic_hash": ""
   },
   "src/agents/runtime/cliMcpStdioBridge.cjs": {
-    "mtime": 1795367194.9556696,
-    "seen": 1795367489.3149664,
-    "ast_hash": "886a96b3cc747bc66ba8ad8a1a115d83",
+    "mtime": 1795405552.8487504,
+    "seen": 1795405701.7660556,
+    "ast_hash": "38082489db7590bebd0fba39e41b238b",
     "semantic_hash": ""
   },
   "tests/cliMcpBridge.test.ts": {
-    "mtime": 1795368237.3235595,
-    "seen": 1795368367.2051158,
-    "ast_hash": "48c37af48e706d043f57186e09eb5629",
+    "mtime": 1795405654.5283926,
+    "seen": 1795405701.7722187,
+    "ast_hash": "f1f00f2c6c74a082aeb94b12f364e413",
+    "semantic_hash": ""
+  },
+  "src/tools/spawnToolProcess.ts": {
+    "mtime": 1795405515.8592443,
+    "seen": 1795405701.770715,
+    "ast_hash": "d34935695dcd6b71507ec3be99dfdfcb",
     "semantic_hash": ""
   },
   "pnpm-lock.yaml": {

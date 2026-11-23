@@ -508,4 +508,94 @@ describe("browser_qa_probe_tool loopback and auth verification", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  test("cliMcpBridge survives abrupt client disconnects during slow async tool calls without crashing", async () => {
+    const slowTool: ToolRecord = {
+      id: "slow_test_tool",
+      name: "slow_test_tool",
+      category: "function",
+      description: "Slow tool for disconnect resilience test",
+      enabled: true,
+      impact: "read-only",
+      inputSchema: { type: "object", properties: {} },
+      outputSchema: { type: "object", properties: {} },
+      configuration: {},
+      metadata: {},
+      createdAt: "2026-11-23T00:00:00Z",
+      updatedAt: "2026-11-23T00:00:00Z",
+    };
+
+    let releaseTool!: () => void;
+    const toolStarted = new Promise<void>((resolve) => {
+      releaseTool = resolve;
+    });
+    const bridge = await startCliMcpBridge({
+      runId: "run-disconnect",
+      nodeId: "node-disconnect",
+      agentId: "agent-disconnect",
+      resolvedTools: [slowTool],
+      toolRuntime: {
+        execute: async () => {
+          await toolStarted;
+          return { ok: true };
+        },
+      },
+    });
+
+    try {
+      const url = new URL("/tools/call", bridge.url);
+      await new Promise<void>((resolve) => {
+        const req = http.request({
+          hostname: url.hostname,
+          port: url.port,
+          path: url.pathname,
+          method: "POST",
+          agent: false,
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${bridge.token}`,
+          },
+        });
+        req.on("error", () => resolve());
+        req.write(JSON.stringify({ name: "slow_test_tool", arguments: {} }));
+        req.end();
+        setTimeout(() => {
+          req.destroy();
+          resolve();
+        }, 40);
+      });
+      // Release tool AFTER client disconnected — must not throw or crash.
+      releaseTool();
+      await new Promise((r) => setTimeout(r, 40));
+
+      // Bridge must still accept subsequent healthy requests.
+      const listRes = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const listUrl = new URL("/tools/list", bridge.url);
+        const req = http.request(
+          {
+            hostname: listUrl.hostname,
+            port: listUrl.port,
+            path: listUrl.pathname,
+            method: "POST",
+            agent: false,
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${bridge.token}`,
+            },
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (c: Buffer) => chunks.push(c));
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }));
+          },
+        );
+        req.on("error", reject);
+        req.write("{}");
+        req.end();
+      });
+      expect(listRes.status).toBe(200);
+    } finally {
+      await bridge.close();
+    }
+  });
 });

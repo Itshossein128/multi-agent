@@ -19,8 +19,8 @@ import {
   executeSpecKitWorkspaceInspector,
 } from "./deliverySystemTools";
 import { executeSubagentDelegation } from "./subagentDelegationTool";
-import { executeVeloraGraphifyTool } from "./veloraGraphifyTool";
-import { executeVeloraKnowledgeTool } from "./veloraKnowledgeTool";
+import { executeVeloraGraphifyToolAsync } from "./veloraGraphifyTool";
+import { executeVeloraKnowledgeToolAsync } from "./veloraKnowledgeTool";
 import { executeVeloraOutputReportTool } from "./veloraOutputReportTool";
 
 /**
@@ -59,10 +59,10 @@ export class FunctionToolExecutor implements ToolExecutor {
       return executeBrowserQaProbe(tool.configuration, input, signal);
     }
     if (kind === "velora-knowledge" || name === "velora_knowledge_tool") {
-      return executeVeloraKnowledgeTool(tool.configuration, input);
+      return executeVeloraKnowledgeToolAsync(tool.configuration, input, signal);
     }
     if (kind === "velora-graphify" || name === "velora_graphify_tool") {
-      return executeVeloraGraphifyTool(tool.configuration, input);
+      return executeVeloraGraphifyToolAsync(tool.configuration, input, signal);
     }
     if (kind === "velora-output-report" || name === "velora_output_report_tool") {
       return executeVeloraOutputReportTool(tool.configuration, input);

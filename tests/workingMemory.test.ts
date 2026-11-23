@@ -697,4 +697,35 @@ describe("working memory diagnostics", () => {
     expect(diagnostics.includedInContext + diagnostics.droppedByBudget).toBe(4);
     expect(JSON.stringify(diagnostics)).not.toContain("DIAGNOSTIC_SECRET_BODY");
   });
+
+  test("splitWorkingMemoryUpdates preserves sibling routing fields alongside output and workingMemoryUpdates", () => {
+    const raw = [
+      "Review passed.",
+      "```json",
+      JSON.stringify({
+        output: "Specification review passed. Proceed to planning.",
+        workingMemoryUpdates: [{ op: "add", scope: "workflow", kind: "finding", content: "Spec verified." }],
+        next: "proceed",
+      }),
+      "```",
+    ].join("\n");
+
+    const split = splitWorkingMemoryUpdates(raw);
+    expect(split.updates).toHaveLength(1);
+    expect(split.remainder).toEqual({
+      next: "proceed",
+      output: "Specification review passed. Proceed to planning.",
+    });
+
+    const structuredOutput = splitWorkingMemoryUpdates({
+      output: { summary: "Done", notes: "All checks passed" },
+      workingMemoryUpdates: [{ op: "add", scope: "workflow", kind: "finding", content: "Checks passed." }],
+      next: "proceed",
+    });
+    expect(structuredOutput.remainder).toEqual({
+      next: "proceed",
+      summary: "Done",
+      notes: "All checks passed",
+    });
+  });
 });

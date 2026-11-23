@@ -19,8 +19,18 @@ const readline = require("node:readline");
 const BRIDGE_URL = process.env.STUDIO_MCP_BRIDGE_URL || "";
 const BRIDGE_TOKEN = process.env.STUDIO_MCP_BRIDGE_TOKEN || "";
 
+process.stdout.on("error", (err) => {
+  if (err && err.code === "EPIPE") process.exit(0);
+});
+process.stdin.on("error", () => {});
+
 function writeMessage(message) {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+  if (process.stdout.destroyed || !process.stdout.writable) return;
+  try {
+    process.stdout.write(`${JSON.stringify(message)}\n`);
+  } catch {
+    // Parent CLI exited while bridge was replying.
+  }
 }
 
 function sendResult(id, result) {

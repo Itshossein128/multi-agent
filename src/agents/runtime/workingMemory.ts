@@ -1,4 +1,4 @@
-﻿import { nowIso } from "@multi-agent/types";
+import { nowIso } from "@multi-agent/types";
 import { containsSecretAssignment, containsSensitiveContent, isTrivialContent } from "../../memory/application/memoryWritePolicy";
 
 // ─── Working Memory Domain Types ──────────────────────────────────────────────
@@ -552,8 +552,20 @@ function splitFromRecord(record: Record<string, unknown>, original: unknown): Sp
   const channel = record.workingMemoryUpdates;
   const updates = Array.isArray(channel) ? channel : [channel];
   if (Object.prototype.hasOwnProperty.call(record, "output")) {
+    const extra: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (key !== "output" && key !== "workingMemoryUpdates" && key !== "memoryCandidates") {
+        extra[key] = value;
+      }
+    }
+    let remainder: unknown = record.output;
+    if (Object.keys(extra).length > 0) {
+      remainder = isPlainRecord(record.output)
+        ? { ...extra, ...record.output }
+        : { ...extra, output: record.output };
+    }
     return {
-      remainder: record.output,
+      remainder,
       updates,
       ...(Array.isArray(record.memoryCandidates) ? { memoryCandidates: record.memoryCandidates.slice(0, 20) } : {}),
     };
